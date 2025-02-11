@@ -1,0 +1,180 @@
+package storagechallenge
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/LumeraProtocol/supernode/common/service/task"
+	"github.com/LumeraProtocol/supernode/common/storage/files"
+	"github.com/LumeraProtocol/supernode/p2p"
+	p2pMock "github.com/LumeraProtocol/supernode/p2p/test"
+	"github.com/LumeraProtocol/supernode/pastel"
+	pastelMock "github.com/LumeraProtocol/supernode/pastel/test"
+	rqnode "github.com/LumeraProtocol/supernode/raptorq/node"
+	rqmock "github.com/LumeraProtocol/supernode/raptorq/node/test"
+	"github.com/LumeraProtocol/supernode/supernode/node"
+	nodeMock "github.com/LumeraProtocol/supernode/supernode/node/mocks"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestNewService(t *testing.T) {
+	t.Parallel()
+
+	type args struct {
+		config        *Config
+		pastelClient  pastel.Client
+		nodeClient    node.ClientInterface
+		p2pClient     p2p.Client
+		raptorQClient rqnode.ClientInterface
+	}
+
+	config := NewConfig()
+	config.IsTestConfig = true
+	pastelClient := pastelMock.NewMockClient(t)
+	p2pClient := p2pMock.NewMockClient(t).ListenOnGetLocalKeys([]string{}, nil)
+
+	nodeClient := &nodeMock.ClientInterface{}
+	raptorQClient := rqmock.NewMockClient(t)
+
+	testCases := []struct {
+		args args
+		want *SCService
+	}{
+		{
+			args: args{
+				config:        config,
+				pastelClient:  pastelClient.Client,
+				p2pClient:     p2pClient.Client,
+				raptorQClient: raptorQClient.ClientInterface,
+				nodeClient:    nodeClient,
+			},
+			want: &SCService{
+				config: config,
+				SuperNodeService: &common.SuperNodeService{
+					PastelClient: pastelClient.Client,
+					P2PClient:    p2pClient.Client,
+					Worker:       task.NewWorker(),
+				},
+			},
+		},
+	}
+
+	for i, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(fmt.Sprintf("testCase-%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			service := NewService(testCase.args.config, nil, testCase.args.pastelClient, testCase.args.nodeClient,
+				testCase.args.p2pClient, nil, nil)
+			assert.Equal(t, testCase.want.config, service.config)
+			// assert.Equal(t, testCase.want.PastelClient, service.pclient)
+			//test repository separately
+			// assert.Equal(t, testCase.want.P2PClient, service.P2PClient)
+			// assert.Equal(t, testCase.want.RQClient, service.RQClient)
+		})
+	}
+}
+
+func TestServiceRun(t *testing.T) {
+	t.Parallel()
+
+	type args struct {
+		ctx context.Context
+	}
+
+	testCases := []struct {
+		args args
+		want error
+	}{
+		{
+			args: args{
+				ctx: context.Background(),
+			},
+			want: nil,
+		},
+	}
+
+	for i, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(fmt.Sprintf("testCase-%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			config := &Config{
+				Config: common.Config{
+					PastelID: "pastelID",
+				},
+				IsTestConfig: true,
+			}
+			pastelClient := pastelMock.NewMockClient(t)
+			p2pClient := p2pMock.NewMockClient(t).ListenOnGetLocalKeys([]string{}, nil)
+			p2pClient.ListenOnGetLocalKeys([]string{}, nil)
+			service := &SCService{
+				config: config,
+				SuperNodeService: &common.SuperNodeService{
+					PastelClient: pastelClient.Client,
+					P2PClient:    p2pClient.Client,
+					Worker:       task.NewWorker(),
+					Storage:      files.NewStorage(nil),
+				},
+			}
+			ctx, cancel := context.WithTimeout(testCase.args.ctx, 6*time.Second)
+			defer cancel()
+			err := service.Run(ctx)
+			assert.Equal(t, testCase.want, err)
+		})
+	}
+}
+
+func TestServiceNewTask(t *testing.T) {
+	t.Parallel()
+
+	type args struct {
+		ctx context.Context
+	}
+
+	testCases := []struct {
+		args args
+	}{
+		{
+			args: args{
+				ctx: context.Background(),
+			},
+		},
+	}
+
+	for i, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(fmt.Sprintf("testCase-%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			config := &Config{
+				Config: common.Config{
+					PastelID: "pastelID",
+				},
+				IsTestConfig: true,
+			}
+			pastelClient := pastelMock.NewMockClient(t)
+			p2pClient := p2pMock.NewMockClient(t).ListenOnGetLocalKeys([]string{}, nil)
+
+			service := &SCService{
+				config: config,
+				SuperNodeService: &common.SuperNodeService{
+					PastelClient: pastelClient.Client,
+					P2PClient:    p2pClient.Client,
+					Worker:       task.NewWorker(),
+				},
+			}
+			ctx, cancel := context.WithTimeout(testCase.args.ctx, 6*time.Second)
+			defer cancel()
+			go service.Run(ctx)
+			task := service.NewSCTask()
+			assert.Equal(t, service, task.SCService)
+		})
+	}
+}

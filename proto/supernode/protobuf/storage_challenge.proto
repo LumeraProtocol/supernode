@@ -1,0 +1,80 @@
+// Copyright (c) 2021-2021 The Pastel Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+syntax = "proto3";
+
+option go_package = "github.com/LumeraProtocol/supernode/proto/supernode;supernode";
+
+package supernode;
+
+import "common_sn.proto";
+
+service StorageChallenge {
+  rpc Session(stream SessionRequest) returns (stream SessionReply);
+  rpc ProcessStorageChallenge(ProcessStorageChallengeRequest) returns (ProcessStorageChallengeReply);
+  rpc VerifyStorageChallenge(VerifyStorageChallengeRequest) returns (VerifyStorageChallengeReply);
+  rpc VerifyEvaluationResult(VerifyEvaluationResultRequest) returns (VerifyEvaluationResultReply);
+  rpc BroadcastStorageChallengeResult(BroadcastStorageChallengeRequest) returns (BroadcastStorageChallengeResponse);
+  rpc BroadcastStorageChallengeMetrics(BroadcastStorageChallengeMetricsRequest) returns (BroadcastStorageChallengeMetricsReply);
+}
+
+message ProcessStorageChallengeRequest {
+  StorageChallengeMessage data = 1;
+}
+
+message ProcessStorageChallengeReply {
+  StorageChallengeMessage data = 1;
+}
+
+message VerifyStorageChallengeRequest {
+  StorageChallengeMessage data = 1;
+}
+
+message VerifyStorageChallengeReply {
+  StorageChallengeMessage data = 1;
+}
+
+message VerifyEvaluationResultRequest {
+  StorageChallengeMessage data = 1;
+}
+
+message VerifyEvaluationResultReply {
+  StorageChallengeMessage data = 1;
+}
+
+message BroadcastStorageChallengeRequest {
+  string challenge_id = 1;
+  map<string, bytes> challenger = 2;
+  map<string, bytes> recipient = 3;
+  map<string, bytes> observers = 4;
+  bytes sender_signature = 5;
+}
+
+message BroadcastStorageChallengeResponse {
+  StorageChallengeMessage data = 1;
+}
+
+
+message StorageChallengeMessage {
+  enum messageType {
+    MessageType_UNKNOWN = 0;
+    MessageType_STORAGE_CHALLENGE_CHALLENGE_MESSAGE = 1;
+    MessageType_STORAGE_CHALLENGE_RESPONSE_MESSAGE = 2;
+    MessageType_STORAGE_CHALLENGE_EVALUATION_MESSAGE = 3;
+    MessageType_STORAGE_CHALLENGE_AFFIRMATION_MESSAGE = 4;
+    MessageType_STORAGE_CHALLENGE_BROADCAST_MESSAGE = 5;
+  }
+
+  messageType message_type = 1;
+  string challenge_id = 2;
+  bytes data = 3;
+  string sender_id = 4;
+  bytes sender_signature = 5;
+}
+
+message BroadcastStorageChallengeMetricsRequest {
+  bytes data = 1;
+  string sender_id = 2;
+}
+
+message BroadcastStorageChallengeMetricsReply {}

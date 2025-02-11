@@ -1,0 +1,47 @@
+# please provide pastel configs in pastel.conf
+log-config:
+  log-file:             # e.g: logs.json - by default, logs are only written to stdout
+  log-compress: true    # compress log or not
+  log-max-size-mb: 100   # maximum log file size before rotate to new file
+  log-max-age-days: 3   # maximum duration to retain old log files based on the timestamp encoded in their filename
+  log-max-backups: 10   # set the maximum number of old log files to retain
+  log-levels:           # log level of individual files 
+    common: debug
+    p2p: info
+    metadb: info
+    dd: info
+quiet: false
+temp-dir:
+work-dir:
+rq-files-dir: 
+dd-service-dir:
+
+node:
+  pastel_id: jXXsFY5CMSFy5T1cHFiqTsK2B5kMv93zP48G2FdfPWuPP6p2jH6c1JrNGL3VJHDxFvq6eZSsWppC3191sbG3oD
+  pass_phrase: "passphrase"
+  server:
+    listen_addresses: "0.0.0.0"
+    port: 4444
+
+p2p:
+  listen_address: "0.0.0.0"
+  port: 6000
+  data_dir: "p2p-localnet-6000"
+
+metadb:
+  is_leader: true
+  none_voter: false
+  listen_address: "0.0.0.0"
+  http_port: 4041
+  raft_port: 4042
+  data_dir: "metadb-4444"
+  block_interval: 48
+
+raptorq:
+  host: "localhost"
+  port: 50051
+
+dd-server:
+  host: "localhost"
+  port: 50052
+  dd-temp-file-dir: "dd-server"

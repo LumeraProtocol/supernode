@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+option go_package = "github.com/LumeraProtocol/supernode/proto/walletnode";
+
+package walletnode;
+import "common_wn.proto";
+
+
+service DownloadNft {
+    // Download downloads NFT by given txid, timestamp and signature.
+    rpc Download(DownloadRequest) returns (stream DownloadReply);
+    rpc DownloadThumbnail(DownloadThumbnailRequest) returns (DownloadThumbnailReply);
+    rpc DownloadDDAndFingerprints(DownloadDDAndFingerprintsRequest) returns (DownloadDDAndFingerprintsReply);
+    //GetTopMNs return top MNs list from the SN
+    rpc GetTopMNs(GetTopMNsRequest) returns (GetTopMNsReply);
+}
+
+message DownloadRequest {
+    string txid = 1;
+    string timestamp = 2;
+    string signature = 3;
+    string ttxid = 4;
+    string ttype = 5;
+    bool send_hash = 6;
+}
+
+message DownloadReply {
+    bytes file = 1;
+}
+
+message DownloadThumbnailRequest {
+    string txid = 1;
+    int32 numnails = 2;
+}
+
+message DownloadThumbnailReply {
+    bytes thumbnailone = 1;
+    bytes thumbnailtwo = 2;
+}
+
+message DownloadDDAndFingerprintsRequest {
+    string txid = 1;
+}
+
+message DownloadDDAndFingerprintsReply {
+    bytes file = 1;
+}

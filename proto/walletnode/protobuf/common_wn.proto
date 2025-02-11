@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+option go_package = "github.com/LumeraProtocol/supernode/proto/walletnode";
+
+package walletnode;
+
+message SessionRequest {
+    bool is_primary = 1;
+}
+
+message SessionReply {
+    string sessID = 1;
+}
+
+message AcceptedNodesRequest {}
+
+message AcceptedNodesReply {
+    message Peer {
+        string nodeID = 1;
+    }
+    repeated Peer peers = 1;
+}
+
+message ConnectToRequest {
+    string sessID = 1;
+    string nodeID = 2;
+}
+
+message ConnectToReply {}
+
+message MeshNodesRequest {
+    message Node  {
+     string sessID = 1;
+     string nodeID = 2;
+    }
+
+    repeated Node nodes = 1;
+}
+
+message MeshNodesReply {}
+
+message SendRegMetadataRequest {
+    string creatorPastelID = 1;
+    string blockHash = 2;
+    string burn_txid = 3;
+    string blockHeight = 4;
+    string timestamp = 5;
+    string group_id = 6;
+    string collection_txid = 7;
+}
+
+message SendRegMetadataReply {}
+
+message ProbeImageRequest {
+    bytes payload = 1;
+}
+
+message ProbeImageReply {
+    bytes compressedSignedDDAndFingerprints = 1;
+    bool is_valid_burn_txid = 2;
+    string err_string = 3;
+    bool is_existing = 4;
+}
+
+message EncoderParameters {
+    bytes oti = 1;   //12 bytes
+}
+
+message SendSignedActionTicketReply {
+    string action_reg_txid = 1;
+}
+
+message SendActionActRequest {
+    string action_reg_txid = 1;
+}
+
+message SendActionActReply {
+}
+
+message GetDBHashRequest {}
+
+message DBHashReply {
+    string hash = 1;
+}
+
+message DDServerStatsRequest {}
+
+message DDServerStatsReply {
+    int32 max_concurrent = 1;
+    int32 executing = 2;
+    int32 waiting_in_queue = 3;
+    string version = 4;
+}
+
+message GetTopMNsRequest {
+    int64 block = 1;
+}
+
+message GetTopMNsReply {
+    repeated string mn_top_list = 1;
+    int64 curr_balance = 2;
+}

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = "github.com/LumeraProtocol/supernode/proto/supernode";
+
+package supernode;
+
+message SessionRequest {
+    string nodeID = 1;
+}
+
+message SessionReply {
+    string sessID = 1;
+}
+
+message SendSignedDDAndFingerprintsRequest {
+    string sessID = 1;
+    string nodeID = 2;
+    bytes zstd_compressed_fingerprint = 3;
+}
+
+message SendSignedDDAndFingerprintsReply {}
+
+message SendTicketSignatureRequest {
+    string nodeID = 1;
+    bytes  signature = 2;
+}
+
+message SendTicketSignatureReply {}
