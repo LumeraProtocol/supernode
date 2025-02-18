@@ -15,8 +15,6 @@ import (
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 )
 
-const lumeraALTSProtocol = "lumera-alts"
-
 var (
 	keyExchangers = map[string]*securekeyx.SecureKeyExchange{}
 	keyExMutex    sync.Mutex
@@ -79,25 +77,29 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 	var optsCommon *CommonOptions
 	var remoteIdentity string
 
-	if commonOpts, ok := opts.(*CommonOptions); ok {
-		optsCommon = commonOpts
-	} else {
-		return nil, fmt.Errorf("invalid credentials type")
-	}
 	if side == ClientSide {
 		if optsClient, ok := opts.(*ClientOptions); ok {
+			optsCommon = &optsClient.CommonOptions
 			remoteIdentity = optsClient.RemoteIdentity
 		}
+	} else {
+		if optsServer, ok := opts.(*ServerOptions); ok {
+			optsCommon = &optsServer.CommonOptions
+		}
+	}
+	if optsCommon == nil {
+		return nil, fmt.Errorf("invalid credentials type")
 	}
 
 	if optsCommon.Curve == nil {
 		optsCommon.Curve = ecdh.P256() // Default to P-256 if not specified
 	}
 
+	var err error
 	keyExMutex.Lock()
 	keyExchanger, exists := keyExchangers[optsCommon.LocalIdentity]
 	if !exists {
-		keyExchanger, err := securekeyx.NewSecureKeyExchange(
+		keyExchanger, err = securekeyx.NewSecureKeyExchange(
 			optsCommon.Keyring,
 			optsCommon.LocalIdentity,
 			optsCommon.PeerType,
@@ -112,7 +114,7 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 
 	return &LumeraTC{
 		info: &credentials.ProtocolInfo{
-			SecurityProtocol: lumeraALTSProtocol,
+			SecurityProtocol: LumeraALTSProtocol,
 			SecurityVersion: "1.0",
 		},
 		side: side,
@@ -123,12 +125,12 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 
 // NewClientCreds creates a TransportCredentials for the client side
 func NewClientCreds(opts *ClientOptions) (credentials.TransportCredentials, error) {
-	return NewTransportCredentials(ClientSide, &opts.CommonOptions)
+	return NewTransportCredentials(ClientSide, opts)
 }
 
 // NewServerCreds creates a TransportCredentials for the server side
 func NewServerCreds(opts *ServerOptions) (credentials.TransportCredentials, error) {
-	return NewTransportCredentials(ServerSide, &opts.CommonOptions)
+	return NewTransportCredentials(ServerSide, opts)
 }
 
 // ClientHandshake performs the client-side handshake
@@ -183,5 +185,5 @@ type LumeraAuthInfo struct {
 }
 
 func (l *LumeraAuthInfo) AuthType() string {
-	return lumeraALTSProtocol
+	return LumeraALTSProtocol
 }

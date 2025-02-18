@@ -17,6 +17,13 @@ import (
 )
 
 const (
+	_        = iota
+	KB int = 1 << (10 * iota) // 1024
+	MB                        // 1048576
+	GB                        // 1073741824
+)
+
+const (
 	defaultTimeout = 30 * time.Second
 	defaultConnWaitTime   = 10 * time.Second
 	defaultRetryWaitTime = 1 * time.Second
@@ -98,10 +105,10 @@ var defaultBackoffConfig = backoff.Config{
 // DefaultClientOptions returns default client options
 func DefaultClientOptions() *ClientOptions {
 	return &ClientOptions{
-		MaxRecvMsgSize:     100 * 1024 * 1024, // 100MB
-		MaxSendMsgSize:     100 * 1024 * 1024, // 100MB
-		InitialWindowSize:  1024 * 1024,       // 1MB - controls initial frame size for streams
-		InitialConnWindowSize: 1024 * 1024,    // 1MB - controls initial frame size for connection
+		MaxRecvMsgSize:     100 * MB,
+		MaxSendMsgSize:     100 * MB, // 100MB
+		InitialWindowSize:     (int32)(1 * MB), // 1MB - controls initial frame size for streams
+		InitialConnWindowSize: (int32)(1 * MB), // 1MB - controls initial frame size for connection
 		ConnWaitTime:       defaultConnWaitTime,
 		
 		KeepAliveTime:      30 * time.Minute,
@@ -206,7 +213,7 @@ var waitForConnection = func(ctx context.Context, conn ClientConn, timeout time.
 		case connectivity.Shutdown:
 			return fmt.Errorf("grpc connection is shutdown")
 		case connectivity.TransientFailure:
-			return fmt.Errorf("grpc connection in transient failure")
+			return fmt.Errorf("grpc connection is in transient failure")
 		default:
 			// For Idle and Connecting states, wait for state change
 			if !conn.WaitForStateChange(timeoutCtx, state) {

@@ -59,7 +59,7 @@ type secureHandshaker struct {
 	// Network connection to the peer.
 	conn net.Conn
 	// Key exchange interface.
-	keyExchange securekeyx.ECDHKeyExchange
+	keyExchanger securekeyx.KeyExchanger
 	// Remote address for client mode.
 	remoteAddr string
 	// Side doing handshake (client or server).
@@ -84,12 +84,12 @@ type handshakeData struct {
 }
 
 // newHandshaker creates a handshaker with custom timeout
-func newHandshaker(keyExchange securekeyx.ECDHKeyExchange, conn net.Conn, remoteAddr string,
+func newHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, remoteAddr string,
 	side Side, timeout time.Duration, opts interface{}) *secureHandshaker {
 
 	hs := &secureHandshaker{
 		conn:        conn,
-		keyExchange: keyExchange,
+		keyExchanger: keyExchange,
 		remoteAddr:  remoteAddr,
 		side:        side,
 		protocol:    RecordProtocolXChaCha20Poly1305ReKey, // Default to XChaCha20-Poly1305
@@ -126,17 +126,17 @@ func newHandshaker(keyExchange securekeyx.ECDHKeyExchange, conn net.Conn, remote
 }
 
 // NewClientHandshaker creates a client-side handshaker
-func NewClientHandshaker(keyExchange securekeyx.ECDHKeyExchange, conn net.Conn, remoteAddr string, opts *ClientHandshakerOptions) *secureHandshaker {
+func NewClientHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, remoteAddr string, opts *ClientHandshakerOptions) *secureHandshaker {
 	return newHandshaker(keyExchange, conn, remoteAddr, ClientSide, defaultTimeout, opts)
 }
 
 // NewServerHandshaker creates a server-side handshaker
-func NewServerHandshaker(keyExchange securekeyx.ECDHKeyExchange, conn net.Conn, opts *ServerHandshakerOptions) *secureHandshaker {
+func NewServerHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, opts *ServerHandshakerOptions) *secureHandshaker {
 	return newHandshaker(keyExchange, conn, "", ServerSide, defaultTimeout, opts)
 }
 
 // For testing purposes
-func newTestHandshaker(keyExchange securekeyx.ECDHKeyExchange, conn net.Conn, remoteAddr string,
+func newTestHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, remoteAddr string,
 	side Side, timeout time.Duration) *secureHandshaker {
 	return newHandshaker(keyExchange, conn, remoteAddr, side, timeout, nil)
 }
@@ -164,7 +164,7 @@ func (h *secureHandshaker) ClientHandshake(ctx context.Context) (net.Conn, crede
 	var lastWriteTime time.Time
 
 	// Create handshake request
-	handshakeBytes, signature, err := h.keyExchange.CreateRequest(h.remoteAddr)
+	handshakeBytes, signature, err := h.keyExchanger.CreateRequest(h.remoteAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create handshake request: %w", err)
 	}
@@ -191,13 +191,14 @@ func (h *secureHandshaker) ClientHandshake(ctx context.Context) (net.Conn, crede
 	}
 
 	// Compute shared secret
-	sharedSecret, err := h.keyExchange.ComputeSharedSecret(respHandshakeBytes, respSig)
+	sharedSecret, err := h.keyExchanger.ComputeSharedSecret(respHandshakeBytes, respSig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to compute shared secret: %w", err)
 	}
 
 	// Create info for HKDF that binds the key to this specific handshake
-	info := []byte(fmt.Sprintf("%s-%s", h.protocol, h.keyExchange.LocalAddress()))
+	// info format: [protocol]-[client address]-[server address]
+	info := []byte(fmt.Sprintf("%s-%s-%s", h.protocol, h.keyExchanger.LocalAddress(), h.remoteAddr))
 
 	// Expand the shared secret for the specific protocol
 	expandedKey, err := ExpandKey(sharedSecret, h.protocol, info)
@@ -206,10 +207,12 @@ func (h *secureHandshaker) ClientHandshake(ctx context.Context) (net.Conn, crede
 	}
 	// Clear shared secret
 	sharedSecret = nil
+	h.Close()
 
 	// Create ALTS connection
 	altsConn, err := NewConn(h.conn, h.side, h.protocol, expandedKey, nil)
 	if err != nil {
+		fmt.Println("Failed to create ALTS connection on client: %w", err)
 		return nil, nil, fmt.Errorf("failed to create ALTS connection: %w", err)
 	}
 
@@ -262,7 +265,7 @@ func (h *secureHandshaker) ServerHandshake(ctx context.Context) (net.Conn, crede
 	}
 
 	// Create handshake response
-	respBytes, respSig, err := h.keyExchange.CreateRequest(clientInfo.Address)
+	respBytes, respSig, err := h.keyExchanger.CreateRequest(clientInfo.Address)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create handshake response: %w", err)
 	}
@@ -273,13 +276,14 @@ func (h *secureHandshaker) ServerHandshake(ctx context.Context) (net.Conn, crede
 	}
 
 	// Compute shared secret
-	sharedSecret, err := h.keyExchange.ComputeSharedSecret(reqBytes, reqSig)
+	sharedSecret, err := h.keyExchanger.ComputeSharedSecret(reqBytes, reqSig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to compute shared secret: %w", err)
 	}
 
 	// Create info for HKDF that binds the key to this specific handshake
-	info := []byte(fmt.Sprintf("%s-%s", h.protocol, h.keyExchange.LocalAddress()))
+	// info format: [protocol]-[client address]-[server address]
+	info := []byte(fmt.Sprintf("%s-%s-%s", h.protocol, clientInfo.Address, h.keyExchanger.LocalAddress()))
 
 	// Expand the shared secret for the specific protocol
 	expandedKey, err := ExpandKey(sharedSecret, h.protocol, info)
@@ -292,11 +296,13 @@ func (h *secureHandshaker) ServerHandshake(ctx context.Context) (net.Conn, crede
 	// Create ALTS connection
 	altsConn, err := NewConn(h.conn, h.side, h.protocol, expandedKey, nil)
 	if err != nil {
+		fmt.Println("Failed to create ALTS connection on server: %w", err)
 		return nil, nil, fmt.Errorf("failed to create ALTS connection: %w", err)
 	}
 
 	// Clear expanded key
 	expandedKey = nil
+	h.Close()
 
 	// Create AuthInfo
 	clientAuthInfo := &AuthInfo{

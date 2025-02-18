@@ -12,7 +12,7 @@ replace (
 require (
 	github.com/LumeraProtocol/lumera v0.4.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cloudflare/circl v1.6.0
 	github.com/go-errors/errors v1.5.1
 	github.com/golang/mock v1.6.0
@@ -24,6 +24,9 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/otrv4/ed448 v0.0.0-20221017120334-a33859724cfd
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/cosmos/cosmos-sdk v0.50.11
+	github.com/cosmos/go-bip39 v1.0.0
+	github.com/cosmos/gogoproto v1.7.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
@@ -35,9 +38,6 @@ require (
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	github.com/cosmos/cosmos-sdk v0.50.11
-	github.com/cosmos/go-bip39 v1.0.0
-	github.com/cosmos/gogoproto v1.7.0
 )
 
 require (

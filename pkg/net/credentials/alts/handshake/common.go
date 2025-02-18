@@ -27,7 +27,7 @@ type AuthInfo struct {
 
 // AuthType returns the name of the authentication mechanism
 func (a *AuthInfo) AuthType() string {
-	return "lumera-alts"
+	return LumeraALTSProtocol
 }
 
 // NewAuthInfo creates a new AuthInfo object

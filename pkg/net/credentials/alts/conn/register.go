@@ -29,3 +29,7 @@ func RegisterALTSRecordProtocols() {
 		ALTSRecordProtocols = append(ALTSRecordProtocols, protocol)
 	}
 }
+
+func UnregisterALTSRecordProtocols() {
+	ALTSRecordProtocols = make([]string, 0)
+}

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package securegrpc;
+
+option go_package = "supernode/tests/integration/securegrpc";
+
+service TestService {
+  rpc TestMethod(TestRequest) returns (TestResponse);
+}
+
+message TestRequest {
+  string message = 1;
+}
+
+message TestResponse {
+  string response = 1;
+}

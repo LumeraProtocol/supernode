@@ -14,6 +14,8 @@ const (
 	// MsgLenFieldSize is the byte size of the frame length field of a framed message.
 	MsgLenFieldSize = 4
 
+	LumeraALTSProtocol = "lumera-alts"
+
 	// RecordProtocolName defines the supported record protocols
 	// Record protocol using GCM-AES128
 	RecordProtocolAESGCM = "ALTSRP_GCM_AES128"

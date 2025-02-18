@@ -17,14 +17,22 @@ import (
 )
 
 const (
+	_        = iota
+	KB int = 1 << (10 * iota) // 1024
+	MB                        // 1048576
+	GB                        // 1073741824
+)
+
+const (
 	defaultGracefulShutdownTimeout = 30 * time.Second
 )
 
 type grpcServer interface {
-	Serve(net.Listener) error
-	Stop()
+	GetServiceInfo() map[string]grpc.ServiceInfo
 	GracefulStop()
 	RegisterService(*grpc.ServiceDesc, interface{})
+	Serve(net.Listener) error
+	Stop()
 }
 
 type ServerOptionBuilder interface {
@@ -79,10 +87,10 @@ type ServerOptions struct {
 // DefaultServerOptions returns default server options
 func DefaultServerOptions() *ServerOptions {
 	return &ServerOptions{
-		MaxRecvMsgSize:        100 * 1024 * 1024, // 100MB
-		MaxSendMsgSize:        100 * 1024 * 1024, // 100MB
-		InitialWindowSize:     1024 * 1024,       // 1MB
-		InitialConnWindowSize: 1024 * 1024,       // 1MB
+		MaxRecvMsgSize:        100 * MB,
+		MaxSendMsgSize:        100 * MB,
+		InitialWindowSize:     (int32)(1 * MB),
+		InitialConnWindowSize: (int32)(1 * MB),
 		MaxConcurrentStreams:  1000,
 		GracefulShutdownTime:  defaultGracefulShutdownTimeout,
 
@@ -94,8 +102,8 @@ func DefaultServerOptions() *ServerOptions {
 		MinTime:              5 * time.Minute,
 		PermitWithoutStream:  true,
 
-		WriteBufferSize:      32 * 1024, // 32KB
-		ReadBufferSize:       32 * 1024, // 32KB
+		WriteBufferSize:      32 * KB,
+		ReadBufferSize:       32 * KB,
 	}
 }
 

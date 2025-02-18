@@ -36,6 +36,20 @@ func (m *MockgrpcServer) EXPECT() *MockgrpcServerMockRecorder {
 	return m.recorder
 }
 
+// GetServiceInfo mocks base method.
+func (m *MockgrpcServer) GetServiceInfo() map[string]grpc.ServiceInfo {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServiceInfo")
+	ret0, _ := ret[0].(map[string]grpc.ServiceInfo)
+	return ret0
+}
+
+// GetServiceInfo indicates an expected call of GetServiceInfo.
+func (mr *MockgrpcServerMockRecorder) GetServiceInfo() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServiceInfo", reflect.TypeOf((*MockgrpcServer)(nil).GetServiceInfo))
+}
+
 // GracefulStop mocks base method.
 func (m *MockgrpcServer) GracefulStop() {
 	m.ctrl.T.Helper()

@@ -2,7 +2,6 @@ package handshake
 
 import (
 	"context"
-	"crypto/ecdh"
 	"errors"
 	"fmt"
 	"net"
@@ -12,13 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/cosmos/go-bip39"
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
@@ -32,44 +25,13 @@ const defaultTestTimeout = 100 * time.Second
 
 var stat testutil.Stats
 
-type MockKeyExchange struct {
-	mock.Mock
-}
-
-func (m *MockKeyExchange) CreateRequest(remoteAddress string) ([]byte, []byte, error) {
-	args := m.Called(remoteAddress)
-	// check if returning error
-	if args.Error(2) != nil {
-		return nil, nil, args.Error(2)
-	}
-	return args.Get(0).([]byte), args.Get(1).([]byte), args.Error(2)
-}
-
-func (m *MockKeyExchange) ComputeSharedSecret(handshakeBytes, signature []byte) ([]byte, error) {
-	args := m.Called(handshakeBytes, signature)
-	// check if returning error
-	if args.Error(1) != nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]byte), args.Error(1)
-}
-
-func (m *MockKeyExchange) PeerType() securekeyx.PeerType {
-	args := m.Called()
-	return args.Get(0).(securekeyx.PeerType)
-}
-
-func (m *MockKeyExchange) LocalAddress() string {
-	args := m.Called()
-	return args.String(0)
-}
-
 func init() {
 	conn.RegisterALTSRecordProtocols()
 }
 
 type hsInterceptor struct {
-	ke                           *MockKeyExchange
+	ctrl 					     *gomock.Controller
+	ke                           *securekeyx.MockKeyExchanger
 	conn                         net.Conn
 	hs                           *secureHandshaker
 	timeout                      time.Duration
@@ -80,14 +42,16 @@ type hsInterceptor struct {
 	savedExpandKey               ExpandKeyFunc
 }
 
-func newHSInterceptor(remoteAddr string, side Side, opts interface{}) *hsInterceptor {
-	ke := new(MockKeyExchange)
+func newHSInterceptor(t *testing.T, remoteAddr string, side Side, opts interface{}) *hsInterceptor {
+	ctrl := gomock.NewController(t)
+	ke := securekeyx.NewMockKeyExchanger(ctrl)
 	conn, _ := net.Pipe()
 
 	defaultHandshakeTimeout := 10 * time.Second
 	hs := newHandshaker(ke, conn, remoteAddr, side, defaultHandshakeTimeout, opts)
 
 	interceptor := &hsInterceptor{
+		ctrl:       ctrl,
 		ke:         ke,
 		conn:       conn,
 		hs:         hs,
@@ -98,12 +62,26 @@ func newHSInterceptor(remoteAddr string, side Side, opts interface{}) *hsInterce
 	return interceptor
 }
 
-func newHSClientInterceptor(opts interface{}) *hsInterceptor {
-	return newHSInterceptor("remote", ClientSide, opts)
+const (
+	// constants for testing
+	testRemoteAddr = "remote"
+	testLocalAddr  = "local"
+)
+
+var (
+	testHandshakeMessage  = []byte("handshake message")
+	testSignature         = []byte("signature")
+	testSharedSecret      = []byte("shared secret")
+	testHandshakeRequest  = []byte("handshake request")
+	testHandshakeResponse = []byte("handshake response")
+)
+
+func newHSClientInterceptor(t *testing.T, opts interface{}) *hsInterceptor {
+	return newHSInterceptor(t, testRemoteAddr, ClientSide, opts)
 }
 
-func newHSServerInterceptor(opts interface{}) *hsInterceptor {
-	return newHSInterceptor("remote", ServerSide, opts)
+func newHSServerInterceptor(t *testing.T, opts interface{}) *hsInterceptor {
+	return newHSInterceptor(t, testRemoteAddr, ServerSide, opts)
 }
 
 func (h *hsInterceptor) setHandshakeTimeout(timeout time.Duration) {
@@ -112,19 +90,31 @@ func (h *hsInterceptor) setHandshakeTimeout(timeout time.Duration) {
 }
 
 func (h *hsInterceptor) mockCreateRequestSuccess() {
-	h.ke.On("CreateRequest", h.remoteAddr).Return([]byte("handshake message"), []byte("signature"), nil)
+	h.ke.EXPECT().CreateRequest(h.remoteAddr).Return(testHandshakeMessage, testSignature, nil)
 }
 
 func (h *hsInterceptor) mockComputeSharedSecret(fn func([]byte, []byte) ([]byte, error)) {
-	h.ke.On("ComputeSharedSecret", mock.Anything, mock.Anything).Return(fn)
+	var handshakeBytes []byte
+	if h.hs.side == ClientSide {
+		handshakeBytes = testHandshakeResponse
+	} else {
+		handshakeBytes = testHandshakeRequest
+	}
+	h.ke.EXPECT().ComputeSharedSecret(handshakeBytes, testSignature).DoAndReturn(fn)
 }
 
 func (h *hsInterceptor) mockComputeSharedSecretSuccess() {
-	h.ke.On("ComputeSharedSecret", mock.Anything, mock.Anything).Return([]byte("shared secret"), nil)
+	var handshakeBytes []byte
+	if h.hs.side == ClientSide {
+		handshakeBytes = testHandshakeResponse
+	} else {
+		handshakeBytes = testHandshakeRequest
+	}
+	h.ke.EXPECT().ComputeSharedSecret(handshakeBytes, testSignature).Return(testSharedSecret, nil)
 }
 
 func (h *hsInterceptor) mockLocalAddress() {
-	h.ke.On("LocalAddress").Return("local")
+	h.ke.EXPECT().LocalAddress().Return(testLocalAddr)
 }
 
 func (h *hsInterceptor) overrideSendHandshakeMessage(fn SendHandshakeMessageFunc) {
@@ -147,7 +137,7 @@ func (h *hsInterceptor) overrideReceiveHandshakeMessage(fn ReceiveHandshakeMessa
 func (h *hsInterceptor) overrideReceiveHandshakeMessageSuccess() {
 	h.savedReceiveHandshakeMessage = ReceiveHandshakeMessage
 	ReceiveHandshakeMessage = func(conn net.Conn) ([]byte, []byte, error) {
-		return []byte("handshake message"), []byte("signature"), nil
+		return testHandshakeMessage, testSignature, nil
 	}
 }
 
@@ -174,7 +164,7 @@ func (h *hsInterceptor) overrideReadRequestWithTimeout(fn ReadRequestWithTimeout
 
 func (h *hsInterceptor) overrideReadRequestWithTimeoutSuccess() {
 	h.hs.readRequestWithTimeoutFn = func(ctx context.Context) ([]byte, []byte, error) {
-		return []byte("handshake request"), []byte("signature"), nil
+		return testHandshakeRequest, testSignature, nil
 	}
 }
 
@@ -184,7 +174,7 @@ func (h *hsInterceptor) overrideReadResponseWithTimeout(fn ReadResponseWithTimeo
 
 func (h *hsInterceptor) overrideReadResponseWithTimeoutSuccess() {
 	h.hs.readResponseWithTimeoutFn = func(ctx context.Context, lastWrite time.Time) ([]byte, []byte, error) {
-		return []byte("handshake response"), []byte("signature"), nil
+		return testHandshakeResponse, testSignature, nil
 	}
 }
 
@@ -216,80 +206,8 @@ func (h *hsInterceptor) cleanup() {
 	h.conn.Close()
 }
 
-// setupTestKeyExchange creates a key exchange instance for testing
-func setupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, peerType securekeyx.PeerType) *securekeyx.SecureKeyExchange {
-	ke, err := securekeyx.NewSecureKeyExchange(kb, addr, peerType, ecdh.P256())
-	require.NoError(t, err)
-	return ke
-}
-
-func generateMnemonic() (string, error) {
-	entropy, err := bip39.NewEntropy(128) // 128 bits for a 12-word mnemonic
-	if err != nil {
-		return "", err
-	}
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", err
-	}
-	return mnemonic, nil
-}
-
-func createTestKeyring() keyring.Keyring {
-	// Create a codec using the modern protobuf-based codec
-	interfaceRegistry := types.NewInterfaceRegistry()
-	protoCodec := codec.NewProtoCodec(interfaceRegistry)
-	// Register public and private key implementations
-	cryptocodec.RegisterInterfaces(interfaceRegistry)
-
-	// Create an in-memory keyring
-	kr := keyring.NewInMemory(protoCodec)
-
-	return kr
-}
-
-func addTestAccountToKeyring(kr keyring.Keyring, accountName string) error {
-	mnemonic, err := generateMnemonic()
-	if err != nil {
-		return err
-	}
-	algoList, _ := kr.SupportedAlgorithms()
-	signingAlgo, err := keyring.NewSigningAlgoFromString("secp256k1", algoList)
-	if err != nil {
-		return err
-	}
-	hdPath := hd.CreateHDPath(118, 0, 0).String() // "118" is Cosmos coin type
-
-	_, err = kr.NewAccount(accountName, mnemonic, "", hdPath, signingAlgo)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// setupTestAccounts creates test accounts in keyring
-func setupTestAccounts(t *testing.T, kr keyring.Keyring, accountNames []string) []string {
-	var addresses []string
-
-	for _, accountName := range accountNames {
-		err := addTestAccountToKeyring(kr, accountName)
-		require.NoError(t, err)
-
-		keyInfo, err := kr.Key(accountName)
-		require.NoError(t, err)
-
-		address, err := keyInfo.GetAddress()
-		require.NoError(t, err, "failed to get address for account %s", accountName)
-
-		addresses = append(addresses, address.String())
-	}
-
-	return addresses
-}
-
 func TestHandshakerConcurrentHandshakes(t *testing.T) {
-	kr := createTestKeyring()
+	kr := testutil.CreateTestKeyring()
 
 	testCases := []struct {
 		name          string
@@ -385,12 +303,12 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			for i := 0; i < tc.numHandshakes; i++ {
 				accountClient := fmt.Sprintf("client-%d", i)
 				accountServer := fmt.Sprintf("server-%d", i)
-				addresses := setupTestAccounts(t, kr, []string{accountClient, accountServer})
+				addresses := testutil.SetupTestAccounts(t, kr, []string{accountClient, accountServer})
 
 				clientAddr := addresses[0]
 				serverAddr := addresses[1]
-				clientKE := setupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
-				serverKE := setupTestKeyExchange(t, kr, serverAddr, securekeyx.Supernode)
+				clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+				serverKE := testutil.SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Supernode)
 
 				// Setup test pipes
 				clientConn, serverConn := net.Pipe()
@@ -519,13 +437,13 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 }
 
 func TestHandshakerContext(t *testing.T) {
-	kr := createTestKeyring()
+	kr := testutil.CreateTestKeyring()
 
-	addresses := setupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := setupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 
 	t.Run("Context timeout", func(t *testing.T) {
 		client, server := net.Pipe()
@@ -578,13 +496,13 @@ func TestHandshakerContext(t *testing.T) {
 }
 
 func TestUnresponsivePeer(t *testing.T) {
-	kr := createTestKeyring()
+	kr := testutil.CreateTestKeyring()
 
-	addresses := setupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := setupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 
 	handshakeTimeout := 100 * time.Millisecond
 	conn := testutil.NewUnresponsiveTestConn(time.Hour) // Create unresponsive conn
@@ -605,10 +523,8 @@ func TestUnresponsivePeer(t *testing.T) {
 // TestClient_InvalidSide tests the case where the client handshake is attempted with an
 // invalid side
 func TestClient_InvalidSide(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
-
-	ti.ke.On("PeerType").Return(securekeyx.Supernode)
 
 	_, _, err := ti.hs.ServerHandshake(context.Background())
 	require.Error(t, err)
@@ -618,10 +534,8 @@ func TestClient_InvalidSide(t *testing.T) {
 // TestServer_InvalidSide tests the case where the server handshake is attempted with an
 // invalid side
 func TestServer_InvalidSide(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
-
-	ti.ke.On("PeerType").Return(securekeyx.Supernode)
 
 	_, _, err := ti.hs.ClientHandshake(context.Background())
 	require.Error(t, err)
@@ -630,7 +544,7 @@ func TestServer_InvalidSide(t *testing.T) {
 
 // TestClient_ReadResponse tests the case where the client handshake fails
 func TestClient_ReadResponse(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.mockCreateRequestSuccess()
@@ -646,7 +560,7 @@ func TestClient_ReadResponse(t *testing.T) {
 
 // TestClient_ParseInvalidHandshakeMessage tests the case where the client handshake fails
 func TestClient_ParseInvalidHandshakeMessage(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.mockCreateRequestSuccess()
@@ -662,7 +576,7 @@ func TestClient_ParseInvalidHandshakeMessage(t *testing.T) {
 }
 
 func TestServer_ReadRequest(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.overrideReadRequestWithTimeout(func(ctx context.Context) ([]byte, []byte, error) {
@@ -674,7 +588,7 @@ func TestServer_ReadRequest(t *testing.T) {
 }
 
 func TestServer_ParseInvalidHandshakeMessage(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.overrideReadRequestWithTimeoutSuccess()
@@ -688,10 +602,10 @@ func TestServer_ParseInvalidHandshakeMessage(t *testing.T) {
 }
 
 func TestClient_CreateRequestFailure(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
-	ti.ke.On("CreateRequest", mock.Anything).Return(nil, nil, errors.New("failed to create handshake request: mock error"))
+	ti.ke.EXPECT().CreateRequest(ti.remoteAddr).Return(nil, nil, errors.New("failed to create handshake request: mock error"))
 
 	_, _, err := ti.hs.ClientHandshake(context.Background())
 	require.Error(t, err)
@@ -699,16 +613,16 @@ func TestClient_CreateRequestFailure(t *testing.T) {
 }
 
 func TestClient_ComputeSharedSecretFailure(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.mockCreateRequestSuccess()
 	ti.overrideSendHandshakeMessageSuccess()
 	ti.overrideReadResponseWithTimeoutSuccess()
-	ti.overrideReadResponseWithTimeoutSuccess()
-	ti.overrideParseHandshakeMessageSuccess("remote", securekeyx.Supernode)
-	ti.ke.On("ComputeSharedSecret", mock.Anything, mock.Anything).
-		Return(nil, errors.New("failed to compute shared secret"))
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
+	ti.mockComputeSharedSecret(func([]byte, []byte) ([]byte, error) {
+		return nil, errors.New("failed to compute shared secret")
+	})
 
 	_, _, err := ti.hs.ClientHandshake(context.Background())
 	require.Error(t, err)
@@ -716,13 +630,13 @@ func TestClient_ComputeSharedSecretFailure(t *testing.T) {
 }
 
 func TestClientHandshakeSemaphore(t *testing.T) {
-	kr := createTestKeyring()
+	kr := testutil.CreateTestKeyring()
 
-	addresses := setupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := setupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -748,12 +662,12 @@ func TestClientHandshakeSemaphore(t *testing.T) {
 }
 
 func TestServerHandshakeSemaphore(t *testing.T) {
-	kr := createTestKeyring()
+	kr := testutil.CreateTestKeyring()
 
-	addresses := setupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
 	serverAddr := addresses[1]
 
-	serverKE := setupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
+	serverKE := testutil.SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -779,7 +693,7 @@ func TestServerHandshakeSemaphore(t *testing.T) {
 }
 
 func TestDefaultReadRequestWithTimeout_ContextDone(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -795,7 +709,7 @@ func TestDefaultReadRequestWithTimeout_ContextDone(t *testing.T) {
 }
 
 func TestDefaultReadRequestWithTimeout_FailedReceive(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.overrideReceiveHandshakeMessage(func(conn net.Conn) ([]byte, []byte, error) {
@@ -813,7 +727,7 @@ func TestDefaultReadRequestWithTimeout_FailedReceive(t *testing.T) {
 }
 
 func TestDefaultReadRequestWithTimeout_EmptyResult(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.overrideReceiveHandshakeMessage(func(conn net.Conn) ([]byte, []byte, error) {
@@ -828,7 +742,7 @@ func TestDefaultReadRequestWithTimeout_EmptyResult(t *testing.T) {
 }
 
 func TestDefaultReadResponseWithTimeout_ContextDone(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.setHandshakeTimeout(time.Minute)
@@ -845,7 +759,7 @@ func TestDefaultReadResponseWithTimeout_ContextDone(t *testing.T) {
 }
 
 func TestDefaultReadResponseWithTimeout_FailedReceive(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.setHandshakeTimeout(time.Minute)
@@ -861,7 +775,7 @@ func TestDefaultReadResponseWithTimeout_FailedReceive(t *testing.T) {
 }
 
 func TestDefaultReadResponsetWithTimeout_EmptyResult(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.setHandshakeTimeout(100*time.Millisecond)
@@ -880,7 +794,7 @@ func TestDefaultReadResponsetWithTimeout_EmptyResult(t *testing.T) {
 func TestNewHandshaker_ClientOptionsProvided(t *testing.T) {
 	t.Parallel()
 	opts := &ClientHandshakerOptions{}
-	ti := newHSClientInterceptor(opts)
+	ti := newHSClientInterceptor(t, opts)
 	defer ti.cleanup()
 
 	require.Equal(t, opts, ti.hs.clientOpts)
@@ -888,7 +802,7 @@ func TestNewHandshaker_ClientOptionsProvided(t *testing.T) {
 
 func TestNewHandshaker_ClientOptionsDefault(t *testing.T) {
 	t.Parallel()
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	require.NotNil(t, ti.hs.clientOpts)
@@ -898,7 +812,7 @@ func TestNewHandshaker_ClientOptionsDefault(t *testing.T) {
 func TestNewHandshaker_ServerOptionsProvided(t *testing.T) {
 	t.Parallel()
 	opts := &ServerHandshakerOptions{}
-	ti := newHSServerInterceptor(opts)
+	ti := newHSServerInterceptor(t, opts)
 	defer ti.cleanup()
 
 	require.Equal(t, opts, ti.hs.serverOpts)
@@ -906,7 +820,7 @@ func TestNewHandshaker_ServerOptionsProvided(t *testing.T) {
 
 func TestNewHandshaker_ServerOptionsDefault(t *testing.T) {
 	t.Parallel()
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	require.NotNil(t, ti.hs.serverOpts)
@@ -915,7 +829,7 @@ func TestNewHandshaker_ServerOptionsDefault(t *testing.T) {
 
 func TestNewHandshaker_ClientOptionsInvalidType(t *testing.T) {
 	t.Parallel()
-	ti := newHSClientInterceptor("invalid_type")
+	ti := newHSClientInterceptor(t, "invalid_type")
 	defer ti.cleanup()
 
 	require.NotNil(t, ti.hs.clientOpts)
@@ -924,7 +838,7 @@ func TestNewHandshaker_ClientOptionsInvalidType(t *testing.T) {
 
 func TestNewHandshaker_ServerOptionsInvalidType(t *testing.T) {
 	t.Parallel()
-	ti := newHSServerInterceptor("invalid_type")
+	ti := newHSServerInterceptor(t, "invalid_type")
 	defer ti.cleanup()
 
 	require.NotNil(t, ti.hs.serverOpts)
@@ -932,7 +846,7 @@ func TestNewHandshaker_ServerOptionsInvalidType(t *testing.T) {
 }
 
 func TestClientHandshake_RemoteAddressMismatch(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.mockCreateRequestSuccess()
@@ -944,15 +858,15 @@ func TestClientHandshake_RemoteAddressMismatch(t *testing.T) {
 
 	_, _, err := ti.hs.ClientHandshake(context.Background())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "remote address mismatch: different_remote != remote")
+	require.Contains(t, err.Error(), fmt.Sprintf("remote address mismatch: different_remote != %s", testRemoteAddr))
 }
 
 func TestServerHandshake_ExpandKeyFailure(t *testing.T) {
-	ti := newHSServerInterceptor(nil)
+	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.overrideReadRequestWithTimeoutSuccess()
-	ti.overrideParseHandshakeMessageSuccess("remote", securekeyx.Supernode)
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
 	ti.mockCreateRequestSuccess()
 	ti.overrideSendHandshakeMessageSuccess()
 	ti.mockComputeSharedSecretSuccess()
@@ -967,13 +881,13 @@ func TestServerHandshake_ExpandKeyFailure(t *testing.T) {
 }
 
 func TestClientHandshake_ExpandKeyFailure(t *testing.T) {
-	ti := newHSClientInterceptor(nil)
+	ti := newHSClientInterceptor(t, nil)
 	defer ti.cleanup()
 
 	ti.mockCreateRequestSuccess()
 	ti.overrideSendHandshakeMessageSuccess()
 	ti.overrideReadResponseWithTimeoutSuccess()
-	ti.overrideParseHandshakeMessageSuccess("remote", securekeyx.Supernode)
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
 	ti.mockComputeSharedSecretSuccess()
 	ti.mockLocalAddress()
 	ti.overrideExpandKey(func([]byte, string, []byte) ([]byte, error) {
@@ -983,4 +897,51 @@ func TestClientHandshake_ExpandKeyFailure(t *testing.T) {
 	_, _, err := ti.hs.ClientHandshake(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "mocked expand key error")
-}	
+}
+
+func TestServerHandshake_CreateRequestFailure(t *testing.T) {
+	ti := newHSServerInterceptor(t, nil)
+	defer ti.cleanup()
+
+	ti.overrideReadRequestWithTimeoutSuccess()
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
+	ti.ke.EXPECT().CreateRequest(ti.remoteAddr).Return(nil, nil, errors.New("failed to create handshake request"))
+
+	_, _, err := ti.hs.ServerHandshake(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create handshake request")
+}
+
+func TestServerHandshake_SendHandshakeFailure(t *testing.T) {
+	ti := newHSServerInterceptor(t, nil)
+	defer ti.cleanup()
+
+	ti.overrideReadRequestWithTimeoutSuccess()
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
+	ti.mockCreateRequestSuccess()
+	ti.overrideSendHandshakeMessage(func(conn net.Conn, handshakeBytes, signature []byte) error {
+		return errors.New("failed to send handshake message")
+	})
+
+	_, _, err := ti.hs.ServerHandshake(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to send handshake message")
+}
+
+func TestServerHandshake_ComputeSharedSecretFailure(t *testing.T) {
+	ti := newHSServerInterceptor(t, nil)
+	defer ti.cleanup()
+
+	ti.overrideReadRequestWithTimeoutSuccess()
+	ti.overrideParseHandshakeMessageSuccess(testRemoteAddr, securekeyx.Supernode)
+	ti.mockCreateRequestSuccess()
+	ti.overrideSendHandshakeMessageSuccess()
+	ti.mockComputeSharedSecret(func([]byte, []byte) ([]byte, error) {
+		return nil, errors.New("failed to compute shared secret")
+	})
+
+	_, _, err := ti.hs.ServerHandshake(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to compute shared secret")
+}
+
