@@ -83,14 +83,14 @@ func TestNewClient(t *testing.T) {
 
 func TestDefaultClientOptions(t *testing.T) {
 	opts := DefaultClientOptions()
-	assert.NotNil(t, opts)
-	assert.Equal(t, 100*1024*1024, opts.MaxRecvMsgSize)
-	assert.Equal(t, 100*1024*1024, opts.MaxSendMsgSize)
-	assert.Equal(t, int32(1024*1024), opts.InitialWindowSize)
-	assert.Equal(t, int32(1024*1024), opts.InitialConnWindowSize)
-	assert.Equal(t, defaultConnWaitTime, opts.ConnWaitTime)
-	assert.True(t, opts.EnableRetries)
-	assert.Equal(t, maxRetries, opts.MaxRetries)
+	assert.NotNil(t, opts, "ClientOptions should be initialized")
+	assert.Equal(t, 100 * MB, opts.MaxRecvMsgSize, "MaxRecvMsgSize should be 100 MB")
+	assert.Equal(t, 100 * MB, opts.MaxSendMsgSize, "MaxSendMsgSize should be 100 MB")
+	assert.Equal(t, int32(1 * MB), opts.InitialWindowSize, "InitialWindowSize should be 1 MB")
+	assert.Equal(t, int32(1 * MB), opts.InitialConnWindowSize, "InitialConnWindowSize should be 1 MB")
+	assert.Equal(t, defaultConnWaitTime, opts.ConnWaitTime, "ConnWaitTime should be 10 seconds")
+	assert.True(t, opts.EnableRetries, "EnableRetries should be true")
+	assert.Equal(t, maxRetries, opts.MaxRetries, "MaxRetries should be 5")
 }
 
 func TestBuildDialOptions(t *testing.T) {
@@ -224,7 +224,7 @@ func TestWaitForConnection(t *testing.T) {
 			finalState:   connectivity.TransientFailure,
 			timeout:      2 * time.Second,
 			expectError:  true,
-			expectedError: "grpc connection in transient failure",
+			expectedError: "grpc connection is in transient failure",
 		},
 		{
 			name:         "timeout waiting for connection",

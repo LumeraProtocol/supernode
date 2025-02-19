@@ -282,6 +282,7 @@ func (s *Server) Close() error {
 
 	if s.server != nil {
 		s.server.Stop()
+		s.server = nil
 	}
 
 	// Close all listeners

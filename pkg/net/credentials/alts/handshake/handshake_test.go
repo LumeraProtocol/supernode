@@ -14,6 +14,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
@@ -31,7 +32,7 @@ func init() {
 
 type hsInterceptor struct {
 	ctrl 					     *gomock.Controller
-	ke                           *securekeyx.MockKeyExchanger
+	ke                           *lumeraidmocks.MockKeyExchanger
 	conn                         net.Conn
 	hs                           *secureHandshaker
 	timeout                      time.Duration
@@ -44,7 +45,7 @@ type hsInterceptor struct {
 
 func newHSInterceptor(t *testing.T, remoteAddr string, side Side, opts interface{}) *hsInterceptor {
 	ctrl := gomock.NewController(t)
-	ke := securekeyx.NewMockKeyExchanger(ctrl)
+	ke := lumeraidmocks.NewMockKeyExchanger(ctrl)
 	conn, _ := net.Pipe()
 
 	defaultHandshakeTimeout := 10 * time.Second
