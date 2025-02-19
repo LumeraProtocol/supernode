@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const testServerName = "test-server"
+
 func GetTestServerAddress(t *testing.T) string {
 	freePort, err := testutil.GetFreePortInRange(55000, 56000)
 	require.NoError(t, err, "Failed to get a free port")
@@ -29,13 +31,13 @@ func TestServerInitialization(t *testing.T) {
 
 	mockBuilder := NewMockServerOptionBuilder(ctrl)
 
-	server := NewServerWithBuilder(insecure.NewCredentials(), mockBuilder)
+	server := NewServerWithBuilder(testServerName, insecure.NewCredentials(), mockBuilder)
 	assert.NotNil(t, server, "Server should be initialized")
 	assert.NotNil(t, server.builder, "Server should have an option builder")
 }
 
 func TestRegisterService(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 
 	serviceDesc := &grpc.ServiceDesc{
 		ServiceName: "TestService",
@@ -99,7 +101,7 @@ func TestBuildKeepAlivePolicy(t *testing.T) {
 
 func TestNewServer(t *testing.T) {
 	creds := insecure.NewCredentials()
-	server := NewServer(creds)
+	server := NewServer(testServerName, creds)
 	assert.NotNil(t, server, "Server should be initialized")
 	assert.NotNil(t, server.builder, "Server should have an option builder")
 	assert.Equal(t, creds, server.creds, "Server should have the correct credentials")
@@ -111,14 +113,14 @@ func TestNewServer(t *testing.T) {
 func TestNewServerWithBuilder(t *testing.T) {
 	creds := insecure.NewCredentials()
 	builder := NewMockServerOptionBuilder(gomock.NewController(t))
-	server := NewServerWithBuilder(creds, builder)
+	server := NewServerWithBuilder(testServerName, creds, builder)
 	assert.NotNil(t, server, "Server should be initialized")
 	assert.Equal(t, creds, server.creds, "Server should have the correct credentials")
 	assert.Equal(t, builder, server.builder, "Server should have the correct option builder")
 }
 
 func TestBuildServerOptions(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	opts := DefaultServerOptions()
 
 	os.Setenv("INTEGRATION_TEST_ENV", "true")
@@ -145,7 +147,7 @@ func TestBuildServerOptions(t *testing.T) {
 }
 
 func TestBuildServerOptionsWithWorkers(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	opts := DefaultServerOptions()
 	opts.NumServerWorkers = 5
 
@@ -164,10 +166,10 @@ func TestBuildServerOptionsWithWorkers(t *testing.T) {
 }
 
 func TestCreateListener(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	address := GetTestServerAddress(t)
 
-	listener, err := server.createListener(address)
+	listener, err := server.createListener(context.Background(), address)
 	assert.NoError(t, err, "Listener should be created without error")
 	assert.NotNil(t, listener, "Listener should not be nil")
 	listener.Close()
@@ -177,7 +179,7 @@ func TestServe(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -193,7 +195,7 @@ func TestServe(t *testing.T) {
 }
 
 func TestServe_NilContext(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	address := GetTestServerAddress(t)
 	opts := DefaultServerOptions()
 	err := server.Serve(nil, address, opts)
@@ -201,7 +203,7 @@ func TestServe_NilContext(t *testing.T) {
 }
 
 func TestServe_NilOptions(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -226,7 +228,7 @@ func (TestService) TestMethod(ctx context.Context, req interface{}) (interface{}
 }
 
 func TestServe_WithRegisteredServices(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -261,7 +263,7 @@ func TestServe_WithRegisteredServices(t *testing.T) {
 }
 
 func TestServe_CreateListenerFailed(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -272,7 +274,7 @@ func TestServe_CreateListenerFailed(t *testing.T) {
 }
 
 func TestServe_Failure(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -291,13 +293,13 @@ func TestServe_Failure(t *testing.T) {
 }
 
 func TestStop_NoServer(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	err := server.Stop(2 * time.Second)
 	assert.NoError(t, err, "Stop should not return an error")
 }
 
 func TestStop_GracefulStop(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -314,7 +316,7 @@ func TestStop_GracefulStop(t *testing.T) {
 }
 
 func TestStop_Timeout(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -335,7 +337,7 @@ func TestStop_Timeout(t *testing.T) {
 }
 
 func TestClose_NoActiveServer(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 
 	// Create a test listener
 	listener, err := net.Listen("tcp", GetTestServerAddress(t))
@@ -352,7 +354,7 @@ func TestClose_NoActiveServer(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	server := NewServer(insecure.NewCredentials())
+	server := NewServer(testServerName, insecure.NewCredentials())
 
 	// Create a test listener
 	listener, err := net.Listen("tcp", GetTestServerAddress(t))

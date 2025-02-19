@@ -100,7 +100,7 @@ func TestSecureGRPCConnection(t *testing.T) {
 	grpcServerAddress := fmt.Sprintf("localhost:%d", listenPort)
 
 	// Start gRPC server
-	grpcServer := server.NewServer(serverCreds)
+	grpcServer := server.NewServer("Integration_Test_Server", serverCreds)
 	pb.RegisterTestServiceServer(grpcServer, &TestServiceImpl{})
 
 	// Register health service

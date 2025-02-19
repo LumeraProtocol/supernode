@@ -14,6 +14,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/grpclog"
+
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 )
 
 const (
@@ -42,6 +46,7 @@ type ServerOptionBuilder interface {
 
 // Server represents a gRPC server with Lumera ALTS credentials
 type Server struct {
+	name      string
 	creds     credentials.TransportCredentials
 	server    *grpc.Server
 	services  []ServiceDesc
@@ -130,8 +135,9 @@ func (b *defaultServerOptionBuilder) buildKeepAlivePolicy(opts *ServerOptions) k
 }
 
 // NewServer creates a new gRPC server with the given credentials
-func NewServer(creds credentials.TransportCredentials) *Server {
+func NewServer(name string, creds credentials.TransportCredentials) *Server {
 	return &Server{
+		name:      name,
 		creds:     creds,
 		services:  make([]ServiceDesc, 0),
 		listeners: make([]net.Listener, 0),
@@ -141,8 +147,9 @@ func NewServer(creds credentials.TransportCredentials) *Server {
 }
 
 // NewServerWithBuilder creates a new gRPC server with the given credentials and option builder
-func NewServerWithBuilder(creds credentials.TransportCredentials, builder ServerOptionBuilder) *Server {
+func NewServerWithBuilder(name string, creds credentials.TransportCredentials, builder ServerOptionBuilder) *Server {
 	return &Server{
+		name:      name,
 		creds:     creds,
 		services:  make([]ServiceDesc, 0),
 		listeners: make([]net.Listener, 0),
@@ -191,11 +198,12 @@ func (s *Server) RegisterService(desc *grpc.ServiceDesc, impl interface{}) {
 }
 
 // createListener creates a TCP listener for the given address
-func (s *Server) createListener(address string) (net.Listener, error) {
+func (s *Server) createListener(ctx context.Context, address string) (net.Listener, error) {
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create listener on %s: %w", address, err)
+		return nil, errors.Errorf("failed to create listener: %w", err).WithField("address", address)
 	}
+	log.WithContext(ctx).Infof("gRPC server listening on %q", address)
 	return lis, nil
 }
 
@@ -209,6 +217,9 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 		opts = DefaultServerOptions()
 	}
 
+	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
+	ctx = log.ContextWithPrefix(ctx, s.name)
+
 	// Create server with options
 	serverOpts := s.buildServerOptions(opts)
 	s.server = grpc.NewServer(serverOpts...)
@@ -221,7 +232,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 	s.mu.RUnlock()
 
 	// Create listener
-	lis, err := s.createListener(address)
+	lis, err := s.createListener(ctx, address)
 	if err != nil {
 		return err
 	}
@@ -234,7 +245,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 	serveErr := make(chan error, 1)
 	go func() {
 		if err := s.server.Serve(lis); err != nil {
-			serveErr <- fmt.Errorf("failed to serve: %w", err)
+			serveErr <- errors.Errorf("serve: %w", err).WithField("address", address)
 		}
 		close(serveErr)
 	}()
@@ -242,6 +253,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 	// Wait for context cancellation or error
 	select {
 	case <-ctx.Done():
+		log.WithContext(ctx).Infof("Shutting down gRPC server at %q", address)
 		return s.Stop(opts.GracefulShutdownTime)
 	case err := <-serveErr:
 		return err

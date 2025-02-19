@@ -14,6 +14,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/grpclog"
+
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/random"
 )
 
 const (
@@ -28,6 +32,8 @@ const (
 	defaultConnWaitTime   = 10 * time.Second
 	defaultRetryWaitTime = 1 * time.Second
 	maxRetries           = 3
+
+	logPrefix = "client"	
 )
 
 type grpcClient interface {
@@ -47,7 +53,7 @@ type DialOptionBuilder interface {
 
 // NewClient(target string, opts ...DialOption) (conn *ClientConn, err error) {
 type ConnectionHandler interface {
-	ensureContext(ctx context.Context) (context.Context, context.CancelFunc)
+	configureContext(ctx context.Context) (context.Context, context.CancelFunc)
 	attemptConnection(ctx context.Context, target string, opts *ClientOptions) (*grpc.ClientConn, error)
 	retryConnection(ctx context.Context, address string, opts *ClientOptions) (*grpc.ClientConn, error)
 }
@@ -269,9 +275,11 @@ func (ch *defaultConnectionHandler) attemptConnection(ctx context.Context, targe
 	// Wait for connection to be ready
 	if err := waitForConnection(ctx, client, opts.ConnWaitTime); err != nil {
 		client.Close()
+		log.WithContext(ctx).WithError(err).Error("Connection failed")
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
 
+	log.WithContext(ctx).Debugf("Connected to %s", target)
 	return client, nil
 }
 
@@ -295,8 +303,10 @@ func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address
 		// Wait before retry, respecting context cancellation
 		select {
 		case <-ctx.Done():
+			log.WithContext(ctx).Debugf("Disconnected %s", address)
 			return nil, ctx.Err()
 		case <-time.After(opts.RetryWaitTime):
+			log.WithContext(ctx).Debugf("Retrying connection to %s (attempt #%d)", address, retries+1)
 			continue
 		}
 	}
@@ -304,8 +314,13 @@ func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address
 	return nil, fmt.Errorf("connection failed after %d attempts: %w", opts.MaxRetries, lastErr)
 }
 
-// ensureContext ensures the context has a timeout
-func (ch *defaultConnectionHandler) ensureContext(ctx context.Context) (context.Context, context.CancelFunc) {
+// configureContext ensures the context has a timeout and sets up logging
+func (ch *defaultConnectionHandler) configureContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
+
+	id, _ := random.String(8, random.Base62Chars)
+	ctx = log.ContextWithPrefix(ctx, fmt.Sprintf("%s-%s", logPrefix, id))
+
 	if _, ok := ctx.Deadline(); !ok {
 		return context.WithTimeout(ctx, defaultTimeout)
 	}
@@ -320,8 +335,8 @@ func (c *Client) Connect(ctx context.Context, address string, opts *ClientOption
 		opts = DefaultClientOptions()
 	}
 
-	// Ensure context has timeout
-	ctx, cancel := c.connHandler.ensureContext(ctx)
+	// configure timeout and log prefix in a context
+	ctx, cancel := c.connHandler.configureContext(ctx)
 	defer cancel()
 
 	// Attempt connection with retries
