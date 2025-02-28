@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 )
 
 const (

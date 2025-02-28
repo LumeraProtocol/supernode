@@ -8,8 +8,8 @@ import (
 
 	"encoding/hex"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/log"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/cenkalti/backoff"
 )
@@ -82,7 +82,7 @@ func (s *DHT) StartFailedFetchAndStoreWorker(ctx context.Context) error {
 	}
 }
 
-func (s *DHT) updateReplicationNode(ctx context.Context, nodeID []byte, ip string, port int, isActive bool) error {
+func (s *DHT) updateReplicationNode(ctx context.Context, nodeID []byte, ip string, port uint16, isActive bool) error {
 	// check if record exists
 	ok, err := s.store.RecordExists(string(nodeID))
 	if err != nil {

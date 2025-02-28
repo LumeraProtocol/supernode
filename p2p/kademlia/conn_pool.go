@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -111,22 +112,36 @@ type connWrapper struct {
 }
 
 // NewSecureClientConn do client handshake and return a secure connection
-func NewSecureClientConn(ctx context.Context, secureHelper credentials.TransportCredentials, remoteAddr string) (net.Conn, error) {
+func NewSecureClientConn(ctx context.Context, tc credentials.TransportCredentials, remoteAddr string) (net.Conn, error) {
+	// Extract identity if in Lumera format
+	remoteIdentity, remoteAddress, err := ltc.ExtractIdentity(remoteAddr, true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address format: %w", err)
+	}
+
+	lumeraTC, ok := tc.(*ltc.LumeraTC)
+	if !ok {
+		return nil, fmt.Errorf("invalid credentials type")
+	}
+
+	// Set remote identity in credentials
+	lumeraTC.SetRemoteIdentity(remoteIdentity)
+
 	// dial the remote address with tcp
 	var d net.Dialer
-	rawConn, err := d.DialContext(ctx, "tcp", remoteAddr)
+	rawConn, err := d.DialContext(ctx, "tcp", remoteAddress)
 
 	if err != nil {
-		return nil, errors.Errorf("dial %q: %w", remoteAddr, err)
+		return nil, errors.Errorf("dial %q: %w", remoteAddress, err)
 	}
 
 	// set the deadline for read and write
 	rawConn.SetDeadline(time.Now().UTC().Add(defaultConnDeadline))
 
-	conn, _, err := secureHelper.ClientHandshake(ctx, "", rawConn)
+	conn, _, err := tc.ClientHandshake(ctx, "", rawConn)
 	if err != nil {
 		rawConn.Close()
-		return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
+		return nil, errors.Errorf("client secure establish %q: %w", remoteAddress, err)
 	}
 
 	return &connWrapper{
@@ -136,10 +151,10 @@ func NewSecureClientConn(ctx context.Context, secureHelper credentials.Transport
 }
 
 // NewSecureServerConn do server handshake and create a secure connection
-func NewSecureServerConn(_ context.Context, secureHelper credentials.TransportCredentials, rawConn net.Conn) (net.Conn, error) {
-	conn, _, err := secureHelper.ServerHandshake(rawConn)
+func NewSecureServerConn(_ context.Context, tc credentials.TransportCredentials, rawConn net.Conn) (net.Conn, error) {
+	conn, _, err := tc.ServerHandshake(rawConn)
 	if err != nil {
-		return nil, errors.Errorf("server secure establish failed")
+		return nil, errors.Errorf("server secure establish failed: %w", err)
 	}
 
 	return &connWrapper{

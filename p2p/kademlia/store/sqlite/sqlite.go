@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/log"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 
-	"github.com/LumeraProtocol/supernode/common/utils"
 	"github.com/cenkalti/backoff"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" //go-sqlite3

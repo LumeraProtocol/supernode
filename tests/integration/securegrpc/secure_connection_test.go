@@ -19,9 +19,9 @@ import (
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/tests/integration/securegrpc"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/testutil"
+	"github.com/LumeraProtocol/supernode/pkg/testutil"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
 )
@@ -74,8 +74,8 @@ func TestSecureGRPCConnection(t *testing.T) {
 	clientAddress := addresses[1]
 
 	// Create server credentials
-	serverCreds, err := credentials.NewServerCreds(&credentials.ServerOptions{
-		CommonOptions: credentials.CommonOptions{
+	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
+		CommonOptions: ltc.CommonOptions{
 			Keyring:       kr,
 			LocalIdentity: serverAddress,
 			PeerType:      securekeyx.Supernode,
@@ -84,13 +84,12 @@ func TestSecureGRPCConnection(t *testing.T) {
 	require.NoError(t, err, "failed to create server credentials")
 
 	// Create client credentials
-	clientCreds, err := credentials.NewClientCreds(&credentials.ClientOptions{
-		CommonOptions: credentials.CommonOptions{
+	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
+		CommonOptions: ltc.CommonOptions{
 			Keyring:       kr,
 			LocalIdentity: clientAddress,
 			PeerType:      securekeyx.Simplenode,
 		},
-		RemoteIdentity: serverAddress,
 	})
 	require.NoError(t, err, "failed to create client credentials")
 
@@ -107,15 +106,15 @@ func TestSecureGRPCConnection(t *testing.T) {
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
 
 	serverOptions := server.DefaultServerOptions()
 	serverOptions.MaxConnectionIdle = time.Minute
 	serverOptions.MaxConnectionAge = 5 * time.Minute
 
 	go func() {
-		err := grpcServer.Serve(ctx, grpcServerAddress, serverOptions)
+		err := grpcServer.Serve(serverCtx, grpcServerAddress, serverOptions)
 		require.NoError(t, err, "server failed to start")
 	}()
 	err = waitForServerReady(grpcServerAddress, 300*time.Second)
@@ -123,18 +122,22 @@ func TestSecureGRPCConnection(t *testing.T) {
 	// Set health status to SERVING only after the server has successfully started
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 
+	clientCtx, clientCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer clientCancel()
+
 	clientOptions := client.DefaultClientOptions()
 	clientOptions.ConnWaitTime = 10 * time.Second
 	clientOptions.EnableRetries = false
 
 	// Create gRPC client and connect
 	grpcClient := client.NewClient(clientCreds)
-	conn, err := grpcClient.Connect(ctx, grpcServerAddress, clientOptions)
+	addressWithIdentity := ltc.FormatAddressWithIdentity(serverAddress, grpcServerAddress)
+	conn, err := grpcClient.Connect(clientCtx, addressWithIdentity, clientOptions)
 	require.NoError(t, err, "client failed to connect to server")
 	defer conn.Close()
 
 	client := pb.NewTestServiceClient(conn)
-	resp, err := client.TestMethod(ctx, &pb.TestRequest{Message: "Hello Lumera Server! I'm [TestClient]!"})
+	resp, err := client.TestMethod(clientCtx, &pb.TestRequest{Message: "Hello Lumera Server! I'm [TestClient]!"})
 	require.NoError(t, err, "failed to send request")
 	require.Equal(t, "Hello, TestClient", resp.Response, "unexpected response from server")
 

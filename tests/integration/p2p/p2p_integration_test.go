@@ -11,22 +11,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/common/utils"
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/btcutil/base58"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LumeraProtocol/supernode/p2p"
+	"github.com/LumeraProtocol/supernode/p2p/kademlia"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/pkg/testutil"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 )
 
 func TestP2PBasicIntegration(t *testing.T) {
 	log.Println("Starting P2P test...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	conn.RegisterALTSRecordProtocols()
+	defer conn.UnregisterALTSRecordProtocols()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
 	log.Println("Setting up P2P nodes...")
-	services, rqStores, err := SetupTestP2PNodes(ctx)
+	services, rqStores, err := SetupTestP2PNodes(t, ctx)
 	require.NoError(t, err)
 	log.Printf("Setup complete. Got %d services and %d stores\n", len(services), len(rqStores))
 
@@ -132,66 +140,71 @@ func TestP2PBasicIntegration(t *testing.T) {
 }
 
 // SetupTestP2PNodes initializes and starts a test P2P network with multiple nodes
-func SetupTestP2PNodes(ctx context.Context) ([]p2p.Client, []*rqstore.SQLiteRQStore, error) {
+func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqstore.SQLiteRQStore, error) {
 	var services []p2p.Client
 	var rqStores []*rqstore.SQLiteRQStore
 
+	kr := testutil.CreateTestKeyring()
+	
+	// Create test accounts
+	accountNames := make([]string, 0)
+	numP2PNodes := kademlia.Alpha + 1
+	for i := 0; i < numP2PNodes; i++ {
+		accountNames = append(accountNames, fmt.Sprintf("test-p2p-node-%d", i))
+	}
+	accountAddresses := testutil.SetupTestAccounts(t, kr, accountNames)
+
 	// Setup node addresses and their corresponding Lumera IDs
-	nodeConfigs := &lumera.LumeraClientConfig{
-		{
-			Address:  "127.0.0.1:9000",
-			LumeraID: "lumera1xdxm4tytunhhq5hs45nwxds3h73qu4hf9nnjhr",
-		},
-		{
-			Address:  "127.0.0.1:9001",
-			LumeraID: "lumera1xdxm4tytunhhq5hs45nwxds3h73qu4hf9nnjhr",
-		},
-		{
-			Address:  "127.0.0.1:9002",
-			LumeraID: "lumera1gx4a82h6fq8jhkn08a5k55k5a3e2ygktujtxca",
-		},
+	var nodeConfigs ltc.LumeraAddresses
+	for i := 0; i < numP2PNodes; i++ {
+		nodeConfigs = append(nodeConfigs, ltc.LumeraAddress{
+			Identity: accountAddresses[i],
+			Host:  "127.0.0.1",
+			Port:  uint16(9000+i),
+		})
 	}
 
 	// Create and start nodes
-	for i, config := range *nodeConfigs {
-		mockClient := lumera.NewLumeraClient(*nodeConfigs)
+	for i, config := range nodeConfigs {
+		tClient, err := lumera.NewTendermintClient(
+			lumera.WithKeyring(kr),
+		)
+		require.NoError(t, err, "failed to create tendermint client")
+
+		// cast to lumera.Client
+		lumeraClient, ok := tClient.(*lumera.Client)
+		require.True(t, ok, "failed to cast to lumera.Client")
 
 		// Create data directory for the node
 		dataDir := fmt.Sprintf("./data/node%d", i)
-		if err := os.MkdirAll(dataDir, 0755); err != nil {
-			return nil, nil, fmt.Errorf("failed to create data directory for node %d: %v", i, err)
-		}
+		err = os.MkdirAll(dataDir, 0755)
+		require.NoError(t, err, "failed to create data directory for node %d: %v", i, err)
 
-		// Collect addresses from previous nodes
+		// Get all previous addresses to use as bootstrap addresses
 		bootstrapAddresses := make([]string, i)
 		for j := 0; j < i; j++ {
-			bootstrapAddresses[j] = (*nodeConfigs)[j].Address
+			bootstrapAddresses[j] = nodeConfigs[j].String()
 		}
 
 		p2pConfig := &p2p.Config{
-			ListenAddress: "127.0.0.1",
-			Port:          9000 + i,
+			ListenAddress: config.Host,
+			Port:          config.Port,
 			DataDir:       dataDir,
-			ID:            config.LumeraID,
-			BootstrapIPs:  strings.Join(bootstrapAddresses, ","),
+			ID:            config.Identity,
+			BootstrapNodes:  strings.Join(bootstrapAddresses, ","),
 		}
 
 		// Initialize SQLite RQ store for each node
 		rqStoreFile := filepath.Join(dataDir, "rqstore.db")
-		if err := os.MkdirAll(filepath.Dir(rqStoreFile), 0755); err != nil {
-			return nil, nil, fmt.Errorf("failed to create rqstore directory for node %d: %v", i, err)
-		}
+		err = os.MkdirAll(filepath.Dir(rqStoreFile), 0755)
+		require.NoError(t, err, "failed to create rqstore directory for node %d: %v", i, err)
 
 		rqStore, err := rqstore.NewSQLiteRQStore(rqStoreFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create rqstore for node %d: %v", i, err)
-		}
+		require.NoError(t, err, "failed to create rqstore for node %d: %v", i, err)
 		rqStores = append(rqStores, rqStore)
 
-		service, err := p2p.New(ctx, p2pConfig, mockClient, nil, rqStore, nil, nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create p2p service for node %d: %v", i, err)
-		}
+		service, err := p2p.New(ctx, p2pConfig, lumeraClient, rqStore, nil, nil)
+		require.NoError(t, err, "failed to create p2p service for node %d: %v", i, err)
 
 		// Start P2P service
 		go func(nodeID int, rqStore *rqstore.SQLiteRQStore) {

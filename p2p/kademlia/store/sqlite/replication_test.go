@@ -37,7 +37,7 @@ func TestStoreBatchRepKeys(t *testing.T) {
 	testValues := []string{"testValue1", "testValue2"}
 	testID := "testID"
 	testIP := "127.0.0.1"
-	testPort := 8080
+	const testPort uint16 = 8080
 
 	// Call StoreBatchRepKeys
 	err = store.StoreBatchRepKeys(testValues, testID, testIP, testPort)
@@ -97,7 +97,7 @@ func TestGetBatchRepKeys(t *testing.T) {
 	testValues := []string{"testValue1", "testValue2"}
 	testID := "testID"
 	testIP := "127.0.0.1"
-	testPort := 8080
+	const testPort uint16 = 8080
 
 	// Call StoreBatchRepKeys
 	err = store.StoreBatchRepKeys(testValues, testID, testIP, testPort)

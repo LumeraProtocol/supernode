@@ -12,7 +12,7 @@ type NodeReplicationInfo struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	Active           bool       `json:"active"`
 	IP               string     `json:"ip"`
-	Port             int        `json:"port"`
+	Port             uint16     `json:"port"`
 	ID               []byte     `json:"id"`
 	IsAdjusted       bool       `json:"is_adjusted"`
 	LastSeen         *time.Time `json:"last_seen"`
@@ -26,7 +26,7 @@ type ToRepKey struct {
 	Key       string    `db:"key"`
 	UpdatedAt time.Time `db:"updatedAt"`
 	IP        string    `db:"ip"`
-	Port      int       `db:"port"`
+	Port      uint16    `db:"port"`
 	ID        string    `db:"id"`
 	Attempts  int       `db:"attempts"`
 }

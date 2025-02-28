@@ -51,7 +51,7 @@ type Store interface {
 	GetOwnCreatedAt(ctx context.Context) (time.Time, error)
 
 	// StoreBatchRepKeys ...
-	StoreBatchRepKeys(values []string, id string, ip string, port int) error
+	StoreBatchRepKeys(values []string, id string, ip string, port uint16) error
 
 	// GetAllToDoRepKeys gets all keys that need to be replicated
 	GetAllToDoRepKeys(minAttempts, maxAttempts int) (retKeys domain.ToRepKeys, err error)

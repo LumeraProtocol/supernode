@@ -14,7 +14,7 @@ func generateKeyFromNode(node *Node) string {
 	builder.WriteByte('^')
 	builder.WriteString(node.IP)
 	builder.WriteByte('^')
-	builder.WriteString(strconv.Itoa(node.Port))
+	builder.WriteString(strconv.Itoa(int(node.Port)))
 
 	return builder.String()
 }
@@ -30,13 +30,13 @@ func getNodeFromKey(key string) (*Node, error) {
 	id := []byte(parts[0])
 	ip := parts[1]
 
-	// strconv.Atoi returns an int and an error, which we need to handle.
-	port, err := strconv.Atoi(parts[2])
+	// strconv.ParseUint returns an int and an error, which we need to handle.
+	portInt, err := strconv.ParseUint(parts[2], 10, 16)
 	if err != nil {
 		return nil, fmt.Errorf("invalid port: %w", err)
 	}
 
-	return &Node{ID: id, IP: ip, Port: port}, nil
+	return &Node{ID: id, IP: ip, Port: uint16(portInt)}, nil
 }
 
 /*

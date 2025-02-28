@@ -7,21 +7,20 @@ import (
 	"io"
 	"net"
 	"sort"
-	"strings"
 	"sync"
 	"time"
+	"syscall"
 
 	"github.com/btcsuite/btcutil/base58"
 	json "github.com/json-iterator/go"
 
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 
 	"github.com/google/uuid"
 	"go.uber.org/ratelimit"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/auth"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/credentials"
 )
@@ -32,7 +31,20 @@ const (
 	defaultMaxPayloadSize              = 200 // MB
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
+	defaultExecTimeout				   = 10 * time.Second
 )
+
+// Global map for message type timeouts
+var execTimeouts map[int]time.Duration
+
+func init() {
+	// Initialize the request execution timeout values
+	execTimeouts = map[int]time.Duration{
+		BatchStoreData: 60 * time.Second,
+		FindNode:       30 * time.Second,
+		BatchFindNode:  15 * time.Second,
+	}
+}
 
 // Network for distributed hash table
 type Network struct {
@@ -43,25 +55,21 @@ type Network struct {
 	done     chan struct{}     // network is stopped
 
 	// For secure connection
-	secureHelper credentials.TransportCredentials
+	tc credentials.TransportCredentials
 	connPool     *ConnPool
 	connPoolMtx  sync.Mutex
-
-	// for authentication only
-	authHelper *AuthHelper
-	sem        *semaphore.Weighted
+	sem          *semaphore.Weighted
 }
 
 // NewNetwork returns a network service
-func NewNetwork(ctx context.Context, dht *DHT, self *Node, secureHelper credentials.TransportCredentials, authHelper *AuthHelper) (*Network, error) {
+func NewNetwork(ctx context.Context, dht *DHT, self *Node, tc credentials.TransportCredentials) (*Network, error) {
 	s := &Network{
-		dht:          dht,
-		self:         self,
-		done:         make(chan struct{}),
-		secureHelper: secureHelper,
-		connPool:     NewConnPool(ctx),
-		authHelper:   authHelper,
-		sem:          semaphore.NewWeighted(maxConcurrentFindBatchValsRequests),
+		dht:      dht,
+		self:     self,
+		done:     make(chan struct{}),
+		tc:       tc,
+		connPool: NewConnPool(ctx),
+		sem:      semaphore.NewWeighted(maxConcurrentFindBatchValsRequests),
 	}
 	// init the rate limiter
 	s.limiter = ratelimit.New(defaultConnRate)
@@ -89,7 +97,7 @@ func (s *Network) Start(ctx context.Context) error {
 
 // Stop the network
 func (s *Network) Stop(ctx context.Context) {
-	if s.secureHelper != nil {
+	if s.tc != nil {
 		s.connPool.Release()
 	}
 	// close the socket
@@ -98,7 +106,6 @@ func (s *Network) Stop(ctx context.Context) {
 			log.P2P().WithContext(ctx).WithError(err).Errorf("close socket failed")
 		}
 	}
-
 }
 
 func (s *Network) encodeMesage(mesage *Message) ([]byte, error) {
@@ -277,7 +284,7 @@ func (s *Network) handleReplicate(ctx context.Context, message *Message) (res []
 	return s.encodeMesage(resMsg)
 }
 
-func (s *Network) handleReplicateRequest(ctx context.Context, req *ReplicateDataRequest, id []byte, ip string, port int) error {
+func (s *Network) handleReplicateRequest(ctx context.Context, req *ReplicateDataRequest, id []byte, ip string, port uint16) error {
 	keysToStore, err := s.dht.store.RetrieveBatchNotExist(ctx, req.Keys, 5000)
 	if err != nil {
 		log.WithContext(ctx).WithField("keys", len(req.Keys)).WithField("from-ip", ip).Errorf("unable to retrieve batch replication keys: %v", err)
@@ -309,26 +316,15 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 	var err error
 	ctx = log.ContextWithPrefix(ctx, fmt.Sprintf("conn:%s->%s", rawConn.LocalAddr(), rawConn.RemoteAddr()))
 	// do secure handshaking
-	if s.secureHelper != nil {
-		conn, err = NewSecureServerConn(ctx, s.secureHelper, rawConn)
+	if s.tc != nil {
+		conn, err = NewSecureServerConn(ctx, s.tc, rawConn)
 		if err != nil {
 			rawConn.Close()
-			log.WithContext(ctx).WithError(err).Error("server secure establish failed")
+			log.WithContext(ctx).WithError(err).Error("server secure handshake failed")
 			return
 		}
 	} else {
-		// if peer authentication is enabled
-		if s.authHelper != nil {
-			authHandshaker, _ := auth.NewServerHandshaker(ctx, s.authHelper, rawConn)
-			conn, err = authHandshaker.ServerHandshake(ctx)
-			if err != nil {
-				rawConn.Close()
-				log.WithContext(ctx).WithError(err).Error("server authentication failed")
-				return
-			}
-		} else {
-			conn = rawConn
-		}
+		conn = rawConn
 	}
 
 	defer conn.Close()
@@ -435,6 +431,29 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 	}
 }
 
+// isTemporaryNetError checks if the error is a known temporary network error
+func isTemporaryNetError(err error) bool {
+	// Check for specific error types that are typically temporary
+	switch err {
+	case syscall.EAGAIN, syscall.ECONNABORTED, syscall.ECONNRESET, syscall.ECONNREFUSED,
+		syscall.EINTR, syscall.ETIMEDOUT:
+		return true
+	}
+	
+	// Some network errors might be wrapped in other errors
+	// Check for syscall errors specifically
+	var sysErr syscall.Errno
+	if errors.As(err, &sysErr) {
+		switch sysErr {
+		case syscall.EAGAIN, syscall.ECONNABORTED, syscall.ECONNRESET, syscall.ECONNREFUSED,
+			syscall.EINTR, syscall.ETIMEDOUT:
+			return true
+		}
+	}
+	
+	return false
+}
+
 // serve the incomming connection
 func (s *Network) serve(ctx context.Context) {
 	var tempDelay time.Duration // how long to sleep on accept failure
@@ -451,7 +470,9 @@ func (s *Network) serve(ctx context.Context) {
 				return
 			default:
 			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+
+			// Handle specific known network errors that are generally temporary
+			if isTemporaryNetError(err) {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
 				} else {
@@ -465,9 +486,6 @@ func (s *Network) serve(ctx context.Context) {
 				time.Sleep(tempDelay)
 				continue
 			}
-			if strings.Contains(err.Error(), "closed") {
-				return
-			}
 
 			log.WithContext(ctx).WithError(err).Error("socket accept failed")
 			return
@@ -478,81 +496,56 @@ func (s *Network) serve(ctx context.Context) {
 	}
 }
 
+// getExecTimeout returns the timeout for the given message type
+func getExecTimeout(messageType int, isLong bool) time.Duration {
+	if isLong {
+		return 3 * time.Minute
+	}
+	if timeout, exists := execTimeouts[messageType]; exists {
+		return timeout
+	}
+	return defaultExecTimeout
+}
+
 // Call sends the request to target and receive the response
 func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Message, error) {
-	timeout := 10 * time.Second
-
-	if request.MessageType == BatchStoreData {
-		timeout = 60 * time.Second
-	}
-	if request.MessageType == FindNode {
-		timeout = 30 * time.Second
-	}
-	if request.MessageType == BatchFindNode {
-		timeout = 15 * time.Second
-	}
-	if isLong {
-		timeout = 3 * time.Minute
-	}
+	timeout := getExecTimeout(request.MessageType, isLong)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	if request.Receiver != nil && request.Receiver.Port == 50052 {
-		log.P2P().WithContext(ctx).Error("invalid port")
-		return nil, errors.New("invalid port")
+		log.P2P().WithContext(ctx).Error("invalid receiver port")
+		return nil, errors.New("invalid receiver port")
 	}
 	if request.Sender != nil && request.Sender.Port == 50052 {
-		log.P2P().WithContext(ctx).Error("invalid port")
-		return nil, errors.New("invalid port")
+		log.P2P().WithContext(ctx).Error("invalid sender port")
+		return nil, errors.New("invalid sender port")
 	}
 
-	var conn net.Conn
-	var rawConn net.Conn
-	var err error
+	remoteAddr := fmt.Sprintf("%s@%s:%d", string(request.Receiver.ID), request.Receiver.IP, request.Receiver.Port)
 
-	remoteAddr := fmt.Sprintf("%s:%d", request.Receiver.IP, request.Receiver.Port)
+	if s.tc == nil {
+		return nil, errors.New("secure transport credentials are not set")
+	}
 
 	// do secure handshaking
-	if s.secureHelper != nil {
-		s.connPoolMtx.Lock()
-		conn, err = s.connPool.Get(remoteAddr)
+	s.connPoolMtx.Lock()
+	conn, err := s.connPool.Get(remoteAddr)
+	if err != nil {
+		conn, err = NewSecureClientConn(ctx, s.tc, remoteAddr)
 		if err != nil {
-			conn, err = NewSecureClientConn(ctx, s.secureHelper, remoteAddr)
-			if err != nil {
-				s.connPoolMtx.Unlock()
-				return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
-			}
-			s.connPool.Add(remoteAddr, conn)
+			s.connPoolMtx.Unlock()
+			return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
 		}
-		s.connPoolMtx.Unlock()
-	} else {
-		// dial the remote address with tcp network
-		var d net.Dialer
-		rawConn, err = d.DialContext(ctx, "tcp", remoteAddr)
-		if err != nil {
-			return nil, errors.Errorf("dial %q: %w", remoteAddr, err)
-		}
-		defer rawConn.Close()
-
-		// set the deadline for read and write
-		rawConn.SetDeadline(time.Now().UTC().Add(timeout))
-
-		// if peer authentication is enabled
-		if s.authHelper != nil {
-			authHandshaker, _ := auth.NewClientHandshaker(ctx, s.authHelper, rawConn)
-			conn, err = authHandshaker.ClientHandshake(ctx)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			conn = rawConn
-		}
+		s.connPool.Add(remoteAddr, conn)
 	}
+	s.connPoolMtx.Unlock()
 
 	defer func() {
-		if err != nil && s.secureHelper != nil {
+		if err != nil && s.tc != nil {
 			s.connPoolMtx.Lock()
 			defer s.connPoolMtx.Unlock()
+
 			conn.Close()
 			s.connPool.Del(remoteAddr)
 		}

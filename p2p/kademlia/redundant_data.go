@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/log"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/cenkalti/backoff"
 	"github.com/jmoiron/sqlx"
@@ -20,7 +20,7 @@ type nodeReplicationInfo struct {
 	Active         bool       `db:"is_active"`
 	Adjusted       bool       `db:"is_adjusted"`
 	IP             string     `db:"ip"`
-	Port           int        `db:"port"`
+	Port           uint16     `db:"port"`
 	ID             string     `db:"id"`
 	LastSeen       *time.Time `db:"last_seen"`
 }
@@ -186,7 +186,7 @@ func (s *Store) DeleteRepKey(hkey string) error {
 }
 
 // StoreBatchRepKeys will store a batch of values with their SHA256 hash as the key
-func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port int) error {
+func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port uint16) error {
 	operation := func() error {
 		tx, err := s.db.Beginx()
 		if err != nil {

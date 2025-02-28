@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	
-	"supernode/pkg/logtrace"
-	"supernode/pkg/net"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/net"
 
 	"cosmossdk.io/api/tendermint/types"
 

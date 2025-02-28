@@ -7,25 +7,26 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"sync/atomic"
-
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/common/net/credentials/alts"
-	"github.com/LumeraProtocol/supernode/common/storage"
-	"github.com/LumeraProtocol/supernode/common/storage/memory"
-	"github.com/LumeraProtocol/supernode/common/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/common/utils"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff"
+
+	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/storage"
+	"github.com/LumeraProtocol/supernode/pkg/storage/memory"
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 )
 
-var (
+const (
+	defaultNetworkPort uint16 			 = 4445
 	defaultNetworkAddr                   = "0.0.0.0"
-	defaultNetworkPort                   = 4445
 	defaultRefreshTime                   = time.Second * 3600
 	defaultPingTime                      = time.Second * 10
 	defaultCleanupInterval               = time.Minute * 2
@@ -38,9 +39,9 @@ var (
 	storeSameSymbolsBatchConcurrency     = 1
 	storeSymbolsBatchConcurrency         = 2.0
 	minimumDataStoreSuccessRate          = 75.0
-)
 
-const maxIterations = 4
+	maxIterations = 4
+)
 
 // DHT represents the state of the queries node in the distributed hash table
 type DHT struct {
@@ -51,10 +52,9 @@ type DHT struct {
 	metaStore      MetaStore        // the meta storage of DHT
 	done           chan struct{}    // distributed hash table is done
 	cache          storage.KeyValue // store bad bootstrap addresses
-	pastelClient   pastel.Client
+	bsConnected    map[string]bool  // map of connected bootstrap nodes [identity] -> connected
 	externalIP     string
 	mtx            sync.Mutex
-	authHelper     *AuthHelper
 	ignorelist     *BanList
 	replicationMtx sync.RWMutex
 	rqstore        rqstore.Store
@@ -68,23 +68,21 @@ type Options struct {
 	IP string
 
 	// The queries port to listen for connections
-	Port int
+	Port uint16
 
 	// The nodes being used to bootstrap the network. Without a bootstrap
 	// node there is no way to connect to the network
 	BootstrapNodes []*Node
 
-	// PastelClient to retrieve p2p bootstrap addrs
-	PastelClient pastel.Client
+	LumeraClient *lumera.Client
 
-	// Authentication is required or not
-	PeerAuth bool
+	LumeraNetwork *lumera.LumeraNetwork
 
 	ExternalIP string
 }
 
 // NewDHT returns a new DHT node
-func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.Client, secInfo *alts.SecInfo, options *Options, rqstore rqstore.Store) (*DHT, error) {
+func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Options, rqstore rqstore.Store) (*DHT, error) {
 	// validate the options, if it's invalid, set them to default value
 	if options.IP == "" {
 		options.IP = defaultNetworkAddr
@@ -97,9 +95,9 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.Cli
 		metaStore:      metaStore,
 		store:          store,
 		options:        options,
-		pastelClient:   pc,
 		done:           make(chan struct{}),
 		cache:          memory.NewKeyValue(),
+		bsConnected:    make(map[string]bool),
 		ignorelist:     NewBanList(ctx),
 		replicationMtx: sync.RWMutex{},
 		rqstore:        rqstore,
@@ -109,8 +107,19 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.Cli
 		s.externalIP = options.ExternalIP
 	}
 
-	if options.PeerAuth && options.ExternalIP != "" {
-		s.authHelper = NewAuthHelper(pc, secInfo)
+	kr := options.LumeraClient.GetKeyring()
+	if kr == nil {
+		return nil, fmt.Errorf("keyring is not initialized in lumera client context")
+	}
+	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
+		CommonOptions: ltc.CommonOptions{
+			Keyring:       kr,
+			LocalIdentity: string(options.ID),
+			PeerType:      securekeyx.Supernode,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client credentials: %w", err)
 	}
 
 	// new a hashtable with options
@@ -123,14 +132,8 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.Cli
 	// add bad boostrap addresss
 	s.skipBadBootstrapAddrs()
 
-	/*
-		// FIXME - use this code to enable secure connection
-		secureHelper := credentials.NewClientCreds(s.pastelClient, s.secInfo)
-		network, err := NewNetwork(s, ht.self, secureHelper)
-	*/
-
 	// new network service for dht
-	network, err := NewNetwork(ctx, s, ht.self, nil, s.authHelper)
+	network, err := NewNetwork(ctx, s, ht.self, clientCreds)
 	if err != nil {
 		return nil, fmt.Errorf("new network: %v", err)
 	}
@@ -898,7 +901,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 			case IterateStore:
 				// Store the value to the node list
 				if err := s.storeToAlphaNodes(ctx, nl, data, typ, taskID); err != nil {
-					log.WithContext(ctx).WithField("task_id", taskID).WithField("key", sKey).Error("could not store value to remaining network")
+					log.WithContext(ctx).WithField("task_id", taskID).WithField("key", sKey).Errorf("could not store value to remaining network: %v", err)
 				}
 
 				return nil, nil

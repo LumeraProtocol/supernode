@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/log"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 )
 
 // StartTimer news a timer for doing the function

@@ -4,64 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	lumerasn "github.com/LumeraProtocol/lumera/x/supernode/types"
+	. "github.com/LumeraProtocol/lumera/x/supernode/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
 
-// SuperNodeState defines possible states of a supernode.
-type SuperNodeState int32
-
-const (
-	SUPERNODE_STATE_UNSPECIFIED SuperNodeState = 0
-	SUPERNODE_STATE_ACTIVE      SuperNodeState = 1
-	SUPERNODE_STATE_DISABLED    SuperNodeState = 2
-	SUPERNODE_STATE_STOPPED     SuperNodeState = 3
-	SUPERNODE_STATE_PENALIZED   SuperNodeState = 4
-)
-
-// Supernode represents a validator's state and related information.
-type Supernode struct {
-	ValidatorAddress string                 `json:"validator_address"`
-	States           []SuperNodeStateRecord `json:"states"`
-	Evidence         []Evidence             `json:"evidence"`
-	PrevIPAddresses  []IPAddressHistory     `json:"prev_ip_addresses"`
-	Version          string                 `json:"version"`
-	Metrics          MetricsAggregate       `json:"metrics"`
-	SupernodeAccount string                 `json:"supernode_account"`
-}
-
-type Supernodes []Supernode
-
-// IPAddressHistory records a validator's previous IP addresses.
-type IPAddressHistory struct {
-	Address string `json:"address"`
-	Height  int64  `json:"height"`
-}
-
-// MetricsAggregate contains aggregated metrics for a validator.
-type MetricsAggregate struct {
-	Metrics     map[string]float64 `json:"metrics"`
-	ReportCount uint64             `json:"report_count"`
-	Height      int64              `json:"height"`
-}
-
-// Evidence represents reports of a validator's misconduct.
-type Evidence struct {
-	ReporterAddress  string `json:"reporter_address"`
-	ValidatorAddress string `json:"validator_address"`
-	ActionID         string `json:"action_id"`
-	EvidenceType     string `json:"evidence_type"`
-	Description      string `json:"description"`
-	Severity         uint64 `json:"severity"`
-	Height           int32  `json:"height"`
-}
-
-// SuperNodeStateRecord stores state transitions of a supernode.
-type SuperNodeStateRecord struct {
-	State  SuperNodeState `json:"state"`
-	Height int64          `json:"height"`
-}
+type Supernodes []SuperNode
 
 type GetTopSupernodesForBlockRequest struct {
 	BlockHeight int32          `json:"block_height"`
@@ -85,10 +33,10 @@ func (c *Client) GetTopSNsByBlockHeight(ctx context.Context, r GetTopSupernodesF
 	}
 	logtrace.Info(ctx, "fetching top supernodes for block", fields)
 
-	resp, err := c.supernodeService.GetTopSuperNodesForBlock(ctx, &lumerasn.QueryGetTopSuperNodesForBlockRequest{
+	resp, err := c.supernodeService.GetTopSuperNodesForBlock(ctx, &QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: r.BlockHeight,
 		Limit:       r.Limit,
-		State:       lumerasn.SuperNodeState(r.State),
+		State:       r.State.String(),
 	})
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -100,15 +48,15 @@ func (c *Client) GetTopSNsByBlockHeight(ctx context.Context, r GetTopSupernodesF
 	return toGetTopSNsForBlockResponse(resp), nil
 }
 
-func toGetTopSNsForBlockResponse(response *lumerasn.QueryGetTopSuperNodesForBlockResponse) GetTopSupernodesForBlockResponse {
+func toGetTopSNsForBlockResponse(response *QueryGetTopSuperNodesForBlockResponse) GetTopSupernodesForBlockResponse {
 	var sns Supernodes
 
 	for _, sn := range response.Supernodes {
-		sns = append(sns, Supernode{
+		sns = append(sns, SuperNode{
 			ValidatorAddress: sn.ValidatorAddress,
 			States:           mapStates(sn.States),
 			Evidence:         mapEvidence(sn.Evidence),
-			PrevIPAddresses:  mapIPAddressHistory(sn.PrevIpAddresses),
+			PrevIpAddresses:  mapIPAddressHistory(sn.PrevIpAddresses),
 			Version:          sn.Version,
 			Metrics:          mapMetrics(sn.Metrics),
 			SupernodeAccount: sn.SupernodeAccount,
@@ -121,10 +69,10 @@ func toGetTopSNsForBlockResponse(response *lumerasn.QueryGetTopSuperNodesForBloc
 }
 
 // Helper function to map repeated SuperNodeStateRecord
-func mapStates(states []*lumerasn.SuperNodeStateRecord) []SuperNodeStateRecord {
-	var stateRecords []SuperNodeStateRecord
+func mapStates(states []*SuperNodeStateRecord) []*SuperNodeStateRecord {
+	var stateRecords []*SuperNodeStateRecord
 	for _, state := range states {
-		stateRecords = append(stateRecords, SuperNodeStateRecord{
+		stateRecords = append(stateRecords, &SuperNodeStateRecord{
 			State:  SuperNodeState(state.State),
 			Height: state.Height,
 		})
@@ -133,13 +81,13 @@ func mapStates(states []*lumerasn.SuperNodeStateRecord) []SuperNodeStateRecord {
 }
 
 // Helper function to map repeated Evidence
-func mapEvidence(evidences []*lumerasn.Evidence) []Evidence {
-	var evidenceList []Evidence
+func mapEvidence(evidences []*Evidence) []*Evidence {
+	var evidenceList []*Evidence
 	for _, ev := range evidences {
-		evidenceList = append(evidenceList, Evidence{
+		evidenceList = append(evidenceList, &Evidence{
 			ReporterAddress:  ev.ReporterAddress,
 			ValidatorAddress: ev.ValidatorAddress,
-			ActionID:         ev.ActionId,
+			ActionId:         ev.ActionId,
 			EvidenceType:     ev.EvidenceType,
 			Description:      ev.Description,
 			Severity:         ev.Severity,
@@ -150,10 +98,10 @@ func mapEvidence(evidences []*lumerasn.Evidence) []Evidence {
 }
 
 // Helper function to map repeated IPAddressHistory
-func mapIPAddressHistory(addresses []*lumerasn.IPAddressHistory) []IPAddressHistory {
-	var ipHistory []IPAddressHistory
+func mapIPAddressHistory(addresses []*IPAddressHistory) []*IPAddressHistory {
+	var ipHistory []*IPAddressHistory
 	for _, addr := range addresses {
-		ipHistory = append(ipHistory, IPAddressHistory{
+		ipHistory = append(ipHistory, &IPAddressHistory{
 			Address: addr.Address,
 			Height:  addr.Height,
 		})
@@ -162,9 +110,9 @@ func mapIPAddressHistory(addresses []*lumerasn.IPAddressHistory) []IPAddressHist
 }
 
 // Helper function to map MetricsAggregate
-func mapMetrics(metrics *lumerasn.MetricsAggregate) MetricsAggregate {
+func mapMetrics(metrics *MetricsAggregate) *MetricsAggregate {
 	if metrics == nil {
-		return MetricsAggregate{}
+		return &MetricsAggregate{}
 	}
 
 	convertedMetrics := make(map[string]float64)
@@ -172,7 +120,7 @@ func mapMetrics(metrics *lumerasn.MetricsAggregate) MetricsAggregate {
 		convertedMetrics[key] = val
 	}
 
-	return MetricsAggregate{
+	return &MetricsAggregate{
 		Metrics:     convertedMetrics,
 		ReportCount: metrics.ReportCount,
 		Height:      metrics.Height,

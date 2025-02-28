@@ -73,6 +73,12 @@ func Is(err, target error) bool {
 	return errors.Is(err, target)
 }
 
+// As finds the first error in err's tree that matches target, and if one is found, sets
+// target to that error value and returns true. Otherwise, it returns false.
+func As(err error, target interface{}) bool {
+	return errors.As(err, target)
+}
+
 // Recover is a method that tries to recover from panics, and if it succeeds, calls the given onPanic function with an error that
 // explains the cause of the panic. This function should only be called from a defer statement.
 func Recover(onPanic func(cause error)) {

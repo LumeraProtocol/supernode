@@ -18,6 +18,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/random"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 )
 
 const (
@@ -263,24 +264,24 @@ func (c *Client) BuildDialOptions(opts *ClientOptions) []grpc.DialOption {
 // The target name syntax is defined in https://github.com/grpc/grpc/blob/master/doc/naming.md.
 func (ch *defaultConnectionHandler) attemptConnection(ctx context.Context, target string, opts *ClientOptions) (*grpc.ClientConn, error) {
 	dialOpts := ch.client.BuildDialOptions(opts)
-	client, err := grpc.NewClient(target, dialOpts...)
+	gclient, err := grpc.NewClient(target, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc client: %w", err)
 	}
 
 	// Start connection attempt
-	client.Connect()
+	gclient.Connect()
 
 	// Start connection attempt
 	// Wait for connection to be ready
-	if err := waitForConnection(ctx, client, opts.ConnWaitTime); err != nil {
-		client.Close()
+	if err := waitForConnection(ctx, gclient, opts.ConnWaitTime); err != nil {
+		gclient.Close()
 		log.WithContext(ctx).WithError(err).Error("Connection failed")
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
 
 	log.WithContext(ctx).Debugf("Connected to %s", target)
-	return client, nil
+	return gclient, nil
 }
 
 // retryConnection attempts to connect with retry logic
@@ -327,12 +328,31 @@ func (ch *defaultConnectionHandler) configureContext(ctx context.Context) (conte
 	return ctx, func() {}
 }
 
-// Connect establishes a connection to the server at the given address
+// Connect establishes a connection to the server at the given address.
 // It implements a retry mechanism with exponential backoff and handles
-// both connection establishment and verification of connection readiness
+// both connection establishment and verification of connection readiness.
+// address format is "remoteIdentity@address", where:
+// - remoteIdentity is the Cosmos address of the remote node
+// - address is a standard gRPC address (e.g., "localhost:50051")
 func (c *Client) Connect(ctx context.Context, address string, opts *ClientOptions) (*grpc.ClientConn, error) {
 	if opts == nil {
 		opts = DefaultClientOptions()
+	}
+	
+	// Extract identity if in Lumera format
+	remoteIdentity, grpcAddress, err := ltc.ExtractIdentity(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address format: %w", err)
+	}
+
+	if remoteIdentity != "" {
+		lumeraTC, ok := c.creds.(*ltc.LumeraTC)
+		if !ok {
+			return nil, fmt.Errorf("invalid credentials type")
+		}
+
+		// Set remote identity in credentials
+		lumeraTC.SetRemoteIdentity(remoteIdentity)
 	}
 
 	// configure timeout and log prefix in a context
@@ -340,7 +360,7 @@ func (c *Client) Connect(ctx context.Context, address string, opts *ClientOption
 	defer cancel()
 
 	// Attempt connection with retries
-	return c.connHandler.retryConnection(ctx, address, opts)
+	return c.connHandler.retryConnection(ctx, grpcAddress, opts)
 }
 
 // GetState returns the current connection state

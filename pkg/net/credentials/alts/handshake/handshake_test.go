@@ -20,6 +20,7 @@ import (
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/testutil"
+	. "github.com/LumeraProtocol/supernode/pkg/testutil"
 )
 
 const defaultTestTimeout = 100 * time.Second
@@ -208,7 +209,7 @@ func (h *hsInterceptor) cleanup() {
 }
 
 func TestHandshakerConcurrentHandshakes(t *testing.T) {
-	kr := testutil.CreateTestKeyring()
+	kr := CreateTestKeyring()
 
 	testCases := []struct {
 		name          string
@@ -304,12 +305,12 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			for i := 0; i < tc.numHandshakes; i++ {
 				accountClient := fmt.Sprintf("client-%d", i)
 				accountServer := fmt.Sprintf("server-%d", i)
-				addresses := testutil.SetupTestAccounts(t, kr, []string{accountClient, accountServer})
+				addresses := SetupTestAccounts(t, kr, []string{accountClient, accountServer})
 
 				clientAddr := addresses[0]
 				serverAddr := addresses[1]
-				clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
-				serverKE := testutil.SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Supernode)
+				clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+				serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Supernode)
 
 				// Setup test pipes
 				clientConn, serverConn := net.Pipe()
@@ -438,13 +439,13 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 }
 
 func TestHandshakerContext(t *testing.T) {
-	kr := testutil.CreateTestKeyring()
+	kr := CreateTestKeyring()
 
-	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 
 	t.Run("Context timeout", func(t *testing.T) {
 		client, server := net.Pipe()
@@ -497,13 +498,13 @@ func TestHandshakerContext(t *testing.T) {
 }
 
 func TestUnresponsivePeer(t *testing.T) {
-	kr := testutil.CreateTestKeyring()
+	kr := CreateTestKeyring()
 
-	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 
 	handshakeTimeout := 100 * time.Millisecond
 	conn := testutil.NewUnresponsiveTestConn(time.Hour) // Create unresponsive conn
@@ -631,13 +632,13 @@ func TestClient_ComputeSharedSecretFailure(t *testing.T) {
 }
 
 func TestClientHandshakeSemaphore(t *testing.T) {
-	kr := testutil.CreateTestKeyring()
+	kr := CreateTestKeyring()
 
-	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
 	clientAddr := addresses[0]
 	serverAddr := addresses[1]
 
-	clientKE := testutil.SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -663,12 +664,12 @@ func TestClientHandshakeSemaphore(t *testing.T) {
 }
 
 func TestServerHandshakeSemaphore(t *testing.T) {
-	kr := testutil.CreateTestKeyring()
+	kr := CreateTestKeyring()
 
-	addresses := testutil.SetupTestAccounts(t, kr, []string{"client", "server"})
+	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
 	serverAddr := addresses[1]
 
-	serverKE := testutil.SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
+	serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()

@@ -3,10 +3,10 @@ package lumera
 import (
 	"context"
 	"fmt"
-	"supernode/pkg/net"
+	"github.com/LumeraProtocol/supernode/pkg/net"
 
 	"github.com/cosmos/cosmos-sdk/types/tx"
-	"supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 type BroadcastMode string

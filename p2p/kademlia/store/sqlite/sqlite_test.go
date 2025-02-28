@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/stretchr/testify/assert"
 )

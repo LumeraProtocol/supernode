@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 
-	"github.com/LumeraProtocol/supernode/common/log"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 )
 
 const (
@@ -53,54 +54,44 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 		return nil, errors.New("empty ip")
 	}
 
-	port, err := strconv.Atoi(addr[1])
+	port, err := strconv.ParseUint(addr[1], 10, 16)
 	if err != nil {
-		return nil, errors.New("invalid port")
+		return nil, errors.New("invalid port number")
 	}
 
 	return &Node{
 		IP:   ip,
-		Port: port,
+		Port: uint16(port),
 	}, nil
 }
 
-// setBootstrapNodesFromConfigVar parses config.BootstrapIPs and sets them
+// setBootstrapNodesFromConfigVar parses config.bootstrapNodes and sets them
 // as the bootstrap nodes - As of now, this is only supposed to be used for testing
-func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapIPs string) error {
+func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes string) error {
 	nodes := []*Node{}
-	ips := strings.Split(bootstrapIPs, ",")
-	for _, ip := range ips {
-		addr := strings.Split(ip, ":")
-		if len(addr) != 2 {
-			return errors.New("setBootstrapNodesFromConfigVar: wrong number of field")
-		}
-
-		ip := addr[0]
-
-		if ip == "" {
-			return errors.New("setBootstrapNodesFromConfigVar: empty ip")
-		}
-
-		port, err := strconv.Atoi(addr[1])
+	bsNodes := strings.Split(bootstrapNodes, ",")
+	for _, bsNode := range bsNodes {
+		lumeraAddress, err := ltc.ParseLumeraAddress(bsNode)
 		if err != nil {
-			return errors.New("setBootstrapNodesFromConfigVar: invalid port")
+			return fmt.Errorf("setBootstrapNodesFromConfigVar: %w", err)
 		}
 
 		nodes = append(nodes, &Node{
-			IP:   ip,
-			Port: port,
+			ID:	  []byte(lumeraAddress.Identity),
+			IP:   lumeraAddress.Host,
+			Port: lumeraAddress.Port,
 		})
 	}
 	s.options.BootstrapNodes = nodes
-	log.P2P().WithContext(ctx).WithField("bootstrap_nodes", nodes).Info("Bootstrap IPs set from config var")
+	log.P2P().WithContext(ctx).WithField("bootstrap_nodes", nodes).Info("Bootstrap nodes set from config var")
 
 	return nil
 }
 
-// ConfigureBootstrapNodes connects with pastel client & gets p2p boostrap ip & port
-func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapIPs string) error {
-	if bootstrapIPs != "" {
-		return s.setBootstrapNodesFromConfigVar(ctx, bootstrapIPs)
+// ConfigureBootstrapNodes connects with lumera client & gets p2p boostrap ip & port
+func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
+	if bootstrapNodes != "" {
+		return s.setBootstrapNodesFromConfigVar(ctx, bootstrapNodes)
 	}
 
 	selfAddress, err := s.getExternalIP()
@@ -109,7 +100,7 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapIPs string) 
 	}
 	selfAddress = fmt.Sprintf("%s:%d", selfAddress, s.options.Port)
 
-	get := func(ctx context.Context, f func(context.Context) (pastel.MasterNodes, error)) ([]*Node, error) {
+	get := func(ctx context.Context, f func(context.Context) (lumera.SuperNodeAddressInfos, error)) ([]*Node, error) {
 		mns, err := f(ctx)
 		if err != nil {
 			return []*Node{}, err
@@ -134,17 +125,20 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapIPs string) 
 		return nodes, nil
 	}
 
-	boostrapNodes, err := get(ctx, s.pastelClient.MasterNodesExtra)
-	if err != nil {
-		return fmt.Errorf("masternodesTop failed: %s", err)
-	} else if len(boostrapNodes) == 0 {
-		boostrapNodes, err = get(ctx, s.pastelClient.MasterNodesTop)
+	var boostrapNodes []*Node
+	if s.options.LumeraNetwork != nil {
+		boostrapNodes, err := get(ctx, s.options.LumeraNetwork.MasterNodesExtra)
 		if err != nil {
-			return fmt.Errorf("masternodesExtra failed: %s", err)
+			return fmt.Errorf("masternodesTop failed: %s", err)
 		} else if len(boostrapNodes) == 0 {
-			log.P2P().WithContext(ctx).Error("unable to fetch bootstrap ip. Missing extP2P")
+			boostrapNodes, err = get(ctx, s.options.LumeraNetwork.MasterNodesTop)
+			if err != nil {
+				return fmt.Errorf("masternodesExtra failed: %s", err)
+			} else if len(boostrapNodes) == 0 {
+				log.P2P().WithContext(ctx).Error("unable to fetch bootstrap ip. Missing extP2P")
 
-			return nil
+				return nil
+			}
 		}
 	}
 
@@ -162,10 +156,10 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapIPs string) 
 
 // Bootstrap attempts to bootstrap the network using the BootstrapNodes provided
 // to the Options struct
-func (s *DHT) Bootstrap(ctx context.Context, bootstrapIPs string) error {
+func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 	if len(s.options.BootstrapNodes) == 0 {
 		time.AfterFunc(bootstrapRetryInterval*time.Minute, func() {
-			s.retryBootstrap(ctx, bootstrapIPs)
+			s.retryBootstrap(ctx, bootstrapNodes)
 		})
 
 		return nil
@@ -173,8 +167,10 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapIPs string) error {
 
 	var wg sync.WaitGroup
 	for _, node := range s.options.BootstrapNodes {
-		// sync the node id when it's empty
-		if len(node.ID) != 0 {
+		nodeId := string(node.ID)
+		// sync the bootstrap node only once
+		isConnected, exists := s.bsConnected[nodeId]
+		if exists && isConnected {
 			continue
 		}
 
@@ -185,6 +181,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapIPs string) error {
 		}
 
 		node := node
+		s.bsConnected[nodeId] = false
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -221,6 +218,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapIPs string) error {
 					continue
 				}
 
+				s.bsConnected[nodeId] = true
 				s.addNode(ctx, response.Sender)
 				break
 			}
@@ -239,21 +237,21 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapIPs string) error {
 		}
 	} else {
 		time.AfterFunc(bootstrapRetryInterval*time.Minute, func() {
-			s.retryBootstrap(ctx, bootstrapIPs)
+			s.retryBootstrap(ctx, bootstrapNodes)
 		})
 	}
 
 	return nil
 }
 
-func (s *DHT) retryBootstrap(ctx context.Context, bootstrapIPs string) {
-	if err := s.ConfigureBootstrapNodes(ctx, bootstrapIPs); err != nil {
+func (s *DHT) retryBootstrap(ctx context.Context, bootstrapNodes string) {
+	if err := s.ConfigureBootstrapNodes(ctx, bootstrapNodes); err != nil {
 		log.P2P().WithContext(ctx).WithError(err).Error("retry failed to get bootstap ip")
 		return
 	}
 
 	// join the kademlia network if bootstrap nodes is set
-	if err := s.Bootstrap(ctx, bootstrapIPs); err != nil {
+	if err := s.Bootstrap(ctx, bootstrapNodes); err != nil {
 		log.P2P().WithContext(ctx).WithError(err).Error("retry failed - bootstrap the node.")
 	}
 }

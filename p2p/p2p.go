@@ -9,14 +9,13 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/meta"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/common/net/credentials/alts"
-	"github.com/LumeraProtocol/supernode/common/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/btcsuite/btcutil/base58"
 )
 
@@ -46,8 +45,7 @@ type p2p struct {
 	dht          *kademlia.DHT // the kademlia network
 	config       *Config       // the service configuration
 	running      bool          // if the kademlia network is ready
-	pastelClient pastel.Client
-	secInfo      *alts.SecInfo
+	lumeraClient *lumera.Client
 	rqstore      rqstore.Store
 }
 
@@ -88,12 +86,12 @@ func (s *p2p) run(ctx context.Context) error {
 		return errors.Errorf("start the kademlia network: %w", err)
 	}
 
-	if err := s.dht.ConfigureBootstrapNodes(ctx, s.config.BootstrapIPs); err != nil {
+	if err := s.dht.ConfigureBootstrapNodes(ctx, s.config.BootstrapNodes); err != nil {
 		log.P2P().WithContext(ctx).WithError(err).Error("failed to get bootstap ip")
 	}
 
 	// join the kademlia network if bootstrap nodes is set
-	if err := s.dht.Bootstrap(ctx, s.config.BootstrapIPs); err != nil {
+	if err := s.dht.Bootstrap(ctx, s.config.BootstrapNodes); err != nil {
 		// stop the node for kademlia network
 		s.dht.Stop(ctx)
 		return errors.Errorf("bootstrap the node: %w", err)
@@ -233,11 +231,11 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 func (s *p2p) configure(ctx context.Context) error {
 	// new the queries storage
 	kadOpts := &kademlia.Options{
+		LumeraClient:  s.lumeraClient,
 		BootstrapNodes: []*kademlia.Node{},
 		IP:             s.config.ListenAddress,
 		Port:           s.config.Port,
 		ID:             []byte(s.config.ID),
-		PeerAuth:       true, // Enable peer authentication
 	}
 
 	if len(kadOpts.ID) == 0 {
@@ -245,13 +243,12 @@ func (s *p2p) configure(ctx context.Context) error {
 	}
 
 	// We Set ExternalIP only for integration tests
-	if s.config.BootstrapIPs != "" && s.config.ExternalIP != "" {
+	if s.config.BootstrapNodes != "" && s.config.ExternalIP != "" {
 		kadOpts.ExternalIP = s.config.ExternalIP
-		kadOpts.PeerAuth = false
 	}
 
 	// new a kademlia distributed hash table
-	dht, err := kademlia.NewDHT(ctx, s.store, s.metaStore, s.pastelClient, s.secInfo, kadOpts, s.rqstore)
+	dht, err := kademlia.NewDHT(ctx, s.store, s.metaStore, kadOpts, s.rqstore)
 
 	if err != nil {
 		return errors.Errorf("new kademlia dht: %w", err)
@@ -262,7 +259,7 @@ func (s *p2p) configure(ctx context.Context) error {
 }
 
 // New returns a new p2p instance.
-func New(ctx context.Context, config *Config, pastelClient pastel.Client, secInfo *alts.SecInfo, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
+func New(ctx context.Context, config *Config, lumeraClient *lumera.Client, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
 	store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
 	if err != nil {
 		return nil, errors.Errorf("new kademlia store: %w", err)
@@ -277,8 +274,7 @@ func New(ctx context.Context, config *Config, pastelClient pastel.Client, secInf
 		store:        store,
 		metaStore:    meta,
 		config:       config,
-		pastelClient: pastelClient,
-		secInfo:      secInfo,
+		lumeraClient: lumeraClient,
 		rqstore:      rqstore,
 	}, nil
 }

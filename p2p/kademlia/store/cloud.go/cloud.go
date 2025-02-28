@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/common/log"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/google/uuid"
 )
 

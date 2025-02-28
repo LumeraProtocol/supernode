@@ -6,7 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-	"fmt"
 
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 )
@@ -110,17 +109,4 @@ func MakeFrame(payload []byte) []byte {
 	binary.BigEndian.PutUint32(frame, uint32(len(payload)))
 	copy(frame[MsgLenFieldSize:], payload)
 	return frame
-}
-
-// GetFreePortInRange finds a free port within the given range.
-func GetFreePortInRange(start, end int) (int, error) {
-	for port := start; port <= end; port++ {
-		addr := fmt.Sprintf("localhost:%d", port)
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("no free port found in range %d-%d", start, end)
 }

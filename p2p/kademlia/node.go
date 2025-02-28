@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
 // Node is the over-the-wire representation of a node
@@ -21,7 +21,7 @@ type Node struct {
 	IP string `json:"ip,omitempty"`
 
 	// port of the node
-	Port int `json:"port,omitempty"`
+	Port uint16 `json:"port,omitempty"`
 
 	HashedID []byte
 }

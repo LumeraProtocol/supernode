@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LumeraProtocol/supernode/common/errors"
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
 const (

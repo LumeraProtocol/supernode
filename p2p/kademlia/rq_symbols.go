@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/common/log"
-	"github.com/LumeraProtocol/supernode/common/utils"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
 const (

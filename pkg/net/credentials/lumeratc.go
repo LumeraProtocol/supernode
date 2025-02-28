@@ -10,10 +10,13 @@ import (
 	"google.golang.org/grpc/credentials"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/handshake"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 )
+
+const RemoteIdentityKey = "remoteIdentity"
 
 var (
 	keyExchangers = map[string]*securekeyx.SecureKeyExchange{}
@@ -31,7 +34,6 @@ type CommonOptions struct {
 // ClientOptions contains client-specific configuration
 type ClientOptions struct {
 	CommonOptions
-	RemoteIdentity string // Remote Cosmos address
 }
 
 // ServerOptions contains server-specific configuration
@@ -65,7 +67,7 @@ func DefaultServerOptions() *ServerOptions {
 type LumeraTC struct {
 	info            *credentials.ProtocolInfo
 	side         	Side
-	remoteIdentity  string	
+	remoteIdentity  string
 	keyExchanger    *securekeyx.SecureKeyExchange
 }
 
@@ -75,12 +77,10 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 		return nil, fmt.Errorf("credentials should be provided")
 	}
 	var optsCommon *CommonOptions
-	var remoteIdentity string
 
 	if side == ClientSide {
 		if optsClient, ok := opts.(*ClientOptions); ok {
 			optsCommon = &optsClient.CommonOptions
-			remoteIdentity = optsClient.RemoteIdentity
 		}
 	} else {
 		if optsServer, ok := opts.(*ServerOptions); ok {
@@ -97,6 +97,8 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 
 	var err error
 	keyExMutex.Lock()
+	defer keyExMutex.Unlock()
+
 	keyExchanger, exists := keyExchangers[optsCommon.LocalIdentity]
 	if !exists {
 		keyExchanger, err = securekeyx.NewSecureKeyExchange(
@@ -110,7 +112,6 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 		}
 		keyExchangers[optsCommon.LocalIdentity] = keyExchanger
 	}
-	keyExMutex.Unlock()
 
 	return &LumeraTC{
 		info: &credentials.ProtocolInfo{
@@ -118,7 +119,6 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 			SecurityVersion: "1.0",
 		},
 		side: side,
-		remoteIdentity: remoteIdentity,
 		keyExchanger: keyExchanger,
 	}, nil
 }
@@ -135,7 +135,7 @@ func NewServerCreds(opts *ServerOptions) (credentials.TransportCredentials, erro
 
 // ClientHandshake performs the client-side handshake
 func (l *LumeraTC) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	//ctx = log.ContextWithPrefix(ctx, "lumera-handshake")
+	ctx = log.ContextWithPrefix(ctx, "lumera-handshake")
 	opts := handshake.DefaultClientHandshakerOptions()
 	clientHS := handshake.NewClientHandshaker(l.keyExchanger, rawConn, l.remoteIdentity, opts)
 
@@ -149,7 +149,7 @@ func (l *LumeraTC) ClientHandshake(ctx context.Context, authority string, rawCon
 
 // ServerHandshake performs the server-side handshake
 func (l *LumeraTC) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	// ctx = log.ContextWithPrefix(ctx, "alts-handshake")
+	//ctx = log.ContextWithPrefix(ctx, "lumera-handshake")
 	opts := handshake.DefaultServerHandshakerOptions()
 	serverHS := handshake.NewServerHandshaker(l.keyExchanger, rawConn, opts)
 
@@ -179,6 +179,10 @@ func (l *LumeraTC) OverrideServerName(serverNameOverride string) error {
 	return nil
 }
 
+func (l *LumeraTC) SetRemoteIdentity(identity string) {
+	l.remoteIdentity = identity
+}
+
 // LumeraAuthInfo implements the AuthInfo interface
 type LumeraAuthInfo struct {
 	credentials.CommonAuthInfo
@@ -187,3 +191,4 @@ type LumeraAuthInfo struct {
 func (l *LumeraAuthInfo) AuthType() string {
 	return LumeraALTSProtocol
 }
+

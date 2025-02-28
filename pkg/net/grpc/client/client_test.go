@@ -172,8 +172,8 @@ func TestConnect(t *testing.T) {
 	mockOpts := DefaultClientOptions()
 	mockConn := new(grpc.ClientConn) // Fake gRPC connection
 
-	// Mock ensureContext to return a valid context
-	mockHandler.EXPECT().ensureContext(gomock.Any()).Return(context.Background(), func() {}).Times(1)
+	// Mock configureContext to return a valid context
+	mockHandler.EXPECT().configureContext(gomock.Any()).Return(context.Background(), func() {}).Times(1)
 
 	// Mock retryConnection to return a valid connection
 	mockHandler.EXPECT().retryConnection(gomock.Any(), "fake-address", mockOpts).Return(mockConn, nil).Times(1)

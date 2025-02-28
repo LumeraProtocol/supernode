@@ -6,8 +6,8 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/types/tx"
 
-	"supernode/pkg/logtrace"
-	"supernode/pkg/net"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/net"
 )
 
 type GetTxRequest struct {

@@ -221,19 +221,19 @@ func (mr *MockConnectionHandlerMockRecorder) attemptConnection(ctx, target, opts
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "attemptConnection", reflect.TypeOf((*MockConnectionHandler)(nil).attemptConnection), ctx, target, opts)
 }
 
-// ensureContext mocks base method.
-func (m *MockConnectionHandler) ensureContext(ctx context.Context) (context.Context, context.CancelFunc) {
+// configureContext mocks base method.
+func (m *MockConnectionHandler) configureContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ensureContext", ctx)
+	ret := m.ctrl.Call(m, "configureContext", ctx)
 	ret0, _ := ret[0].(context.Context)
 	ret1, _ := ret[1].(context.CancelFunc)
 	return ret0, ret1
 }
 
-// ensureContext indicates an expected call of ensureContext.
-func (mr *MockConnectionHandlerMockRecorder) ensureContext(ctx interface{}) *gomock.Call {
+// configureContext indicates an expected call of configureContext.
+func (mr *MockConnectionHandlerMockRecorder) configureContext(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ensureContext", reflect.TypeOf((*MockConnectionHandler)(nil).ensureContext), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "configureContext", reflect.TypeOf((*MockConnectionHandler)(nil).configureContext), ctx)
 }
 
 // retryConnection mocks base method.
