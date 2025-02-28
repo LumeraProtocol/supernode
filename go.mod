@@ -1,6 +1,8 @@
 module github.com/LumeraProtocol/supernode
 
-go 1.23.3
+go 1.23.5
+
+toolchain go1.24.0
 
 require (
 	cosmossdk.io/api v0.7.6
@@ -32,6 +34,8 @@ require (
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
+
+replace github.com/LumeraProtocol/lumera v0.4.1 => ../lumera
 
 require (
 	cosmossdk.io/collections v0.4.0 // indirect

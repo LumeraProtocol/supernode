@@ -88,7 +88,7 @@ func (c *Client) GetTopSNsByBlockHeight(ctx context.Context, r GetTopSupernodesF
 	resp, err := c.supernodeService.GetTopSuperNodesForBlock(ctx, &lumerasn.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: r.BlockHeight,
 		Limit:       r.Limit,
-		State:       lumerasn.SuperNodeState(r.State),
+		State:       lumerasn.SuperNodeState(r.State).String(),
 	})
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
