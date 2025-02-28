@@ -9,7 +9,8 @@ replace (
 
 require (
 	cosmossdk.io/api v0.7.6
-	github.com/LumeraProtocol/lumera v0.0.0-20250301122440-0478948af353
+	github.com/LumeraProtocol/dd-service v0.0.0-20250226082440-ebf419254f36
+	github.com/LumeraProtocol/lumera v0.4.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cosmos/btcutil v1.0.5
@@ -175,3 +176,5 @@ require (
 	pgregory.net/rapid v1.1.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/LumeraProtocol/dd-service => ../dd-service/gen
