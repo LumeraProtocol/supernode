@@ -7,12 +7,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	json "github.com/json-iterator/go"
-
 	"github.com/LumeraProtocol/supernode/common/log"
 	"github.com/LumeraProtocol/supernode/common/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/cenkalti/backoff"
+	json "github.com/json-iterator/go"
 )
 
 const (

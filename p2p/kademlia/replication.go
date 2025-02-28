@@ -3,10 +3,9 @@ package kademlia
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
-
-	"encoding/hex"
 
 	"github.com/LumeraProtocol/supernode/common/errors"
 	"github.com/LumeraProtocol/supernode/common/log"

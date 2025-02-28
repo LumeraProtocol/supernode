@@ -2,18 +2,15 @@ package meta
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"path"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
-
 	"github.com/LumeraProtocol/supernode/common/log"
-
-	"database/sql"
-
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/cenkalti/backoff"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" //go-sqlite3

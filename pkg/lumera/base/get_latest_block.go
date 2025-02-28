@@ -1,10 +1,11 @@
-package lumera
+package base
 
 import (
 	"context"
 	"fmt"
-	"supernode/pkg/logtrace"
-	"supernode/pkg/net"
+
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/net"
 
 	tendermintv1beta1 "cosmossdk.io/api/cosmos/base/tendermint/v1beta1"
 )

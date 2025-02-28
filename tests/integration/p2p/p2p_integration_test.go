@@ -14,7 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/common/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/common/utils"
 	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/base"
 	"github.com/cosmos/btcutil/base58"
 	"github.com/stretchr/testify/require"
 )
@@ -137,7 +137,7 @@ func SetupTestP2PNodes(ctx context.Context) ([]p2p.Client, []*rqstore.SQLiteRQSt
 	var rqStores []*rqstore.SQLiteRQStore
 
 	// Setup node addresses and their corresponding Lumera IDs
-	nodeConfigs := &lumera.LumeraClientConfig{
+	nodeConfigs := &base.LumeraClientConfig{
 		{
 			Address:  "127.0.0.1:9000",
 			LumeraID: "lumera1xdxm4tytunhhq5hs45nwxds3h73qu4hf9nnjhr",
@@ -154,7 +154,7 @@ func SetupTestP2PNodes(ctx context.Context) ([]p2p.Client, []*rqstore.SQLiteRQSt
 
 	// Create and start nodes
 	for i, config := range *nodeConfigs {
-		mockClient := lumera.NewLumeraClient(*nodeConfigs)
+		mockClient := base.NewLumeraClient(*nodeConfigs)
 
 		// Create data directory for the node
 		dataDir := fmt.Sprintf("./data/node%d", i)
@@ -188,7 +188,7 @@ func SetupTestP2PNodes(ctx context.Context) ([]p2p.Client, []*rqstore.SQLiteRQSt
 		}
 		rqStores = append(rqStores, rqStore)
 
-		service, err := p2p.New(ctx, p2pConfig, mockClient, nil, rqStore, nil, nil)
+		service, err := p2p.New(ctx, p2pConfig, *mockClient, nil, rqStore, nil, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create p2p service for node %d: %v", i, err)
 		}

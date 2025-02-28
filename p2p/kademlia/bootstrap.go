@@ -11,7 +11,7 @@ import (
 	"github.com/LumeraProtocol/supernode/common/errors"
 
 	"github.com/LumeraProtocol/supernode/common/log"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	pastel "github.com/LumeraProtocol/supernode/pkg/lumera/base"
 )
 
 const (

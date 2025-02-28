@@ -18,7 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/common/storage/memory"
 	"github.com/LumeraProtocol/supernode/common/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/common/utils"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	pastel "github.com/LumeraProtocol/supernode/pkg/lumera/base"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff"
 )
@@ -51,7 +51,7 @@ type DHT struct {
 	metaStore      MetaStore        // the meta storage of DHT
 	done           chan struct{}    // distributed hash table is done
 	cache          storage.KeyValue // store bad bootstrap addresses
-	pastelClient   pastel.Client
+	pastelClient   pastel.LumeraClient
 	externalIP     string
 	mtx            sync.Mutex
 	authHelper     *AuthHelper
@@ -84,7 +84,7 @@ type Options struct {
 }
 
 // NewDHT returns a new DHT node
-func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.Client, secInfo *alts.SecInfo, options *Options, rqstore rqstore.Store) (*DHT, error) {
+func NewDHT(ctx context.Context, store Store, metaStore MetaStore, pc pastel.LumeraClient, secInfo *alts.SecInfo, options *Options, rqstore rqstore.Store) (*DHT, error) {
 	// validate the options, if it's invalid, set them to default value
 	if options.IP == "" {
 		options.IP = defaultNetworkAddr

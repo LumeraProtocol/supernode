@@ -16,7 +16,7 @@ import (
 	"github.com/LumeraProtocol/supernode/common/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	pastel "github.com/LumeraProtocol/supernode/pkg/lumera/base"
 	"github.com/btcsuite/btcutil/base58"
 )
 
@@ -46,7 +46,7 @@ type p2p struct {
 	dht          *kademlia.DHT // the kademlia network
 	config       *Config       // the service configuration
 	running      bool          // if the kademlia network is ready
-	pastelClient pastel.Client
+	pastelClient pastel.LumeraClient
 	secInfo      *alts.SecInfo
 	rqstore      rqstore.Store
 }
@@ -262,7 +262,7 @@ func (s *p2p) configure(ctx context.Context) error {
 }
 
 // New returns a new p2p instance.
-func New(ctx context.Context, config *Config, pastelClient pastel.Client, secInfo *alts.SecInfo, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
+func New(ctx context.Context, config *Config, pastelClient pastel.LumeraClient, secInfo *alts.SecInfo, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
 	store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
 	if err != nil {
 		return nil, errors.Errorf("new kademlia store: %w", err)

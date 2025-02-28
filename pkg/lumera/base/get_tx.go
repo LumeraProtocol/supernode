@@ -1,13 +1,12 @@
-package lumera
+package base
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/net"
 	"github.com/cosmos/cosmos-sdk/types/tx"
-
-	"supernode/pkg/logtrace"
-	"supernode/pkg/net"
 )
 
 type GetTxRequest struct {

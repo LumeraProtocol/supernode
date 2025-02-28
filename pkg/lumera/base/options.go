@@ -1,4 +1,4 @@
-package lumera
+package base
 
 import (
 	"github.com/cosmos/cosmos-sdk/types/tx"

@@ -13,7 +13,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/common/net/credentials/alts"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/auth"
-	pastel "github.com/LumeraProtocol/supernode/pkg/lumera"
+	pastel "github.com/LumeraProtocol/supernode/pkg/lumera/base"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 
 // AuthHelper define a authentication help - that provide helper functions for authentication handshaking
 type AuthHelper struct {
-	pastelClient pastel.Client
+	pastelClient pastel.LumeraClient
 	secInfo      *alts.SecInfo
 
 	expiredDuration time.Duration
@@ -38,7 +38,7 @@ type AuthHelper struct {
 }
 
 // NewAuthHelper returns a peer AuthHelper
-func NewAuthHelper(pastelClient pastel.Client, secInfo *alts.SecInfo) *AuthHelper {
+func NewAuthHelper(pastelClient pastel.LumeraClient, secInfo *alts.SecInfo) *AuthHelper {
 	return &AuthHelper{
 		pastelClient:               pastelClient,
 		secInfo:                    secInfo,
