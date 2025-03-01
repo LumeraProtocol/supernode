@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/pkg/errors"

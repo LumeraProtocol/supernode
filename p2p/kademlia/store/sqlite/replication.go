@@ -9,7 +9,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/jmoiron/sqlx"
 )
 
