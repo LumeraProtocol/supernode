@@ -260,7 +260,7 @@ func (s *DHT) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 
 	// if queries only option is set, do not search just return error
 	if len(localOnly) > 0 && localOnly[0] {
-		return nil, fmt.Errorf("queries-only failed to get properly: " + err.Error())
+		return nil, errors.Errorf("queries-only failed to get properly: %w", err)
 	}
 
 	// if not found locally, iterative find value from kademlia network

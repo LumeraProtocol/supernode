@@ -50,7 +50,7 @@ func TestStoreBatchRepKeys(t *testing.T) {
 		Key  string
 		ID   string
 		IP   string
-		Port int
+		Port uint16
 	}
 
 	for _, testValue := range testValues {

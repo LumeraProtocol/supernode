@@ -8,8 +8,8 @@ import (
 	"net"
 	"sort"
 	"sync"
-	"time"
 	"syscall"
+	"time"
 
 	"github.com/btcsuite/btcutil/base58"
 	json "github.com/json-iterator/go"
@@ -31,7 +31,7 @@ const (
 	defaultMaxPayloadSize              = 200 // MB
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
-	defaultExecTimeout				   = 10 * time.Second
+	defaultExecTimeout                 = 10 * time.Second
 )
 
 // Global map for message type timeouts
@@ -55,10 +55,10 @@ type Network struct {
 	done     chan struct{}     // network is stopped
 
 	// For secure connection
-	tc credentials.TransportCredentials
-	connPool     *ConnPool
-	connPoolMtx  sync.Mutex
-	sem          *semaphore.Weighted
+	tc          credentials.TransportCredentials
+	connPool    *ConnPool
+	connPoolMtx sync.Mutex
+	sem         *semaphore.Weighted
 }
 
 // NewNetwork returns a network service
@@ -439,7 +439,7 @@ func isTemporaryNetError(err error) bool {
 		syscall.EINTR, syscall.ETIMEDOUT:
 		return true
 	}
-	
+
 	// Some network errors might be wrapped in other errors
 	// Check for syscall errors specifically
 	var sysErr syscall.Errno
@@ -450,7 +450,7 @@ func isTemporaryNetError(err error) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
