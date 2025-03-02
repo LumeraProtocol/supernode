@@ -9,7 +9,7 @@ replace (
 
 require (
 	cosmossdk.io/api v0.7.6
-	github.com/LumeraProtocol/lumera v0.0.0-20250228060622-d3eea7cff146
+	github.com/LumeraProtocol/lumera v0.0.0-20250301122440-8940629
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cosmos/btcutil v1.0.5
