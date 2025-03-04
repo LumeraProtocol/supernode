@@ -1,13 +1,10 @@
 module github.com/LumeraProtocol/supernode
 
-go 1.23.5
-
-replace github.com/LumeraProtocol/rq-service => ../rq-service/gen
+go 1.23.3
 
 require (
 	cosmossdk.io/api v0.7.6
 	github.com/LumeraProtocol/lumera v0.4.1
-	github.com/LumeraProtocol/rq-service v0.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cloudflare/circl v1.6.0
