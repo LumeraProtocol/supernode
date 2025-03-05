@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	. "github.com/LumeraProtocol/lumera/x/supernode/types"
 	lumerasn "github.com/LumeraProtocol/lumera/x/supernode/types"
 )
 

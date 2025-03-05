@@ -5,14 +5,24 @@ package raptorq
 import (
 	"context"
 	"fmt"
+
 	"google.golang.org/grpc"
 
 	rq "github.com/LumeraProtocol/rq-service"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
+)
+
+const (
+	concurrency = 1
 )
 
 type Client struct {
-	conn      *grpc.ClientConn
-	rqService rq.RaptorQClient
+	conn   *grpc.ClientConn
+	config Config
+
+	rqService    rq.RaptorQClient
+	lumeraClient *lumera.Client
+	semaphore    chan struct{} // Semaphore to control concurrency
 }
 
 type Service interface {
@@ -21,15 +31,18 @@ type Service interface {
 	EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error)
 }
 
-func NewClient(serverAddr string) (Service, error) {
+func NewClient(serverAddr string, conf Config, lumeraC *lumera.Client) (Service, error) {
 	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
 	}
 
 	return &Client{
-		conn:      conn,
-		rqService: rq.NewRaptorQClient(conn),
+		conn:         conn,
+		rqService:    rq.NewRaptorQClient(conn),
+		config:       conf,
+		lumeraClient: lumeraC,
+		semaphore:    make(chan struct{}, concurrency),
 	}, nil
 }
 
