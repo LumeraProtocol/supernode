@@ -3,7 +3,7 @@ package raptorq
 import (
 	"context"
 
-	rq "github.com/LumeraProtocol/rq-service"
+	rq "github.com/LumeraProtocol/rq-service/gen"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )

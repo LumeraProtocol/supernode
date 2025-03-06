@@ -61,6 +61,12 @@ github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3
 github.com/DataDog/zstd v1.5.5 h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=
 github.com/DataDog/zstd v1.5.5/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
+github.com/LumeraProtocol/dd-service/gen v0.0.0-20250305185425-22977769a449 h1:VwXwh/bNCNmj8OgIyM+LfqMCqqSGjRtQv983HiYCKcE=
+github.com/LumeraProtocol/dd-service/gen v0.0.0-20250305185425-22977769a449/go.mod h1:/ieXOhfSDyTbcyB1GFmKr4t2b0YGYn0O8ikMNBMnOMA=
+github.com/LumeraProtocol/lumera v0.4.2 h1:yW7mwoYiBCcFLFNs9AgmaLc0DVkir95NGFtR2j/VYsw=
+github.com/LumeraProtocol/lumera v0.4.2/go.mod h1:MRqVY+f8edEBkDvpr4z2nJpglp3Qj1OUvjeWvrvIUSM=
+github.com/LumeraProtocol/rq-service/gen v0.0.0-20250305185258-cf252902b897 h1:sxqhMpcQm8KjDFvhs6yg3Vyv9gt9uxBnfpZRewxAFos=
+github.com/LumeraProtocol/rq-service/gen v0.0.0-20250305185258-cf252902b897/go.mod h1:+b6pn5XADYaATzzaKRZtCeIyYW2845v34gZ8NaPtPgI=
 github.com/OneOfOne/xxhash v1.2.2 h1:KMrpdQIwFcEqXDklaen+P1axHaj9BSKzvpUUfnHldSE=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/Shopify/sarama v1.19.0/go.mod h1:FVkBWblsNy7DGZRfXLU0O9RCGt5g3g3yEuWXgklEdEo=

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	ddService "github.com/LumeraProtocol/dd-service"
+	ddService "github.com/LumeraProtocol/dd-service/gen"
 	"google.golang.org/grpc"
 )
 

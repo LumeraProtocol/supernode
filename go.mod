@@ -2,17 +2,11 @@ module github.com/LumeraProtocol/supernode
 
 go 1.24.0
 
-replace (
-	github.com/LumeraProtocol/lumera => ../lumera
-	github.com/LumeraProtocol/rq-service => ../rq-service/gen
-	github.com/LumeraProtocol/supernode => .
-)
-
 require (
 	cosmossdk.io/api v0.7.6
-	github.com/LumeraProtocol/dd-service v0.0.0-20250226082440-ebf419254f36
-	github.com/LumeraProtocol/lumera v0.4.1
-	github.com/LumeraProtocol/rq-service v0.0.0-00010101000000-000000000000
+	github.com/LumeraProtocol/dd-service/gen v0.0.0-20250305185425-22977769a449
+	github.com/LumeraProtocol/lumera v0.4.2
+	github.com/LumeraProtocol/rq-service/gen v0.0.0-20250305185258-cf252902b897
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cosmos/btcutil v1.0.5
@@ -178,5 +172,3 @@ require (
 	pgregory.net/rapid v1.1.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/LumeraProtocol/dd-service => ../dd-service/gen

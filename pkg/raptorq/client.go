@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"google.golang.org/grpc"
 
-	rq "github.com/LumeraProtocol/rq-service"
+	rq "github.com/LumeraProtocol/rq-service/gen"
 )
 
 type Client struct {

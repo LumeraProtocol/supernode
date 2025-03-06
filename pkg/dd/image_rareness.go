@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	ddService "github.com/LumeraProtocol/dd-service"
+	ddService "github.com/LumeraProtocol/dd-service/gen"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
