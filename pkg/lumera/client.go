@@ -3,11 +3,12 @@ package lumera
 import (
 	"context"
 
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+
 	tendermintv1beta1 "cosmossdk.io/api/cosmos/base/tendermint/v1beta1"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types/tx"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 )
 
 type DummyClient interface {
@@ -28,6 +29,15 @@ type CosmosBase interface {
 	GetBlockByHeight(ctx context.Context, height int64) (Block, error)
 	BroadcastTx(ctx context.Context, req BroadcastRequest) (BroadcastResponse, error)
 	GetTx(ctx context.Context, req GetTxRequest) (GetTxResponse, error)
+	Sign(ctx context.Context, snAccAddress string, data []byte) (signature []byte, err error)
+	Verify(ctx context.Context, accAddress string, data, signature []byte) (err error)
+
+	// TODO
+	GetBlockCount(ctx context.Context) (int32, error)
+	GetRawTransactionVerbose1(ctx context.Context, txID string) (*GetRawTransactionVerbose1Result, error)
+	GetEstimatedCascadeFee(ctx context.Context, ImgSizeInMb float64) (float64, error)
+	MasterNodesExtra(ctx context.Context) (SuperNodeAddressInfos, error)
+	MasterNodesTop(ctx context.Context) (SuperNodeAddressInfos, error)
 }
 
 func NewTendermintClient(opts ...Option) (CosmosBase, error) {
@@ -60,9 +70,9 @@ func NewLumeraNetwork(nodeConfig ltc.LumeraAddresses) *LumeraNetwork {
 	nodes := make([]SuperNodeAddressInfo, len(nodeConfig))
 	for i, cfg := range nodeConfig {
 		nodes[i] = SuperNodeAddressInfo{
-			ExtKey:     cfg.Identity, 	 // LumeraID of the node
-			ExtAddress: cfg.HostPort(),  // IP:Port for general communication
-			ExtP2P:     cfg.HostPort(),  // Same address for P2P - in real network this might be different
+			ExtKey:     cfg.Identity,   // LumeraID of the node
+			ExtAddress: cfg.HostPort(), // IP:Port for general communication
+			ExtP2P:     cfg.HostPort(), // Same address for P2P - in real network this might be different
 		}
 	}
 

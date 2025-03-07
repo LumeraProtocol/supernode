@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/cosmos/btcutil/base58"
-	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/google/uuid"
 )
 
@@ -50,32 +49,43 @@ type EncodeInfo struct {
 	EncoderParam  EncoderParameters
 }
 
-func (s *Client) GenRQIdentifiersFiles(ctx context.Context, fields logtrace.Fields, data []byte, operationBlockHash string, pastelID string, rqMax uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, RQEncodeParams EncoderParameters, err error) {
+// Encode represents the response returns by Encode method
+type Encode struct {
+	Symbols      map[string][]byte
+	EncoderParam EncoderParameters
+}
+
+// Decode represents the response returns by Decode method
+type Decode struct {
+	File []byte
+}
+
+func (s *Client) GenRQIdentifiersFiles(ctx context.Context, fields logtrace.Fields, data []byte, operationBlockHash string, pastelID string, rqMax uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, RQEncodeParams EncoderParameters, signature []byte, err error) {
 	encodeInfo, err := s.encodeInfo(ctx, fields, data, rqMax, operationBlockHash, pastelID)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, status.Errorf(codes.Internal, "generate RaptorQ symbols identifiers")
+		return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, signature, status.Errorf(codes.Internal, "generate RaptorQ symbols identifiers")
 	}
 
 	var rqIDsFilesCount uint32
 	for i := range encodeInfo.SymbolIDFiles {
 		if len(encodeInfo.SymbolIDFiles[i].SymbolIdentifiers) == 0 {
-			return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, status.Errorf(codes.Internal, "empty symbol identifiers - rawFile")
+			return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, signature, status.Errorf(codes.Internal, "empty symbol identifiers - rawFile")
 		}
 
-		RQIDsIc, RQIDs, RQIDsFile, err := s.generateRQIDs(ctx, encodeInfo.SymbolIDFiles[i], pastelID, rqMax)
+		RQIDsIc, RQIDs, RQIDsFile, signature, err := s.generateRQIDs(ctx, encodeInfo.SymbolIDFiles[i], pastelID, rqMax)
 		if err != nil {
-			return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, status.Errorf(codes.Internal, "create RQIDs file")
+			return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, signature, status.Errorf(codes.Internal, "create RQIDs file")
 		}
 		rqIDsFilesCount++
 		break
 	}
 	if rqIDsFilesCount != rqMax {
-		return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, status.Errorf(codes.Internal, "number of RaptorQ symbol identifiers files must be %d, most probably old version of rq-service is installed", rqMax)
+		return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, signature, status.Errorf(codes.Internal, "number of RaptorQ symbol identifiers files must be %d, most probably old version of rq-service is installed", rqMax)
 	}
 
 	RQEncodeParams = encodeInfo.EncoderParam
 
-	return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, nil
+	return RQIDsIc, RQIDs, RQIDsFile, RQEncodeParams, signature, nil
 }
 
 func (s *Client) encodeInfo(ctx context.Context, fields logtrace.Fields, data []byte, copies uint32, blockHash string, pastelID string) (*EncodeInfo, error) {
@@ -125,16 +135,16 @@ func (s *Client) encodeInfo(ctx context.Context, fields logtrace.Fields, data []
 	return output, nil
 }
 
-func (s *Client) generateRQIDs(ctx context.Context, rawFile RawSymbolIDFile, callerPastelID string, maxFiles uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, err error) {
+func (s *Client) generateRQIDs(ctx context.Context, rawFile RawSymbolIDFile, callerPastelID string, maxFiles uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, signature []byte, err error) {
 	rqIDsfile, err := json.Marshal(rawFile)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, errors.Errorf("marshal rqID file")
+		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("marshal rqID file")
 	}
 
 	// FIXME : msgs param
-	signature, err := s.lumeraClient.Sign(ctx, callerPastelID, []types.Msg{})
+	signature, err = s.lumeraClient.Sign(ctx, callerPastelID, rqIDsfile) // FIXME : confirm the data
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, errors.Errorf("sign identifiers file: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("sign identifiers file: %w", err)
 	}
 
 	encRqIDsfile := utils.B64Encode(rqIDsfile)
@@ -146,18 +156,18 @@ func (s *Client) generateRQIDs(ctx context.Context, rawFile RawSymbolIDFile, cal
 	rqIDFile := buffer.Bytes()
 
 	RQIDsIc = rand.Uint32()
-	RQIDs, _, err = getIDFiles(ctx, rqIDFile, RQIDsIc, maxFiles)
+	RQIDs, _, err = GetIDFiles(ctx, rqIDFile, RQIDsIc, maxFiles)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, errors.Errorf("get ID Files: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("get ID Files: %w", err)
 	}
 
 	comp, err := utils.HighCompress(ctx, rqIDFile)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, errors.Errorf("compress: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("compress: %w", err)
 	}
 	RQIDsFile = utils.B64Encode(comp)
 
-	return RQIDsIc, RQIDs, RQIDsFile, nil
+	return RQIDsIc, RQIDs, RQIDsFile, signature, nil
 }
 
 func createInputEncodeFile(base string, data []byte) (taskPath string, inputFile string, err error) {
@@ -243,7 +253,7 @@ func scanSymbolIDFiles(dirPath string) (map[string]RawSymbolIDFile, error) {
 // GetIDFiles generates ID Files for dd_and_fingerprints files and rq_id files
 // file is b64 encoded file appended with signatures and compressed, ic is the initial counter
 // and max is the number of ids to generate
-func getIDFiles(ctx context.Context, file []byte, ic uint32, max uint32) (ids []string, files [][]byte, err error) {
+func GetIDFiles(ctx context.Context, file []byte, ic uint32, max uint32) (ids []string, files [][]byte, err error) {
 	idFiles := make([][]byte, 0, max)
 	ids = make([]string, 0, max)
 	var buffer bytes.Buffer

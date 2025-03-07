@@ -7,5 +7,5 @@ import (
 
 type CascadeActionServer struct {
 	cascadeGen.UnimplementedCascadeServiceServer
-	service *cascadeService.CascadeService
+	service *cascadeService.CascadeRegistrationTask
 }
