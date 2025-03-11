@@ -1,7 +1,7 @@
 package cascade
 
 import (
-	"github.com/LumeraProtocol/supernode/supernode/service/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
 const (
@@ -13,7 +13,7 @@ const (
 type Config struct {
 	common.Config `mapstructure:",squash" json:"-"`
 
-	// raptorq service
+	// raptorq services
 	RaptorQServiceAddress string `mapstructure:"-" json:"-"`
 	RqFilesDir            string
 

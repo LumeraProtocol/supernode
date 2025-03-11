@@ -7,6 +7,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/types"
 )
 
+const SeparatorByte byte = 46
+
 func (c *Client) Verify(ctx context.Context, accAddress string, data, signature []byte) (err error) {
 	addr, err := types.AccAddressFromBech32(accAddress)
 	if err != nil {

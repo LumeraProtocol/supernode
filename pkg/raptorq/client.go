@@ -4,9 +4,6 @@ package raptorq
 
 import (
 	"context"
-	"fmt"
-
-	"google.golang.org/grpc"
 
 	rq "github.com/LumeraProtocol/rq-service"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
@@ -17,7 +14,7 @@ const (
 )
 
 type Client struct {
-	conn   *grpc.ClientConn
+	conn   *clientConn
 	config Config
 
 	rqService    rq.RaptorQClient
@@ -31,19 +28,29 @@ type Service interface {
 	EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error)
 }
 
-func NewClient(serverAddr string, conf Config, lumeraC *lumera.Client) (Service, error) {
-	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
-	}
+// func NewClient(serverAddr string, conf Config, lumeraC *lumera.Client) (Service, error) {
+// 	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure(), grpc.WithBlock())
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
+// 	}
 
+// 	return &Client{
+// 		conn:         conn,
+// 		rqService:    rq.NewRaptorQClient(conn),
+// 		config:       conf,
+// 		lumeraClient: lumeraC,
+// 		semaphore:    make(chan struct{}, concurrency),
+// 	}, nil
+// }
+
+func (conn *clientConn) newRaptorQ(conf Config) Service {
 	return &Client{
 		conn:         conn,
 		rqService:    rq.NewRaptorQClient(conn),
 		config:       conf,
-		lumeraClient: lumeraC,
+		lumeraClient: &lumera.Client{}, // FIXME : init lumera client
 		semaphore:    make(chan struct{}, concurrency),
-	}, nil
+	}
 }
 
 func (c *Client) Close() {

@@ -9,7 +9,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/types"
-	"github.com/LumeraProtocol/supernode/supernode/node"
+	node "github.com/LumeraProtocol/supernode/supernode/node/supernode"
 )
 
 // NetworkHandler common functionality related for SNs Mesh and other interconnections
@@ -33,7 +33,8 @@ type NetworkHandler struct {
 
 // NewNetworkHandler creates instance of NetworkHandler
 func NewNetworkHandler(task *SuperNodeTask,
-	nodeClient node.ClientInterface, nodeMaker node.NodeMaker,
+	nodeClient node.ClientInterface,
+	nodeMaker node.NodeMaker,
 	pastelClient lumera.Client,
 	pastelID string,
 	minNumberConnectedNodes int,
@@ -157,10 +158,11 @@ func (h *NetworkHandler) ConnectTo(_ context.Context, nodeID, sessID string) err
 			return nil
 		}
 
-		if err = someNode.Connect(ctx); err != nil {
-			log.WithContext(ctx).WithField("nodeID", nodeID).WithError(err).Errorf("connect to node")
-			return nil
-		}
+		// FIXME:
+		//if err = someNode.Connect(ctx); err != nil {
+		//	log.WithContext(ctx).WithField("nodeID", nodeID).WithError(err).Errorf("connect to node")
+		//	return nil
+		//}
 
 		if err = someNode.Session(ctx, h.pastelID, sessID); err != nil {
 			log.WithContext(ctx).WithField("sessID", sessID).WithField("pastelID", h.pastelID).WithError(err).Errorf("handshake with peer")
@@ -219,24 +221,30 @@ func (h *NetworkHandler) PastelNodeByExtKey(ctx context.Context, nodeID string) 
 	return nil, errors.Errorf("node %q not found", nodeID)
 }
 
+// FIXME:
 // CloseSNsConnections closes all connections to supernodes
 func (h *NetworkHandler) CloseSNsConnections(ctx context.Context) error {
-	for _, node := range h.Accepted {
-		if node.ConnectionInterface != nil {
-			if err := node.Close(); err != nil {
-				log.WithContext(ctx).WithError(err).Errorf("close connection to node %s", node.ID)
-			}
-		} else {
-			log.WithContext(ctx).Errorf("node %s has no connection", node.ID)
-		}
-
-	}
-
-	if h.ConnectedTo != nil {
-		if err := h.ConnectedTo.Close(); err != nil {
-			log.WithContext(ctx).WithError(err).Errorf("close connection to node %s", h.ConnectedTo.ID)
-		}
-	}
+	//for _, node := range h.Accepted {
+	//	if node.ConnectionInterface != nil {
+	//		if err := node.Close(); err != nil {
+	//			log.WithContext(ctx).WithError(err).Errorf("close connection to node %s", node.ID)
+	//		}
+	//	} else {
+	//		log.WithContext(ctx).Errorf("node %s has no connection", node.ID)
+	//	}
+	//
+	//}
+	//
+	//if h.ConnectedTo != nil {
+	//	if err := h.ConnectedTo.Close(); err != nil {
+	//		log.WithContext(ctx).WithError(err).Errorf("close connection to node %s", h.ConnectedTo.ID)
+	//	}
+	//}
 
 	return nil
+}
+
+// IsPrimary checks if this node is primary
+func (h *NetworkHandler) IsPrimary() bool {
+	return h.ConnectedTo == nil
 }

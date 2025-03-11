@@ -1,4 +1,4 @@
-package server
+package cascade
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
-	"github.com/LumeraProtocol/supernode/supernode/service/cascade"
+	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"

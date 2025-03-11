@@ -1,7 +1,7 @@
 package cascade
 
 import (
-	"github.com/LumeraProtocol/supernode/supernode/node"
+	node "github.com/LumeraProtocol/supernode/supernode/node/supernode"
 )
 
 // RegisterCascadeNodeMaker makes concrete instance of CascadeRegistrationNode

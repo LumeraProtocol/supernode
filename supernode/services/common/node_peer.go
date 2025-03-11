@@ -1,10 +1,9 @@
 package common
 
 import (
-	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/supernode/node"
+	node "github.com/LumeraProtocol/supernode/supernode/node/supernode"
 )
 
 const (
@@ -22,23 +21,25 @@ type SuperNodePeer struct {
 	Address string
 }
 
-// Connect connects to grpc Server and setup pointer to concrete client wrapper
-func (node *SuperNodePeer) Connect(ctx context.Context) error {
-	connCtx, connCancel := context.WithTimeout(ctx, defaultConnectToNodeTimeout)
-	defer connCancel()
-
-	conn, err := node.ClientInterface.Connect(connCtx, node.Address)
-	if err != nil {
-		return err
-	}
-
-	node.ConnectionInterface = conn
-	node.SuperNodePeerAPIInterface = node.MakeNode(conn)
-	return nil
-}
+//// Connect connects to grpc Server and setup pointer to concrete client wrapper
+//func (node *SuperNodePeer) Connect(ctx context.Context) error {
+//	connCtx, connCancel := context.WithTimeout(ctx, defaultConnectToNodeTimeout)
+//	defer connCancel()
+//
+//	conn, err := node.ClientInterface.Connect(connCtx, node.Address)
+//	if err != nil {
+//		return err
+//	}
+//
+//	node.ConnectionInterface = conn
+//	node.SuperNodePeerAPIInterface = node.MakeNode(conn)
+//	return nil
+//}
 
 // NewSuperNode returns a new Node instance.
-func NewSuperNode(client node.ClientInterface, address string, pastelID string,
+func NewSuperNode(
+	client node.ClientInterface,
+	address string, pastelID string,
 	nodeMaker node.NodeMaker) *SuperNodePeer {
 	return &SuperNodePeer{
 		ClientInterface: client,

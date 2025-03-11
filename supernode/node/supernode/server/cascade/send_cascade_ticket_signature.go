@@ -1,4 +1,4 @@
-package server
+package cascade
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
-	sc "github.com/LumeraProtocol/supernode/supernode/service/common"
+	sc "github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
 // SendCascadeTicketSignature implements supernode.RegisterCascadeServer.SendCascadeTicketSignature()
@@ -16,6 +16,9 @@ func (service *RegisterCascade) SendCascadeTicketSignature(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO : add rq file to req, also confirm which func to call
+	err = task.ValidateSignedTicketFromSecondaryNode(ctx, req.Data, req.Signature, req.RqFile)
 
 	if err := task.AddPeerTicketSignature(req.NodeID, req.Signature, sc.StatusAssetUploaded); err != nil {
 		return nil, errors.Errorf("add peer signature %w", err)

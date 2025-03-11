@@ -1,21 +1,19 @@
-package node
+package supernode
 
-import "context"
+import (
+	"context"
+
+	"github.com/LumeraProtocol/supernode/pkg/raptorq"
+)
 
 // ClientInterface represents a base connection interface.
 type ClientInterface interface {
 	// Connect connects to the server at the given address.
 	Connect(ctx context.Context, address string) (ConnectionInterface, error)
-	ConnectSN(ctx context.Context, address string) (ConnectionInterface, error)
 }
 
 // ConnectionInterface represents a client connection
 type ConnectionInterface interface {
-	// Close closes connection.
-	Close() error
-	// Done returns a channel that's closed when connection is shutdown.
-	Done() <-chan struct{}
-
 	// RegisterCascade returns a new RegisterCascade stream
 	RegisterCascade() RegisterCascadeInterface
 }
@@ -40,5 +38,5 @@ type RegisterCascadeInterface interface {
 	SuperNodePeerAPIInterface
 
 	// Send signature of ticket to primary supernode
-	SendCascadeTicketSignature(ctx context.Context, nodeID string, signature []byte) error
+	SendCascadeTicketSignature(ctx context.Context, nodeID string, signature []byte, data []byte, rqFile []byte, rqEncodeParams raptorq.EncoderParameters) error
 }

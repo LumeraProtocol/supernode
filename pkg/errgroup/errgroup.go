@@ -5,7 +5,8 @@ import (
 	"runtime/debug"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,7 +19,11 @@ type Group struct {
 func (group *Group) Go(fn func() error) {
 	group.Group.Go(func() (err error) {
 		defer errors.Recover(func(recErr error) {
-			log.WithField("stack-strace", string(debug.Stack())).WithError(recErr).Error("Panic")
+			fields := logtrace.Fields{
+				logtrace.FieldError:      recErr.Error(),
+				logtrace.FieldStackTrace: debug.Stack(),
+			}
+			logtrace.Error(context.Background(), "errgroup panic", fields)
 			err = recErr
 		})
 		return fn()

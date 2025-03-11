@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
@@ -41,6 +42,10 @@ func (service *RegisterCascade) TaskFromMD(ctx context.Context) (*cascade.Cascad
 		return nil, errors.Errorf("not found %q task", sessID)
 	}
 	return task, nil
+}
+
+func (service *RegisterCascade) Desc() *grpc.ServiceDesc {
+	return &grpc.ServiceDesc{ServiceName: "supernode.RegisterCascade", HandlerType: (*RegisterCascade)(nil)}
 }
 
 // NewRegisterCascade returns a new RegisterSense instance.

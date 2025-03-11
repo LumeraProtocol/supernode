@@ -15,7 +15,6 @@ service CascadeService {
   rpc SendCascadeTicketSignature(SendTicketSignatureRequest) returns (SendTicketSignatureReply);
 }
 
-
 message SessionRequest {
   string nodeID = 1;
 }
@@ -26,7 +25,14 @@ message SessionReply {
 
 message SendTicketSignatureRequest {
   string nodeID = 1;
-  bytes  signature = 2;
+  bytes signature = 2;
+  bytes data = 3;
+  bytes rqFile = 4;
+  EncoderParameters rqEncodeParams = 5;
 }
 
 message SendTicketSignatureReply {}
+
+message EncoderParameters {
+  bytes Oti = 1;
+}

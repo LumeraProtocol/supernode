@@ -2,12 +2,16 @@ package cascade
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 
+	ct "github.com/LumeraProtocol/supernode/pkg/common/task"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/action"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/supernode"
+	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +48,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 		logtrace.Error(ctx, "action id not found", fields)
 		return nil, status.Errorf(codes.Internal, "action id not found")
 	}
+	task.Creator = action.Creator
 
 	latestBlock, err := task.lumeraClient.GetLatestBlock(ctx)
 	if err != nil {
@@ -80,17 +85,35 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 
 	// FIXME : use proper file
-	task.RQIDsIc, task.RQIDs, task.RQIDsFile, _, task.creatorSignature, err = task.rqClient.GenRQIdentifiersFiles(ctx, fields, nil, string(latestBlock.Hash), action.Creator, uint32(action.Metadata.GetCascadeMetadata().RqMax))
+	task.rqIDsIC, task.rqIDs, task.rqIDsFile, task.rqIDEncodeParams, task.creatorSignature, err = task.rqClient.GenRQIdentifiersFiles(ctx, fields, nil, string(latestBlock.Hash), action.Creator, uint32(action.Metadata.GetCascadeMetadata().RqMax))
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to generate RQID Files", fields)
 		return nil, status.Errorf(codes.Internal, "failed to generate RQID Files")
 	}
 
+	cascadeTicket := ct.CascadeTicket{
+		Creator:          action.Creator,
+		CreatorSignature: task.creatorSignature,
+		ActionID:         action.ActionID,
+		DataHash:         action.Metadata.GetCascadeMetadata().DataHash,
+		BlockHeight:      latestBlock.Height,
+		BlockHash:        latestBlock.Hash, // FIXME : verify, to be used in validateRQSymbolID
+		RQIDsIC:          task.rqIDsIC,
+		RQIDs:            task.rqIDs,
+		RQIDsMax:         action.Metadata.CascadeMetadata.RqMax,
+	}
+	ticket, err := json.Marshal(cascadeTicket)
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		logtrace.Error(ctx, "failed marshall the cascade ticket", fields)
+		return nil, status.Errorf(codes.Internal, "failed marshall the cascade ticket")
+	}
+
 	<-task.NewAction(func(ctx context.Context) error {
 		// sign the ticket if not primary node
 		log.WithContext(ctx).Infof("isPrimary: %t", task.NetworkHandler.ConnectedTo == nil)
-		if err = task.signAndSendCascadeTicket(ctx, task.NetworkHandler.ConnectedTo == nil, task.RQIDsFile); err != nil { // FIXME : use the right data
+		if err = task.signAndSendCascadeTicket(ctx, task.NetworkHandler.ConnectedTo == nil, ticket, task.rqIDsFile, task.rqIDEncodeParams); err != nil { // FIXME : use the right data
 			log.WithContext(ctx).WithError(err).Errorf("signed and send Cascade ticket")
 			err = errors.Errorf("signed and send Cascade ticket: %w", err)
 			return nil
@@ -117,12 +140,6 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 				case <-task.AllSignaturesReceivedChn:
 					log.WithContext(ctx).Info("all signature received so start validation")
 
-					if err = task.lumeraClient.Verify(ctx, task.supernodeAddress, task.RQIDsFile, task.creatorSignature); err != nil { // FIXME : check signature
-						log.WithContext(ctx).WithError(err).Errorf("peers' signature mismatched")
-						err = errors.Errorf("peers' signature mismatched: %w", err)
-						return nil
-					}
-
 					// TODO : MsgFinalizeAction
 
 					return nil
@@ -138,8 +155,8 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 }
 
 // sign and send NFT ticket if not primary
-func (task *CascadeRegistrationTask) signAndSendCascadeTicket(ctx context.Context, isPrimary bool, data []byte) error {
-	signature, err := task.lumeraClient.Sign(ctx, task.supernodeAddress, data)
+func (task *CascadeRegistrationTask) signAndSendCascadeTicket(ctx context.Context, isPrimary bool, ticket []byte, data []byte, rqEncodeParams raptorq.EncoderParameters) (err error) {
+	task.creatorSignature, err = task.lumeraClient.Sign(ctx, task.config.SupernodeAccountAddress, ticket)
 	if err != nil {
 		return errors.Errorf("sign ticket: %w", err)
 	}
@@ -152,10 +169,78 @@ func (task *CascadeRegistrationTask) signAndSendCascadeTicket(ctx context.Contex
 			return errors.Errorf("node is not SenseRegistrationNode")
 		}
 
-		if err := cascadeNode.SendCascadeTicketSignature(ctx, task.config.PastelID, signature); err != nil {
+		if err := cascadeNode.SendCascadeTicketSignature(ctx, task.config.SupernodeAccountAddress, task.creatorSignature, data, task.rqIDsFile, rqEncodeParams); err != nil { // FIXME : nodeID
 			return errors.Errorf("send signature to primary node %s at address %s: %w", task.NetworkHandler.ConnectedTo.ID, task.NetworkHandler.ConnectedTo.Address, err)
 		}
 	}
 
 	return nil
+}
+
+func (task *CascadeRegistrationTask) ValidateSignedTicketFromSecondaryNode(ctx context.Context,
+	ticket []byte, creatorSignature []byte, rqidFile []byte) error {
+	var err error
+	// task.creatorSignature = creatorSignature
+
+	var cascadeTask ct.CascadeTicket
+	err = json.Unmarshal(ticket, &cascadeTask)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Errorf("unmarshal cascade ticket signature")
+		return errors.Errorf("unmarshal cascade ticket signature %w", err)
+	}
+
+	err = task.lumeraClient.Verify(ctx, task.config.SupernodeAccountAddress, ticket, creatorSignature)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Errorf("verify cascade ticket signature")
+		return errors.Errorf("verify cascade ticket signature %w", err)
+	}
+
+	if err := task.validateRqIDs(ctx, rqidFile, &cascadeTask); err != nil {
+		log.WithContext(ctx).WithError(err).Errorf("validate rqids files")
+
+		return errors.Errorf("validate rq & dd id files %w", err)
+	}
+
+	if err = task.validateRQSymbolID(ctx, &cascadeTask); err != nil {
+		log.WithContext(ctx).WithError(err).Errorf("valdate rq ids inside rqids file")
+		err = errors.Errorf("generate rqids: %w", err)
+		return nil
+	}
+
+	task.dataHash = cascadeTask.DataHash
+
+	return nil
+}
+
+// validates RQIDs file
+func (task *CascadeRegistrationTask) validateRqIDs(ctx context.Context, dd []byte, ticket *ct.CascadeTicket) error {
+	pastelIDs := []string{ticket.Creator}
+
+	var err error
+	task.rawRqFile, task.rqIDFiles, err = task.ValidateIDFiles(ctx, dd,
+		ticket.RQIDsIC, uint32(ticket.RQIDsMax),
+		ticket.RQIDs, 1,
+		pastelIDs,
+		*task.lumeraClient,
+		ticket.CreatorSignature,
+	)
+	if err != nil {
+		return errors.Errorf("validate rq_ids file: %w", err)
+	}
+
+	return nil
+}
+
+// validates actual RQ Symbol IDs inside RQIDs file
+func (task *CascadeRegistrationTask) validateRQSymbolID(ctx context.Context, ticket *ct.CascadeTicket) error {
+
+	content, err := task.Asset.Bytes()
+	if err != nil {
+		return errors.Errorf("read image contents: %w", err)
+	}
+
+	return task.storage.ValidateRaptorQSymbolIDs(ctx,
+		content /*uint32(len(task.Ticket.AppTicketData.RQIDs))*/, 1,
+		hex.EncodeToString([]byte(ticket.BlockHash)), ticket.Creator,
+		task.rawRqFile)
 }

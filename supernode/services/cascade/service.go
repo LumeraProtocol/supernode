@@ -9,15 +9,13 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/storage"
 	"github.com/LumeraProtocol/supernode/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/supernode/node"
-	"github.com/LumeraProtocol/supernode/supernode/service/common"
+	node "github.com/LumeraProtocol/supernode/supernode/node/supernode"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
 type CascadeService struct {
 	*common.SuperNodeService
 	config *Config
-
-	supernodeAddress string
 
 	lumeraClient    *lumera.Client
 	supernodeClient *supernode.Client
@@ -47,23 +45,21 @@ func (service *CascadeService) Task(id string) *CascadeRegistrationTask {
 }
 
 // NewCascadeService returns a new CascadeService instance.
-func NewCascadeService(config *Config, supernodeAddress string, lumeraC *lumera.Client, actionC *action.Client,
+func NewCascadeService(config *Config, lumera *lumera.Client, actionC *action.Client,
 	fileStorage storage.FileStorageInterface, nodeClient node.ClientInterface, p2pClient p2p.Client,
-	supernodeC *supernode.Client, rqC *raptorq.Client, historyDB queries.LocalStoreInterface, rqstore rqstore.Store) *CascadeService {
+	supernodeC *supernode.Client, rqC *raptorq.Client, rqstore rqstore.Store) *CascadeService {
 	return &CascadeService{
 		config:           config,
 		SuperNodeService: common.NewSuperNodeService(fileStorage, p2pClient),
-		supernodeAddress: supernodeAddress,
-		lumeraClient:     lumeraC,
+		lumeraClient:     lumera,
 		actionClient:     actionC,
 		supernodeClient:  supernodeC,
 		nodeClient:       nodeClient,
 		rqClient:         rqC,
-		historyDB:        historyDB,
 		rqstore:          rqstore,
 	}
 }
 
 func (s *CascadeService) GetSNAddress() string {
-	return s.supernodeAddress
+	return s.config.SupernodeAccountAddress // FIXME : verify
 }

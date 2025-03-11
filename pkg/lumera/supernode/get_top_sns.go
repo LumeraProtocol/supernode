@@ -126,3 +126,12 @@ func mapMetrics(metrics *MetricsAggregate) *MetricsAggregate {
 		Height:      metrics.Height,
 	}
 }
+
+func (s *Supernodes) Exists(accAddress string) bool {
+	for _, sn := range *s {
+		if sn.GetSupernodeAccount() == accAddress {
+			return true
+		}
+	}
+	return false
+}
