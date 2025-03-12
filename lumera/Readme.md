@@ -79,12 +79,12 @@ make run-advanced
 
 ```
 lumera-client/
-├── client/               # Core client package
-│   ├── interface.go      # Client interface definitions
-│   ├── client.go         # Client implementation
-│   ├── config.go         # Configuration types
-│   ├── options.go        # Option functions
-│   └── connection.go     # Connection handling
+│    				  # Core client package
+│   interface.go      # Client interface definitions
+│   client.go         # Client implementation
+│   config.go         # Configuration types
+│   options.go        # Option functions
+│   connection.go     # Connection handling
 ├── modules/              # Module-specific packages
 │   ├── action/           # Action module
 │   ├── node/             # Node module

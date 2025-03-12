@@ -1,4 +1,4 @@
-package client
+package lumera
 
 // Config holds all the configuration needed for the client
 type Config struct {

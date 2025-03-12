@@ -1,4 +1,4 @@
-package client
+package lumera
 
 // Option is a function that applies a change to Config
 type Option func(*Config)

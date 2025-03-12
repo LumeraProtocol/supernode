@@ -1,12 +1,12 @@
-package client
+package lumera
 
 import (
 	"context"
 
-	"lumera-client/modules/action"
-	"lumera-client/modules/node"
-	"lumera-client/modules/supernode"
-	"lumera-client/modules/tx"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
 )
 
 // lumeraClient implements the Client interface
