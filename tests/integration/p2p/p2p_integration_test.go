@@ -1,5 +1,3 @@
-//go:build integration
-
 package integration
 
 import (
@@ -18,7 +16,6 @@ import (
 
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
@@ -168,14 +165,8 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 
 	// Create and start nodes
 	for i, config := range nodeConfigs {
-		tClient, err := lumera.NewTendermintClient(
-			lumera.WithKeyring(kr),
-		)
+		mockClient, err := testutil.NewMockLumeraClient(kr, accountAddresses)
 		require.NoError(t, err, "failed to create tendermint client")
-
-		// cast to lumera.Client
-		lumeraClient, ok := tClient.(lumera.Client)
-		require.True(t, ok, "failed to cast to lumera.Client")
 
 		// Create data directory for the node
 		dataDir := fmt.Sprintf("./data/node%d", i)
@@ -205,7 +196,7 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 		require.NoError(t, err, "failed to create rqstore for node %d: %v", i, err)
 		rqStores = append(rqStores, rqStore)
 
-		service, err := p2p.New(ctx, p2pConfig, lumeraClient, rqStore, nil, nil)
+		service, err := p2p.New(ctx, p2pConfig, mockClient, kr, rqStore, nil, nil)
 		require.NoError(t, err, "failed to create p2p service for node %d: %v", i, err)
 
 		// Start P2P service
