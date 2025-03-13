@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	cosmossdk.io/api v0.7.6
 	github.com/LumeraProtocol/dd-service/gen v0.0.0-20250305185425-22977769a449
-	github.com/LumeraProtocol/lumera v0.4.2
+	github.com/LumeraProtocol/lumera v0.4.3
 	github.com/LumeraProtocol/rq-service/gen v0.0.0-20250305185258-cf252902b897
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
