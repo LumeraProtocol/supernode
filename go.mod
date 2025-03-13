@@ -3,7 +3,6 @@ module github.com/LumeraProtocol/supernode
 go 1.24.0
 
 require (
-	cosmossdk.io/api v0.7.6
 	github.com/LumeraProtocol/dd-service/gen v0.0.0-20250305185425-22977769a449
 	github.com/LumeraProtocol/lumera v0.4.3
 	github.com/LumeraProtocol/rq-service/gen v0.0.0-20250305185258-cf252902b897
@@ -35,6 +34,7 @@ require (
 )
 
 require (
+	cosmossdk.io/api v0.7.6 // indirect
 	cosmossdk.io/collections v0.4.0 // indirect
 	cosmossdk.io/core v0.11.1 // indirect
 	cosmossdk.io/depinject v1.1.0 // indirect

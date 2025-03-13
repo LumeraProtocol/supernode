@@ -19,11 +19,11 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 )
 
 func TestP2PBasicIntegration(t *testing.T) {
@@ -147,7 +147,7 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 	var rqStores []*rqstore.SQLiteRQStore
 
 	kr := testutil.CreateTestKeyring()
-	
+
 	// Create test accounts
 	accountNames := make([]string, 0)
 	numP2PNodes := kademlia.Alpha + 1
@@ -161,8 +161,8 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 	for i := 0; i < numP2PNodes; i++ {
 		nodeConfigs = append(nodeConfigs, ltc.LumeraAddress{
 			Identity: accountAddresses[i],
-			Host:  "127.0.0.1",
-			Port:  uint16(9000+i),
+			Host:     "127.0.0.1",
+			Port:     uint16(9000 + i),
 		})
 	}
 
@@ -174,7 +174,7 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 		require.NoError(t, err, "failed to create tendermint client")
 
 		// cast to lumera.Client
-		lumeraClient, ok := tClient.(*lumera.Client)
+		lumeraClient, ok := tClient.(lumera.Client)
 		require.True(t, ok, "failed to cast to lumera.Client")
 
 		// Create data directory for the node
@@ -189,11 +189,11 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 		}
 
 		p2pConfig := &p2p.Config{
-			ListenAddress: config.Host,
-			Port:          config.Port,
-			DataDir:       dataDir,
-			ID:            config.Identity,
-			BootstrapNodes:  strings.Join(bootstrapAddresses, ","),
+			ListenAddress:  config.Host,
+			Port:           config.Port,
+			DataDir:        dataDir,
+			ID:             config.Identity,
+			BootstrapNodes: strings.Join(bootstrapAddresses, ","),
 		}
 
 		// Initialize SQLite RQ store for each node
