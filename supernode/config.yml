@@ -1,0 +1,17 @@
+supernode_id: "cosmos12xasxwxw"  # Unique identifier for this supernode
+keyring:
+  backend: "file"  # Can be "file", "os", "memory", etc.
+  dir: "./keys"
+  password: "keyring-password"  # Optional, can be omitted for interactive prompting
+
+p2p:
+  listen_address: "0.0.0.0"
+  port: 4445
+  data_dir: "./data/p2p"
+  bootstrap_nodes: ""  # Comma-separated list of bootstrap nodes for testing (optional)
+  external_ip: ""      # External IP for testing (optional)
+
+lumera:
+  grpc_addr: "localhost:9090"
+  chain_id: "lumera"
+  timeout: 10  # in seconds
