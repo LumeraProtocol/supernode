@@ -3,7 +3,7 @@ package raptorq
 import (
 	"context"
 
-	rq "github.com/LumeraProtocol/rq-service/gen"
+	rq "github.com/LumeraProtocol/supernode/gen/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
@@ -16,7 +16,7 @@ type EncodeMetadataRequest struct {
 }
 
 // EncodeMetaData handles encoding metadata
-func (c *Client) EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error) {
+func (c *raptorQServerClient) EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error) {
 	ctx = net.AddCorrelationID(ctx)
 	fields := logtrace.Fields{
 		logtrace.FieldMethod:  "EncodeMetaData",

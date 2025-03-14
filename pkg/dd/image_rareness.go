@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	ddService "github.com/LumeraProtocol/dd-service/gen"
+	ddService "github.com/LumeraProtocol/supernode/gen/dupedetection"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
@@ -50,7 +50,7 @@ type ImageRarenessScoreResponse struct {
 }
 
 // ImageRarenessScore gets the image rareness score
-func (c *Client) ImageRarenessScore(ctx context.Context, req RarenessScoreRequest) (ImageRarenessScoreResponse, error) {
+func (c *ddServerClientImpl) ImageRarenessScore(ctx context.Context, req RarenessScoreRequest) (ImageRarenessScoreResponse, error) {
 	ctx = net.AddCorrelationID(ctx)
 	fields := logtrace.Fields{
 		logtrace.FieldMethod:  "ImageRarenessScore",

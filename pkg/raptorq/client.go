@@ -1,38 +1,46 @@
-//go:generate mockgen -destination=rq_mock.go -package=raptorq -source=client.go
-
 package raptorq
 
 import (
 	"context"
 	"fmt"
-	"google.golang.org/grpc"
 
-	rq "github.com/LumeraProtocol/rq-service/gen"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/random"
+
+	"google.golang.org/grpc"
 )
 
-type Client struct {
-	conn      *grpc.ClientConn
-	rqService rq.RaptorQClient
-}
+type client struct{}
 
-type Service interface {
-	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
-	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
-	EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error)
-}
+// Connect implements node.Client.Connect()
+func (client *client) Connect(ctx context.Context, address string) (Connection, error) {
+	// Limits the dial timeout, prevent got stuck too long
+	dialCtx, cancel := context.WithTimeout(ctx, defaultConnectTimeout)
+	defer cancel()
 
-func NewClient(serverAddr string) (Service, error) {
-	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure(), grpc.WithBlock())
+	id, _ := random.String(8, random.Base62Chars)
+	ctx = log.ContextWithPrefix(ctx, fmt.Sprintf("%s-%s", logPrefix, id))
+
+	grpcConn, err := grpc.DialContext(dialCtx, address,
+		//lint:ignore SA1019 we want to ignore this for now
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
+		return nil, errors.Errorf("fail to dial: %w", err).WithField("address", address)
 	}
+	log.WithContext(ctx).Debugf("Connected to RQ %s", address)
 
-	return &Client{
-		conn:      conn,
-		rqService: rq.NewRaptorQClient(conn),
-	}, nil
+	conn := newClientConn(id, grpcConn)
+	go func() {
+		//<-conn.Done() // FIXME: to be implemented by new gRPC package
+		log.WithContext(ctx).Debugf("Disconnected RQ %s", grpcConn.Target())
+	}()
+	return conn, nil
 }
 
-func (c *Client) Close() {
-	c.conn.Close()
+// NewClient returns a new client instance.
+func NewClient() ClientInterface {
+	return &client{}
 }

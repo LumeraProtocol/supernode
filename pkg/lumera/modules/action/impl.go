@@ -36,6 +36,7 @@ func (m *module) GetAction(ctx context.Context, actionID string) (*types.QueryGe
 	return resp, nil
 }
 
+
 // GetActionFee calculates fee for processing data with given size
 func (m *module) GetActionFee(ctx context.Context, dataSize string) (*types.QueryGetActionFeeResponse, error) {
 	resp, err := m.client.GetActionFee(ctx, &types.QueryGetActionFeeRequest{

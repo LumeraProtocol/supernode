@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	rq "github.com/LumeraProtocol/rq-service/gen"
+	rq "github.com/LumeraProtocol/supernode/gen/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
@@ -20,7 +20,7 @@ type DecodeResponse struct {
 }
 
 // Decode handles data decoding
-func (c *Client) Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error) {
+func (c *raptorQServerClient) Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error) {
 	ctx = net.AddCorrelationID(ctx)
 	fields := logtrace.Fields{
 		logtrace.FieldMethod:  "Decode",
