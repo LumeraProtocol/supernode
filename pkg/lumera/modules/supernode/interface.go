@@ -11,6 +11,7 @@ import (
 type Module interface {
 	GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error)
 	GetSuperNode(ctx context.Context, address string) (*types.QueryGetSuperNodeResponse, error)
+	GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*types.SuperNode, error)
 }
 
 // NewModule creates a new SuperNode module client

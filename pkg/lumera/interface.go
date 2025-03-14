@@ -11,7 +11,6 @@ import (
 
 // Client defines the main interface for interacting with Lumera blockchain
 type Client interface {
-	// Module accessors
 	Action() action.Module
 	SuperNode() supernode.Module
 	Tx() tx.Module

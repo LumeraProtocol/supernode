@@ -3,9 +3,12 @@ package supernode
 import (
 	"context"
 	"fmt"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 
 	"github.com/LumeraProtocol/lumera/x/supernode/types"
+
 	"google.golang.org/grpc"
+	"sort"
 )
 
 // module implements the Module interface
@@ -46,4 +49,35 @@ func (m *module) GetSuperNode(ctx context.Context, address string) (*types.Query
 	}
 
 	return resp, nil
+}
+
+func (m *module) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*types.SuperNode, error) {
+	resp, err := m.client.GetSuperNodeBySuperNodeAddress(ctx, &types.QueryGetSuperNodeBySuperNodeAddressRequest{
+		SupernodeAddress: address,
+	})
+	if err != nil {
+		fmt.Errorf("failed to get supernode: %w", err)
+	}
+
+	return resp.Supernode, nil
+}
+
+func Exists(nodes []*types.SuperNode, snAccAddress string) bool {
+	for _, sn := range nodes {
+		if sn.SupernodeAccount == snAccAddress {
+			return true
+		}
+	}
+	return false
+}
+
+func GetLatestIP(supernode *types.SuperNode) (string, error) {
+	if len(supernode.PrevIpAddresses) == 0 {
+		return "", errors.Errorf("no ip history exists for the supernode")
+	}
+	sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
+		return supernode.PrevIpAddresses[i].GetHeight() > supernode.PrevIpAddresses[j].GetHeight()
+	})
+
+	return supernode.PrevIpAddresses[0].Address, nil
 }

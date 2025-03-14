@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"google.golang.org/grpc"
@@ -26,9 +27,15 @@ type Module interface {
 
 	// GetValidatorSetByHeight gets the validator set at a specific height
 	GetValidatorSetByHeight(ctx context.Context, height int64) (*cmtservice.GetValidatorSetByHeightResponse, error)
+
+	// Sign signs the given bytes with the supernodeAccountAddress and returns the signature
+	Sign(snAccAddress string, data []byte) (signature []byte, err error)
+
+	// Verify verifies the given bytes with given supernodeAccAddress public key and returns the error
+	Verify(accAddress string, data, signature []byte) (err error)
 }
 
 // NewModule creates a new Node module client
-func NewModule(conn *grpc.ClientConn) (Module, error) {
-	return newModule(conn)
+func NewModule(conn *grpc.ClientConn, kr keyring.Keyring) (Module, error) {
+	return newModule(conn, kr)
 }

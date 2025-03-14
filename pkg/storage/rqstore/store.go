@@ -41,7 +41,7 @@ type SymbolDir struct {
 func NewSQLiteRQStore(file string) (*SQLiteRQStore, error) {
 	db, err := sqlx.Connect("sqlite3", file)
 	if err != nil {
-		return nil, fmt.Errorf("cannot open rq-service database: %w", err)
+		return nil, fmt.Errorf("cannot open rq-services database: %w", err)
 	}
 
 	// Create the rq_symbols_dir table if it doesn't exist

@@ -4,6 +4,8 @@ package raptorq
 
 import (
 	"context"
+
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 // ClientInterface represents a base connection interface.
@@ -33,4 +35,6 @@ type RaptorQ interface {
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
 	// EncodeMetaData Get encode info(include encode parameters + symbol id files)
 	EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error)
+	// GenRQIdentifiersFiles generates the RQ identifier files
+	GenRQIdentifiersFiles(ctx context.Context, fields logtrace.Fields, data []byte, operationBlockHash string, pastelID string, rqMax uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, RQEncodeParams EncoderParameters, signature []byte, err error)
 }

@@ -53,7 +53,7 @@ func newClient(ctx context.Context, opts ...Option) (Client, error) {
 		return nil, err
 	}
 
-	nodeModule, err := node.NewModule(conn.GetConn())
+	nodeModule, err := node.NewModule(conn.GetConn(), cfg.keyring)
 	if err != nil {
 		conn.Close()
 		return nil, err
