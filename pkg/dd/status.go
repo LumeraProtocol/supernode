@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	ddService "github.com/LumeraProtocol/dd-service/gen"
+	ddService "github.com/LumeraProtocol/supernode/gen/dupedetection"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 )
@@ -19,7 +19,7 @@ type GetStatusResponse struct {
 }
 
 // GetStatus retrieves the status.
-func (c *Client) GetStatus(ctx context.Context, req GetStatusRequest) (GetStatusResponse, error) {
+func (c *ddServerClientImpl) GetStatus(ctx context.Context, req GetStatusRequest) (GetStatusResponse, error) {
 	ctx = net.AddCorrelationID(ctx)
 
 	fields := logtrace.Fields{
