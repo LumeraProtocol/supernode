@@ -10,29 +10,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the YAML configuration structure
+type SupernodeConfig struct {
+	KeyName   string `yaml:"key_name"`
+	Mnemonic  string `yaml:"mnemonic"`
+	IpAddress string `yaml:"ip_address"`
+	Port      uint16 `yaml:"port"`
+	DataDir   string `yaml:"data_dir"`
+}
+
+type KeyringConfig struct {
+	Backend  string `yaml:"backend"`
+	Dir      string `yaml:"dir"`
+	Password string `yaml:"password"`
+}
+
+type P2PConfig struct {
+	ListenAddress  string `yaml:"listen_address"`
+	Port           uint16 `yaml:"port"`
+	DataDir        string `yaml:"data_dir"`
+	BootstrapNodes string `yaml:"bootstrap_nodes"`
+	ExternalIP     string `yaml:"external_ip"`
+}
+
+type LumeraClientConfig struct {
+	GRPCAddr string `yaml:"grpc_addr"`
+	ChainID  string `yaml:"chain_id"`
+	Timeout  int    `yaml:"timeout"`
+}
+
 type Config struct {
-	SupernodeID string `yaml:"supernode_id"`
-
-	Keyring struct {
-		Backend  string `yaml:"backend"`
-		Dir      string `yaml:"dir"`
-		Password string `yaml:"password"`
-	} `yaml:"keyring"`
-
-	P2P struct {
-		ListenAddress  string `yaml:"listen_address"`
-		Port           uint16 `yaml:"port"`
-		DataDir        string `yaml:"data_dir"`
-		BootstrapNodes string `yaml:"bootstrap_nodes"`
-		ExternalIP     string `yaml:"external_ip"`
-	} `yaml:"p2p"`
-
-	Lumera struct {
-		GRPCAddr string `yaml:"grpc_addr"`
-		ChainID  string `yaml:"chain_id"`
-		Timeout  int    `yaml:"timeout"`
-	} `yaml:"lumera"`
+	SupernodeConfig    `yaml:"supernode"`
+	KeyringConfig      `yaml:"keyring"`
+	P2PConfig          `yaml:"p2p"`
+	LumeraClientConfig `yaml:"lumera"`
 }
 
 // LoadConfig loads the configuration from a file
@@ -63,80 +73,51 @@ func LoadConfig(filename string) (*Config, error) {
 		return nil, fmt.Errorf("error parsing config file: %w", err)
 	}
 
-	// Set default values if not provided
-	if config.SupernodeID == "" {
-		return nil, fmt.Errorf("supernode_id is required in config file")
+	// Expand home directory in all paths
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	// Set defaults for P2P
-	if config.P2P.ListenAddress == "" {
-		config.P2P.ListenAddress = "0.0.0.0"
-		logtrace.Info(ctx, "Using default P2P listen address", logtrace.Fields{
-			"address": config.P2P.ListenAddress,
-		})
+	// Process SupernodeConfig
+	if config.SupernodeConfig.DataDir != "" {
+		config.SupernodeConfig.DataDir = expandPath(config.SupernodeConfig.DataDir, homeDir)
+		if err := os.MkdirAll(config.SupernodeConfig.DataDir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create Supernode data directory: %w", err)
+		}
 	}
 
-	if config.P2P.Port == 0 {
-		config.P2P.Port = 4445
-		logtrace.Info(ctx, "Using default P2P port", logtrace.Fields{
-			"port": config.P2P.Port,
-		})
+	// Process KeyringConfig
+	if config.KeyringConfig.Dir != "" {
+		config.KeyringConfig.Dir = expandPath(config.KeyringConfig.Dir, homeDir)
+		if err := os.MkdirAll(config.KeyringConfig.Dir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create keyring directory: %w", err)
+		}
 	}
 
-	if config.P2P.DataDir == "" {
-		config.P2P.DataDir = "./data/p2p"
-		logtrace.Info(ctx, "Using default P2P data directory", logtrace.Fields{
-			"dir": config.P2P.DataDir,
-		})
-	}
-
-	// Create data directory if it doesn't exist
-	if err := os.MkdirAll(config.P2P.DataDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create P2P data directory: %w", err)
-	}
-
-	// Set defaults for Keyring
-	if config.Keyring.Backend == "" {
-		config.Keyring.Backend = "file"
-		logtrace.Info(ctx, "Using default keyring backend", logtrace.Fields{
-			"backend": config.Keyring.Backend,
-		})
-	}
-
-	if config.Keyring.Dir == "" {
-		config.Keyring.Dir = "./keys"
-		logtrace.Info(ctx, "Using default keyring directory", logtrace.Fields{
-			"dir": config.Keyring.Dir,
-		})
-	}
-
-	// Create keyring directory if it doesn't exist
-	if err := os.MkdirAll(config.Keyring.Dir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create keyring directory: %w", err)
-	}
-
-	// Set defaults for Lumera
-	if config.Lumera.GRPCAddr == "" {
-		config.Lumera.GRPCAddr = "localhost:9090"
-		logtrace.Info(ctx, "Using default Lumera gRPC address", logtrace.Fields{
-			"address": config.Lumera.GRPCAddr,
-		})
-	}
-
-	if config.Lumera.ChainID == "" {
-		config.Lumera.ChainID = "lumera"
-		logtrace.Info(ctx, "Using default Lumera chain ID", logtrace.Fields{
-			"chain_id": config.Lumera.ChainID,
-		})
-	}
-
-	if config.Lumera.Timeout <= 0 {
-		config.Lumera.Timeout = 10
-		logtrace.Info(ctx, "Using default Lumera timeout", logtrace.Fields{
-			"timeout": config.Lumera.Timeout,
-		})
+	// Process P2PConfig
+	if config.P2PConfig.DataDir != "" {
+		config.P2PConfig.DataDir = expandPath(config.P2PConfig.DataDir, homeDir)
+		if err := os.MkdirAll(config.P2PConfig.DataDir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create P2P data directory: %w", err)
+		}
 	}
 
 	logtrace.Info(ctx, "Configuration loaded successfully", logtrace.Fields{})
 	return &config, nil
+}
+
+// expandPath handles path expansion including home directory (~)
+func expandPath(path string, homeDir string) string {
+	// Handle home directory expansion
+	if len(path) > 0 && path[0] == '~' {
+		path = filepath.Join(homeDir, path[1:])
+	}
+
+	// If path is not absolute, make it absolute based on home directory
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(homeDir, path)
+	}
+
+	return path
 }

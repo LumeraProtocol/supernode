@@ -15,23 +15,19 @@ import (
 
 // Supernode represents a supernode in the Lumera network
 type Supernode struct {
-	config       *config.Config
-	lumeraClient lumera.Client
-	p2pService   p2p.P2P
-	keyring      keyring.Keyring
-	rqStore      rqstore.Store
+	config         *config.Config
+	lumeraClient   lumera.Client
+	p2pService     p2p.P2P
+	keyring        keyring.Keyring
+	rqStore        rqstore.Store
+	keyName        string // String that represents the supernode account in keyring
+	accountAddress string // String that represents the supernode account address lemera12Xxxxx
 }
 
 // NewSupernode creates a new supernode instance
-func NewSupernode(ctx context.Context, config *config.Config) (*Supernode, error) {
+func NewSupernode(ctx context.Context, config *config.Config, kr keyring.Keyring) (*Supernode, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
-	}
-
-	// Initialize keyring
-	kr, err := initKeyring(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize keyring: %w", err)
 	}
 
 	// Initialize Lumera client
@@ -52,6 +48,7 @@ func NewSupernode(ctx context.Context, config *config.Config) (*Supernode, error
 		lumeraClient: lumeraClient,
 		keyring:      kr,
 		rqStore:      rqStore,
+		keyName:      config.SupernodeConfig.KeyName,
 	}
 
 	return supernode, nil
@@ -60,19 +57,52 @@ func NewSupernode(ctx context.Context, config *config.Config) (*Supernode, error
 // Start starts all supernode services
 func (s *Supernode) Start(ctx context.Context) error {
 	// Initialize p2p service
+
+	// Verify that the key specified in config exists
+	keyInfo, err := s.keyring.Key(appConfig.SupernodeConfig.KeyName)
+	if err != nil {
+		logtrace.Error(ctx, "Key not found in keyring", logtrace.Fields{
+			"key_name": appConfig.SupernodeConfig.KeyName,
+			"error":    err.Error(),
+		})
+
+		// Provide helpful guidance
+		fmt.Printf("\nError: Key '%s' not found in keyring at %s\n",
+			appConfig.SupernodeConfig.KeyName, appConfig.KeyringConfig.Dir)
+		fmt.Println("\nPlease create the key first with one of these commands:")
+		fmt.Printf("  supernode keys add %s\n", appConfig.SupernodeConfig.KeyName)
+		fmt.Printf("  supernode keys recover %s\n", appConfig.SupernodeConfig.KeyName)
+		return fmt.Errorf("key not found")
+	}
+
+	// Get the account address for logging
+	address, err := keyInfo.GetAddress()
+	if err != nil {
+		logtrace.Error(ctx, "Failed to get address from key", logtrace.Fields{
+			"error": err.Error(),
+		})
+		return err
+	}
+
+	logtrace.Info(ctx, "Found valid key in keyring", logtrace.Fields{
+		"key_name": appConfig.SupernodeConfig.KeyName,
+		"address":  address.String(),
+	})
+
 	p2pConfig := &p2p.Config{
-		ListenAddress:  s.config.P2P.ListenAddress,
-		Port:           s.config.P2P.Port,
-		DataDir:        s.config.P2P.DataDir,
-		BootstrapNodes: s.config.P2P.BootstrapNodes,
-		ExternalIP:     s.config.P2P.ExternalIP,
-		ID:             s.config.SupernodeID,
+		ListenAddress:  s.config.P2PConfig.ListenAddress,
+		Port:           s.config.P2PConfig.Port,
+		DataDir:        s.config.P2PConfig.DataDir,
+		BootstrapNodes: s.config.P2PConfig.BootstrapNodes,
+		ExternalIP:     s.config.P2PConfig.ExternalIP,
+		ID:             address.String(),
 	}
 
 	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{
 		"listen_address": p2pConfig.ListenAddress,
 		"port":           p2pConfig.Port,
 		"data_dir":       p2pConfig.DataDir,
+		"supernode_id":   address.String(),
 	})
 
 	p2pService, err := p2p.New(ctx, p2pConfig, s.lumeraClient, s.keyring, s.rqStore, nil, nil)
@@ -105,93 +135,23 @@ func (s *Supernode) Stop(ctx context.Context) error {
 	return nil
 }
 
-// initKeyring initializes the keyring based on configuration
-func initKeyring(ctx context.Context, config *config.Config) (keyring.Keyring, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-
-	// Set default directory if not provided
-	keyringDir := "./keys"
-	if config.Keyring.Dir != "" {
-		keyringDir = config.Keyring.Dir
-	}
-
-	// Set default backend if not provided
-	backend := keyring.BackendFile
-	if config.Keyring.Backend != "" {
-		switch config.Keyring.Backend {
-		case "file":
-			backend = keyring.BackendFile
-		case "os":
-			backend = keyring.BackendOS
-		case "memory":
-			backend = keyring.BackendMemory
-		default:
-			logtrace.Warn(ctx, "Unsupported keyring backend, using file backend", logtrace.Fields{
-				"backend": config.Keyring.Backend,
-			})
-		}
-	}
-
-	// Create the keyring directory if it doesn't exist
-	if err := os.MkdirAll(keyringDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create keyring directory: %w", err)
-	}
-
-	logtrace.Info(ctx, "Initializing keyring", logtrace.Fields{
-		"backend":   backend,
-		"directory": keyringDir,
-	})
-
-	// Initialize the keyring
-	kr, err := keyring.New(
-		"lumera",
-		backend,
-		keyringDir,
-		os.Stdin,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize keyring: %w", err)
-	}
-
-	return kr, nil
-}
-
 // initLumeraClient initializes the Lumera client based on configuration
 func initLumeraClient(ctx context.Context, config *config.Config) (lumera.Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
 
-	// Set default values if not provided
-	grpcAddr := "localhost:9090"
-	if config.Lumera.GRPCAddr != "" {
-		grpcAddr = config.Lumera.GRPCAddr
-	}
-
-	chainID := "lumera"
-	if config.Lumera.ChainID != "" {
-		chainID = config.Lumera.ChainID
-	}
-
-	timeout := 10
-	if config.Lumera.Timeout > 0 {
-		timeout = config.Lumera.Timeout
-	}
-
 	logtrace.Info(ctx, "Initializing Lumera client", logtrace.Fields{
-		"grpc_addr": grpcAddr,
-		"chain_id":  chainID,
-		"timeout":   timeout,
+		"grpc_addr": config.LumeraClientConfig.GRPCAddr,
+		"chain_id":  config.LumeraClientConfig.ChainID,
+		"timeout":   config.LumeraClientConfig.Timeout,
 	})
 
 	return lumera.NewClient(
 		ctx,
-		lumera.WithGRPCAddr(grpcAddr),
-		lumera.WithChainID(chainID),
-		lumera.WithTimeout(timeout),
+		lumera.WithGRPCAddr(config.LumeraClientConfig.GRPCAddr),
+		lumera.WithChainID(config.LumeraClientConfig.ChainID),
+		lumera.WithTimeout(config.LumeraClientConfig.Timeout),
 	)
 }
 
@@ -201,14 +161,8 @@ func initRQStore(ctx context.Context, config *config.Config) (rqstore.Store, err
 		return nil, fmt.Errorf("config is nil")
 	}
 
-	// Set default directory if not provided
-	dataDir := "./data/p2p"
-	if config.P2P.DataDir != "" {
-		dataDir = config.P2P.DataDir
-	}
-
 	// Create RaptorQ store directory if it doesn't exist
-	rqDir := dataDir + "/rq"
+	rqDir := config.P2PConfig.DataDir + "/rq"
 	if err := os.MkdirAll(rqDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create RQ store directory: %w", err)
 	}
