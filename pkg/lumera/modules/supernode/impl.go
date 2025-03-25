@@ -3,12 +3,12 @@ package supernode
 import (
 	"context"
 	"fmt"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"sort"
 
 	"github.com/LumeraProtocol/lumera/x/supernode/types"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 
 	"google.golang.org/grpc"
-	"sort"
 )
 
 // module implements the Module interface

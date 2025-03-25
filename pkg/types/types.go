@@ -14,28 +14,6 @@ type MeshedSuperNode struct {
 	NodeID string
 }
 
-// NftRegMetadata represents nft reg metadata
-type NftRegMetadata struct {
-	CreatorPastelID string
-	BlockHash       string
-	BlockHeight     string
-	Timestamp       string
-	GroupID         string
-	CollectionTxID  string
-}
-
-// ActionRegMetadata represents action reg metadata
-type ActionRegMetadata struct {
-	CreatorPastelID string
-	BlockHash       string
-	BurnTxID        string
-	BlockHeight     string
-	Timestamp       string
-	EstimatedFee    int64
-	GroupID         string
-	CollectionTxID  string
-}
-
 // TaskHistory represents task history
 type TaskHistory struct {
 	ID        int

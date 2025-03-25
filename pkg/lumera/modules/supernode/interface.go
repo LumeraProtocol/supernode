@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=supernode_mock.go -package=supernode -source=interface.go
 package supernode
 
 import (

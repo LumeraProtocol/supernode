@@ -8,7 +8,6 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/common/task/state"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
-	"github.com/LumeraProtocol/supernode/pkg/storage/queries"
 )
 
 // TaskCleanerFunc pointer to func that removes artefacts
@@ -52,13 +51,11 @@ func (task *SuperNodeTask) RemoveFile(file *files.File) {
 }
 
 // NewSuperNodeTask returns a new Task instance.
-func NewSuperNodeTask(logPrefix string, historyDB queries.LocalStoreInterface) *SuperNodeTask {
+func NewSuperNodeTask(logPrefix string) *SuperNodeTask {
 	snt := &SuperNodeTask{
 		Task:      task.New(StatusTaskStarted),
 		LogPrefix: logPrefix,
 	}
-
-	snt.InitialiseHistoryDB(historyDB)
 
 	return snt
 }

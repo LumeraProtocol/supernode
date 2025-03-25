@@ -1,10 +1,11 @@
+//go:generate mockgen -destination=node_mock.go -package=node -source=interface.go
 package node
 
 import (
 	"context"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
 )
 

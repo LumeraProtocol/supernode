@@ -11,7 +11,6 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 
 	"github.com/LumeraProtocol/supernode/pkg/log"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 )
 
@@ -77,7 +76,7 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 		}
 
 		nodes = append(nodes, &Node{
-			ID:	  []byte(lumeraAddress.Identity),
+			ID:   []byte(lumeraAddress.Identity),
 			IP:   lumeraAddress.Host,
 			Port: lumeraAddress.Port,
 		})
@@ -88,6 +87,7 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 	return nil
 }
 
+// ConfigureBootstrapNodes connects with lumera client & gets p2p boostrap ip & port
 // ConfigureBootstrapNodes connects with lumera client & gets p2p boostrap ip & port
 func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
 	if bootstrapNodes != "" {
@@ -100,53 +100,77 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 	}
 	selfAddress = fmt.Sprintf("%s:%d", selfAddress, s.options.Port)
 
-	get := func(ctx context.Context, f func(context.Context) (lumera.SuperNodeAddressInfos, error)) ([]*Node, error) {
-		mns, err := f(ctx)
+	var boostrapNodes []*Node
+
+	if s.options.LumeraClient != nil {
+		// Get the latest block to determine height
+		latestBlockResp, err := s.options.LumeraClient.Node().GetLatestBlock(ctx)
 		if err != nil {
-			return []*Node{}, err
+			return fmt.Errorf("failed to get latest block: %w", err)
+		}
+
+		// Get the block height
+		blockHeight := uint64(latestBlockResp.SdkBlock.Header.Height)
+
+		// Get top supernodes for this block
+		supernodeResp, err := s.options.LumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
+		if err != nil {
+			return fmt.Errorf("failed to get top supernodes: %w", err)
 		}
 
 		mapNodes := map[string]*Node{}
-		for _, mn := range mns {
-			node, err := s.parseNode(mn.ExtP2P, selfAddress)
-			if err != nil {
-				log.P2P().WithContext(ctx).WithError(err).WithField("extP2P", mn.ExtP2P).Warn("Skip Bad Boostrap Address")
+
+		for _, supernode := range supernodeResp.Supernodes {
+			// Find the latest IP address (with highest block height)
+			var latestIP string
+			var maxHeight int64 = -1
+
+			for _, ipHistory := range supernode.PrevIpAddresses {
+				if ipHistory.Height > maxHeight {
+					maxHeight = ipHistory.Height
+					latestIP = ipHistory.Address
+				}
+			}
+
+			if latestIP == "" {
+				log.P2P().WithContext(ctx).
+					WithField("supernode", supernode.SupernodeAccount).
+					Warn("No valid IP address found for supernode")
 				continue
 			}
 
-			mapNodes[mn.ExtP2P] = node
+			// Parse the node from the IP address
+			node, err := s.parseNode(latestIP, selfAddress)
+			if err != nil {
+				log.P2P().WithContext(ctx).WithError(err).
+					WithField("address", latestIP).
+					WithField("supernode", supernode.SupernodeAccount).
+					Warn("Skip Bad Bootstrap Address")
+				continue
+			}
+
+			// Store the supernode account as the node ID
+			node.ID = []byte(supernode.SupernodeAccount)
+			mapNodes[latestIP] = node
 		}
 
-		nodes := []*Node{}
+		// Convert the map to a slice
 		for _, node := range mapNodes {
-			nodes = append(nodes, node)
+			boostrapNodes = append(boostrapNodes, node)
 		}
-
-		return nodes, nil
 	}
 
-	var boostrapNodes []*Node
-	if s.options.LumeraNetwork != nil {
-		boostrapNodes, err := get(ctx, s.options.LumeraNetwork.MasterNodesExtra)
-		if err != nil {
-			return fmt.Errorf("masternodesTop failed: %s", err)
-		} else if len(boostrapNodes) == 0 {
-			boostrapNodes, err = get(ctx, s.options.LumeraNetwork.MasterNodesTop)
-			if err != nil {
-				return fmt.Errorf("masternodesExtra failed: %s", err)
-			} else if len(boostrapNodes) == 0 {
-				log.P2P().WithContext(ctx).Error("unable to fetch bootstrap ip. Missing extP2P")
-
-				return nil
-			}
-		}
+	if len(boostrapNodes) == 0 {
+		log.P2P().WithContext(ctx).Error("unable to fetch bootstrap IP addresses. No valid supernodes found.")
+		return nil
 	}
 
 	for _, node := range boostrapNodes {
 		log.P2P().WithContext(ctx).WithFields(log.Fields{
 			"bootstap_ip":    node.IP,
 			"bootstrap_port": node.Port,
-		}).Info("adding p2p bootstap node")
+			"node_id":        string(node.ID),
+		}).Info("adding p2p bootstrap node")
 	}
 
 	s.options.BootstrapNodes = append(s.options.BootstrapNodes, boostrapNodes...)

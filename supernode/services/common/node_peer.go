@@ -39,13 +39,13 @@ type SuperNodePeer struct {
 // NewSuperNode returns a new Node instance.
 func NewSuperNode(
 	client node.ClientInterface,
-	address string, pastelID string,
+	address string, nodeAddress string,
 	nodeMaker node.NodeMaker) *SuperNodePeer {
 	return &SuperNodePeer{
 		ClientInterface: client,
 		NodeMaker:       nodeMaker,
 		Address:         address,
-		ID:              pastelID,
+		ID:              nodeAddress,
 	}
 }
 

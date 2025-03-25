@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	CascadeService_Session_FullMethodName         = "/cascade.CascadeService/Session"
 	CascadeService_UploadInputData_FullMethodName = "/cascade.CascadeService/UploadInputData"
 )
 
@@ -26,6 +27,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CascadeServiceClient interface {
+	Session(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionRequest, SessionReply], error)
 	UploadInputData(ctx context.Context, in *UploadInputDataRequest, opts ...grpc.CallOption) (*UploadInputDataResponse, error)
 }
 
@@ -36,6 +38,19 @@ type cascadeServiceClient struct {
 func NewCascadeServiceClient(cc grpc.ClientConnInterface) CascadeServiceClient {
 	return &cascadeServiceClient{cc}
 }
+
+func (c *cascadeServiceClient) Session(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionRequest, SessionReply], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &CascadeService_ServiceDesc.Streams[0], CascadeService_Session_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SessionRequest, SessionReply]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CascadeService_SessionClient = grpc.BidiStreamingClient[SessionRequest, SessionReply]
 
 func (c *cascadeServiceClient) UploadInputData(ctx context.Context, in *UploadInputDataRequest, opts ...grpc.CallOption) (*UploadInputDataResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -51,6 +66,7 @@ func (c *cascadeServiceClient) UploadInputData(ctx context.Context, in *UploadIn
 // All implementations must embed UnimplementedCascadeServiceServer
 // for forward compatibility.
 type CascadeServiceServer interface {
+	Session(grpc.BidiStreamingServer[SessionRequest, SessionReply]) error
 	UploadInputData(context.Context, *UploadInputDataRequest) (*UploadInputDataResponse, error)
 	mustEmbedUnimplementedCascadeServiceServer()
 }
@@ -62,6 +78,9 @@ type CascadeServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCascadeServiceServer struct{}
 
+func (UnimplementedCascadeServiceServer) Session(grpc.BidiStreamingServer[SessionRequest, SessionReply]) error {
+	return status.Errorf(codes.Unimplemented, "method Session not implemented")
+}
 func (UnimplementedCascadeServiceServer) UploadInputData(context.Context, *UploadInputDataRequest) (*UploadInputDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UploadInputData not implemented")
 }
@@ -85,6 +104,13 @@ func RegisterCascadeServiceServer(s grpc.ServiceRegistrar, srv CascadeServiceSer
 	}
 	s.RegisterService(&CascadeService_ServiceDesc, srv)
 }
+
+func _CascadeService_Session_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(CascadeServiceServer).Session(&grpc.GenericServerStream[SessionRequest, SessionReply]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CascadeService_SessionServer = grpc.BidiStreamingServer[SessionRequest, SessionReply]
 
 func _CascadeService_UploadInputData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UploadInputDataRequest)
@@ -116,6 +142,13 @@ var CascadeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CascadeService_UploadInputData_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Session",
+			Handler:       _CascadeService_Session_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "proto/supernode/action/cascade/service.proto",
 }

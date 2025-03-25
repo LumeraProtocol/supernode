@@ -13,11 +13,6 @@ type clientConn struct {
 	id string
 }
 
-// RegisterCascade implements node.ConnectionInterface.RegisterSense()
-func (conn *clientConn) RegisterCascade() supernode.RegisterCascadeInterface {
-	return newSupernodeCascadeActionClient(conn)
-}
-
 func newClientConn(id string, conn *grpc.ClientConn) supernode.ConnectionInterface {
 	return &clientConn{
 		ClientConn: conn,

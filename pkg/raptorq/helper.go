@@ -41,7 +41,7 @@ type Decode struct {
 	File []byte
 }
 
-func (s *raptorQServerClient) encodeInfo(ctx context.Context, data []byte, copies uint32, blockHash string, pastelID string) (*EncodeInfo, error) {
+func (s *raptorQServerClient) encodeInfo(ctx context.Context, taskID string, data []byte, copies uint32, blockHash string, pastelID string) (*EncodeInfo, error) {
 	s.semaphore <- struct{}{} // Acquire slot
 	defer func() {
 		<-s.semaphore // Release the semaphore slot
@@ -74,6 +74,10 @@ func (s *raptorQServerClient) encodeInfo(ctx context.Context, data []byte, copie
 		return nil, errors.Errorf("symbol id files count not match: expect %d, output %d", copies, len(filesMap))
 	}
 
+	if err := s.store.StoreSymbolDirectory(taskID, res.Path); err != nil {
+		return nil, errors.Errorf("store symbol directory: %w", err)
+	}
+
 	output := &EncodeInfo{
 		SymbolIDFiles: filesMap,
 		EncoderParam: EncoderParameters{
@@ -88,16 +92,16 @@ func (s *raptorQServerClient) encodeInfo(ctx context.Context, data []byte, copie
 	return output, nil
 }
 
-func (s *raptorQServerClient) generateRQIDs(ctx context.Context, rawFile RawSymbolIDFile, snAccAddress string, maxFiles uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, signature []byte, err error) {
+func (s *raptorQServerClient) generateRQIDs(ctx context.Context, rawFile RawSymbolIDFile, snAccAddress string, maxFiles uint32) (RQIDsIc uint32, RQIDs []string, RQIDsFile []byte, RQIDsFiles [][]byte, signature []byte, err error) {
 	rqIDsfile, err := json.Marshal(rawFile)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("marshal rqID file")
+		return RQIDsIc, RQIDs, RQIDsFile, RQIDsFiles, signature, errors.Errorf("marshal rqID file")
 	}
 
 	// FIXME : msgs param
 	signature, err = s.lumeraClient.Node().Sign(snAccAddress, rqIDsfile) // FIXME : confirm the data
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("sign identifiers file: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, RQIDsFiles, signature, errors.Errorf("sign identifiers file: %w", err)
 	}
 
 	encRqIDsfile := utils.B64Encode(rqIDsfile)
@@ -109,18 +113,18 @@ func (s *raptorQServerClient) generateRQIDs(ctx context.Context, rawFile RawSymb
 	rqIDFile := buffer.Bytes()
 
 	RQIDsIc = rand.Uint32()
-	RQIDs, _, err = GetIDFiles(ctx, rqIDFile, RQIDsIc, maxFiles)
+	RQIDs, RQIDsFiles, err = GetIDFiles(ctx, rqIDFile, RQIDsIc, maxFiles)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("get ID Files: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, RQIDsFiles, signature, errors.Errorf("get ID Files: %w", err)
 	}
 
 	comp, err := utils.HighCompress(ctx, rqIDFile)
 	if err != nil {
-		return RQIDsIc, RQIDs, RQIDsFile, signature, errors.Errorf("compress: %w", err)
+		return RQIDsIc, RQIDs, RQIDsFile, RQIDsFiles, signature, errors.Errorf("compress: %w", err)
 	}
 	RQIDsFile = utils.B64Encode(comp)
 
-	return RQIDsIc, RQIDs, RQIDsFile, signature, nil
+	return RQIDsIc, RQIDs, RQIDsFile, RQIDsFiles, signature, nil
 }
 
 // GetIDFiles generates ID Files for dd_and_fingerprints files and rq_id files

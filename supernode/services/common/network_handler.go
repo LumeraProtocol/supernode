@@ -48,8 +48,8 @@ func NewNetworkHandler(task *SuperNodeTask,
 	}
 }
 
-// MeshedNodesPastelID return PastelIDs of meshed nodes
-func (h *NetworkHandler) MeshedNodesPastelID() []string {
+// MeshedNodes return SupernodeAccountAddresses of meshed nodes
+func (h *NetworkHandler) MeshedNodes() []string {
 	var ids []string
 	for _, peer := range h.meshedNodes {
 		ids = append(ids, peer.NodeID)
@@ -58,7 +58,7 @@ func (h *NetworkHandler) MeshedNodesPastelID() []string {
 }
 
 // Session is handshake wallet to supernode
-func (h *NetworkHandler) Session(_ context.Context, isPrimary bool) error {
+func (h *NetworkHandler) Session(ctx context.Context, isPrimary bool) error {
 	if err := h.task.RequiredStatus(StatusTaskStarted); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (h *NetworkHandler) ConnectTo(_ context.Context, nodeID, sessID string) err
 		}
 
 		if err = someNode.Session(ctx, h.superNodeAccAddress, sessID); err != nil {
-			log.WithContext(ctx).WithField("sessID", sessID).WithField("pastelID", h.superNodeAccAddress).WithError(err).Errorf("handshake with peer")
+			log.WithContext(ctx).WithField("sessID", sessID).WithField("sn-acc-address", h.superNodeAccAddress).WithError(err).Errorf("handshake with peer")
 			return nil
 		}
 
@@ -199,7 +199,7 @@ func (h *NetworkHandler) CheckNodeInMeshedNodes(nodeID string) error {
 	return errors.New("nodeID not found")
 }
 
-// PastelNodeByExtKey returns information about SN by its PastelID
+// toSupernodePeer returns information about SN by its account-address
 func (h *NetworkHandler) toSupernodePeer(ctx context.Context, supernodeAccountAddress string) (*SuperNodePeer, error) {
 	sn, err := h.lumeraHandler.SuperNode().GetSupernodeBySupernodeAddress(ctx, supernodeAccountAddress)
 	if err != nil {

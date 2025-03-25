@@ -5,6 +5,7 @@ package cascade;
 option go_package = "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade";
 
 service CascadeService {
+  rpc Session(stream SessionRequest) returns (stream SessionReply);
   rpc UploadInputData (UploadInputDataRequest) returns (UploadInputDataResponse);
 }
 
@@ -19,4 +20,12 @@ message UploadInputDataRequest {
 message UploadInputDataResponse {
   bool success = 1;
   string message = 2;
+}
+
+message SessionRequest {
+  bool is_primary = 1;
+}
+
+message SessionReply {
+  string sessID = 1;
 }

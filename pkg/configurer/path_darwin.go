@@ -9,12 +9,12 @@ import (
 )
 
 var defaultConfigPaths = []string{
-	"$HOME/Library/Application Support/Pastel",
+	"$HOME/Library/Application Support/Lumera",
 	".",
 }
 
 // DefaultPath returns the default config path for darwin OS.
 func DefaultPath() string {
 	homeDir, _ := os.UserConfigDir()
-	return filepath.Join(homeDir, "Pastel")
+	return filepath.Join(homeDir, "Lumera")
 }

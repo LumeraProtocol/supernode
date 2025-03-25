@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=lumera_mock.go -package=lumera -source=interface.go
 package lumera
 
 import (

@@ -1,11 +1,12 @@
 package cascade
 
 import (
+	"context"
+
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/storage"
-	"github.com/LumeraProtocol/supernode/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	node "github.com/LumeraProtocol/supernode/supernode/node/supernode"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
@@ -16,12 +17,11 @@ type CascadeService struct {
 	config *Config
 
 	lumeraClient  lumera.Client
-	raptorQ       raptorq.RaptorQ
 	raptorQClient raptorq.ClientInterface
+	nodeClient    node.ClientInterface
 
-	nodeClient node.ClientInterface
-	rqstore    rqstore.Store
-	historyDB  queries.LocalStoreInterface
+	rqstore rqstore.Store
+	raptorQ raptorq.RaptorQ
 }
 
 // NewCascadeRegistrationTask runs a new task of the registration Sense and returns its taskID.
@@ -30,6 +30,11 @@ func (s *CascadeService) NewCascadeRegistrationTask() *CascadeRegistrationTask {
 	s.Worker.AddTask(task)
 
 	return task
+}
+
+// Run starts task
+func (service *CascadeService) Run(ctx context.Context) error {
+	return service.RunHelper(ctx, service.config.SupernodeAccountAddress, logPrefix)
 }
 
 // Task returns the task of the Sense registration by the given id.

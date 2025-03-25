@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=tx_mock.go -package=tx -source=interface.go
 package tx
 
 import (

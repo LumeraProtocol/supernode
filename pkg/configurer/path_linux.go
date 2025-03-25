@@ -9,12 +9,12 @@ import (
 )
 
 var defaultConfigPaths = []string{
-	"$HOME/.pastel",
+	"$HOME/.lumera",
 	".",
 }
 
 // DefaultPath returns the default config path for Linux OS.
 func DefaultPath() string {
 	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".pastel")
+	return filepath.Join(homeDir, ".lumera")
 }

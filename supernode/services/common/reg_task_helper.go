@@ -31,10 +31,12 @@ type RegTaskHelper struct {
 // NewRegTaskHelper creates instance of RegTaskHelper
 func NewRegTaskHelper(task *SuperNodeTask,
 	lumeraClient lumera.Client,
+	NetworkHandler *NetworkHandler,
 ) *RegTaskHelper {
 	return &RegTaskHelper{
 		SuperNodeTask:            task,
 		LumeraHandler:            &lumeraClient,
+		NetworkHandler:           NetworkHandler,
 		peersTicketSignatureMtx:  &sync.Mutex{},
 		PeersTicketSignature:     make(map[string][]byte),
 		AllSignaturesReceivedChn: make(chan struct{}),

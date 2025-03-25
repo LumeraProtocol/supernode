@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/meta"
-
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
 const (
@@ -45,7 +45,8 @@ type p2p struct {
 	dht          *kademlia.DHT // the kademlia network
 	config       *Config       // the service configuration
 	running      bool          // if the kademlia network is ready
-	lumeraClient *lumera.Client
+	lumeraClient lumera.Client
+	keyring      keyring.Keyring // Add the keyring field
 	rqstore      rqstore.Store
 }
 
@@ -231,7 +232,8 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 func (s *p2p) configure(ctx context.Context) error {
 	// new the queries storage
 	kadOpts := &kademlia.Options{
-		LumeraClient:  s.lumeraClient,
+		LumeraClient:   s.lumeraClient,
+		Keyring:        s.keyring, // Pass the keyring
 		BootstrapNodes: []*kademlia.Node{},
 		IP:             s.config.ListenAddress,
 		Port:           s.config.Port,
@@ -259,7 +261,7 @@ func (s *p2p) configure(ctx context.Context) error {
 }
 
 // New returns a new p2p instance.
-func New(ctx context.Context, config *Config, lumeraClient *lumera.Client, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
+func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr keyring.Keyring, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
 	store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
 	if err != nil {
 		return nil, errors.Errorf("new kademlia store: %w", err)
@@ -275,6 +277,7 @@ func New(ctx context.Context, config *Config, lumeraClient *lumera.Client, rqsto
 		metaStore:    meta,
 		config:       config,
 		lumeraClient: lumeraClient,
+		keyring:      kr, // Store the keyring
 		rqstore:      rqstore,
 	}, nil
 }

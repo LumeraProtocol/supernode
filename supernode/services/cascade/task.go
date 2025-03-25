@@ -51,13 +51,14 @@ func (task *CascadeRegistrationTask) removeArtifacts() {
 func NewCascadeRegistrationTask(service *CascadeService) *CascadeRegistrationTask {
 
 	task := &CascadeRegistrationTask{
-		SuperNodeTask:  common.NewSuperNodeTask(logPrefix, service.historyDB),
+		SuperNodeTask:  common.NewSuperNodeTask(logPrefix),
 		CascadeService: service,
 		storage: common.NewStorageHandler(service.P2PClient, service.raptorQClient,
 			service.config.RaptorQServiceAddress, service.config.RqFilesDir, service.rqstore),
 	}
 
-	task.RegTaskHelper = common.NewRegTaskHelper(task.SuperNodeTask, service.lumeraClient)
+	task.RegTaskHelper = common.NewRegTaskHelper(task.SuperNodeTask, service.lumeraClient, common.NewNetworkHandler(
+		task.SuperNodeTask, service.nodeClient, nil, service.lumeraClient, service.config.NumberConnectedNodes))
 
 	return task
 }

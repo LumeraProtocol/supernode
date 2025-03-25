@@ -8,6 +8,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	lumera "github.com/LumeraProtocol/supernode/pkg/lumera"
+	rqstore "github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -87,17 +89,17 @@ func (mr *MockConnectionMockRecorder) Close() *gomock.Call {
 }
 
 // RaptorQ mocks base method.
-func (m *MockConnection) RaptorQ(config *Config) RaptorQ {
+func (m *MockConnection) RaptorQ(config *Config, lc lumera.Client, store rqstore.Store) RaptorQ {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RaptorQ", config)
+	ret := m.ctrl.Call(m, "RaptorQ", config, lc, store)
 	ret0, _ := ret[0].(RaptorQ)
 	return ret0
 }
 
 // RaptorQ indicates an expected call of RaptorQ.
-func (mr *MockConnectionMockRecorder) RaptorQ(config interface{}) *gomock.Call {
+func (mr *MockConnectionMockRecorder) RaptorQ(config, lc, store interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RaptorQ", reflect.TypeOf((*MockConnection)(nil).RaptorQ), config)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RaptorQ", reflect.TypeOf((*MockConnection)(nil).RaptorQ), config, lc, store)
 }
 
 // MockRaptorQ is a mock of RaptorQ interface.
@@ -166,4 +168,24 @@ func (m *MockRaptorQ) EncodeMetaData(ctx context.Context, req EncodeMetadataRequ
 func (mr *MockRaptorQMockRecorder) EncodeMetaData(ctx, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EncodeMetaData", reflect.TypeOf((*MockRaptorQ)(nil).EncodeMetaData), ctx, req)
+}
+
+// GenRQIdentifiersFiles mocks base method.
+func (m *MockRaptorQ) GenRQIdentifiersFiles(ctx context.Context, taskID string, data []byte, operationBlockHash, creator string, rqMax uint32) (uint32, []string, [][]byte, []byte, EncoderParameters, []byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenRQIdentifiersFiles", ctx, taskID, data, operationBlockHash, creator, rqMax)
+	ret0, _ := ret[0].(uint32)
+	ret1, _ := ret[1].([]string)
+	ret2, _ := ret[2].([][]byte)
+	ret3, _ := ret[3].([]byte)
+	ret4, _ := ret[4].(EncoderParameters)
+	ret5, _ := ret[5].([]byte)
+	ret6, _ := ret[6].(error)
+	return ret0, ret1, ret2, ret3, ret4, ret5, ret6
+}
+
+// GenRQIdentifiersFiles indicates an expected call of GenRQIdentifiersFiles.
+func (mr *MockRaptorQMockRecorder) GenRQIdentifiersFiles(ctx, taskID, data, operationBlockHash, creator, rqMax interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenRQIdentifiersFiles", reflect.TypeOf((*MockRaptorQ)(nil).GenRQIdentifiersFiles), ctx, taskID, data, operationBlockHash, creator, rqMax)
 }

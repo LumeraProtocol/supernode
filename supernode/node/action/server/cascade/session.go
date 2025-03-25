@@ -4,23 +4,21 @@ import (
 	"context"
 	"io"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode/supernode"
+	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
-// Session implements supernode.RegisterSenseServer.Session()
-func (service *RegisterCascade) Session(stream pb.CascadeService_SessionServer) error {
+// Session implements walletnode.RegisterCascadeServer.Session()
+func (service *CascadeActionServer) Session(stream pb.CascadeService_SessionServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
 	var task *cascade.CascadeRegistrationTask
-	isTaskNew := false
 
 	if sessID, ok := service.SessID(ctx); ok {
 		if task = service.Task(sessID); task == nil {
@@ -28,43 +26,34 @@ func (service *RegisterCascade) Session(stream pb.CascadeService_SessionServer) 
 		}
 	} else {
 		task = service.NewCascadeRegistrationTask()
-		isTaskNew = true
 	}
-
 	go func() {
 		<-task.Done()
 		cancel()
 	}()
-
-	if isTaskNew {
-		defer task.Cancel()
-	}
+	defer task.Cancel()
 
 	peer, _ := peer.FromContext(ctx)
-	log.WithContext(ctx).WithField("addr", peer.Addr).Debugf("Session stream")
-	defer log.WithContext(ctx).WithField("addr", peer.Addr).Debugf("Session stream closed")
+
+	defer log.WithContext(ctx).WithField("addr", peer.Addr).Debug("Session stream closed")
 
 	req, err := stream.Recv()
 	if err != nil {
-		return errors.Errorf("receive handshake request: %w", err)
+		return errors.Errorf("receieve handshake request: %w", err)
 	}
-	log.WithContext(ctx).WithField("req", req).Debugf("Session request")
 
-	if err := task.NetworkHandler.SessionNode(ctx, req.NodeID); err != nil {
+	if err := task.NetworkHandler.Session(ctx, req.IsPrimary); err != nil {
 		return err
-	}
-
-	if !isTaskNew {
-		defer task.Cancel()
 	}
 
 	resp := &pb.SessionReply{
 		SessID: task.ID(),
 	}
+
 	if err := stream.Send(resp); err != nil {
 		return errors.Errorf("send handshake response: %w", err)
 	}
-	log.WithContext(ctx).WithField("resp", resp).Debugf("Session response")
+	log.WithContext(ctx).WithField("resp", resp).Debug("Session response")
 
 	for {
 		if _, err := stream.Recv(); err != nil {
@@ -72,7 +61,10 @@ func (service *RegisterCascade) Session(stream pb.CascadeService_SessionServer) 
 				return nil
 			}
 			switch status.Code(err) {
-			case codes.Canceled, codes.Unavailable:
+			case codes.Canceled:
+				log.WithContext(ctx).WithError(err).Error("handshake stream canceled")
+				return nil
+			case codes.Unavailable:
 				return nil
 			}
 			return errors.Errorf("handshake stream closed: %w", err)

@@ -2,8 +2,6 @@ package supernode
 
 import (
 	"context"
-
-	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 )
 
 // ClientInterface represents a base connection interface.
@@ -16,8 +14,6 @@ type ClientInterface interface {
 type ConnectionInterface interface {
 	// Close closes connection.
 	Close() error
-	// RegisterCascade returns a new RegisterCascade stream
-	RegisterCascade() RegisterCascadeInterface
 }
 
 // SuperNodePeerAPIInterface base interface for other Node API interfaces
@@ -33,12 +29,4 @@ type SuperNodePeerAPIInterface interface {
 // NodeMaker interface to make concrete node types
 type NodeMaker interface {
 	MakeNode(conn ConnectionInterface) SuperNodePeerAPIInterface
-}
-
-// RegisterCascadeInterface represents an interaction stream with supernodes for registering sense.
-type RegisterCascadeInterface interface {
-	SuperNodePeerAPIInterface
-
-	// Send signature of ticket to primary supernode
-	SendCascadeTicketSignature(ctx context.Context, nodeID string, signature []byte, data []byte, rqFile []byte, rqEncodeParams raptorq.EncoderParameters) error
 }

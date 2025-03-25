@@ -16,14 +16,14 @@ import (
 // this implements SN's GRPC methods that call another SN during Cascade Registration
 // meaning - these methods implements client side of SN to SN GRPC communication
 
-type client struct {
+type Client struct {
 	*netgrpcclient.Client
-	keyRing             keyring.Keyring
-	superNodeAccAddress string
+	KeyRing             keyring.Keyring
+	SuperNodeAccAddress string
 }
 
 // Connect implements node.Client.Connect()
-func (c *client) Connect(ctx context.Context, address string) (node.ConnectionInterface, error) {
+func (c *Client) Connect(ctx context.Context, address string) (node.ConnectionInterface, error) {
 	clientOptions := netgrpcclient.DefaultClientOptions()
 	clientOptions.ConnWaitTime = 30 * time.Minute
 	clientOptions.MinConnectTimeout = 30 * time.Minute

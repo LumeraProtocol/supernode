@@ -2,18 +2,12 @@ package cascade
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
-	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
-
-	ct "github.com/LumeraProtocol/supernode/pkg/common/task"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/raptorq"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,11 +76,10 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "request data-hash has been matched with the action data-hash", fields)
 
-	// FIXME : use proper file
-	task.rqIDsIC, task.rqIDs,
-		task.rqIDsFile, task.rqIDEncodeParams, task.creatorSignature, err = task.raptorQ.GenRQIdentifiersFiles(ctx,
-		fields,
-		nil,
+	data := []byte{} // FIXME : use proper file contents
+	task.RQInfo.rqIDsIC, task.RQInfo.rqIDs,
+		task.RQInfo.rqIDFiles, task.RQInfo.rqIDsFile, task.RQInfo.rqIDEncodeParams, task.creatorSignature, err = task.raptorQ.GenRQIdentifiersFiles(ctx, task.ID(),
+		data,
 		string(latestBlockHash), actionDetails.GetCreator(),
 		uint32(actionDetails.Metadata.GetCascadeMetadata().RqMax),
 	)
@@ -95,52 +88,23 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 		logtrace.Error(ctx, "failed to generate RQID Files", fields)
 		return nil, status.Errorf(codes.Internal, "failed to generate RQID Files")
 	}
-	logtrace.Info(ctx, "rq symbols have been generated", fields)
+	logtrace.Info(ctx, "rq symbols, rq-ids and rqid-files have been generated", fields)
 
-	ticket, err := task.createCascadeActionTicket(ctx, actionDetails, *latestBlock)
-	if err != nil {
+	// TODO : MsgFinalizeAction
+
+	if err = task.storeIDFiles(ctx); err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to create cascade ticket", fields)
-		return nil, status.Errorf(codes.Internal, "failed to create cascade ticket")
+		logtrace.Error(ctx, "error storing id files to p2p", fields)
+		return nil, status.Errorf(codes.Internal, "error storing id files to p2p")
 	}
-	logtrace.Info(ctx, "cascade ticket created", fields)
+	logtrace.Info(ctx, "id files have been stored", fields)
 
-	switch task.NetworkHandler.IsPrimary() {
-	case true:
-		<-task.NewAction(func(ctx context.Context) error {
-			logtrace.Info(ctx, "primary node flow, waiting for signature from peers", fields)
-			for {
-				select {
-				case <-ctx.Done():
-					err = ctx.Err()
-					if err != nil {
-						logtrace.Info(ctx, "waiting for signature from peers cancelled or timeout", fields)
-					}
-
-					logtrace.Info(ctx, "ctx done return from Validate & Register", fields)
-					return nil
-				case <-task.AllSignaturesReceivedChn:
-					logtrace.Info(ctx, "all signature received so start validation", fields)
-
-					// TODO : MsgFinalizeAction
-
-					return nil
-				}
-			}
-		})
-	case false:
-		<-task.NewAction(func(ctx context.Context) error {
-			logtrace.Info(ctx, "secondary node flow, sending data with signature to primary node for validation", fields)
-
-			if err = task.signAndSendCascadeTicket(ctx, task.NetworkHandler.ConnectedTo == nil, ticket, task.rqIDsFile, task.rqIDEncodeParams); err != nil { // FIXME : use the right data
-				fields[logtrace.FieldError] = err.Error()
-				logtrace.Error(ctx, "failed to sign & send cascade ticket to the primary node", fields)
-				return status.Errorf(codes.Internal, "failed to sign and send cascade ticket")
-			}
-
-			return nil
-		})
+	if err = task.storeRaptorQSymbols(ctx); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		logtrace.Error(ctx, "error storing raptor-q symbols", fields)
+		return nil, status.Errorf(codes.Internal, "error storing raptor-q symbols")
 	}
+	logtrace.Info(ctx, "raptor-q symbols have been stored", fields)
 
 	return &UploadInputDataResponse{
 		Success: true,
@@ -148,121 +112,48 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}, nil
 }
 
-// sign and send NFT ticket if not primary
-func (task *CascadeRegistrationTask) signAndSendCascadeTicket(ctx context.Context, isPrimary bool, ticket []byte, data []byte, rqEncodeParams raptorq.EncoderParameters) (err error) {
-	secondaryNodeSignature, err := task.lumeraClient.Node().Sign(task.config.SupernodeAccountAddress, ticket)
-	if err != nil {
-		return errors.Errorf("sign ticket: %w", err)
+func (task *CascadeRegistrationTask) storeIDFiles(ctx context.Context) error {
+	ctx = context.WithValue(ctx, log.TaskIDKey, task.ID())
+	task.storage.TaskID = task.ID()
+	if err := task.storage.StoreBatch(ctx, task.RQInfo.rqIDFiles, common.P2PDataCascadeMetadata); err != nil {
+		return errors.Errorf("store ID files into kademlia: %w", err)
 	}
-
-	if !isPrimary {
-		log.WithContext(ctx).Info("send signed cascade ticket to primary node")
-
-		cascadeNode, ok := task.NetworkHandler.ConnectedTo.SuperNodePeerAPIInterface.(*CascadeRegistrationNode)
-		if !ok {
-			return errors.Errorf("node is not SenseRegistrationNode")
-		}
-
-		if err := cascadeNode.SendCascadeTicketSignature(ctx, task.config.SupernodeAccountAddress, secondaryNodeSignature, data, task.rqIDsFile, rqEncodeParams); err != nil { // FIXME : nodeID
-			return errors.Errorf("send signature to primary node %s at address %s: %w", task.NetworkHandler.ConnectedTo.ID, task.NetworkHandler.ConnectedTo.Address, err)
-		}
-	}
-
 	return nil
 }
 
-func (task *CascadeRegistrationTask) ValidateSignedTicketFromSecondaryNode(ctx context.Context,
-	ticket []byte, supernodeAccAddress string, supernodeSignature []byte, rqidFile []byte) error {
-	var err error
-
-	fields := logtrace.Fields{
-		logtrace.FieldMethod:                  "ValidateSignedTicketFromSecondaryNode",
-		logtrace.FieldSupernodeAccountAddress: supernodeAccAddress,
-	}
-	logtrace.Info(ctx, "request has been received to validate signature", fields)
-
-	err = task.lumeraClient.Node().Verify(supernodeAccAddress, ticket, supernodeSignature)
-	if err != nil {
-		log.WithContext(ctx).WithError(err).Errorf("error verifying the secondary-supernode signature")
-		return errors.Errorf("verify cascade ticket signature %w", err)
-	}
-	logtrace.Info(ctx, "seconday-supernode signature has been verified", fields)
-
-	var cascadeData ct.CascadeTicket
-	err = json.Unmarshal(ticket, &cascadeData)
-	if err != nil {
-		log.WithContext(ctx).WithError(err).Errorf("unmarshal cascade ticket signature")
-		return errors.Errorf("unmarshal cascade ticket signature %w", err)
-	}
-	logtrace.Info(ctx, "data has been unmarshalled", fields)
-
-	if err := task.validateRqIDs(ctx, rqidFile, &cascadeData); err != nil {
-		log.WithContext(ctx).WithError(err).Errorf("validate rqids files")
-
-		return errors.Errorf("validate rq & dd id files %w", err)
-	}
-
-	if err = task.validateRQSymbolID(ctx, &cascadeData); err != nil {
-		log.WithContext(ctx).WithError(err).Errorf("valdate rq ids inside rqids file")
-		err = errors.Errorf("generate rqids: %w", err)
-		return nil
-	}
-
-	task.dataHash = cascadeData.DataHash
-
-	return nil
+func (task *CascadeRegistrationTask) storeRaptorQSymbols(ctx context.Context) error {
+	return task.storage.StoreRaptorQSymbolsIntoP2P(ctx, task.ID())
 }
 
-// validates RQIDs file
-func (task *CascadeRegistrationTask) validateRqIDs(ctx context.Context, dd []byte, ticket *ct.CascadeTicket) error {
-	snAccAddresses := []string{ticket.Creator}
-
-	var err error
-	task.rawRqFile, task.rqIDFiles, err = task.ValidateIDFiles(ctx, dd,
-		ticket.RQIDsIC, uint32(ticket.RQIDsMax),
-		ticket.RQIDs, 1,
-		snAccAddresses,
-		task.lumeraClient,
-		ticket.CreatorSignature,
-	)
-	if err != nil {
-		return errors.Errorf("validate rq_ids file: %w", err)
-	}
-
-	return nil
-}
-
-// validates actual RQ Symbol IDs inside RQIDs file
-func (task *CascadeRegistrationTask) validateRQSymbolID(ctx context.Context, ticket *ct.CascadeTicket) error {
-
-	content, err := task.Asset.Bytes()
-	if err != nil {
-		return errors.Errorf("read image contents: %w", err)
-	}
-
-	return task.storage.ValidateRaptorQSymbolIDs(ctx,
-		content /*uint32(len(task.Ticket.AppTicketData.RQIDs))*/, 1,
-		hex.EncodeToString([]byte(ticket.BlockHash)), ticket.Creator,
-		task.rawRqFile)
-}
-
-func (task *CascadeRegistrationTask) createCascadeActionTicket(ctx context.Context,
-	actionDetails *actiontypes.Action, latestBlock cmtservice.GetLatestBlockResponse) ([]byte, error) {
-	t := ct.CascadeTicket{
-		ActionID:         actionDetails.ActionID,
-		BlockHeight:      latestBlock.GetSdkBlock().GetHeader().Height,
-		BlockHash:        latestBlock.GetBlockId().GetHash(),
-		Creator:          actionDetails.GetCreator(),
-		CreatorSignature: task.creatorSignature,
-		DataHash:         actionDetails.Metadata.GetCascadeMetadata().DataHash,
-		RQIDsIC:          task.rqIDsIC,
-		RQIDs:            task.rqIDs,
-		RQIDsMax:         actionDetails.GetMetadata().GetCascadeMetadata().RqMax,
-	}
-	ticket, err := json.Marshal(t)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed marshall the cascade ticket")
-	}
-
-	return ticket, nil
-}
+//// validates RQIDs file
+//func (task *CascadeRegistrationTask) validateRqIDs(ctx context.Context, dd []byte, ticket *ct.CascadeTicket) error {
+//	snAccAddresses := []string{ticket.Creator}
+//
+//	var err error
+//	task.rawRqFile, task.rqIDFiles, err = task.ValidateIDFiles(ctx, dd,
+//		ticket.RQIDsIC, uint32(ticket.RQIDsMax),
+//		ticket.RQIDs, 1,
+//		snAccAddresses,
+//		task.lumeraClient,
+//		ticket.CreatorSignature,
+//	)
+//	if err != nil {
+//		return errors.Errorf("validate rq_ids file: %w", err)
+//	}
+//
+//	return nil
+//}
+//
+//// validates actual RQ Symbol IDs inside RQIDs file
+//func (task *CascadeRegistrationTask) validateRQSymbolID(ctx context.Context, ticket *ct.CascadeTicket) error {
+//
+//	content, err := task.Asset.Bytes()
+//	if err != nil {
+//		return errors.Errorf("read image contents: %w", err)
+//	}
+//
+//	return task.storage.ValidateRaptorQSymbolIDs(ctx,
+//		content /*uint32(len(task.Ticket.AppTicketData.RQIDs))*/, 1,
+//		hex.EncodeToString([]byte(ticket.BlockHash)), ticket.Creator,
+//		task.rawRqFile)
+//}

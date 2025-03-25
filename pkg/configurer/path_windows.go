@@ -16,8 +16,8 @@ const (
 )
 
 var defaultConfigPaths = []string{
-	path.Join("$HOME", beforeVistaAppDir, "Pastel"),
-	path.Join("$HOME", sinceVistaAppDir, "Pastel"),
+	path.Join("$HOME", beforeVistaAppDir, "Lumera"),
+	path.Join("$HOME", sinceVistaAppDir, "Lumera"),
 	".",
 }
 
@@ -30,5 +30,5 @@ func DefaultPath() string {
 	if v&0xff > 5 {
 		appDir = sinceVistaAppDir
 	}
-	return filepath.Join(homeDir, filepath.FromSlash(appDir), "Pastel")
+	return filepath.Join(homeDir, filepath.FromSlash(appDir), "Lumera")
 }

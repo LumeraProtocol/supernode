@@ -1,10 +1,12 @@
 package raptorq
 
 import (
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
+
 	rq "github.com/LumeraProtocol/supernode/gen/raptorq"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 )
 
 const (
@@ -17,15 +19,21 @@ type raptorQServerClient struct {
 	conn         *clientConn
 	rqService    rq.RaptorQClient
 	lumeraClient lumera.Client
+	store        rqstore.Store
 	semaphore    chan struct{} // Semaphore to control concurrency
 }
 
-func newRaptorQServerClient(conn *clientConn, config *Config) RaptorQ {
+func NewRaptorQServerClient(conn *clientConn,
+	config *Config,
+	lc lumera.Client,
+	store rqstore.Store) RaptorQ {
 	return &raptorQServerClient{
-		conn:      conn,
-		rqService: rq.NewRaptorQClient(conn),
-		config:    config,
-		semaphore: make(chan struct{}, concurrency),
+		conn:         conn,
+		rqService:    rq.NewRaptorQClient(conn),
+		lumeraClient: lc,
+		store:        store,
+		config:       config,
+		semaphore:    make(chan struct{}, concurrency),
 	}
 }
 
