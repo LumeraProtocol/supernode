@@ -1,20 +1,20 @@
 package testutil
 
 import (
-	"testing"
 	"crypto/ecdh"
 	"github.com/stretchr/testify/require"
+	"testing"
 
-	"github.com/cosmos/go-bip39"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/go-bip39"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 )
-	
+
 // setupTestKeyExchange creates a key exchange instance for testing
 func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, peerType securekeyx.PeerType) *securekeyx.SecureKeyExchange {
 	ke, err := securekeyx.NewSecureKeyExchange(kb, addr, peerType, ecdh.P256())
@@ -23,7 +23,7 @@ func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, peerTyp
 }
 
 func generateMnemonic() (string, error) {
-	entropy, err := bip39.NewEntropy(128) // 128 bits for a 12-word mnemonic
+	entropy, err := bip39.NewEntropy(256) // 128 bits for a 12-word mnemonic
 	if err != nil {
 		return "", err
 	}

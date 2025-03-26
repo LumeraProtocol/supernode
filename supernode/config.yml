@@ -1,0 +1,26 @@
+# Supernode Configuration
+supernode:
+  key_name: "mukey"  # Account name for the supernode in keyring
+  ip_address: "0.0.0.0"
+  port: 4444
+  data_dir: "~/.supernode"  # Base directory in home folder
+
+# Keyring Configuration
+keyring:
+  backend: "test"  # Options: test, file, os
+  dir: "~/.supernode/keys"  # Keyring directory in home folder
+  password: "keyring-password"  # Only used for 'file' backend
+
+# P2P Network Configuration
+p2p:
+  listen_address: "0.0.0.0"
+  port: 4445
+  data_dir: "~/.supernode/data/p2p"  # P2P data directory in home folder
+  bootstrap_nodes: ""  # Comma-separated list of bootstrap peer addresses
+  external_ip: ""  # External IP address for this node (if behind NAT)
+
+# Lumera Chain Configuration
+lumera:
+  grpc_addr: "localhost:9090"
+  chain_id: "lumera"
+  timeout: 10  # Connection timeout in seconds

@@ -12,33 +12,34 @@ import (
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/storage"
 	"github.com/LumeraProtocol/supernode/pkg/storage/memory"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 )
 
 const (
-	defaultNetworkPort uint16 			 = 4445
-	defaultNetworkAddr                   = "0.0.0.0"
-	defaultRefreshTime                   = time.Second * 3600
-	defaultPingTime                      = time.Second * 10
-	defaultCleanupInterval               = time.Minute * 2
-	defaultDisabledKeyExpirationInterval = time.Minute * 30
-	defaultRedundantDataCleanupInterval  = 12 * time.Hour
-	defaultDeleteDataInterval            = 11 * time.Hour
-	delKeysCountThreshold                = 10
-	lowSpaceThreshold                    = 50 // GB
-	batchStoreSize                       = 2500
-	storeSameSymbolsBatchConcurrency     = 1
-	storeSymbolsBatchConcurrency         = 2.0
-	minimumDataStoreSuccessRate          = 75.0
+	defaultNetworkPort                   uint16 = 4445
+	defaultNetworkAddr                          = "0.0.0.0"
+	defaultRefreshTime                          = time.Second * 3600
+	defaultPingTime                             = time.Second * 10
+	defaultCleanupInterval                      = time.Minute * 2
+	defaultDisabledKeyExpirationInterval        = time.Minute * 30
+	defaultRedundantDataCleanupInterval         = 12 * time.Hour
+	defaultDeleteDataInterval                   = 11 * time.Hour
+	delKeysCountThreshold                       = 10
+	lowSpaceThreshold                           = 50 // GB
+	batchStoreSize                              = 2500
+	storeSameSymbolsBatchConcurrency            = 1
+	storeSymbolsBatchConcurrency                = 2.0
+	minimumDataStoreSuccessRate                 = 75.0
 
 	maxIterations = 4
 )
@@ -74,13 +75,16 @@ type Options struct {
 	// node there is no way to connect to the network
 	BootstrapNodes []*Node
 
-	LumeraClient *lumera.Client
+	// Lumera client for interacting with the blockchain
+	LumeraClient lumera.Client
 
-	LumeraNetwork *lumera.LumeraNetwork
+	// Keyring for credentials
+	Keyring keyring.Keyring
 
 	ExternalIP string
 }
 
+// NewDHT returns a new DHT node
 // NewDHT returns a new DHT node
 func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Options, rqstore rqstore.Store) (*DHT, error) {
 	// validate the options, if it's invalid, set them to default value
@@ -107,13 +111,15 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 		s.externalIP = options.ExternalIP
 	}
 
-	kr := options.LumeraClient.GetKeyring()
-	if kr == nil {
-		return nil, fmt.Errorf("keyring is not initialized in lumera client context")
+	// Check that keyring is provided
+	if options.Keyring == nil {
+		return nil, fmt.Errorf("keyring is required but not provided")
 	}
+
+	// Initialize client credentials with the provided keyring
 	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
 		CommonOptions: ltc.CommonOptions{
-			Keyring:       kr,
+			Keyring:       options.Keyring,
 			LocalIdentity: string(options.ID),
 			PeerType:      securekeyx.Supernode,
 		},
