@@ -8,6 +8,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	lumera "github.com/LumeraProtocol/supernode/pkg/lumera"
+	rqstore "github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -87,17 +89,17 @@ func (mr *MockConnectionMockRecorder) Close() *gomock.Call {
 }
 
 // RaptorQ mocks base method.
-func (m *MockConnection) RaptorQ(config *Config) RaptorQ {
+func (m *MockConnection) RaptorQ(config *Config, lc lumera.Client, store rqstore.Store) RaptorQ {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RaptorQ", config)
+	ret := m.ctrl.Call(m, "RaptorQ", config, lc, store)
 	ret0, _ := ret[0].(RaptorQ)
 	return ret0
 }
 
 // RaptorQ indicates an expected call of RaptorQ.
-func (mr *MockConnectionMockRecorder) RaptorQ(config interface{}) *gomock.Call {
+func (mr *MockConnectionMockRecorder) RaptorQ(config, lc, store interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RaptorQ", reflect.TypeOf((*MockConnection)(nil).RaptorQ), config)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RaptorQ", reflect.TypeOf((*MockConnection)(nil).RaptorQ), config, lc, store)
 }
 
 // MockRaptorQ is a mock of RaptorQ interface.
@@ -166,4 +168,19 @@ func (m *MockRaptorQ) EncodeMetaData(ctx context.Context, req EncodeMetadataRequ
 func (mr *MockRaptorQMockRecorder) EncodeMetaData(ctx, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EncodeMetaData", reflect.TypeOf((*MockRaptorQ)(nil).EncodeMetaData), ctx, req)
+}
+
+// GenRQIdentifiersFiles mocks base method.
+func (m *MockRaptorQ) GenRQIdentifiersFiles(ctx context.Context, req GenRQIdentifiersFilesRequest) (GenRQIdentifiersFilesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenRQIdentifiersFiles", ctx, req)
+	ret0, _ := ret[0].(GenRQIdentifiersFilesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenRQIdentifiersFiles indicates an expected call of GenRQIdentifiersFiles.
+func (mr *MockRaptorQMockRecorder) GenRQIdentifiersFiles(ctx, req interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenRQIdentifiersFiles", reflect.TypeOf((*MockRaptorQ)(nil).GenRQIdentifiersFiles), ctx, req)
 }

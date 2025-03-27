@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package cascade;
+
+option go_package = "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade";
+
+service CascadeService {
+  rpc Session(stream SessionRequest) returns (stream SessionReply);
+  rpc UploadInputData (UploadInputDataRequest) returns (UploadInputDataResponse);
+}
+
+message UploadInputDataRequest {
+  string filename = 1;
+  string action_id = 2;
+  string data_hash = 3;
+  int32 rq_max = 4;
+  string signed_data = 5;
+  bytes data = 6;
+}
+
+message UploadInputDataResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SessionRequest {
+  bool is_primary = 1;
+}
+
+message SessionReply {
+  string sessID = 1;
+}

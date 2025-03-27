@@ -2,13 +2,26 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/LumeraProtocol/supernode/p2p"
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/raptorq"
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/supernode/node/supernode/server"
+	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
+
+	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
 )
 
@@ -45,8 +58,26 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return err
 		}
 
+		// Initialize Lumera client
+		lumeraClient, err := initLumeraClient(ctx, appConfig)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Lumera client: %w", err)
+		}
+
+		// Initialize RaptorQ store for Cascade processing
+		rqStore, err := initRQStore(ctx, appConfig)
+		if err != nil {
+			return fmt.Errorf("failed to initialize RaptorQ store: %w", err)
+		}
+
+		// Initialize P2P service
+		p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to initialize P2P service: %w", err)
+		}
+
 		// Initialize the supernode (next step)
-		supernode, err := NewSupernode(ctx, appConfig, kr)
+		_, err = NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
 		if err != nil {
 			logtrace.Error(ctx, "Failed to initialize supernode", logtrace.Fields{
 				"error": err.Error(),
@@ -54,13 +85,45 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return err
 		}
 
-		// Start the supernode
-		if err := supernode.Start(ctx); err != nil {
-			logtrace.Error(ctx, "Failed to start supernode", logtrace.Fields{
+		// Initialize RaptorQ client connection
+		raptorQClientConnection, err := raptorq.NewClient().Connect(ctx, appConfig.RaptorQConfig.ServiceAddress)
+		if err != nil {
+			logtrace.Error(ctx, "Failed to initialize raptor q client connection interface", logtrace.Fields{
 				"error": err.Error(),
 			})
 			return err
 		}
+
+		// Configure cascade service
+		cascadeService := cascade.NewCascadeService(
+			&cascade.Config{
+				Config: common.Config{
+					SupernodeAccountAddress: appConfig.SupernodeConfig.KeyName,
+				},
+				RaptorQServicePort:    fmt.Sprintf("%d", appConfig.RaptorQConfig.ServicePort),
+				RaptorQServiceAddress: appConfig.RaptorQConfig.ServiceAddress,
+				RqFilesDir:            appConfig.RaptorQConfig.FilesDir,
+				NumberConnectedNodes:  1,
+			},
+			lumeraClient,
+			nil,
+			*p2pService,
+			raptorQClientConnection.RaptorQ(raptorq.NewConfig(), lumeraClient, rqStore),
+			raptorq.NewClient(),
+			rqStore,
+		)
+
+		serverConfig := &server.Config{
+			ListenAddresses: appConfig.SupernodeConfig.IpAddress, // FIXME : confirm
+			Port:            int(appConfig.SupernodeConfig.Port), // FIXME : confirm
+		}
+		grpc := server.New(serverConfig,
+			"service",
+			cascadeService,
+		)
+
+		// Start the services
+		RunServices(ctx, grpc, cascadeService, *p2pService)
 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
@@ -78,4 +141,41 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 func init() {
 	rootCmd.AddCommand(startCmd)
+}
+
+// initP2PService initializes the P2P service
+func initP2PService(ctx context.Context, config *config.Config, lumeraClient lumera.Client, kr cKeyring.Keyring, rqStore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (*p2p.P2P, error) {
+	// Get the supernode address from the keyring
+	keyInfo, err := kr.Key(config.SupernodeConfig.KeyName)
+	if err != nil {
+		return nil, fmt.Errorf("key not found: %w", err)
+	}
+	address, err := keyInfo.GetAddress()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address from key: %w", err)
+	}
+
+	// Initialize P2P service
+	p2pConfig := &p2p.Config{
+		ListenAddress:  config.P2PConfig.ListenAddress,
+		Port:           config.P2PConfig.Port,
+		DataDir:        config.P2PConfig.DataDir,
+		BootstrapNodes: config.P2PConfig.BootstrapNodes,
+		ExternalIP:     config.P2PConfig.ExternalIP,
+		ID:             address.String(),
+	}
+
+	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{
+		"listen_address": p2pConfig.ListenAddress,
+		"port":           p2pConfig.Port,
+		"data_dir":       p2pConfig.DataDir,
+		"supernode_id":   address.String(),
+	})
+
+	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize p2p service: %w", err)
+	}
+
+	return &p2pService, nil
 }

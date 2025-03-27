@@ -15,6 +15,8 @@ type Config struct {
 
 	// the queries port to listen for connections on
 	Port int `mapstructure:"port" json:"port,omitempty"`
+
+	RqFilesDir string `mapstructure:"rqfiles_dir" json:"rqfiles_dir,omitempty"`
 }
 
 // NewConfig returns a new Config instance.

@@ -37,11 +37,18 @@ type LumeraClientConfig struct {
 	Timeout  int    `yaml:"timeout"`
 }
 
+type RaptorQConfig struct {
+	ServiceAddress string `yaml:"service_address"`
+	ServicePort    uint16 `yaml:"service_port"`
+	FilesDir       string `yaml:"files_dir"`
+}
+
 type Config struct {
 	SupernodeConfig    `yaml:"supernode"`
 	KeyringConfig      `yaml:"keyring"`
 	P2PConfig          `yaml:"p2p"`
 	LumeraClientConfig `yaml:"lumera"`
+	RaptorQConfig      `yaml:"raptorq"`
 }
 
 // LoadConfig loads the configuration from a file
@@ -99,6 +106,14 @@ func LoadConfig(filename string) (*Config, error) {
 		config.P2PConfig.DataDir = expandPath(config.P2PConfig.DataDir, homeDir)
 		if err := os.MkdirAll(config.P2PConfig.DataDir, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create P2P data directory: %w", err)
+		}
+	}
+
+	// Process RaptorQConfig
+	if config.RaptorQConfig.FilesDir != "" {
+		config.RaptorQConfig.FilesDir = expandPath(config.RaptorQConfig.FilesDir, homeDir)
+		if err := os.MkdirAll(config.RaptorQConfig.FilesDir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create RaptorQ files directory: %w", err)
 		}
 	}
 

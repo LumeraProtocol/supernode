@@ -114,6 +114,10 @@ func (m *MockSupernodeModule) GetSuperNode(ctx context.Context, address string) 
 	return &supernodeTypes.QueryGetSuperNodeResponse{}, nil
 }
 
+func (m *MockSupernodeModule) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*supernodeTypes.SuperNode, error) {
+	return &supernodeTypes.SuperNode{}, nil
+}
+
 // MockTxModule implements the tx.Module interface for testing
 type MockTxModule struct{}
 
@@ -131,6 +135,16 @@ func (m *MockTxModule) GetTx(ctx context.Context, hash string) (*sdktx.GetTxResp
 
 // MockNodeModule implements the node.Module interface for testing
 type MockNodeModule struct{}
+
+// Sign implements node.Module.
+func (m *MockNodeModule) Sign(snAccAddress string, data []byte) (signature []byte, err error) {
+	panic("unimplemented")
+}
+
+// Verify implements node.Module.
+func (m *MockNodeModule) Verify(accAddress string, data []byte, signature []byte) (err error) {
+	panic("unimplemented")
+}
 
 func (m *MockNodeModule) GetLatestBlock(ctx context.Context) (*cmtservice.GetLatestBlockResponse, error) {
 	return &cmtservice.GetLatestBlockResponse{

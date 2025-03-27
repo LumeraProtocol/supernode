@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=lumera_mock.go -package=lumera -source=interface.go
 package lumera
 
 import (
@@ -11,7 +12,6 @@ import (
 
 // Client defines the main interface for interacting with Lumera blockchain
 type Client interface {
-	// Module accessors
 	Action() action.Module
 	SuperNode() supernode.Module
 	Tx() tx.Module

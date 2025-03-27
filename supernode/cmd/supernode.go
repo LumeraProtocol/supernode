@@ -25,29 +25,19 @@ type Supernode struct {
 }
 
 // NewSupernode creates a new supernode instance
-func NewSupernode(ctx context.Context, config *config.Config, kr keyring.Keyring) (*Supernode, error) {
+func NewSupernode(ctx context.Context, config *config.Config, kr keyring.Keyring,
+	p2pClient *p2p.P2P, rqStore rqstore.Store, lumeraClient lumera.Client) (*Supernode, error) {
+
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
 
-	// Initialize Lumera client
-	lumeraClient, err := initLumeraClient(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lumera client: %w", err)
-	}
-
-	// Initialize RaptorQ store for Cascade processing
-	rqStore, err := initRQStore(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize RaptorQ store: %w", err)
-	}
-
-	// Create the supernode instance
 	supernode := &Supernode{
 		config:       config,
 		lumeraClient: lumeraClient,
 		keyring:      kr,
 		rqStore:      rqStore,
+		p2pService:   *p2pClient,
 		keyName:      config.SupernodeConfig.KeyName,
 	}
 

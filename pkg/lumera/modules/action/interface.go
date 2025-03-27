@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=action_mock.go -package=action -source=interface.go
 package action
 
 import (

@@ -1,11 +1,12 @@
 package raptorq
 
 import (
-	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 
 	json "github.com/json-iterator/go"
 

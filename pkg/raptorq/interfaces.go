@@ -1,9 +1,12 @@
-//go:generate mockgen -destination=rq_mock.go -package=raptorq -source=interface.go
+//go:generate mockgen -destination=rq_mock.go -package=raptorq -source=interfaces.go
 
 package raptorq
 
 import (
 	"context"
+
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 )
 
 // ClientInterface represents a base connection interface.
@@ -18,7 +21,7 @@ type Connection interface {
 	Close() error
 
 	// RaptorQ returns a new RaptorQ stream.
-	RaptorQ(config *Config) RaptorQ
+	RaptorQ(config *Config, lc lumera.Client, store rqstore.Store) RaptorQ
 
 	// FIXME:
 	// Done returns a channel that's closed when connection is shutdown.
@@ -33,4 +36,6 @@ type RaptorQ interface {
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
 	// EncodeMetaData Get encode info(include encode parameters + symbol id files)
 	EncodeMetaData(ctx context.Context, req EncodeMetadataRequest) (EncodeResponse, error)
+	// GenRQIdentifiersFiles generates the RQ identifier files
+	GenRQIdentifiersFiles(ctx context.Context, req GenRQIdentifiersFilesRequest) (GenRQIdentifiersFilesResponse, error)
 }

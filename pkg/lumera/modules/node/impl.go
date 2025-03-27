@@ -5,22 +5,28 @@ import (
 	"fmt"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/types"
+	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+
 	"google.golang.org/grpc"
 )
 
 // module implements the Module interface
 type module struct {
+	kr     keyring.Keyring
 	client cmtservice.ServiceClient
 }
 
 // newModule creates a new Node module client
-func newModule(conn *grpc.ClientConn) (Module, error) {
+func newModule(conn *grpc.ClientConn, keyring keyring.Keyring) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
 	}
 
 	return &module{
 		client: cmtservice.NewServiceClient(conn),
+		kr:     keyring,
 	}, nil
 }
 
@@ -86,4 +92,46 @@ func (m *module) GetValidatorSetByHeight(ctx context.Context, height int64) (*cm
 	}
 
 	return resp, nil
+}
+
+func (m *module) Sign(snAccAddress string, data []byte) (signature []byte, err error) {
+	accAddr, err := types.AccAddressFromBech32(snAccAddress)
+	if err != nil {
+		return signature, fmt.Errorf("invalid address: %w", err)
+	}
+
+	_, err = m.kr.KeyByAddress(accAddr)
+	if err != nil {
+		return signature, fmt.Errorf("address not found in keyring: %w", err)
+	}
+
+	signature, _, err = m.kr.SignByAddress(accAddr, data, signingtypes.SignMode_SIGN_MODE_DIRECT)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign data: %w", err)
+	}
+
+	return signature, nil
+}
+
+func (m *module) Verify(accAddress string, data, signature []byte) (err error) {
+	addr, err := types.AccAddressFromBech32(accAddress)
+	if err != nil {
+		return fmt.Errorf("invalid address: %w", err)
+	}
+
+	keyInfo, err := m.kr.KeyByAddress(addr)
+	if err != nil {
+		return fmt.Errorf("address not found in keyring: %w", err)
+	}
+
+	pubKey, err := keyInfo.GetPubKey()
+	if err != nil {
+		return fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	if !pubKey.VerifySignature(data, signature) {
+		return fmt.Errorf("invalid signature")
+	}
+
+	return nil
 }
