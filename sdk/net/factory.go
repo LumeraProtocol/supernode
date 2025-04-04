@@ -27,10 +27,19 @@ type ClientFactory struct {
 
 // NewClientFactory creates a new client factory with the provided dependencies
 func NewClientFactory(
+	ctx context.Context,
 	logger log.Logger,
 	keyring keyring.Keyring,
 	config FactoryConfig,
 ) *ClientFactory {
+	if logger == nil {
+		logger = log.NewNoopLogger()
+	}
+
+	logger.Debug(ctx, "Creating supernode client factory",
+		"localAddress", config.LocalCosmosAddress,
+		"defaultPort", config.DefaultSupernodePort)
+
 	return &ClientFactory{
 		logger:        logger,
 		keyring:       keyring,

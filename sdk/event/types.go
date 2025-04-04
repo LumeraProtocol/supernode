@@ -2,6 +2,7 @@ package event
 
 import (
 	"action/adapters/lumera"
+	"context"
 	"time"
 )
 
@@ -41,7 +42,7 @@ type SupernodeData struct {
 	Error     string           // Error message if applicable
 }
 
-func NewEvent(eventType EventType, taskID, taskType string, data map[string]interface{}) Event {
+func NewEvent(ctx context.Context, eventType EventType, taskID, taskType string, data map[string]interface{}) Event {
 	if data == nil {
 		data = make(map[string]interface{})
 	}

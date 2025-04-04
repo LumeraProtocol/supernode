@@ -48,7 +48,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"actionID", t.ActionID)
 
 	// Emit task started event with phase information
-	t.EmitEvent(event.TaskStarted, map[string]interface{}{
+	t.EmitEvent(ctx, event.TaskStarted, map[string]interface{}{
 		"total_phases": 3, // Action validation, supernode selection, upload
 	})
 
@@ -57,7 +57,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 
 	// 1. Action Validation Phase
 	t.logger.Debug(ctx, "Starting action validation phase", "taskID", t.TaskID)
-	t.EmitEvent(event.PhaseStarted, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseStarted, map[string]interface{}{
 		"phase":        "action_validation",
 		"phase_number": 1,
 		"total_phases": 3,
@@ -73,13 +73,13 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 			"actionID", t.ActionID,
 			"error", err)
 
-		t.EmitEvent(event.PhaseFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.PhaseFailed, map[string]interface{}{
 			"phase":        "action_validation",
 			"phase_number": 1,
 			"error":        err.Error(),
 		})
 
-		t.EmitEvent(event.TaskFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.TaskFailed, map[string]interface{}{
 			"phase": "action_validation",
 			"error": t.Err.Error(),
 		})
@@ -92,7 +92,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"actionID", action.ID,
 		"state", action.State)
 
-	t.EmitEvent(event.PhaseCompleted, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseCompleted, map[string]interface{}{
 		"phase":         "action_validation",
 		"phase_number":  1,
 		"action_id":     action.ID,
@@ -102,7 +102,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 
 	// 2. Supernode Selection Phase
 	t.logger.Debug(ctx, "Starting supernode selection phase", "taskID", t.TaskID)
-	t.EmitEvent(event.PhaseStarted, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseStarted, map[string]interface{}{
 		"phase":        "supernode_selection",
 		"phase_number": 2,
 		"total_phases": 3,
@@ -117,13 +117,13 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 			"taskID", t.TaskID,
 			"error", err)
 
-		t.EmitEvent(event.PhaseFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.PhaseFailed, map[string]interface{}{
 			"phase":        "supernode_selection",
 			"phase_number": 2,
 			"error":        err.Error(),
 		})
 
-		t.EmitEvent(event.TaskFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.TaskFailed, map[string]interface{}{
 			"phase": "supernode_selection",
 			"error": t.Err.Error(),
 		})
@@ -135,7 +135,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"taskID", t.TaskID,
 		"supernodeCount", len(supernodes))
 
-	t.EmitEvent(event.PhaseCompleted, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseCompleted, map[string]interface{}{
 		"phase":           "supernode_selection",
 		"phase_number":    2,
 		"supernode_count": len(supernodes),
@@ -149,6 +149,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		DefaultSupernodePort: t.config.Network.DefaultSupernodePort,
 	}
 	clientFactory := net.NewClientFactory(
+		ctx,
 		t.logger,
 		t.keyring,
 		factoryConfig,
@@ -166,13 +167,13 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 			"filePath", t.FilePath,
 			"error", err)
 
-		t.EmitEvent(event.PhaseFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.PhaseFailed, map[string]interface{}{
 			"phase":        "upload",
 			"phase_number": 3,
 			"error":        t.Err.Error(),
 		})
 
-		t.EmitEvent(event.TaskFailed, map[string]interface{}{
+		t.EmitEvent(ctx, event.TaskFailed, map[string]interface{}{
 			"phase": "file_reading",
 			"error": t.Err.Error(),
 		})
@@ -203,7 +204,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"taskID", t.TaskID,
 		"supernodeCount", len(supernodes))
 
-	t.EmitEvent(event.PhaseStarted, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseStarted, map[string]interface{}{
 		"phase":           "upload",
 		"phase_number":    3,
 		"total_phases":    3,
@@ -219,7 +220,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 			"endpoint", sn.GrpcEndpoint)
 
 		// Emit supernode attempt event
-		t.EmitEvent(event.SupernodeAttempt, map[string]interface{}{
+		t.EmitEvent(ctx, event.SupernodeAttempt, map[string]interface{}{
 			"phase":              "upload",
 			"supernode_index":    i + 1,
 			"total_supernodes":   len(supernodes),
@@ -239,7 +240,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 				"error", err)
 
 			// Emit supernode failed event
-			t.EmitEvent(event.SupernodeFailed, map[string]interface{}{
+			t.EmitEvent(ctx, event.SupernodeFailed, map[string]interface{}{
 				"phase":             "upload",
 				"supernode_index":   i + 1,
 				"supernode_address": sn.CosmosAddress,
@@ -256,14 +257,14 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 				"supernodeAddress", sn.CosmosAddress)
 
 			// Emit supernode success event
-			t.EmitEvent(event.SupernodeSucceeded, map[string]interface{}{
+			t.EmitEvent(ctx, event.SupernodeSucceeded, map[string]interface{}{
 				"phase":             "upload",
 				"supernode_index":   i + 1,
 				"supernode_address": sn.CosmosAddress,
 			})
 
 			// Emit phase completed event
-			t.EmitEvent(event.PhaseCompleted, map[string]interface{}{
+			t.EmitEvent(ctx, event.PhaseCompleted, map[string]interface{}{
 				"phase":                "upload",
 				"phase_number":         3,
 				"attempts":             i + 1,
@@ -271,7 +272,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 			})
 
 			// Emit task completed event
-			t.EmitEvent(event.TaskCompleted, map[string]interface{}{
+			t.EmitEvent(ctx, event.TaskCompleted, map[string]interface{}{
 				"total_phases":         3,
 				"successful_supernode": sn.CosmosAddress,
 			})
@@ -292,7 +293,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"lastError", lastErr)
 
 	// Emit phase failed event
-	t.EmitEvent(event.PhaseFailed, map[string]interface{}{
+	t.EmitEvent(ctx, event.PhaseFailed, map[string]interface{}{
 		"phase":        "upload",
 		"phase_number": 3,
 		"attempts":     len(supernodes),
@@ -300,7 +301,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 	})
 
 	// Emit task failed event
-	t.EmitEvent(event.TaskFailed, map[string]interface{}{
+	t.EmitEvent(ctx, event.TaskFailed, map[string]interface{}{
 		"phase": "upload",
 		"error": t.Err.Error(),
 	})
@@ -336,7 +337,7 @@ func (t *CascadeTask) tryUploadToSupernode(
 		"taskID", t.TaskID,
 		"supernodeAddress", supernode.CosmosAddress)
 
-	healthCtx, cancel := context.WithTimeout(ctx, time.Duration(ConnectTimeout))
+	healthCtx, cancel := context.WithTimeout(ctx, ConnectTimeout)
 	healthResp, err := client.HealthCheck(healthCtx)
 	cancel()
 
@@ -363,7 +364,7 @@ func (t *CascadeTask) tryUploadToSupernode(
 		"filename", request.Filename,
 		"dataSize", len(request.Data))
 
-	uploadCtx, cancel := context.WithTimeout(ctx, time.Duration(UploadTimeout))
+	uploadCtx, cancel := context.WithTimeout(ctx, UploadTimeout)
 	defer cancel()
 
 	resp, err := client.UploadInputData(uploadCtx, request)

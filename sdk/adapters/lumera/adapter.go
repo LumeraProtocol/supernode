@@ -41,6 +41,11 @@ func NewAdapter(
 		logger = log.NewNoopLogger()
 	}
 
+	logger.Debug(ctx, "Creating Lumera adapter",
+		"grpcAddr", config.GRPCAddr,
+		"chainID", config.ChainID,
+		"timeout", config.Timeout)
+
 	// Create client options from the config
 	options := []lumeraclient.Option{
 		lumeraclient.WithGRPCAddr(config.GRPCAddr),
@@ -61,8 +66,11 @@ func NewAdapter(
 	// Initialize the client
 	client, err := lumeraclient.NewClient(ctx, options...)
 	if err != nil {
+		logger.Error(ctx, "Failed to initialize Lumera client", "error", err)
 		return nil, fmt.Errorf("failed to initialize Lumera client: %w", err)
 	}
+
+	logger.Info(ctx, "Lumera adapter created successfully")
 
 	return &Adapter{
 		client: client,

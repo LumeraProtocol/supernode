@@ -14,10 +14,12 @@ type cascadeAdapter struct {
 	logger log.Logger
 }
 
-func NewCascadeAdapter(client cascade.CascadeServiceClient, logger log.Logger) CascadeServiceClient {
+func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient, logger log.Logger) CascadeServiceClient {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
+
+	logger.Debug(ctx, "Creating cascade service adapter")
 
 	return &cascadeAdapter{
 		client: client,

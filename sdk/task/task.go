@@ -28,7 +28,8 @@ const (
 )
 
 // EventCallback is a function that processes events from tasks
-type EventCallback func(event.Event)
+// Now includes context parameter for proper context propagation
+type EventCallback func(ctx context.Context, e event.Event)
 
 // Task is the interface that all task types must implement
 type Task interface {
@@ -52,9 +53,11 @@ type BaseTask struct {
 }
 
 // EmitEvent creates and sends an event with the specified type and data
-func (t *BaseTask) EmitEvent(eventType event.EventType, data map[string]interface{}) {
+func (t *BaseTask) EmitEvent(ctx context.Context, eventType event.EventType, data map[string]interface{}) {
 	if t.onEvent != nil {
-		e := event.NewEvent(eventType, t.TaskID, string(t.TaskType), data)
-		t.onEvent(e)
+		// Create event with the provided context
+		e := event.NewEvent(ctx, eventType, t.TaskID, string(t.TaskType), data)
+		// Pass context to the callback
+		t.onEvent(ctx, e)
 	}
 }

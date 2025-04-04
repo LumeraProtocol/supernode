@@ -28,12 +28,11 @@ type TaskCache struct {
 	taskLocks sync.Map
 }
 
-func NewTaskCache(logger log.Logger) (*TaskCache, error) {
+func NewTaskCache(ctx context.Context, logger log.Logger) (*TaskCache, error) {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
 
-	ctx := context.Background()
 	logger.Debug(ctx, "Creating new task cache")
 
 	cache, err := ristretto.NewCache(&ristretto.Config[string, *TaskEntry]{
@@ -163,14 +162,11 @@ func (tc *TaskCache) AddEvent(ctx context.Context, taskID string, e event.Event)
 
 // Wait waits for all operations to complete
 func (tc *TaskCache) Wait() {
-	ctx := context.Background()
-	tc.logger.Debug(ctx, "Waiting for cache operations to complete")
 	tc.cache.Wait()
 }
 
 // Close cleans up resources
-func (tc *TaskCache) Close() {
-	ctx := context.Background()
+func (tc *TaskCache) Close(ctx context.Context) {
 	tc.logger.Debug(ctx, "Closing task cache")
 	if tc.cache != nil {
 		tc.cache.Close()

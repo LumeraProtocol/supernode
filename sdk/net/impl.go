@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// supernodeClient implements the SupernodeClient interface
 type supernodeClient struct {
 	cascadeClient supernodeservice.CascadeServiceClient
 	healthClient  grpc_health_v1.HealthClient
@@ -24,13 +25,15 @@ type supernodeClient struct {
 	logger        log.Logger
 }
 
+// Verify interface compliance at compile time
+var _ SupernodeClient = (*supernodeClient)(nil)
+
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(
 	ctx context.Context,
 	logger log.Logger,
 	keyring keyring.Keyring,
 	localCosmosAddress string,
-
 	targetSupernode lumera.Supernode,
 	clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
@@ -80,6 +83,7 @@ func NewSupernodeClient(
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(
+		ctx,
 		cascade.NewCascadeServiceClient(conn),
 		logger,
 	)

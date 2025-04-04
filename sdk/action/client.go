@@ -12,16 +12,16 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
+// Client defines the interface for action operations
 type Client interface {
 	StartCascade(ctx context.Context, fileHash string, actionID string, filePath string, signedData string) (string, error)
-
+	DeleteTask(ctx context.Context, taskID string) error
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
-
-	SubscribeToEvents(eventType event.EventType, handler event.Handler)
-
-	SubscribeToAllEvents(handler event.Handler)
+	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
+	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
 }
 
+// ClientImpl implements the Client interface
 type ClientImpl struct {
 	config      config.Config
 	taskManager task.Manager
@@ -29,7 +29,12 @@ type ClientImpl struct {
 	keyring     keyring.Keyring
 }
 
+// Verify interface compliance at compile time
+var _ Client = (*ClientImpl)(nil)
+
+// NewClient creates a new action client
 func NewClient(
+	ctx context.Context,
 	config config.Config,
 	logger log.Logger,
 	keyring keyring.Keyring,
@@ -38,7 +43,7 @@ func NewClient(
 		logger = log.NewNoopLogger()
 	}
 
-	taskManager, err := task.NewManager(config, logger, keyring)
+	taskManager, err := task.NewManager(ctx, config, logger, keyring)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task manager: %w", err)
 	}
@@ -51,69 +56,89 @@ func NewClient(
 	}, nil
 }
 
-func (ac *ClientImpl) StartCascade(
+// StartCascade initiates a cascade operation
+func (c *ClientImpl) StartCascade(
 	ctx context.Context,
-	fileHash string,
-	actionID string,
-	filePath string,
-	signedData string,
+	fileHash string, // Hash of the file to process
+	actionID string, // ID of the action to perform
+	filePath string, // Path to the file on disk
+	signedData string, // Optional signed authorization data
 ) (string, error) {
-	ac.logger.Debug(ctx, "Starting cascade operation",
+	c.logger.Debug(ctx, "Starting cascade operation",
 		"fileHash", fileHash,
 		"actionID", actionID,
 		"filePath", filePath,
 	)
 
 	if fileHash == "" {
-		ac.logger.Error(ctx, "Empty file hash provided")
+		c.logger.Error(ctx, "Empty file hash provided")
 		return "", ErrEmptyFileHash
 	}
 	if actionID == "" {
-		ac.logger.Error(ctx, "Empty action ID provided")
+		c.logger.Error(ctx, "Empty action ID provided")
 		return "", ErrEmptyActionID
 	}
 	if filePath == "" {
-		ac.logger.Error(ctx, "Empty file path provided")
+		c.logger.Error(ctx, "Empty file path provided")
 		return "", ErrEmptyFilePath
 	}
 
-	taskID, err := ac.taskManager.CreateCascadeTask(ctx, fileHash, actionID, filePath, signedData)
+	taskID, err := c.taskManager.CreateCascadeTask(ctx, fileHash, actionID, filePath, signedData)
 	if err != nil {
-		ac.logger.Error(ctx, "Failed to create cascade task", "error", err)
+		c.logger.Error(ctx, "Failed to create cascade task", "error", err)
 		return "", fmt.Errorf("failed to create cascade task: %w", err)
 	}
 
-	ac.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)
+	c.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)
 	return taskID, nil
 }
 
-func (ac *ClientImpl) GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool) {
-	ac.logger.Debug(ctx, "Getting task", "taskID", taskID)
-	task, found := ac.taskManager.GetTask(ctx, taskID)
+// GetTask retrieves a task by its ID
+func (c *ClientImpl) GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool) {
+	c.logger.Debug(ctx, "Getting task", "taskID", taskID)
+	task, found := c.taskManager.GetTask(ctx, taskID)
 	if !found {
-		ac.logger.Debug(ctx, "Task not found", "taskID", taskID)
+		c.logger.Debug(ctx, "Task not found", "taskID", taskID)
 	} else {
-		ac.logger.Debug(ctx, "Task found", "taskID", taskID, "status", task.Status)
+		c.logger.Debug(ctx, "Task found", "taskID", taskID, "status", task.Status)
 	}
 	return task, found
 }
 
+// DeleteTask removes a task by its ID
+func (c *ClientImpl) DeleteTask(ctx context.Context, taskID string) error {
+	c.logger.Debug(ctx, "Deleting task", "taskID", taskID)
+	if taskID == "" {
+		c.logger.Error(ctx, "Empty task ID provided")
+		return fmt.Errorf("task ID cannot be empty")
+	}
+
+	err := c.taskManager.DeleteTask(ctx, taskID)
+	if err != nil {
+		c.logger.Error(ctx, "Failed to delete task", "taskID", taskID, "error", err)
+		return fmt.Errorf("failed to delete task: %w", err)
+	}
+
+	c.logger.Info(ctx, "Task deleted successfully", "taskID", taskID)
+	return nil
+}
+
 // SubscribeToEvents registers a handler for specific event types
-func (ac *ClientImpl) SubscribeToEvents(eventType event.EventType, handler event.Handler) {
-	ac.logger.Debug(context.Background(), "Subscribing to events via task manager", "eventType", eventType)
-	if ac.taskManager != nil {
-		ac.taskManager.SubscribeToEvents(eventType, handler)
+func (c *ClientImpl) SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) {
+	c.logger.Debug(ctx, "Subscribing to events via task manager", "eventType", eventType)
+	if c.taskManager != nil {
+		c.taskManager.SubscribeToEvents(ctx, eventType, handler)
 	} else {
-		ac.logger.Warn(context.Background(), "TaskManager is nil, cannot subscribe to events")
+		c.logger.Warn(ctx, "TaskManager is nil, cannot subscribe to events")
 	}
 }
 
 // SubscribeToAllEvents registers a handler for all events
-func (ac *ClientImpl) SubscribeToAllEvents(handler event.Handler) {
-	ac.logger.Debug(context.Background(), "Subscribing to all events via task manager")
-	if ac.taskManager != nil {
-		ac.taskManager.SubscribeToAllEvents(handler)
+func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Handler) {
+	c.logger.Debug(ctx, "Subscribing to all events via task manager")
+	if c.taskManager != nil {
+		c.taskManager.SubscribeToAllEvents(ctx, handler)
 	} else {
-		ac.logger.Warn(context.Background(), "TaskManager is nil, cannot subscribe to all events")
+		c.logger.Warn(ctx, "TaskManager is nil, cannot subscribe to all events")
 	}
 }

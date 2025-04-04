@@ -8,7 +8,7 @@ import (
 )
 
 // Handler is a function that processes events
-type Handler func(Event)
+type Handler func(ctx context.Context, e Event)
 
 // Bus manages event subscriptions and dispatching
 type Bus struct {
@@ -21,7 +21,7 @@ type Bus struct {
 }
 
 // NewBus creates a new event bus
-func NewBus(logger log.Logger, maxWorkers int) *Bus {
+func NewBus(ctx context.Context, logger log.Logger, maxWorkers int) *Bus {
 	// Use default logger if nil is provided
 	if logger == nil {
 		logger = log.NewNoopLogger()
@@ -32,6 +32,8 @@ func NewBus(logger log.Logger, maxWorkers int) *Bus {
 		maxWorkers = 50
 	}
 
+	logger.Debug(ctx, "Creating new event bus", "maxWorkers", maxWorkers)
+
 	return &Bus{
 		subscribers: make(map[EventType][]Handler),
 		logger:      logger,
@@ -41,11 +43,10 @@ func NewBus(logger log.Logger, maxWorkers int) *Bus {
 }
 
 // Subscribe registers a handler for a specific event type
-func (b *Bus) Subscribe(eventType EventType, handler Handler) {
+func (b *Bus) Subscribe(ctx context.Context, eventType EventType, handler Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ctx := context.Background()
 	b.logger.Debug(ctx, "Subscribing handler to event type", "eventType", eventType)
 
 	if _, exists := b.subscribers[eventType]; !exists {
@@ -55,17 +56,16 @@ func (b *Bus) Subscribe(eventType EventType, handler Handler) {
 }
 
 // SubscribeAll registers a handler for all event types
-func (b *Bus) SubscribeAll(handler Handler) {
+func (b *Bus) SubscribeAll(ctx context.Context, handler Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ctx := context.Background()
 	b.logger.Debug(ctx, "Subscribing handler to all event types")
 	b.wildcardHandlers = append(b.wildcardHandlers, handler)
 }
 
 // safelyCallHandler executes a handler with proper panic recovery
-func (b *Bus) safelyCallHandler(handler Handler, event Event) {
+func (b *Bus) safelyCallHandler(ctx context.Context, handler Handler, event Event) {
 	// Acquire a worker slot
 	b.workerPool <- struct{}{}
 
@@ -77,7 +77,6 @@ func (b *Bus) safelyCallHandler(handler Handler, event Event) {
 			// Recover from panics
 			if r := recover(); r != nil {
 				stackTrace := debug.Stack()
-				ctx := context.Background()
 				b.logger.Error(ctx,
 					"Event handler panicked",
 					"error", r,
@@ -90,8 +89,8 @@ func (b *Bus) safelyCallHandler(handler Handler, event Event) {
 		// Create a deep copy of the event to avoid race conditions
 		eventCopy := copyEvent(event)
 
-		// Execute the handler
-		handler(eventCopy)
+		// Execute the handler with the provided context
+		handler(ctx, eventCopy)
 	}()
 }
 
@@ -115,11 +114,10 @@ func copyEvent(e Event) Event {
 }
 
 // Publish sends an event to all relevant subscribers
-func (b *Bus) Publish(event Event) {
+func (b *Bus) Publish(ctx context.Context, event Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	ctx := context.Background()
 	b.logger.Debug(ctx, "Publishing event",
 		"type", event.Type,
 		"taskID", event.TaskID,
@@ -132,7 +130,7 @@ func (b *Bus) Publish(event Event) {
 			"handlerCount", len(handlers))
 
 		for _, handler := range handlers {
-			b.safelyCallHandler(handler, event)
+			b.safelyCallHandler(ctx, handler, event)
 		}
 	}
 
@@ -142,13 +140,15 @@ func (b *Bus) Publish(event Event) {
 			"handlerCount", len(b.wildcardHandlers))
 
 		for _, handler := range b.wildcardHandlers {
-			b.safelyCallHandler(handler, event)
+			b.safelyCallHandler(ctx, handler, event)
 		}
 	}
 }
 
 // WaitForHandlers waits for all event handlers to complete
-func (b *Bus) WaitForHandlers() {
+func (b *Bus) WaitForHandlers(ctx context.Context) {
+	b.logger.Debug(ctx, "Waiting for all handlers to complete")
+
 	// Fill the worker pool to capacity (blocks until all workers are free)
 	for i := 0; i < b.maxWorkers; i++ {
 		b.workerPool <- struct{}{}
@@ -161,6 +161,7 @@ func (b *Bus) WaitForHandlers() {
 }
 
 // Close releases resources used by the event bus
-func (b *Bus) Close() {
-	b.WaitForHandlers()
+func (b *Bus) Close(ctx context.Context) {
+	b.logger.Debug(ctx, "Closing event bus")
+	b.WaitForHandlers(ctx)
 }

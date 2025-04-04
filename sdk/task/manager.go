@@ -18,9 +18,9 @@ const MAX_EVENT_WORKERS = 100
 type Manager interface {
 	CreateCascadeTask(ctx context.Context, fileHash, actionID, filePath string, signedData string) (string, error)
 	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)
-
-	SubscribeToEvents(eventType event.EventType, handler event.Handler)
-	SubscribeToAllEvents(handler event.Handler)
+	DeleteTask(ctx context.Context, taskID string) error
+	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
+	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
 }
 
 type ManagerImpl struct {
@@ -33,6 +33,7 @@ type ManagerImpl struct {
 }
 
 func NewManager(
+	ctx context.Context,
 	config config.Config,
 	logger log.Logger,
 	kr keyring.Keyring,
@@ -43,11 +44,10 @@ func NewManager(
 		logger = log.NewNoopLogger()
 	}
 
-	ctx := context.Background()
 	logger.Info(ctx, "Initializing task manager")
 
 	// 2 - Event bus
-	eventBus := event.NewBus(logger, MAX_EVENT_WORKERS)
+	eventBus := event.NewBus(ctx, logger, MAX_EVENT_WORKERS)
 
 	// 3 - Create the Lumera client adapter
 	clientAdapter, err := lumera.NewAdapter(ctx,
@@ -59,7 +59,7 @@ func NewManager(
 		kr,
 		logger)
 
-	taskCache, err := NewTaskCache(logger)
+	taskCache, err := NewTaskCache(ctx, logger)
 	if err != nil {
 		logger.Error(ctx, "Failed to create task cache", "error", err)
 		return nil, fmt.Errorf("failed to create task cache: %w", err)
@@ -112,14 +112,16 @@ func (m *ManagerImpl) CreateCascadeTask(
 
 	// Start task asynchronously
 	go func() {
-		m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
-		err := task.Run(ctx)
-		if err != nil {
-			// Error handling is done via events in the task.Run method
-			// This is just a failsafe in case something goes wrong
-			m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
-			m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
-		}
+		// Create a separate context for the goroutine
+
+		// m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
+		// err := task.Run(ctx)
+		// if err != nil {
+		// 	// Error handling is done via events in the task.Run method
+		// 	// This is just a failsafe in case something goes wrong
+		// 	m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
+		// 	m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
+		// }
 	}()
 
 	m.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)
@@ -132,29 +134,46 @@ func (m *ManagerImpl) GetTask(ctx context.Context, taskID string) (*TaskEntry, b
 	return m.taskCache.Get(ctx, taskID)
 }
 
+// DeleteTask removes a task from the cache by its ID
+func (m *ManagerImpl) DeleteTask(ctx context.Context, taskID string) error {
+	m.logger.Info(ctx, "Deleting task", "taskID", taskID)
+
+	// First check if the task exists
+	_, exists := m.taskCache.Get(ctx, taskID)
+	if !exists {
+		m.logger.Warn(ctx, "Task not found for deletion", "taskID", taskID)
+		return fmt.Errorf("task not found: %s", taskID)
+	}
+
+	// Delete the task from the cache
+	m.taskCache.Del(ctx, taskID)
+
+	m.logger.Info(ctx, "Task deleted successfully", "taskID", taskID)
+	return nil
+}
+
 // SubscribeToEvents registers a handler for specific event types
-func (m *ManagerImpl) SubscribeToEvents(eventType event.EventType, handler event.Handler) {
-	m.logger.Debug(context.Background(), "Subscribing to events", "eventType", eventType)
+func (m *ManagerImpl) SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) {
+	m.logger.Debug(ctx, "Subscribing to events", "eventType", eventType)
 	if m.eventBus != nil {
-		m.eventBus.Subscribe(eventType, handler)
+		m.eventBus.Subscribe(ctx, eventType, handler)
 	} else {
-		m.logger.Warn(context.Background(), "EventBus is nil, cannot subscribe to events")
+		m.logger.Warn(ctx, "EventBus is nil, cannot subscribe to events")
 	}
 }
 
 // SubscribeToAllEvents registers a handler for all events
-func (m *ManagerImpl) SubscribeToAllEvents(handler event.Handler) {
-	m.logger.Debug(context.Background(), "Subscribing to all events")
+func (m *ManagerImpl) SubscribeToAllEvents(ctx context.Context, handler event.Handler) {
+	m.logger.Debug(ctx, "Subscribing to all events")
 	if m.eventBus != nil {
-		m.eventBus.SubscribeAll(handler)
+		m.eventBus.SubscribeAll(ctx, handler)
 	} else {
-		m.logger.Warn(context.Background(), "EventBus is nil, cannot subscribe to events")
+		m.logger.Warn(ctx, "EventBus is nil, cannot subscribe to events")
 	}
 }
 
 // handleEvent processes events from tasks and updates cache
-func (m *ManagerImpl) handleEvent(e event.Event) {
-	ctx := context.Background()
+func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 	m.logger.Debug(ctx, "Handling task event",
 		"taskID", e.TaskID,
 		"taskType", e.TaskType,
@@ -185,23 +204,22 @@ func (m *ManagerImpl) handleEvent(e event.Event) {
 	// Forward to the global event bus if configured
 	if m.eventBus != nil {
 		m.logger.Debug(ctx, "Publishing event to event bus", "eventType", e.Type)
-		m.eventBus.Publish(e)
+		m.eventBus.Publish(ctx, e)
 	} else {
 		m.logger.Debug(ctx, "No event bus configured, skipping event publishing")
 	}
 }
 
 // Close cleans up resources when the manager is no longer needed
-func (m *ManagerImpl) Close() {
-	ctx := context.Background()
+func (m *ManagerImpl) Close(ctx context.Context) {
 	m.logger.Info(ctx, "Closing task manager")
 
 	// Wait for any in-flight events to be processed
 	if m.eventBus != nil {
-		m.eventBus.WaitForHandlers()
+		m.eventBus.WaitForHandlers(ctx)
 	}
 
 	if m.taskCache != nil {
-		m.taskCache.Close()
+		m.taskCache.Close(ctx)
 	}
 }
