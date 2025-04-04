@@ -1,0 +1,207 @@
+package task
+
+import (
+	"action/adapters/lumera"
+	"action/config"
+	"action/event"
+	"action/log"
+	"context"
+	"fmt"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/google/uuid"
+)
+
+const MAX_EVENT_WORKERS = 100
+
+// Manager handles task creation and management
+type Manager interface {
+	CreateCascadeTask(ctx context.Context, fileHash, actionID, filePath string, signedData string) (string, error)
+	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)
+
+	SubscribeToEvents(eventType event.EventType, handler event.Handler)
+	SubscribeToAllEvents(handler event.Handler)
+}
+
+type ManagerImpl struct {
+	lumeraClient lumera.Client
+	config       config.Config
+	taskCache    *TaskCache
+	eventBus     *event.Bus
+	logger       log.Logger
+	keyring      keyring.Keyring
+}
+
+func NewManager(
+	config config.Config,
+	logger log.Logger,
+	kr keyring.Keyring,
+) (Manager, error) {
+
+	// 1 - Logger
+	if logger == nil {
+		logger = log.NewNoopLogger()
+	}
+
+	ctx := context.Background()
+	logger.Info(ctx, "Initializing task manager")
+
+	// 2 - Event bus
+	eventBus := event.NewBus(logger, MAX_EVENT_WORKERS)
+
+	// 3 - Create the Lumera client adapter
+	clientAdapter, err := lumera.NewAdapter(ctx,
+		lumera.ConfigParams{
+			GRPCAddr: config.Lumera.GRPCAddr,
+			ChainID:  config.Lumera.ChainID,
+			Timeout:  config.Lumera.Timeout,
+		},
+		kr,
+		logger)
+
+	taskCache, err := NewTaskCache(logger)
+	if err != nil {
+		logger.Error(ctx, "Failed to create task cache", "error", err)
+		return nil, fmt.Errorf("failed to create task cache: %w", err)
+	}
+
+	return &ManagerImpl{
+		lumeraClient: clientAdapter,
+		config:       config,
+		taskCache:    taskCache,
+		eventBus:     eventBus,
+		logger:       logger,
+		keyring:      kr,
+	}, nil
+}
+
+// CreateCascadeTask creates and starts a Cascade task using the new pattern
+func (m *ManagerImpl) CreateCascadeTask(
+	ctx context.Context,
+	fileHash string,
+	actionID string,
+	filePath string,
+	signedData string,
+) (string, error) {
+	m.logger.Info(ctx, "Creating cascade task",
+		"fileHash", fileHash,
+		"actionID", actionID)
+
+	// Generate task ID
+	taskID := uuid.New().String()
+	m.logger.Debug(ctx, "Generated task ID", "taskID", taskID)
+
+	baseTask := BaseTask{
+		TaskID:   taskID,
+		ActionID: actionID,
+		TaskType: TaskTypeCascade,
+		client:   m.lumeraClient,
+		keyring:  m.keyring,
+		config:   m.config,
+		onEvent:  m.handleEvent,
+		logger:   m.logger,
+	}
+	// Create cascade-specific task
+	task := NewCascadeTask(baseTask, fileHash, filePath, signedData)
+
+	// Store task in cache
+	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade)
+
+	// Ensure task is stored before returning
+	m.taskCache.Wait()
+
+	// Start task asynchronously
+	go func() {
+		m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
+		err := task.Run(ctx)
+		if err != nil {
+			// Error handling is done via events in the task.Run method
+			// This is just a failsafe in case something goes wrong
+			m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
+			m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
+		}
+	}()
+
+	m.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)
+	return taskID, nil
+}
+
+// GetTask retrieves a task entry by its ID
+func (m *ManagerImpl) GetTask(ctx context.Context, taskID string) (*TaskEntry, bool) {
+	m.logger.Debug(ctx, "Getting task", "taskID", taskID)
+	return m.taskCache.Get(ctx, taskID)
+}
+
+// SubscribeToEvents registers a handler for specific event types
+func (m *ManagerImpl) SubscribeToEvents(eventType event.EventType, handler event.Handler) {
+	m.logger.Debug(context.Background(), "Subscribing to events", "eventType", eventType)
+	if m.eventBus != nil {
+		m.eventBus.Subscribe(eventType, handler)
+	} else {
+		m.logger.Warn(context.Background(), "EventBus is nil, cannot subscribe to events")
+	}
+}
+
+// SubscribeToAllEvents registers a handler for all events
+func (m *ManagerImpl) SubscribeToAllEvents(handler event.Handler) {
+	m.logger.Debug(context.Background(), "Subscribing to all events")
+	if m.eventBus != nil {
+		m.eventBus.SubscribeAll(handler)
+	} else {
+		m.logger.Warn(context.Background(), "EventBus is nil, cannot subscribe to events")
+	}
+}
+
+// handleEvent processes events from tasks and updates cache
+func (m *ManagerImpl) handleEvent(e event.Event) {
+	ctx := context.Background()
+	m.logger.Debug(ctx, "Handling task event",
+		"taskID", e.TaskID,
+		"taskType", e.TaskType,
+		"eventType", e.Type)
+
+	// Update the cache with the event
+	m.taskCache.AddEvent(ctx, e.TaskID, e)
+
+	// Update the task status based on event type
+	switch e.Type {
+	case event.TaskStarted:
+		m.logger.Info(ctx, "Task started", "taskID", e.TaskID, "taskType", e.TaskType)
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusProcessing, nil)
+	case event.TaskCompleted:
+		m.logger.Info(ctx, "Task completed", "taskID", e.TaskID, "taskType", e.TaskType)
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusCompleted, nil)
+	case event.TaskFailed:
+		var err error
+		if errMsg, ok := e.Data["error"].(string); ok {
+			err = fmt.Errorf(errMsg)
+			m.logger.Error(ctx, "Task failed", "taskID", e.TaskID, "taskType", e.TaskType, "error", errMsg)
+		} else {
+			m.logger.Error(ctx, "Task failed with unknown error", "taskID", e.TaskID, "taskType", e.TaskType)
+		}
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusFailed, err)
+	}
+
+	// Forward to the global event bus if configured
+	if m.eventBus != nil {
+		m.logger.Debug(ctx, "Publishing event to event bus", "eventType", e.Type)
+		m.eventBus.Publish(e)
+	} else {
+		m.logger.Debug(ctx, "No event bus configured, skipping event publishing")
+	}
+}
+
+// Close cleans up resources when the manager is no longer needed
+func (m *ManagerImpl) Close() {
+	ctx := context.Background()
+	m.logger.Info(ctx, "Closing task manager")
+
+	// Wait for any in-flight events to be processed
+	if m.eventBus != nil {
+		m.eventBus.WaitForHandlers()
+	}
+
+	if m.taskCache != nil {
+		m.taskCache.Close()
+	}
+}
