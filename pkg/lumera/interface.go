@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
@@ -12,6 +13,7 @@ import (
 
 // Client defines the main interface for interacting with Lumera blockchain
 type Client interface {
+	Auth() auth.Module
 	Action() action.Module
 	SuperNode() supernode.Module
 	Tx() tx.Module

@@ -18,6 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	lumeraActionMod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	lumeraAuthMod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	lumeraNodeMod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	lumeraSupernodeMod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	lumeraTxMod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
@@ -216,10 +217,12 @@ func connectToSupernodeGRPC(t *testing.T, address string) CascadePb.CascadeServi
 func setupMockLumeraClient(ctrl *gomock.Controller, actionID string, accAddress string) lumera.Client {
 	mockLumeraClient := lumera.NewMockClient(ctrl)
 	mockActionClient := lumeraActionMod.NewMockModule(ctrl)
+	mockAuthClient := lumeraAuthMod.NewMockModule(ctrl)
 	mockNodeClient := lumeraNodeMod.NewMockModule(ctrl)
 	mockTxClient := lumeraTxMod.NewMockModule(ctrl)
 	mockSupernodeClient := lumeraSupernodeMod.NewMockModule(ctrl)
 
+	mockLumeraClient.EXPECT().Auth().Return(mockAuthClient).AnyTimes()
 	mockLumeraClient.EXPECT().Action().Return(mockActionClient).AnyTimes()
 	mockLumeraClient.EXPECT().Node().Return(mockNodeClient).AnyTimes()
 	mockLumeraClient.EXPECT().Tx().Return(mockTxClient).AnyTimes()

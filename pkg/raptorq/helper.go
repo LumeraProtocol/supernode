@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math/rand/v2"
+	"os"
+	"strconv"
+
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
-	"math/rand/v2"
-	"os"
-	"strconv"
 )
 
 const (
@@ -116,7 +117,7 @@ func (s *raptorQServerClient) generateRQIDs(ctx context.Context, req generateRQI
 	}
 	encRqIDsfile := utils.B64Encode(rqIDsfile)
 
-	creatorSignature, err := ValidateRQIDs(req.lc, req.signedData, encRqIDsfile, req.rawFile.SymbolIdentifiers, req.creatorAddress)
+	creatorSignature, err := ValidateRQIDs(ctx, req.lc, req.signedData, encRqIDsfile, req.rawFile.SymbolIdentifiers, req.creatorAddress)
 	if err != nil {
 		return generateRQIDsResponse{}, errors.Errorf("error validating RQIDs")
 	}

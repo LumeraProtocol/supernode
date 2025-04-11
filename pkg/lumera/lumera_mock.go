@@ -8,6 +8,7 @@ import (
 	reflect "reflect"
 
 	action "github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	auth "github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	node "github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	supernode "github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	tx "github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
@@ -49,6 +50,20 @@ func (m *MockClient) Action() action.Module {
 func (mr *MockClientMockRecorder) Action() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Action", reflect.TypeOf((*MockClient)(nil).Action))
+}
+
+// Auth mocks base method.
+func (m *MockClient) Auth() auth.Module {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Auth")
+	ret0, _ := ret[0].(auth.Module)
+	return ret0
+}
+
+// Auth indicates an expected call of Auth.
+func (mr *MockClientMockRecorder) Auth() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Auth", reflect.TypeOf((*MockClient)(nil).Auth))
 }
 
 // Close mocks base method.
