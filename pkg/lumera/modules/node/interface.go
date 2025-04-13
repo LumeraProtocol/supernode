@@ -31,9 +31,6 @@ type Module interface {
 
 	// Sign signs the given bytes with the supernodeAccountAddress and returns the signature
 	Sign(snAccAddress string, data []byte) (signature []byte, err error)
-
-	// Verify verifies the given bytes with given supernodeAccAddress public key and returns the error
-	Verify(accAddress string, data, signature []byte) (err error)
 }
 
 // NewModule creates a new Node module client

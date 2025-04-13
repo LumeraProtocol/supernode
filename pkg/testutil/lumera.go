@@ -3,21 +3,24 @@ package testutil
 import (
 	"context"
 
-	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
-
 	"github.com/LumeraProtocol/lumera/x/action/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
+
+	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // MockLumeraClient implements the lumera.Client interface for testing purposes
 type MockLumeraClient struct {
+	authMod      *MockAuthModule
 	actionMod    *MockActionModule
 	supernodeMod *MockSupernodeModule
 	txMod        *MockTxModule
@@ -43,6 +46,11 @@ func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client,
 	}, nil
 }
 
+// Auth returns the Auth module client
+func (c *MockLumeraClient) Auth() auth.Module {
+	return c.authMod
+}
+
 // Action returns the Action module client
 func (c *MockLumeraClient) Action() action.Module {
 	return c.actionMod
@@ -65,6 +73,21 @@ func (c *MockLumeraClient) Node() node.Module {
 
 // Close closes all connections
 func (c *MockLumeraClient) Close() error {
+	return nil
+}
+
+// MockAuthModule implements the auth.Module interface for testing
+type MockAuthModule struct{}
+
+// AccountInfoByAddress mocks the behavior of retrieving account info by address
+func (m *MockAuthModule) AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error) {
+	// Mock response: Return an empty response for testing, modify as needed
+	return &authtypes.QueryAccountInfoResponse{}, nil
+}
+
+// Verify mocks the behavior of verifying data with a given account address
+func (m *MockAuthModule) Verify(ctx context.Context, accAddress string, data, signature []byte) error {
+	// In the mock implementation, we just return nil to indicate success
 	return nil
 }
 

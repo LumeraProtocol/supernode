@@ -112,7 +112,7 @@ func (h *RegTaskHelper) ValidateIDFiles(ctx context.Context,
 				continue
 			}
 
-			err := lumeraClient.Node().Verify(snAccAddresses[j], file, creatorSignaure) // TODO : verify the signature
+			err := lumeraClient.Auth().Verify(ctx, snAccAddresses[j], file, creatorSignaure) // TODO : verify the signature
 			if err != nil {
 				return nil, nil, errors.Errorf("verify file signature %w", err)
 			}
