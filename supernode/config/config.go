@@ -11,6 +11,7 @@ import (
 )
 
 type SupernodeConfig struct {
+	Identity  string `yaml:"identity"`
 	KeyName   string `yaml:"key_name"`
 	IpAddress string `yaml:"ip_address"`
 	Port      uint16 `yaml:"port"`
@@ -39,7 +40,6 @@ type LumeraClientConfig struct {
 
 type RaptorQConfig struct {
 	ServiceAddress string `yaml:"service_address"`
-	ServicePort    uint16 `yaml:"service_port"`
 	FilesDir       string `yaml:"files_dir"`
 }
 

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// UploadInputDataRequest contains parameters for upload request
 type UploadInputDataRequest struct {
 	ActionID   string
 	Filename   string
@@ -23,17 +24,20 @@ type UploadInputDataRequest struct {
 	Data       []byte
 }
 
+// UploadInputDataResponse contains the result of upload
 type UploadInputDataResponse struct {
 	Success bool
 	Message string
 }
 
+// UploadInputData processes the upload request for cascade input data
 func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *UploadInputDataRequest) (*UploadInputDataResponse, error) {
 	fields := logtrace.Fields{
 		logtrace.FieldMethod:  "UploadInputData",
 		logtrace.FieldRequest: req,
 	}
 
+	// Get action details from Lumera
 	actionRes, err := task.lumeraClient.Action().GetAction(ctx, req.ActionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -47,6 +51,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	actionDetails := actionRes.GetAction()
 	logtrace.Info(ctx, "action has been retrieved", fields)
 
+	// Get latest block information
 	latestBlock, err := task.lumeraClient.Node().GetLatestBlock(ctx)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -58,6 +63,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	fields[logtrace.FieldBlockHeight] = latestBlockHeight
 	logtrace.Info(ctx, "latest block has been retrieved", fields)
 
+	// Get top supernodes
 	topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, latestBlockHeight)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -66,18 +72,21 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "top sns have been fetched", fields)
 
+	// Verify current supernode is in the top list
 	if !supernode.Exists(topSNsRes.Supernodes, task.config.SupernodeAccountAddress) {
 		logtrace.Error(ctx, "current supernode do not exist in the top sns list", fields)
 		return nil, status.Errorf(codes.Internal, "current supernode does not exist in the top sns list")
 	}
 	logtrace.Info(ctx, "current supernode exists in the top sns list", fields)
 
+	// Verify data hash matches action metadata
 	if req.DataHash != actionDetails.Metadata.GetCascadeMetadata().DataHash {
 		logtrace.Error(ctx, "data hash doesn't match", fields)
 		return nil, status.Errorf(codes.Internal, "data hash doesn't match")
 	}
 	logtrace.Info(ctx, "request data-hash has been matched with the action data-hash", fields)
 
+	// Generate RaptorQ identifiers
 	res, err := task.raptorQ.GenRQIdentifiersFiles(ctx, raptorq.GenRQIdentifiersFilesRequest{
 		TaskID:           task.ID(),
 		BlockHash:        string(latestBlockHash),
@@ -94,6 +103,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "rq symbols, rq-ids and rqid-files have been generated", fields)
 
+	// Store RaptorQ information
 	task.RQInfo.rqIDsIC = res.RQIDsIc
 	task.RQInfo.rqIDs = res.RQIDs
 	task.RQInfo.rqIDFiles = res.RQIDsFiles
@@ -101,8 +111,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	task.RQInfo.rqIDEncodeParams = res.RQEncodeParams
 	task.creatorSignature = res.CreatorSignature
 
-	// TODO : MsgFinalizeAction
-
+	// Store ID files to P2P
 	if err = task.storeIDFiles(ctx); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "error storing id files to p2p", fields)
@@ -110,6 +119,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "id files have been stored", fields)
 
+	// Store RaptorQ symbols
 	if err = task.storeRaptorQSymbols(ctx); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "error storing raptor-q symbols", fields)
@@ -123,6 +133,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}, nil
 }
 
+// storeIDFiles stores ID files to P2P
 func (task *CascadeRegistrationTask) storeIDFiles(ctx context.Context) error {
 	ctx = context.WithValue(ctx, log.TaskIDKey, task.ID())
 	task.storage.TaskID = task.ID()
@@ -132,39 +143,7 @@ func (task *CascadeRegistrationTask) storeIDFiles(ctx context.Context) error {
 	return nil
 }
 
+// storeRaptorQSymbols stores RaptorQ symbols to P2P
 func (task *CascadeRegistrationTask) storeRaptorQSymbols(ctx context.Context) error {
 	return task.storage.StoreRaptorQSymbolsIntoP2P(ctx, task.ID())
 }
-
-//// validates RQIDs file
-//func (task *CascadeRegistrationTask) validateRqIDs(ctx context.Context, dd []byte, ticket *ct.CascadeTicket) error {
-//	snAccAddresses := []string{ticket.Creator}
-//
-//	var err error
-//	task.rawRqFile, task.rqIDFiles, err = task.ValidateIDFiles(ctx, dd,
-//		ticket.RQIDsIC, uint32(ticket.RQIDsMax),
-//		ticket.RQIDs, 1,
-//		snAccAddresses,
-//		task.lumeraClient,
-//		ticket.CreatorSignature,
-//	)
-//	if err != nil {
-//		return errors.Errorf("validate rq_ids file: %w", err)
-//	}
-//
-//	return nil
-//}
-//
-//// validates actual RQ Symbol IDs inside RQIDs file
-//func (task *CascadeRegistrationTask) validateRQSymbolID(ctx context.Context, ticket *ct.CascadeTicket) error {
-//
-//	content, err := task.Asset.Bytes()
-//	if err != nil {
-//		return errors.Errorf("read image contents: %w", err)
-//	}
-//
-//	return task.storage.ValidateRaptorQSymbolIDs(ctx,
-//		content /*uint32(len(task.Ticket.AppTicketData.RQIDs))*/, 1,
-//		hex.EncodeToString([]byte(ticket.BlockHash)), ticket.Creator,
-//		task.rawRqFile)
-//}

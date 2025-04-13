@@ -9,11 +9,21 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	// "github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx" //
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
+
+	// ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	// "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
+
+// NOTE : Implemented with insecure gRPC server for now,
+//       // secure gRPC server setup is commented out and will be updated later
 
 type service interface {
 	Desc() *grpc.ServiceDesc
@@ -21,54 +31,53 @@ type service interface {
 
 // Server represents supernode server
 type Server struct {
-	config   *Config
-	services []service
-	name     string
-	//secClient alts.SecClient
-	//secInfo   *alts.SecInfo
+	config       *Config
+	services     []service
+	name         string
+	kr           keyring.Keyring
+	grpcServer   *grpc.Server
+	healthServer *health.Server
 }
 
 // Run starts the server
 func (server *Server) Run(ctx context.Context) error {
+	// conn.RegisterALTSRecordProtocols()
+	// defer conn.UnregisterALTSRecordProtocols()
 	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
+	// log.WithContext(ctx).Infof("Server identity: %s", server.config.Identity)
+	log.WithContext(ctx).Infof("Listening on: %s", server.config.ListenAddresses)
 	ctx = log.ContextWithPrefix(ctx, server.name)
 
 	group, ctx := errgroup.WithContext(ctx)
 
 	addresses := strings.Split(server.config.ListenAddresses, ",")
-	grpcServer := server.grpcServer(ctx)
-	if grpcServer == nil {
-		return fmt.Errorf("initialize grpc server failed")
+	if err := server.setupGRPCServer(); err != nil {
+		return fmt.Errorf("failed to setup gRPC server: %w", err)
 	}
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
+		address := addr // Create a new variable to avoid closure issues
 
 		group.Go(func() error {
-			return server.listen(ctx, addr, grpcServer)
+			return server.listen(ctx, address)
 		})
 	}
 
 	return group.Wait()
 }
 
-func (server *Server) listen(ctx context.Context, address string, grpcServer *grpc.Server) (err error) {
+func (server *Server) listen(ctx context.Context, address string) (err error) {
 	listen, err := net.Listen("tcp", address)
 	if err != nil {
 		return errors.Errorf("listen: %w", err).WithField("address", address)
 	}
 
-	// The listener that will track connections.
-	/*listen = &connTrackListener{
-		Listener:  listen,
-		connTrack: server.connTrack, // connection tracker
-	}*/
-
 	errCh := make(chan error, 1)
 	go func() {
 		defer errors.Recover(func(recErr error) { err = recErr })
-		log.WithContext(ctx).Infof("gRPC server listening on %q", address)
-		if err := grpcServer.Serve(listen); err != nil {
+		log.WithContext(ctx).Infof("gRPC server listening insecurely on %q", address)
+		if err := server.grpcServer.Serve(listen); err != nil {
 			errCh <- errors.Errorf("serve: %w", err).WithField("address", address)
 		}
 	}()
@@ -76,7 +85,7 @@ func (server *Server) listen(ctx context.Context, address string, grpcServer *gr
 	select {
 	case <-ctx.Done():
 		log.WithContext(ctx).Infof("Shutting down gRPC server at %q", address)
-		grpcServer.GracefulStop()
+		server.grpcServer.GracefulStop()
 	case err := <-errCh:
 		return err
 	}
@@ -84,58 +93,78 @@ func (server *Server) listen(ctx context.Context, address string, grpcServer *gr
 	return nil
 }
 
-func (server *Server) grpcServer(ctx context.Context) *grpc.Server {
-	//if server.secClient == nil || server.secInfo == nil {
-	//	log.WithContext(ctx).Errorln("secClient or secInfo don't initialize")
-	//	return nil
-	//}
+func (server *Server) setupGRPCServer() error {
+	// --- Commented out secure credential setup ---
+	/*
+		// Create server credentials
+		serverCreds, err := ltc.NewServerCreds(<c.ServerOptions{
+			CommonOptions: ltc.CommonOptions{
+				Keyring:       server.kr,
+				LocalIdentity: server.config.Identity,
+				PeerType:      securekeyx.Supernode,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create server credentials: %w", err)
+		}
+	*/
 
-	//// Define the keep-alive parameters
-	//kaParams := keepalive.ServerParameters{
-	//	MaxConnectionIdle:     2 * time.Hour,
-	//	MaxConnectionAge:      2 * time.Hour,
-	//	MaxConnectionAgeGrace: 1 * time.Hour,
-	//	Time:                  1 * time.Hour,
-	//	Timeout:               30 * time.Minute,
-	//}
-	//
-	//// Define the keep-alive enforcement policy
-	//kaPolicy := keepalive.EnforcementPolicy{
-	//	MinTime:             3 * time.Minute, // Minimum time a client should wait before sending keep-alive probes
-	//	PermitWithoutStream: true,            // Only allow pings when there are active streams
-	//}
+	// Initialize the gRPC server without credentials (insecure)
+	// server.grpcServer = grpc.NewServer(grpc.Creds(serverCreds)) // Original secure version
+	server.grpcServer = grpc.NewServer()
 
-	var grpcServer *grpc.Server
-	//if os.Getenv("INTEGRATION_TEST_ENV") == "true" {
-	//	grpcServer = grpc.NewServer(middleware.UnaryInterceptor(), middleware.StreamInterceptor(), grpc.MaxSendMsgSize(100000000),
-	//		grpc.MaxRecvMsgSize(100000000), grpc.KeepaliveParams(kaParams), // Use the keep-alive parameters
-	//		grpc.KeepaliveEnforcementPolicy(kaPolicy))
-	//} else {
-	//
-	//	grpcServer = grpc.NewServer(middleware.UnaryInterceptor(), middleware.StreamInterceptor(),
-	//		middleware.AltsCredential(server.secClient, server.secInfo), grpc.MaxSendMsgSize(100000000),
-	//		grpc.MaxRecvMsgSize(100000000), grpc.KeepaliveParams(kaParams), // Use the keep-alive parameters
-	//		grpc.KeepaliveEnforcementPolicy(kaPolicy))
-	//}
+	// Initialize and register the health server
+	server.healthServer = health.NewServer()
+	healthpb.RegisterHealthServer(server.grpcServer, server.healthServer)
 
+	// Set all services as serving
+	server.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+
+	// Register all services and set their health status
 	for _, service := range server.services {
-		log.WithContext(ctx).Debugf("Register services %q", service.Desc().ServiceName)
-		grpcServer.RegisterService(service.Desc(), service)
+		serviceName := service.Desc().ServiceName
+		server.grpcServer.RegisterService(service.Desc(), service)
+		server.healthServer.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 	}
 
-	return grpcServer
+	return nil
+}
+
+// SetServiceStatus allows updating the health status of a specific service
+func (server *Server) SetServiceStatus(serviceName string, status healthpb.HealthCheckResponse_ServingStatus) {
+	if server.healthServer != nil {
+		server.healthServer.SetServingStatus(serviceName, status)
+	}
+}
+
+// Close gracefully stops the server
+func (server *Server) Close() {
+	if server.healthServer != nil {
+		// Set all services to NOT_SERVING before shutdown
+		server.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+
+		// Allow a short time for health status to propagate
+		for _, service := range server.services {
+			serviceName := service.Desc().ServiceName
+			server.healthServer.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
+		}
+	}
+
+	if server.grpcServer != nil {
+		server.grpcServer.GracefulStop()
+	}
 }
 
 // New returns a new Server instance.
-func New(config *Config, name string,
-	//secClient alts.SecClient,
-	//secInfo *alts.SecInfo,
-	services ...service) *Server {
+func New(config *Config, name string, kr keyring.Keyring, services ...service) (*Server, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
 	return &Server{
-		config: config,
-		//secClient: secClient,
-		//secInfo:   secInfo,
+		config:   config,
 		services: services,
 		name:     name,
-	}
+		kr:       kr, // Keyring is kept for now
+	}, nil
 }

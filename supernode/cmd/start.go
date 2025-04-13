@@ -17,8 +17,9 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/supernode/node/action/server/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/node/supernode/server"
-	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
+	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -95,35 +96,41 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Configure cascade service
-		cascadeService := cascade.NewCascadeService(
-			&cascade.Config{
+		cService := cascadeService.NewCascadeService(
+			&cascadeService.Config{
 				Config: common.Config{
 					SupernodeAccountAddress: appConfig.SupernodeConfig.KeyName,
 				},
-				RaptorQServicePort:    fmt.Sprintf("%d", appConfig.RaptorQConfig.ServicePort),
 				RaptorQServiceAddress: appConfig.RaptorQConfig.ServiceAddress,
 				RqFilesDir:            appConfig.RaptorQConfig.FilesDir,
-				NumberConnectedNodes:  1,
 			},
 			lumeraClient,
-			nil,
 			*p2pService,
 			raptorQClientConnection.RaptorQ(raptorq.NewConfig(), lumeraClient, rqStore),
 			raptorq.NewClient(),
 			rqStore,
 		)
 
+		// Create cascade action server
+		cascadeActionServer := cascade.NewCascadeActionServer(cService)
+
+		// Configure server
 		serverConfig := &server.Config{
-			ListenAddresses: appConfig.SupernodeConfig.IpAddress, // FIXME : confirm
-			Port:            int(appConfig.SupernodeConfig.Port), // FIXME : confirm
+
+			Identity:        appConfig.SupernodeConfig.Identity,
+			ListenAddresses: appConfig.SupernodeConfig.IpAddress,
+			Port:            int(appConfig.SupernodeConfig.Port),
 		}
-		grpc := server.New(serverConfig,
+
+		// Create gRPC server
+		grpcServer, err := server.New(serverConfig,
 			"service",
-			cascadeService,
+			kr,
+			cascadeActionServer,
 		)
 
 		// Start the services
-		RunServices(ctx, grpc, cascadeService, *p2pService)
+		RunServices(ctx, grpcServer, cService, *p2pService)
 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
