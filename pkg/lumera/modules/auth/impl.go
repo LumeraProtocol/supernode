@@ -40,6 +40,8 @@ func (m *module) AccountInfoByAddress(ctx context.Context, addr string) (*authty
 }
 
 func (m *module) Verify(ctx context.Context, accAddress string, data, signature []byte) (err error) {
+
+	// Validate the address
 	addr, err := types.AccAddressFromBech32(accAddress)
 	if err != nil {
 		return fmt.Errorf("invalid address: %w", err)

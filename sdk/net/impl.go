@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"action/adapters/lumera"
 	"action/adapters/supernodeservice"
@@ -102,10 +103,22 @@ func (c *supernodeClient) UploadInputData(
 	in *supernodeservice.UploadInputDataRequest,
 	opts ...grpc.CallOption,
 ) (*supernodeservice.UploadInputDataResponse, error) {
+	// Get file info for logging
+	fileInfo, err := os.Stat(in.FilePath)
+	var fileSize int64
+	if err != nil {
+		c.logger.Warn(ctx, "Failed to get file stats",
+			"filePath", in.FilePath,
+			"error", err)
+	} else {
+		fileSize = fileInfo.Size()
+	}
+
 	c.logger.Debug(ctx, "Uploading input data",
 		"actionID", in.ActionID,
 		"filename", in.Filename,
-		"dataSize", len(in.Data))
+		"filePath", in.FilePath,
+		"fileSize", fileSize)
 
 	resp, err := c.cascadeClient.UploadInputData(ctx, in, opts...)
 	if err != nil {
@@ -114,7 +127,8 @@ func (c *supernodeClient) UploadInputData(
 
 	c.logger.Info(ctx, "Input data uploaded successfully",
 		"actionID", in.ActionID,
-		"filename", in.Filename)
+		"filename", in.Filename,
+		"filePath", in.FilePath)
 
 	return resp, nil
 }

@@ -155,14 +155,14 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		factoryConfig,
 	)
 
-	// 4. Load file data
-	t.logger.Debug(ctx, "Loading file data", "taskID", t.TaskID, "filePath", t.FilePath)
-	fileData, err := os.ReadFile(t.FilePath)
+	// Verify the file exists before we try to upload it
+	t.logger.Debug(ctx, "Verifying file exists", "taskID", t.TaskID, "filePath", t.FilePath)
+	fileInfo, err := os.Stat(t.FilePath)
 	if err != nil {
 		t.Status = StatusFailed
-		t.Err = fmt.Errorf("failed to read file: %w", err)
+		t.Err = fmt.Errorf("failed to access file: %w", err)
 
-		t.logger.Error(ctx, "Failed to read file data",
+		t.logger.Error(ctx, "Failed to access file",
 			"taskID", t.TaskID,
 			"filePath", t.FilePath,
 			"error", err)
@@ -174,7 +174,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		})
 
 		t.EmitEvent(ctx, event.TaskFailed, map[string]interface{}{
-			"phase": "file_reading",
+			"phase": "file_access",
 			"error": t.Err.Error(),
 		})
 
@@ -188,7 +188,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		"filename", filename,
 		"actionID", t.ActionID,
 		"fileHash", t.FileHash,
-		"dataSize", len(fileData),
+		"fileSize", fileInfo.Size(),
 		"hasSignedData", t.SignedData != "")
 
 	uploadRequest := &supernodeservice.UploadInputDataRequest{
@@ -196,7 +196,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		ActionID:   t.ActionID,
 		DataHash:   t.FileHash,
 		SignedData: t.SignedData,
-		Data:       fileData,
+		FilePath:   t.FilePath, // Pass the file path to the request
 	}
 
 	// 6. Upload Phase - Try each supernode until success
@@ -362,7 +362,7 @@ func (t *CascadeTask) tryUploadToSupernode(
 		"taskID", t.TaskID,
 		"supernodeAddress", supernode.CosmosAddress,
 		"filename", request.Filename,
-		"dataSize", len(request.Data))
+		"filePath", request.FilePath)
 
 	uploadCtx, cancel := context.WithTimeout(ctx, UploadTimeout)
 	defer cancel()

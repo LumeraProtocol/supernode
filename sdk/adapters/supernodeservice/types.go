@@ -11,7 +11,8 @@ type UploadInputDataRequest struct {
 	ActionID   string
 	DataHash   string
 	SignedData string
-	Data       []byte
+	RqMax      int32
+	FilePath   string
 }
 
 type UploadInputDataResponse struct {
