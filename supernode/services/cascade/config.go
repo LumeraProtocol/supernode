@@ -4,25 +4,15 @@ import (
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
-const (
-	defaultNumberConnectedNodes       = 2
-	defaultPreburntTxMinConfirmations = 3
-)
-
-// Config contains settings of the registering Nft.
+// Config contains settings for the cascade service
 type Config struct {
 	common.Config `mapstructure:",squash" json:"-"`
 
 	RaptorQServiceAddress string `mapstructure:"-" json:"-"`
-	RaptorQServicePort    string `mapstructure:"-" json:"-"`
-	RqFilesDir            string
-
-	NumberConnectedNodes int `mapstructure:"-" json:"number_connected_nodes,omitempty"`
+	RqFilesDir            string `mapstructure:"rq_files_dir" json:"rq_files_dir,omitempty"`
 }
 
-// NewConfig returns a new Config instance.
+// NewConfig returns a new Config instance with default values
 func NewConfig() *Config {
-	return &Config{
-		NumberConnectedNodes: defaultNumberConnectedNodes,
-	}
+	return &Config{}
 }
