@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 )
 
 // ClientInterface represents a base connection interface.
@@ -21,7 +20,7 @@ type Connection interface {
 	Close() error
 
 	// RaptorQ returns a new RaptorQ stream.
-	RaptorQ(config *Config, lc lumera.Client, store rqstore.Store) RaptorQ
+	RaptorQ(config *Config, lc lumera.Client) RaptorQ
 
 	// FIXME:
 	// Done returns a channel that's closed when connection is shutdown.

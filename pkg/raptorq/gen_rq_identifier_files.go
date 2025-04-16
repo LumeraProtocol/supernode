@@ -2,17 +2,20 @@ package raptorq
 
 import (
 	"context"
+	"encoding/json"
+
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
 type GenRQIdentifiersFilesRequest struct {
-	TaskID           string
 	BlockHash        string
 	Data             []byte
 	RqMax            uint32
 	CreatorSNAddress string
 	SignedData       string
+	DoValidate       bool
 	LC               lumera.Client
 }
 
@@ -28,26 +31,48 @@ type GenRQIdentifiersFilesResponse struct {
 func (s *raptorQServerClient) GenRQIdentifiersFiles(ctx context.Context, req GenRQIdentifiersFilesRequest) (
 	GenRQIdentifiersFilesResponse, error) {
 
-	encodeInfo, err := s.encodeInfo(ctx, req.TaskID, req.Data, req.RqMax, req.BlockHash, req.CreatorSNAddress)
+	// Step 1: Encode the original data to get symbol IDs
+	encodeInfo, err := s.encodeInfo(ctx, req.Data, req.RqMax, req.BlockHash, req.CreatorSNAddress)
 	if err != nil {
-		return GenRQIdentifiersFilesResponse{}, errors.Errorf("error encoding info:%s", err.Error())
+		return GenRQIdentifiersFilesResponse{}, errors.Errorf("error encoding info: %w", err)
 	}
 
-	var genRQIDsRes generateRQIDsResponse
+	// Step 2: Process the symbol ID files (taking just the first one)
+	var rawRQIDFile RawSymbolIDFile
 	for i := range encodeInfo.SymbolIDFiles {
-		if len(encodeInfo.SymbolIDFiles[i].SymbolIdentifiers) == 0 {
-			return GenRQIdentifiersFilesResponse{}, errors.Errorf("empty raw file")
+		rawRQIDFile = encodeInfo.SymbolIDFiles[i]
+		if len(rawRQIDFile.SymbolIdentifiers) == 0 {
+			return GenRQIdentifiersFilesResponse{}, errors.Errorf("empty symbol identifiers in raw file")
 		}
+		break // Only process the first valid file
+	}
 
-		rawRQIDFile := encodeInfo.SymbolIDFiles[i]
+	// Step 3: Marshal and encode the raw symbol ID file
+	rqIDsfile, err := json.Marshal(rawRQIDFile)
+	if err != nil {
+		return GenRQIdentifiersFilesResponse{}, errors.Errorf("marshal rqID file: %w", err)
+	}
+	encRqIDsfile := utils.B64Encode(rqIDsfile)
 
-		genRQIDsRes, err = s.generateRQIDs(ctx, generateRQIDsRequest{
-			req.LC, req.SignedData, rawRQIDFile, req.CreatorSNAddress, req.RqMax,
-		})
+	// Step 4: Validate RQIDs separately and explicitly
+	if !req.DoValidate {
+		err := ValidateRQIDs(ctx, req.LC, req.SignedData, encRqIDsfile,
+			rawRQIDFile.SymbolIdentifiers, req.CreatorSNAddress)
 		if err != nil {
-			return GenRQIdentifiersFilesResponse{}, errors.Errorf("error generating rqids")
+			return GenRQIdentifiersFilesResponse{}, errors.Errorf("error validating RQIDs: %w", err)
 		}
-		break
+	}
+
+	// Step 5: Generate RQIDs using the validated data
+	genRQIDsRes, err := s.generateRQIDs(ctx, generateRQIDsRequest{
+		lc:             req.LC,
+		rawFile:        rawRQIDFile,
+		creatorAddress: req.CreatorSNAddress,
+		maxFiles:       req.RqMax,
+		signedData:     req.SignedData,
+	})
+	if err != nil {
+		return GenRQIdentifiersFilesResponse{}, errors.Errorf("error generating rqids: %w", err)
 	}
 
 	return GenRQIdentifiersFilesResponse{
@@ -59,68 +84,3 @@ func (s *raptorQServerClient) GenRQIdentifiersFiles(ctx context.Context, req Gen
 		CreatorSignature: genRQIDsRes.signature,
 	}, nil
 }
-
-// // ValidateIDFiles validates received (IDs) file and its (50) IDs:
-// //  1. checks signatures
-// //  2. generates list of 50 IDs and compares them to received
-// func (h *RegTaskHelper) ValidateIDFiles(ctx context.Context,
-// 	data []byte, ic uint32, max uint32, ids []string, numSignRequired int,
-// 	snAccAddresses []string,
-// 	lumeraClient lumera.Client,
-// 	creatorSignaure []byte,
-// ) ([]byte, [][]byte, error) {
-
-// 	dec, err := utils.B64Decode(data)
-// 	if err != nil {
-// 		return nil, nil, errors.Errorf("decode data: %w", err)
-// 	}
-
-// 	decData, err := utils.Decompress(dec)
-// 	if err != nil {
-// 		return nil, nil, errors.Errorf("decompress: %w", err)
-// 	}
-
-// 	splits := bytes.Split(decData, []byte{SeparatorByte})
-// 	if len(splits) != numSignRequired+1 {
-// 		return nil, nil, errors.New("invalid data")
-// 	}
-
-// 	file, err := utils.B64Decode(splits[0])
-// 	if err != nil {
-// 		return nil, nil, errors.Errorf("decode file: %w", err)
-// 	}
-
-// 	verifications := 0
-// 	verifiedNodes := make(map[int]bool)
-// 	for i := 1; i < numSignRequired+1; i++ {
-// 		for j := 0; j < len(snAccAddresses); j++ {
-// 			if _, ok := verifiedNodes[j]; ok {
-// 				continue
-// 			}
-
-// 			err := lumeraClient.Node().Verify(snAccAddresses[j], file, creatorSignaure) // TODO : verify the signature
-// 			if err != nil {
-// 				return nil, nil, errors.Errorf("verify file signature %w", err)
-// 			}
-
-// 			verifiedNodes[j] = true
-// 			verifications++
-// 			break
-// 		}
-// 	}
-
-// 	if verifications != numSignRequired {
-// 		return nil, nil, errors.Errorf("file verification failed: need %d verifications, got %d", numSignRequired, verifications)
-// 	}
-
-// 	gotIDs, idFiles, err := raptorq.GetIDFiles(ctx, decData, ic, max)
-// 	if err != nil {
-// 		return nil, nil, errors.Errorf("get ids: %w", err)
-// 	}
-
-// 	if err := utils.EqualStrList(gotIDs, ids); err != nil {
-// 		return nil, nil, errors.Errorf("IDs don't match: %w", err)
-// 	}
-
-// 	return file, idFiles, nil
-// }

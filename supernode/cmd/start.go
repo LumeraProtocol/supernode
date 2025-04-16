@@ -106,7 +106,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			},
 			lumeraClient,
 			*p2pService,
-			raptorQClientConnection.RaptorQ(raptorq.NewConfig(), lumeraClient, rqStore),
+			raptorQClientConnection.RaptorQ(raptorq.NewConfig(), lumeraClient),
 			raptorq.NewClient(),
 			rqStore,
 		)
