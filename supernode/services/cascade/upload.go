@@ -10,6 +10,8 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 
+	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -79,8 +81,16 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "current supernode exists in the top sns list", fields)
 
+	// Parse the action metadata to CascadeMetadata
+	var cascadeMetadata actiontypes.CascadeMetadata
+	if err := proto.Unmarshal(actionDetails.Metadata, &cascadeMetadata); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		logtrace.Error(ctx, "failed to unmarshal cascade metadata", fields)
+		return nil, status.Errorf(codes.Internal, "failed to unmarshal cascade metadata")
+	}
+
 	// Verify data hash matches action metadata
-	if req.DataHash != actionDetails.Metadata.GetCascadeMetadata().DataHash {
+	if req.DataHash != cascadeMetadata.DataHash {
 		logtrace.Error(ctx, "data hash doesn't match", fields)
 		return nil, status.Errorf(codes.Internal, "data hash doesn't match")
 	}
@@ -88,11 +98,10 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 
 	// Generate RaptorQ identifiers
 	res, err := task.raptorQ.GenRQIdentifiersFiles(ctx, raptorq.GenRQIdentifiersFilesRequest{
-		TaskID:           task.ID(),
 		BlockHash:        string(latestBlockHash),
 		Data:             req.Data,
 		CreatorSNAddress: actionDetails.GetCreator(),
-		RqMax:            uint32(actionDetails.Metadata.GetCascadeMetadata().RqMax),
+		RqMax:            uint32(cascadeMetadata.RqIdsMax),
 		SignedData:       req.SignedData,
 		LC:               task.lumeraClient,
 	})

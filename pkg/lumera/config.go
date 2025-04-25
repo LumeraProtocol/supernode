@@ -21,7 +21,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		GRPCAddr: "localhost:9090",
-		ChainID:  "lumera",
-		Timeout:  10,
+		ChainID:  "testing",
+		Timeout:  30,
 	}
 }

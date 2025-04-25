@@ -1,12 +1,13 @@
 package task
 
 import (
-	"action/event"
-	"action/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
 	"github.com/dgraph-io/ristretto/v2"
 )

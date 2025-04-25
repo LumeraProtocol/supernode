@@ -12,9 +12,6 @@ test-integration:
 test-system:
 	cd tests/system && go test -tags=system_test -v .
 
-tests-system-setup:
-	cd tests/scripts && ./install-lumera.sh
-
 gen-lumera-proto:
 	cd  ./proto/lumera/action && protoc --go_out=../../../gen/lumera/action --go-grpc_out=../../../gen/lumera/action --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative action.proto && cd ../../../
 	cd  ./proto/lumera/action && protoc --go_out=../../../gen/lumera/action --go-grpc_out=../../../gen/lumera/action --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative action_service.proto && cd ../../../
@@ -27,3 +24,23 @@ gen-dupe-detection-proto:
 gen-raptor-q-proto:
 	cd  ./proto/raptorq && protoc --go_out=../../gen/raptorq --go-grpc_out=../../gen/raptorq --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative raptorq.proto && cd ../../
 
+# Define the paths
+SUPERNODE_SRC=supernode/main.go
+DATA_DIR=tests/system/supernode-data
+CONFIG_FILE=supernode/config.test.yml
+
+# Consolidated target that runs all setup steps
+setup-all: install-supernode install-rqservice install-lumera
+	@echo "All setup steps completed successfully!"
+
+# Setup the supernode test environment
+install-supernode:
+	@echo "Setting up supernode test environment..."
+	@bash tests/scripts/install-sn.sh $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE)
+
+install-rqservice:
+	@echo "Installing and running rq-service in $(DATA_DIR)..."
+	@bash tests/scripts/install-rq-service.sh $(DATA_DIR)
+
+install-lumera:
+	cd tests/scripts && ./install-lumera.sh

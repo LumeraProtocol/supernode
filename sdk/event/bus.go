@@ -1,8 +1,8 @@
 package event
 
 import (
-	"action/log"
 	"context"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 	"runtime/debug"
 	"sync"
 )

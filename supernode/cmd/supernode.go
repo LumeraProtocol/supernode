@@ -58,7 +58,7 @@ func (s *Supernode) Start(ctx context.Context) error {
 
 		// Provide helpful guidance
 		fmt.Printf("\nError: Key '%s' not found in keyring at %s\n",
-			appConfig.SupernodeConfig.KeyName, appConfig.KeyringConfig.Dir)
+			appConfig.SupernodeConfig.KeyName, appConfig.GetKeyringDir())
 		fmt.Println("\nPlease create the key first with one of these commands:")
 		fmt.Printf("  supernode keys add %s\n", appConfig.SupernodeConfig.KeyName)
 		fmt.Printf("  supernode keys recover %s\n", appConfig.SupernodeConfig.KeyName)
@@ -82,7 +82,7 @@ func (s *Supernode) Start(ctx context.Context) error {
 	p2pConfig := &p2p.Config{
 		ListenAddress:  s.config.P2PConfig.ListenAddress,
 		Port:           s.config.P2PConfig.Port,
-		DataDir:        s.config.P2PConfig.DataDir,
+		DataDir:        s.config.GetP2PDataDir(),
 		BootstrapNodes: s.config.P2PConfig.BootstrapNodes,
 		ExternalIP:     s.config.P2PConfig.ExternalIP,
 		ID:             address.String(),
@@ -152,7 +152,7 @@ func initRQStore(ctx context.Context, config *config.Config) (rqstore.Store, err
 	}
 
 	// Create RaptorQ store directory if it doesn't exist
-	rqDir := config.P2PConfig.DataDir + "/rq"
+	rqDir := config.GetRaptorQFilesDir() + "/rq"
 	if err := os.MkdirAll(rqDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create RQ store directory: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection" // Add this import
 
 	// "github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx" //
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
@@ -116,6 +117,9 @@ func (server *Server) setupGRPCServer() error {
 	// Initialize and register the health server
 	server.healthServer = health.NewServer()
 	healthpb.RegisterHealthServer(server.grpcServer, server.healthServer)
+
+	// Register reflection service
+	reflection.Register(server.grpcServer)
 
 	// Set all services as serving
 	server.healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

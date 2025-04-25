@@ -19,7 +19,8 @@ var keysRecoverCmd = &cobra.Command{
 This command will derive a key pair from the provided mnemonic and store it in the keyring.
 
 Example:
-  supernode keys recover mykey`,
+  supernode keys recover mykey
+  supernode keys recover mykey --mnemonic="your mnemonic words here"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var keyName string
@@ -37,26 +38,47 @@ Example:
 		// Initialize keyring using config values
 		kr, err := keyring.InitKeyring(
 			appConfig.KeyringConfig.Backend,
-			appConfig.KeyringConfig.Dir,
+			appConfig.GetKeyringDir(),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)
 		}
 
-		// Prompt for mnemonic or use from config
-		var mnemonic string
-
-		fmt.Print("Enter your mnemonic: ")
-		reader := bufio.NewReader(os.Stdin)
-		mnemonic, err = reader.ReadString('\n')
+		// Get mnemonic from flag or prompt
+		mnemonic, err := cmd.Flags().GetString("mnemonic")
 		if err != nil {
-			return fmt.Errorf("failed to read mnemonic: %w", err)
+			return fmt.Errorf("failed to get mnemonic flag: %w", err)
 		}
+
+		// If mnemonic wasn't provided as a flag, prompt for it
+		if mnemonic == "" {
+			fmt.Print("Enter your mnemonic: ")
+			reader := bufio.NewReader(os.Stdin)
+			mnemonic, err = reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to read mnemonic: %w", err)
+			}
+			mnemonic = strings.TrimSpace(mnemonic)
+		}
+
+		// Process the mnemonic to ensure proper formatting
 		mnemonic = strings.TrimSpace(mnemonic)
+		// Normalize whitespace (replace multiple spaces with single space)
+		mnemonic = strings.Join(strings.Fields(mnemonic), " ")
+
+		// Add debug output to see what's being processed
+		fmt.Printf("Processing mnemonic with %d words\n", len(strings.Fields(mnemonic)))
+
+		// Check expected word count (BIP39 mnemonics are typically 12 or 24 words)
+		wordCount := len(strings.Fields(mnemonic))
+		if wordCount != 12 && wordCount != 15 && wordCount != 18 && wordCount != 21 && wordCount != 24 {
+			return fmt.Errorf("mnemonic should have 12, 15, 18, 21, or 24 words, found %d words", wordCount)
+		}
 
 		// Recover account from mnemonic
 		info, err := keyring.RecoverAccountFromMnemonic(kr, keyName, mnemonic)
 		if err != nil {
+			// Check if the error is due to an invalid mnemonic
 			return fmt.Errorf("failed to recover account: %w", err)
 		}
 
@@ -77,5 +99,6 @@ Example:
 
 func init() {
 	keysCmd.AddCommand(keysRecoverCmd)
-	// Remove all flags - we'll use config file only
+	// Add flag for mnemonic
+	keysRecoverCmd.Flags().String("mnemonic", "", "BIP39 mnemonic for key recovery")
 }

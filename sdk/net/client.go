@@ -3,7 +3,7 @@ package net
 import (
 	"context"
 
-	"action/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"

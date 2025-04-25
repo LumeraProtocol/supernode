@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/supernode/config"
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 
 var (
 	cfgFile   string
+	baseDir   string
 	appConfig *config.Config
 )
 
@@ -24,14 +26,45 @@ This application allows you to create and recover keys using mnemonics.`,
 			return nil
 		}
 
-		// If config file path is not specified, use the default in current directory
-		if cfgFile == "" {
-			cfgFile = "config.yml"
+		// Set default base directory to home if not specified
+		if baseDir == "" {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("failed to get home directory: %w", err)
+			}
+			baseDir = filepath.Join(homeDir, ".supernode")
 		}
 
+		// If config file path not specified, use the one next to the binary
+		if cfgFile == "" {
+			// Get the directory where the binary is located
+			execPath, err := os.Executable()
+			if err == nil {
+				execDir := filepath.Dir(execPath)
+				cfgFile = filepath.Join(execDir, "config.yaml")
+
+				// If not found, try config.yml
+				if _, err := os.Stat(cfgFile); err != nil {
+					ymlConfig := filepath.Join(execDir, "config.yml")
+					if _, err := os.Stat(ymlConfig); err == nil {
+						cfgFile = ymlConfig
+					}
+				}
+			}
+		}
+
+		// Get absolute path for clarity in logs
+		absPath, err := filepath.Abs(cfgFile)
+		if err == nil {
+			fmt.Printf("Using config file: %s\n", absPath)
+		} else {
+			fmt.Printf("Using config file: %s\n", cfgFile)
+		}
+
+		fmt.Printf("Using base directory: %s\n", baseDir)
+
 		// Load configuration
-		var err error
-		appConfig, err = config.LoadConfig(cfgFile)
+		appConfig, err = config.LoadConfig(cfgFile, baseDir)
 		if err != nil {
 			return fmt.Errorf("failed to load config file %s: %w", cfgFile, err)
 		}
@@ -50,5 +83,6 @@ func Execute() {
 
 func init() {
 	// Allow user to override config file location with --config flag
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Config file path (default is ./config.yaml)")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "Config file path (default ./config.yaml )")
+	rootCmd.PersistentFlags().StringVarP(&baseDir, "basedir", "d", "", "Base directory for all data (default is ~/.supernode)")
 }

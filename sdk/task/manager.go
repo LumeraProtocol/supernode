@@ -1,12 +1,13 @@
 package task
 
 import (
-	"action/adapters/lumera"
-	"action/config"
-	"action/event"
-	"action/log"
 	"context"
 	"fmt"
+
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/sdk/config"
+	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/google/uuid"
@@ -114,14 +115,14 @@ func (m *ManagerImpl) CreateCascadeTask(
 	go func() {
 		// Create a separate context for the goroutine
 
-		// m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
-		// err := task.Run(ctx)
-		// if err != nil {
-		// 	// Error handling is done via events in the task.Run method
-		// 	// This is just a failsafe in case something goes wrong
-		// 	m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
-		// 	m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
-		// }
+		m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
+		err := task.Run(ctx)
+		if err != nil {
+			// Error handling is done via events in the task.Run method
+			// This is just a failsafe in case something goes wrong
+			m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
+			m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
+		}
 	}()
 
 	m.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)

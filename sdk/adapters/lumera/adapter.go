@@ -3,11 +3,13 @@ package lumera
 import (
 	"context"
 	"fmt"
+	"strconv"
 
-	"action/log"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	"github.com/LumeraProtocol/lumera/x/action/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/types"
+	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+
+	sntypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
@@ -110,13 +112,12 @@ func (a *Adapter) GetSupernodes(ctx context.Context, height int64) ([]Supernode,
 
 	return supernodes, nil
 }
-
-func toSdkAction(resp *types.QueryGetActionResponse) Action {
+func toSdkAction(resp *actiontypes.QueryGetActionResponse) Action {
 	return Action{
 		ID:             resp.Action.ActionID,
-		State:          ACTION_STATE(resp.Action.State),
+		State:          ACTION_STATE(resp.Action.State.String()),
 		Height:         int64(resp.Action.BlockHeight),
-		ExpirationTime: resp.Action.ExpirationTime,
+		ExpirationTime: strconv.FormatInt(resp.Action.ExpirationTime, 10),
 	}
 }
 

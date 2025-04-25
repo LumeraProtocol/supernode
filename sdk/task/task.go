@@ -1,11 +1,12 @@
 package task
 
 import (
-	"action/adapters/lumera"
-	"action/config"
-	"action/event"
-	"action/log"
 	"context"
+
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/sdk/config"
+	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

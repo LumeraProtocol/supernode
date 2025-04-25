@@ -55,7 +55,7 @@ func (s *raptorQServerClient) GenRQIdentifiersFiles(ctx context.Context, req Gen
 	encRqIDsfile := utils.B64Encode(rqIDsfile)
 
 	// Step 4: Validate RQIDs separately and explicitly
-	if !req.DoValidate {
+	if req.DoValidate {
 		err := ValidateRQIDs(ctx, req.LC, req.SignedData, encRqIDsfile,
 			rawRQIDFile.SymbolIdentifiers, req.CreatorSNAddress)
 		if err != nil {

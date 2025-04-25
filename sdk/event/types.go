@@ -1,9 +1,10 @@
 package event
 
 import (
-	"action/adapters/lumera"
 	"context"
 	"time"
+
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 )
 
 // EventType represents the type of event

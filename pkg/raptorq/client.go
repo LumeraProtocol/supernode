@@ -23,7 +23,7 @@ func (client *client) Connect(ctx context.Context, address string) (Connection, 
 	ctx = log.ContextWithPrefix(ctx, fmt.Sprintf("%s-%s", logPrefix, id))
 
 	grpcConn, err := grpc.DialContext(dialCtx, address,
-		//lint:ignore SA1019 we want to ignore this for now
+
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
 	)

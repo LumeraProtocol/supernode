@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"action/config"
-	"action/event"
-	"action/log"
-	"action/task"
+	"github.com/LumeraProtocol/supernode/sdk/config"
+	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/sdk/task"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

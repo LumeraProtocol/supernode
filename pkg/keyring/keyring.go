@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/go-bip39"
 )
 
@@ -152,4 +153,26 @@ func DerivePrivKeyFromMnemonic(mnemonic, hdPath string) (*secp256k1.PrivKey, err
 	}
 
 	return &secp256k1.PrivKey{Key: derivedKey}, nil
+}
+
+// SignBytes signs a byte array using a key from the keyring
+func SignBytes(kr keyring.Keyring, name string, bytes []byte) ([]byte, error) {
+	// Get the key from the keyring
+	record, err := kr.Key(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get key '%s' from keyring: %w", name, err)
+	}
+
+	// Get the address from the record
+	addr, err := record.GetAddress()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address from record: %w", err)
+	}
+	// Sign the bytes
+	signature, _, err := kr.SignByAddress(addr, bytes, signing.SignMode_SIGN_MODE_DIRECT)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign bytes: %w", err)
+	}
+
+	return signature, nil
 }

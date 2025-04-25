@@ -43,14 +43,14 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Log configuration info
 		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{
 			"config_file": cfgFile,
-			"keyring_dir": appConfig.KeyringConfig.Dir,
+			"keyring_dir": appConfig.GetKeyringDir(),
 			"key_name":    appConfig.SupernodeConfig.KeyName,
 		})
 
 		// Initialize keyring
 		kr, err := keyring.InitKeyring(
 			appConfig.KeyringConfig.Backend,
-			appConfig.KeyringConfig.Dir,
+			appConfig.GetKeyringDir(),
 		)
 		if err != nil {
 			logtrace.Error(ctx, "Failed to initialize keyring", logtrace.Fields{
@@ -102,7 +102,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 					SupernodeAccountAddress: appConfig.SupernodeConfig.KeyName,
 				},
 				RaptorQServiceAddress: appConfig.RaptorQConfig.ServiceAddress,
-				RqFilesDir:            appConfig.RaptorQConfig.FilesDir,
+				RqFilesDir:            appConfig.GetRaptorQFilesDir(),
 			},
 			lumeraClient,
 			*p2pService,
@@ -166,7 +166,7 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 	p2pConfig := &p2p.Config{
 		ListenAddress:  config.P2PConfig.ListenAddress,
 		Port:           config.P2PConfig.Port,
-		DataDir:        config.P2PConfig.DataDir,
+		DataDir:        config.GetP2PDataDir(),
 		BootstrapNodes: config.P2PConfig.BootstrapNodes,
 		ExternalIP:     config.P2PConfig.ExternalIP,
 		ID:             address.String(),

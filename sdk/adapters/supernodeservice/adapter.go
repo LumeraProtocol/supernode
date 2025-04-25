@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"action/log"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"google.golang.org/grpc"

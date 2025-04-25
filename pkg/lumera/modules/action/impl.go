@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/lumera/x/action/types"
+	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
 	"google.golang.org/grpc"
 )
 
@@ -36,7 +36,6 @@ func (m *module) GetAction(ctx context.Context, actionID string) (*types.QueryGe
 	return resp, nil
 }
 
-
 // GetActionFee calculates fee for processing data with given size
 func (m *module) GetActionFee(ctx context.Context, dataSize string) (*types.QueryGetActionFeeResponse, error) {
 	resp, err := m.client.GetActionFee(ctx, &types.QueryGetActionFeeRequest{
@@ -48,4 +47,3 @@ func (m *module) GetActionFee(ctx context.Context, dataSize string) (*types.Quer
 
 	return resp, nil
 }
-

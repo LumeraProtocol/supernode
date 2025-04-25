@@ -7,13 +7,16 @@ require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cosmos/btcutil v1.0.5
+	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.12
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/gogoproto v1.7.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-errors/errors v1.5.1
 	github.com/golang/mock v1.6.0
+	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
+	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.11
@@ -30,6 +33,7 @@ require (
 	golang.org/x/crypto v0.33.0
 	golang.org/x/sync v0.11.0
 	golang.org/x/sys v0.30.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20241202173237-19429a94021a
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -67,7 +71,6 @@ require (
 	github.com/cometbft/cometbft v0.38.12 // indirect
 	github.com/cometbft/cometbft-db v0.11.0 // indirect
 	github.com/cosmos/cosmos-db v1.1.1 // indirect
-	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogogateway v1.2.0 // indirect
 	github.com/cosmos/iavl v1.2.2 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
@@ -93,7 +96,6 @@ require (
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.2.3 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -101,7 +103,6 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
@@ -164,7 +165,6 @@ require (
 	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto v0.0.0-20240701130421-f6361c86f094 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20241202173237-19429a94021a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gotest.tools/v3 v3.5.1 // indirect

@@ -1,10 +1,6 @@
 package task
 
 import (
-	"action/adapters/lumera"
-	"action/adapters/supernodeservice"
-	"action/event"
-	"action/net"
 	"context"
 	"errors"
 	"fmt"
@@ -12,12 +8,17 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/sdk/net"
+
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
 	UploadTimeout  = 60 * time.Second // Timeout for upload requests
-	ConnectTimeout = 10 * time.Second // Timeout for connection requests
+	ConnectTimeout = 60 * time.Second // Timeout for connection requests
 )
 
 type CascadeTask struct {

@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"os"
 
-	"action/adapters/lumera"
-	"action/adapters/supernodeservice"
-	"action/log"
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -42,6 +41,7 @@ func NewSupernodeClient(
 	if logger == nil {
 		return nil, fmt.Errorf("logger cannot be nil")
 	}
+	// We still keep the keyring check for future reference
 	if keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
@@ -50,21 +50,33 @@ func NewSupernodeClient(
 	}
 
 	// Create client credentials
-	clientCreds, err := credentials.NewClientCreds(&credentials.ClientOptions{
-		CommonOptions: credentials.CommonOptions{
-			Keyring:       keyring,
-			LocalIdentity: localCosmosAddress,
-			PeerType:      securekeyx.Supernode,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create credentials: %w", err)
-	}
+	/*
+		clientCreds, err := credentials.NewClientCreds(&credentials.ClientOptions{
+			CommonOptions: credentials.CommonOptions{
+				Keyring:       keyring,
+				LocalIdentity: localCosmosAddress,
+				PeerType:      securekeyx.Supernode,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create credentials: %w", err)
+		}
+	*/
 
-	// Format connection address with identity
-	targetAddress := fmt.Sprintf("%s@%s", targetSupernode.CosmosAddress, targetSupernode.GrpcEndpoint)
+	// Format connection address without identity for insecure connection
+	targetAddress := targetSupernode.GrpcEndpoint
 
-	logger.Debug(ctx, "Connecting to supernode", "address", targetAddress)
+	logger.Debug(ctx, "Connecting to supernode insecurely", "address", targetAddress)
+
+	// Use provided client options or defaults
+	// options := clientOptions
+	// if options == nil {
+	// 	options = client.DefaultClientOptions()
+	// }
+
+	// Connect to server with insecure credentials
+	// grpcClient := client.NewClient(clientCreds)
+	// conn, err := grpcClient.Connect(ctx, targetAddress, options)
 
 	// Use provided client options or defaults
 	options := clientOptions
@@ -72,15 +84,16 @@ func NewSupernodeClient(
 		options = client.DefaultClientOptions()
 	}
 
-	// Connect to server
-	grpcClient := client.NewClient(clientCreds)
+	// Direct insecure connection via the grpc client wrapper
+	grpcClient := client.NewClient(insecure.NewCredentials())
 	conn, err := grpcClient.Connect(ctx, targetAddress, options)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to supernode %s: %w",
 			targetSupernode.CosmosAddress, err)
 	}
 
-	logger.Info(ctx, "Connected to supernode", "address", targetSupernode.CosmosAddress)
+	logger.Info(ctx, "Connected to supernode insecurely", "address", targetSupernode.CosmosAddress)
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(

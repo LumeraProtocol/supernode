@@ -35,7 +35,7 @@ Example:
 		// Initialize keyring using config values
 		kr, err := keyring.InitKeyring(
 			appConfig.KeyringConfig.Backend,
-			appConfig.KeyringConfig.Dir,
+			appConfig.GetKeyringDir(),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)

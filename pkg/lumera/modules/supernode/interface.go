@@ -4,7 +4,8 @@ package supernode
 import (
 	"context"
 
-	"github.com/LumeraProtocol/lumera/x/supernode/types"
+	"github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
+
 	"google.golang.org/grpc"
 )
 

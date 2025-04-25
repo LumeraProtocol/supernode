@@ -1,14 +1,30 @@
 {
     "version": "0.2.0",
     "configurations": [
+        
+        
 
         {
-            "name": "Debug main.go",
+            "name": "Launch Supernode",
             "type": "go",
             "request": "launch",
-            "mode": "debug",
-            "program": "${workspaceFolder}/sdk/example/main.go",
-            "showLog": true
+            "mode": "auto",
+            "program": "${workspaceFolder}/supernode/main.go",
+            "cwd": "${workspaceFolder}",
+            "args": ["start", "-c=${workspaceFolder}/supernode/config.yaml"]
+        },
+        {
+            "name": "Run System Test",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}/tests/system",
+            "buildFlags": "-tags=system_test",
+            "args": ["-test.run=TestCascadeE2E", "-test.v"],
+            "showLog": true,
+            "env": {
+                "LOG_LEVEL": "debug"  // This may vary depending on your logger
+            }
         }
     ]
 }
