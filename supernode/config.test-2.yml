@@ -1,3 +1,4 @@
+#hope bulk clever tip road female fly quiz once dose journey sting hedgehog pull area envelope supreme maze project spike brave shed fish live
 # Supernode Configuration
 supernode:
   key_name: "testkey2"
@@ -27,5 +28,5 @@ lumera:
 
 # RaptorQ Configuration
 raptorq:
-  service_address: "localhost:50052"
+  service_address: "localhost:50051"
   files_dir: "raptorq_files"

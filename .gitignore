@@ -27,3 +27,5 @@ go.work.sum
 /data
 /tests/system/data
 tests/system/supernode-data
+tests/system/supernode-data2
+tests/system/supernode-data3

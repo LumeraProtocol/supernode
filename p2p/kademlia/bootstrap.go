@@ -32,6 +32,7 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 	}
 
 	if strings.Contains(extP2P, "0.0.0.0") {
+		fmt.Println("skippping node")
 		return nil, errors.New("invalid address")
 	}
 
@@ -156,17 +157,18 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 		// Convert the map to a slice
 		for _, node := range mapNodes {
+			fmt.Println("node adding", node.String(), "hashed id", string(node.HashedID))
 			boostrapNodes = append(boostrapNodes, node)
 		}
 	}
 
 	if len(boostrapNodes) == 0 {
-		log.P2P().WithContext(ctx).Error("unable to fetch bootstrap IP addresses. No valid supernodes found.")
+		log.WithContext(ctx).Error("unable to fetch bootstrap IP addresses. No valid supernodes found.")
 		return nil
 	}
 
 	for _, node := range boostrapNodes {
-		log.P2P().WithContext(ctx).WithFields(log.Fields{
+		log.WithContext(ctx).WithFields(log.Fields{
 			"bootstap_ip":    node.IP,
 			"bootstrap_port": node.Port,
 			"node_id":        string(node.ID),

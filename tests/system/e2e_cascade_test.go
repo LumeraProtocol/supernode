@@ -1,7 +1,6 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha3"
 	"encoding/base64"
@@ -51,7 +50,7 @@ func TestCascadeE2E(t *testing.T) {
 	// Test account credentials - these values are consistent across test runs
 	const testMnemonic = "odor kiss switch swarm spell make planet bundle skate ozone path planet exclude butter atom ahead angle royal shuffle door prevent merry alter robust"
 	const expectedAddress = "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4"
-	const testKeyName = "testkey"
+	const testKeyName = "testkey1"
 	const fundAmount = "1000000ulume"
 
 	// Network and service configuration constants
@@ -78,13 +77,13 @@ func TestCascadeE2E(t *testing.T) {
 	sut.ResetChain(t)
 	sut.StartChain(t)
 
-	// Start the RaptorQ service for encoding/decoding with fountain codes
+	// // Start the RaptorQ service for encoding/decoding with fountain codes
 	rq_cmd := StartRQService(t)
 	defer StopRQService(rq_cmd) // Ensure service is stopped after test
 
 	// Start the supernode service to process cascade requests
-	sn_cmd := StartSupernode(t)
-	defer StopSupernode(sn_cmd) // Ensure service is stopped after test
+	cmds := StartAllSupernodes(t)
+	defer StopAllSupernodes(cmds) // Ensure service is stopped after test
 
 	// ---------------------------------------
 	// Step 2: Set up test account and keys
@@ -179,27 +178,44 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
 	// ---------------------------------------
-	// Register Supernode to process the request
+	// Register Multiple Supernodes to process the request
 	// ---------------------------------------
+	t.Log("Registering multiple supernodes to process requests")
 
-	// Get account and validator addresses for registration
-	accountAddr := cli.GetKeyAddr("node0")
-	valAddrOutput := cli.Keys("keys", "show", "node0", "--bech", "val", "-a")
-	valAddr := strings.TrimSpace(valAddrOutput)
+	// Helper function to register a supernode
+	registerSupernode := func(nodeKey string, port string) {
+		// Get account and validator addresses for registration
+		accountAddr := cli.GetKeyAddr(nodeKey)
+		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
+		valAddr := strings.TrimSpace(valAddrOutput)
 
-	// Register the supernode with the network
-	// This allows it to process CASCADE requests
-	registerCmd := []string{
-		"tx", "supernode", "register-supernode",
-		valAddr,          // validator address
-		"localhost:4444", // IP address
-		"1.0.0",          // version
-		accountAddr,      // supernode account
-		"--from", "node0",
+		t.Logf("Registering supernode for %s (validator: %s, account: %s)", nodeKey, valAddr, accountAddr)
+
+		// Register the supernode with the network
+		registerCmd := []string{
+			"tx", "supernode", "register-supernode",
+			valAddr,             // validator address
+			"localhost:" + port, // IP address with unique port
+			"1.0.0",             // version
+			accountAddr,         // supernode account
+			"--from", nodeKey,
+		}
+
+		resp := cli.CustomCommand(registerCmd...)
+		RequireTxSuccess(t, resp)
+
+		// Wait for transaction to be included in a block
+		sut.AwaitNextBlock(t)
 	}
 
-	resp := cli.CustomCommand(registerCmd...)
-	RequireTxSuccess(t, resp)
+	// Register three supernodes with different ports
+	registerSupernode("node0", "4444")
+	registerSupernode("node1", "4446")
+	registerSupernode("node2", "4448")
+
+	t.Log("Successfully registered three supernodes")
+
+	sut.AwaitNextBlock(t) // Wait for all transactions to be processed
 
 	// ---------------------------------------
 	// Step 4: Create and prepare test file
@@ -330,25 +346,6 @@ func TestCascadeE2E(t *testing.T) {
 		"--gas", "auto",
 		"--gas-adjustment", "1.5",
 	)
-
-	// Save transaction response to log file for debugging
-	t.Log("Saving action request response to log file")
-	logFileName := "action_request_response.json"
-
-	// Format the JSON for better readability
-	var prettyJSON bytes.Buffer
-	err = json.Indent(&prettyJSON, []byte(actionRequestResp), "", "  ")
-	if err != nil {
-		t.Logf("Warning: Failed to format JSON: %v", err)
-		// Fall back to unformatted JSON if formatting fails
-		err = os.WriteFile(logFileName, []byte(actionRequestResp), 0644)
-	} else {
-		// Write formatted JSON
-		err = os.WriteFile(logFileName, prettyJSON.Bytes(), 0644)
-	}
-
-	require.NoError(t, err, "Failed to write response to log file")
-	t.Logf("Response saved to %s", logFileName)
 
 	// Verify the transaction was successful
 	RequireTxSuccess(t, actionRequestResp)

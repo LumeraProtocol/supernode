@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
-
 	"google.golang.org/grpc"
 )
 

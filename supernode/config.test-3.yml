@@ -1,7 +1,8 @@
+#young envelope urban crucial denial zone toward mansion protect bonus exotic puppy resource pistol expand tell cupboard radio hurry world radio trust explain million
 # Supernode Configuration
 supernode:
   key_name: "testkey3"
-  identity: "lumera165s423s465qk57xzfs3w6gvlusuwe2fctwvs0q"
+  identity: "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp"
   ip_address: "0.0.0.0"
   port: 4448
 
@@ -27,5 +28,5 @@ lumera:
 
 # RaptorQ Configuration
 raptorq:
-  service_address: "localhost:50053"
+  service_address: "localhost:50051"
   files_dir: "raptorq_files"

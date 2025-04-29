@@ -6,7 +6,6 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 
@@ -66,20 +65,20 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	// logtrace.Info(ctx, "latest block has been retrieved", fields)
 
 	// Get top supernodes
-	topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, uint64(actionDetails.BlockHeight))
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to get top SNs", fields)
-		return nil, status.Errorf(codes.Internal, "failed to get top SNs")
-	}
-	logtrace.Info(ctx, "top sns have been fetched", fields)
+	// topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, uint64(actionDetails.BlockHeight))
+	// if err != nil {
+	// 	fields[logtrace.FieldError] = err.Error()
+	// 	logtrace.Error(ctx, "failed to get top SNs", fields)
+	// 	return nil, status.Errorf(codes.Internal, "failed to get top SNs")
+	// }
+	// logtrace.Info(ctx, "top sns have been fetched", fields)
 
-	// Verify current supernode is in the top list
-	if !supernode.Exists(topSNsRes.Supernodes, task.config.SupernodeAccountAddress) {
-		logtrace.Error(ctx, "current supernode do not exist in the top sns list", fields)
-		return nil, status.Errorf(codes.Internal, "current supernode does not exist in the top sns list")
-	}
-	logtrace.Info(ctx, "current supernode exists in the top sns list", fields)
+	// // Verify current supernode is in the top list
+	// if !supernode.Exists(topSNsRes.Supernodes, task.config.SupernodeAccountAddress) {
+	// 	logtrace.Error(ctx, "current supernode do not exist in the top sns list", fields)
+	// 	return nil, status.Errorf(codes.Internal, "current supernode does not exist in the top sns list")
+	// }
+	// logtrace.Info(ctx, "current supernode exists in the top sns list", fields)
 
 	// Parse the action metadata to CascadeMetadata
 	var cascadeMetadata actiontypes.CascadeMetadata
