@@ -85,7 +85,6 @@ type Options struct {
 }
 
 // NewDHT returns a new DHT node
-// NewDHT returns a new DHT node
 func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Options, rqstore rqstore.Store) (*DHT, error) {
 	// validate the options, if it's invalid, set them to default value
 	if options.IP == "" {

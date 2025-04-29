@@ -281,15 +281,20 @@ func TestServe_Failure(t *testing.T) {
 	address := GetTestServerAddress(t)
 	opts := DefaultServerOptions()
 
+	done := make(chan struct{})
+
 	// Run the server in a goroutine
 	go func() {
 		err := server.Serve(ctx, address, opts)
 		assert.Error(t, err, "Serve should return an error when the listener is closed unexpectedly")
+		close(done)
 	}()
 
 	// Wait a bit and then close the listener to trigger a failure
 	time.Sleep(500 * time.Millisecond)
 	server.listeners[0].Close()
+
+	<-done // wait for the goroutine to finish before ending the test
 }
 
 func TestStop_NoServer(t *testing.T) {

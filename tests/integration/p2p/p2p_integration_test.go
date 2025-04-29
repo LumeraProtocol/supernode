@@ -151,13 +151,15 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 	for i := 0; i < numP2PNodes; i++ {
 		accountNames = append(accountNames, fmt.Sprintf("test-p2p-node-%d", i))
 	}
-	accountAddresses := testutil.SetupTestAccounts(t, kr, accountNames)
+	p2pAccounts := testutil.SetupTestAccounts(t, kr, accountNames)
 
 	// Setup node addresses and their corresponding Lumera IDs
 	var nodeConfigs ltc.LumeraAddresses
+	var accountAddresses []string
 	for i := 0; i < numP2PNodes; i++ {
+		accountAddresses = append(accountAddresses, p2pAccounts[i].Address)
 		nodeConfigs = append(nodeConfigs, ltc.LumeraAddress{
-			Identity: accountAddresses[i],
+			Identity: p2pAccounts[i].Address,
 			Host:     "127.0.0.1",
 			Port:     uint16(9000 + i),
 		})

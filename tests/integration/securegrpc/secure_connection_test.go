@@ -64,19 +64,21 @@ func TestSecureGRPCConnection(t *testing.T) {
 	// Set gRPC log level
 	grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(os.Stdout, os.Stderr, os.Stderr, 2))
 
-	// Create test kr
-	kr := testutil.CreateTestKeyring()
+	// Create test keyrings
+	clientKr := testutil.CreateTestKeyring()
+	serverKr := testutil.CreateTestKeyring()
 
 	// Create test accounts
-	accountNames := []string{"test-server", "test-client"}
-	addresses := testutil.SetupTestAccounts(t, kr, accountNames)
-	serverAddress := addresses[0]
-	clientAddress := addresses[1]
+	testAccounts := testutil.SetupTestAccounts(t, clientKr, []string{"test-client"})
+	clientAddress := testAccounts[0].Address
+
+	testAccounts = testutil.SetupTestAccounts(t, serverKr, []string{"test-server"})
+	serverAddress := testAccounts[0].Address
 
 	// Create server credentials
 	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
 		CommonOptions: ltc.CommonOptions{
-			Keyring:       kr,
+			Keyring:       serverKr,
 			LocalIdentity: serverAddress,
 			PeerType:      securekeyx.Supernode,
 		},
@@ -86,7 +88,7 @@ func TestSecureGRPCConnection(t *testing.T) {
 	// Create client credentials
 	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
 		CommonOptions: ltc.CommonOptions{
-			Keyring:       kr,
+			Keyring:       clientKr,
 			LocalIdentity: clientAddress,
 			PeerType:      securekeyx.Simplenode,
 		},

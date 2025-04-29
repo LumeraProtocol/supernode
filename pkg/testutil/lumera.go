@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"strconv"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -97,7 +98,7 @@ func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, bloc
 			SupernodeAccount: addr, // Use the real account address for testing
 			PrevIpAddresses: []*supernodeTypes.IPAddressHistory{
 				{
-					Address: "127.0.0.1:900" + string('0'+i),
+					Address: "127.0.0.1:900" + strconv.Itoa(i),
 					Height:  10,
 				},
 			},
