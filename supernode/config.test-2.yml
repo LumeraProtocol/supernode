@@ -1,0 +1,31 @@
+# Supernode Configuration
+supernode:
+  key_name: "testkey2"
+  identity: "lumera1ae37km54w88f783cktmpyd3fny0ycdn69ftt6e"
+  ip_address: "0.0.0.0"
+  port: 4446
+
+# Keyring Configuration
+keyring:
+  backend: "test"
+  dir: "keys"
+  password: "keyring-password"
+
+# P2P Network Configuration
+p2p:
+  listen_address: "0.0.0.0"
+  port: 4447
+  data_dir: "data/p2p"
+  bootstrap_nodes: ""
+  external_ip: ""
+
+# Lumera Chain Configuration
+lumera:
+  grpc_addr: "localhost:9090"
+  chain_id: "lumera"
+  timeout: 10
+
+# RaptorQ Configuration
+raptorq:
+  service_address: "localhost:50052"
+  files_dir: "raptorq_files"

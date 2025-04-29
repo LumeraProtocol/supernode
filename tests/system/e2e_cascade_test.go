@@ -241,6 +241,7 @@ func TestCascadeE2E(t *testing.T) {
 	// Sign the original file data for verification purposes
 	// This signature proves the data came from this account
 	signedData, err := keyring.SignBytes(keplrKeyring, testKeyName, data)
+	base64EncodedData := base64.StdEncoding.EncodeToString(signedData)
 	require.NoError(t, err, "Failed to sign data")
 	t.Logf("Signed data length: %d bytes", len(signedData))
 
@@ -249,55 +250,23 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Get current block hash or use file hash as fallback
 	// Block hash adds randomness to the fountain code generation
-	blockHash := hashHex // Default to file hash
-	latestBlock, err := lumeraClient.Node().GetLatestBlock(ctx)
-	if err == nil && latestBlock != nil && len(latestBlock.BlockId.Hash) > 0 {
-		blockHash = fmt.Sprintf("%X", latestBlock.BlockId.Hash)
-	}
-	t.Logf("Using block hash: %s", blockHash)
-
-	// Generate RaptorQ identifiers by sending data to the RaptorQ service
-	// INPUTS:
-	// - blockHash: Block hash for randomness
-	// - 50: Maximum number of RQ identifiers to generate
-	// - data: Original file content
-	// - false: Don't validate (optimization)
-	// - localAddr.String(): Creator's address
-	// - string(signedData): Signed data for verification
-
-	// type GenRQIdentifiersFilesRequest struct {
-	// 	BlockHash        string
-	// 	Data             []byte
-	// 	RqMax            uint32
-	// 	CreatorSNAddress string
-	// 	SignedData       string
-	// 	DoValidate       bool
-	// 	LC               lumera.Client
+	// blockHash := hashHex // Default to file hash
+	// latestBlock, err := lumeraClient.Node().GetLatestBlock(ctx)
+	// if err == nil && latestBlock != nil && len(latestBlock.BlockId.Hash) > 0 {
+	// 	blockHash = fmt.Sprintf("%X", latestBlock.BlockId.Hash)
 	// }
-
-	// type GenRQIdentifiersFilesResponse struct {
-	// 	RQIDsIc          uint32
-	// 	RQIDs            []string
-	// 	RQIDsFiles       [][]byte
-	// 	RQIDsFile        []byte
-	// 	CreatorSignature []byte
-	// 	RQEncodeParams   EncoderParameters
-	// }
+	// t.Logf("Using block hash: %s", blockHash)
 
 	t.Log("Generating RQ identifiers")
 	genRqIdsResp, err := rq.GenRQIdentifiersFiles(ctx, raptorq.GenRQIdentifiersFilesRequest{
-		BlockHash:        blockHash,
+
 		RqMax:            50,
 		Data:             data,
-		DoValidate:       false,
 		CreatorSNAddress: localAddr.String(),
-		SignedData:       string(signedData),
+		SignedData:       base64EncodedData,
 	})
 	require.NoError(t, err, "Failed to generate RQ identifiers")
 
-	// OUTPUTS from RaptorQ service:
-	// - RQIDsIc: Count of identifiers generated
-	// - RQIDsFile: Byte array containing the RQ identifiers
 	t.Logf("RQ identifiers generated successfully with RQ_IDs_IC: %d", genRqIdsResp.RQIDsIc)
 
 	// ---------------------------------------
@@ -466,10 +435,10 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Starting cascade operation with action ID: %s", actionID)
 	taskID, err := actionClient.StartCascade(
 		ctx,
-		hashHex,            // File hash
-		actionID,           // Action ID from the events
-		testFileName,       // Path to the test file
-		string(signedData), // Signed data
+		hashHex,           // File hash
+		actionID,          // Action ID from the events
+		testFileName,      // Path to the test file
+		base64EncodedData, // Signed data
 	)
 	require.NoError(t, err, "Failed to start cascade operation")
 	require.NotEmpty(t, taskID, "Task ID should not be empty")

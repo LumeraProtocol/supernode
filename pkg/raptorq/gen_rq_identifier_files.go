@@ -2,20 +2,18 @@ package raptorq
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
+const BlockHash = "block_hash"
+
 type GenRQIdentifiersFilesRequest struct {
-	BlockHash        string
 	Data             []byte
 	RqMax            uint32
 	CreatorSNAddress string
 	SignedData       string
-	DoValidate       bool
 	LC               lumera.Client
 }
 
@@ -32,7 +30,7 @@ func (s *raptorQServerClient) GenRQIdentifiersFiles(ctx context.Context, req Gen
 	GenRQIdentifiersFilesResponse, error) {
 
 	// Step 1: Encode the original data to get symbol IDs
-	encodeInfo, err := s.encodeInfo(ctx, req.Data, req.RqMax, req.BlockHash, req.CreatorSNAddress)
+	encodeInfo, err := s.encodeInfo(ctx, req.Data, req.RqMax, BlockHash, req.CreatorSNAddress)
 	if err != nil {
 		return GenRQIdentifiersFilesResponse{}, errors.Errorf("error encoding info: %w", err)
 	}
@@ -45,22 +43,6 @@ func (s *raptorQServerClient) GenRQIdentifiersFiles(ctx context.Context, req Gen
 			return GenRQIdentifiersFilesResponse{}, errors.Errorf("empty symbol identifiers in raw file")
 		}
 		break // Only process the first valid file
-	}
-
-	// Step 3: Marshal and encode the raw symbol ID file
-	rqIDsfile, err := json.Marshal(rawRQIDFile)
-	if err != nil {
-		return GenRQIdentifiersFilesResponse{}, errors.Errorf("marshal rqID file: %w", err)
-	}
-	encRqIDsfile := utils.B64Encode(rqIDsfile)
-
-	// Step 4: Validate RQIDs separately and explicitly
-	if req.DoValidate {
-		err := ValidateRQIDs(ctx, req.LC, req.SignedData, encRqIDsfile,
-			rawRQIDFile.SymbolIdentifiers, req.CreatorSNAddress)
-		if err != nil {
-			return GenRQIdentifiersFilesResponse{}, errors.Errorf("error validating RQIDs: %w", err)
-		}
 	}
 
 	// Step 5: Generate RQIDs using the validated data

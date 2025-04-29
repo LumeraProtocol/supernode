@@ -69,7 +69,7 @@ func (a *cascadeAdapter) UploadInputData(ctx context.Context, in *UploadInputDat
 	}
 
 	// Define chunk size (could be configurable)
-	const chunkSize = 1024 * 1024 // 1MB chunks
+	const chunkSize = 1024 //  1 KB
 	buffer := make([]byte, chunkSize)
 
 	// Track progress

@@ -54,19 +54,19 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	logtrace.Info(ctx, "action has been retrieved", fields)
 
 	// Get latest block information
-	latestBlock, err := task.lumeraClient.Node().GetLatestBlock(ctx)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to get latest block", fields)
-		return nil, status.Errorf(codes.Internal, "failed to get latest block")
-	}
-	latestBlockHeight := uint64(latestBlock.GetSdkBlock().GetHeader().Height)
-	latestBlockHash := latestBlock.GetBlockId().GetHash()
-	fields[logtrace.FieldBlockHeight] = latestBlockHeight
-	logtrace.Info(ctx, "latest block has been retrieved", fields)
+	// latestBlock, err := task.lumeraClient.Node().GetLatestBlock(ctx)
+	// if err != nil {
+	// 	fields[logtrace.FieldError] = err.Error()
+	// 	logtrace.Error(ctx, "failed to get latest block", fields)
+	// 	return nil, status.Errorf(codes.Internal, "failed to get latest block")
+	// }
+	// latestBlockHeight := uint64(latestBlock.GetSdkBlock().GetHeader().Height)
+	// latestBlockHash := latestBlock.GetBlockId().GetHash()
+	// fields[logtrace.FieldBlockHeight] = latestBlockHeight
+	// logtrace.Info(ctx, "latest block has been retrieved", fields)
 
 	// Get top supernodes
-	topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, latestBlockHeight)
+	topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, uint64(actionDetails.BlockHeight))
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to get top SNs", fields)
@@ -98,7 +98,6 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 
 	// Generate RaptorQ identifiers
 	res, err := task.raptorQ.GenRQIdentifiersFiles(ctx, raptorq.GenRQIdentifiersFilesRequest{
-		BlockHash:        string(latestBlockHash),
 		Data:             req.Data,
 		CreatorSNAddress: actionDetails.GetCreator(),
 		RqMax:            uint32(cascadeMetadata.RqIdsMax),
@@ -120,11 +119,18 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	task.RQInfo.rqIDEncodeParams = res.RQEncodeParams
 	task.creatorSignature = res.CreatorSignature
 
+	// About to store ID files
+	logtrace.Info(ctx, "About to store ID files", logtrace.Fields{
+		"taskID":    task.ID(),
+		"fileCount": len(task.RQInfo.rqIDFiles),
+	})
+
 	// Store ID files to P2P
 	if err = task.storeIDFiles(ctx); err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "error storing id files to p2p", fields)
-		return nil, status.Errorf(codes.Internal, "error storing id files to p2p")
+		fields["fileCount"] = len(task.RQInfo.rqIDFiles)
+		logtrace.Error(ctx, "failed to store ID files", fields)
+		return nil, status.Errorf(codes.Internal, "failed to store ID files")
 	}
 	logtrace.Info(ctx, "id files have been stored", fields)
 
@@ -146,13 +152,45 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 func (task *CascadeRegistrationTask) storeIDFiles(ctx context.Context) error {
 	ctx = context.WithValue(ctx, log.TaskIDKey, task.ID())
 	task.storage.TaskID = task.ID()
+
+	// Log basic info before storing
+	logtrace.Info(ctx, "Storing ID files", logtrace.Fields{
+		"taskID":    task.ID(),
+		"fileCount": len(task.RQInfo.rqIDFiles),
+	})
+
+	// Check if files exist
+	if len(task.RQInfo.rqIDFiles) == 0 {
+		logtrace.Error(ctx, "No ID files to store", nil)
+		return errors.New("no ID files to store")
+	}
+
+	// Store files with better error handling
 	if err := task.storage.StoreBatch(ctx, task.RQInfo.rqIDFiles, common.P2PDataCascadeMetadata); err != nil {
+		logtrace.Error(ctx, "Store operation failed", logtrace.Fields{
+			"error":     err.Error(),
+			"fileCount": len(task.RQInfo.rqIDFiles),
+		})
 		return errors.Errorf("store ID files into kademlia: %w", err)
 	}
+
+	logtrace.Info(ctx, "ID files stored successfully", nil)
 	return nil
 }
 
 // storeRaptorQSymbols stores RaptorQ symbols to P2P
 func (task *CascadeRegistrationTask) storeRaptorQSymbols(ctx context.Context) error {
-	return task.storage.StoreRaptorQSymbolsIntoP2P(ctx, task.ID())
+	// Add improved logging
+	logtrace.Info(ctx, "Storing RaptorQ symbols", logtrace.Fields{
+		"taskID": task.ID(),
+	})
+
+	err := task.storage.StoreRaptorQSymbolsIntoP2P(ctx, task.ID())
+	if err != nil {
+		logtrace.Error(ctx, "Failed to store RaptorQ symbols", logtrace.Fields{
+			"taskID": task.ID(),
+			"error":  err.Error(),
+		})
+	}
+	return err
 }

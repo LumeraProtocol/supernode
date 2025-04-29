@@ -89,7 +89,9 @@ func (m *ManagerImpl) CreateCascadeTask(
 		"actionID", actionID)
 
 	// Generate task ID
-	taskID := uuid.New().String()
+	// slice this to 8 bytes
+	taskID := uuid.New().String()[:8]
+
 	m.logger.Debug(ctx, "Generated task ID", "taskID", taskID)
 
 	baseTask := BaseTask{
