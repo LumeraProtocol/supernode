@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
 	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
@@ -13,6 +12,7 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -20,14 +20,28 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Default gas parameters
+const (
+	defaultGasLimit      = uint64(200000)
+	defaultMinGasLimit   = uint64(100000)
+	defaultMaxGasLimit   = uint64(1000000)
+	defaultGasAdjustment = float64(1.5)
+	defaultGasPadding    = uint64(10000) // Added to simulated gas
+)
+
 // module implements the Module interface
 type module struct {
-	conn     *grpc.ClientConn
-	client   types.MsgClient
-	kr       keyring.Keyring
-	keyName  string
-	chainID  string
-	nodeAddr string
+	conn          *grpc.ClientConn
+	client        actiontypes.MsgClient
+	kr            keyring.Keyring
+	keyName       string
+	chainID       string
+	nodeAddr      string
+	gasLimit      uint64  // Default gas limit
+	minGasLimit   uint64  // Minimum gas limit
+	maxGasLimit   uint64  // Maximum gas limit
+	gasAdjustment float64 // Gas adjustment multiplier
+	gasPadding    uint64  // Added to simulated gas
 }
 
 // newModule creates a new ActionMsg module client
@@ -52,12 +66,17 @@ func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainI
 	nodeAddr := conn.Target()
 
 	return &module{
-		conn:     conn,
-		client:   types.NewMsgClient(conn),
-		kr:       kr,
-		keyName:  keyName,
-		chainID:  chainID,
-		nodeAddr: nodeAddr,
+		conn:          conn,
+		client:        actiontypes.NewMsgClient(conn),
+		kr:            kr,
+		keyName:       keyName,
+		chainID:       chainID,
+		nodeAddr:      nodeAddr,
+		gasLimit:      defaultGasLimit,
+		minGasLimit:   defaultMinGasLimit,
+		maxGasLimit:   defaultMaxGasLimit,
+		gasAdjustment: defaultGasAdjustment,
+		gasPadding:    defaultGasPadding,
 	}, nil
 }
 
@@ -104,7 +123,7 @@ func (m *module) FinalizeCascadeAction(
 	}
 
 	// Create the message
-	msg := &types.MsgFinalizeAction{
+	msg := &actiontypes.MsgFinalizeAction{
 		Creator:    creator,
 		ActionId:   actionId,
 		ActionType: "CASCADE",
@@ -127,15 +146,15 @@ func (m *module) FinalizeCascadeAction(
 		WithKeyring(m.kr).
 		WithBroadcastMode("sync")
 
-	// Create transaction factory
+	// Create transaction factory with initial gas values
 	factory := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
 		WithKeybase(m.kr).
 		WithAccountNumber(accInfo.AccountNumber).
 		WithSequence(accInfo.Sequence).
 		WithChainID(m.chainID).
-		WithGas(200000).
-		WithGasAdjustment(1.5).
+		WithGas(m.gasLimit).                // Use default initially
+		WithGasAdjustment(m.gasAdjustment). // Configurable adjustment
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT)
 
 	// Build unsigned transaction
@@ -145,13 +164,26 @@ func (m *module) FinalizeCascadeAction(
 	}
 
 	// Simulate transaction to get accurate gas estimation
-	gasInfo, err := m.simulateTx(ctx, clientCtx, txBuilder)
+	simulatedGas, err := m.simulateTx(ctx, clientCtx, txBuilder)
 	if err != nil {
-		return nil, fmt.Errorf("failed to simulate transaction: %w", err)
+		return nil, fmt.Errorf("simulation failed: %v, using default gas limit of %d", err, m.gasLimit)
 	}
 
-	// Update gas amount based on simulation
-	factory = factory.WithGas(gasInfo + 10000)
+	// Apply gas adjustment and padding to simulated gas value
+	adjustedGas := uint64(float64(simulatedGas) * m.gasAdjustment)
+	gasToUse := adjustedGas + m.gasPadding
+
+	// Apply gas bounds
+	if gasToUse < m.minGasLimit {
+		return nil, fmt.Errorf("adjusted gas (%d) below minimum, transaction requires minimum gas limit: %d", adjustedGas+m.gasPadding, m.minGasLimit)
+	} else if gasToUse > m.maxGasLimit {
+		return nil, fmt.Errorf("adjusted gas (%d) above maximum, transaction exceeds maximum gas limit: %d", adjustedGas+m.gasPadding, m.maxGasLimit)
+	}
+
+	// Update factory with calculated gas
+	factory = factory.WithGas(gasToUse)
+
+	// Rebuild transaction with updated gas
 	txBuilder, err = factory.BuildUnsignedTx(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to rebuild unsigned tx: %w", err)
@@ -173,6 +205,7 @@ func (m *module) FinalizeCascadeAction(
 	if err != nil {
 		return &FinalizeActionResult{
 			Success: false,
+			TxHash:  "", // Empty when failed
 		}, fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
@@ -186,8 +219,9 @@ func (m *module) FinalizeCascadeAction(
 func (m *module) simulateTx(ctx context.Context, clientCtx client.Context, txBuilder client.TxBuilder) (uint64, error) {
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to encode transaction for simulation: %w", err)
 	}
+
 	// Create gRPC client for tx service
 	txClient := txtypes.NewServiceClient(m.conn)
 
@@ -198,7 +232,7 @@ func (m *module) simulateTx(ctx context.Context, clientCtx client.Context, txBui
 
 	simRes, err := txClient.Simulate(ctx, simReq)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("simulation failed: %w", err)
 	}
 
 	return simRes.GasInfo.GasUsed, nil
@@ -217,11 +251,12 @@ func (m *module) broadcastTx(ctx context.Context, txBytes []byte) (*TxResponse, 
 
 	resp, err := txClient.BroadcastTx(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("broadcast failed: %w", err)
 	}
 
 	if resp.TxResponse.Code != 0 {
-		return nil, fmt.Errorf("transaction failed: %s", resp.TxResponse.RawLog)
+		return nil, fmt.Errorf("transaction failed (code %d): %s",
+			resp.TxResponse.Code, resp.TxResponse.RawLog)
 	}
 
 	return &TxResponse{
@@ -247,7 +282,7 @@ func (m *module) getAccountInfo(ctx context.Context, address string) (*AccountIn
 	}
 
 	// Unmarshal account
-	var account authtypes.AccountI
+	var account sdk.AccountI
 	err = m.getEncodingConfig().InterfaceRegistry.UnpackAny(resp.Account, &account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal account: %w", err)
