@@ -1,6 +1,9 @@
 package conn
 
 import (
+	"sync"
+
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 )
 
@@ -32,4 +35,24 @@ func RegisterALTSRecordProtocols() {
 
 func UnregisterALTSRecordProtocols() {
 	ALTSRecordProtocols = make([]string, 0)
+}
+
+var (
+	recMu sync.RWMutex
+	facts = make(map[string]common.ALTSRecordFunc)
+)
+
+// registerFactory is called from init() blocks.
+func registerFactory(proto string, f common.ALTSRecordFunc) {
+	recMu.Lock()
+	facts[proto] = f
+	recMu.Unlock()
+}
+
+// lookupFactory is used by NewConn.
+func lookupFactory(proto string) (common.ALTSRecordFunc, bool) {
+	recMu.RLock()
+	f, ok := facts[proto]
+	recMu.RUnlock()
+	return f, ok
 }

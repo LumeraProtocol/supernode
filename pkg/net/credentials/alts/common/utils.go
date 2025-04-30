@@ -21,6 +21,14 @@ type ExpandKeyFunc func(sharedSecret []byte, protocol string, info []byte) ([]by
 // defaultSendHandshakeMessage sends serialized handshake bytes with its signature over the connection
 // Format: [handshake length][handshake bytes][signature length][signature]
 func defaultSendHandshakeMessage(conn net.Conn, handshakeBytes, signature []byte) error {
+	if handshakeBytes == nil {
+		return fmt.Errorf("empty handshake")
+	}
+	// Normalise nil → empty slice so len() works and we still send the frame.
+	if signature == nil {
+		signature = []byte{}
+	}
+
 	// Calculate total message size and allocate a single buffer
 	totalSize := MsgLenFieldSize + len(handshakeBytes) + MsgLenFieldSize + len(signature)
 	buf := make([]byte, totalSize)
@@ -55,35 +63,40 @@ func defaultSendHandshakeMessage(conn net.Conn, handshakeBytes, signature []byte
 // Format: [handshake length][handshake bytes][signature length][signature]
 var SendHandshakeMessage SendHandshakeMessageFunc = defaultSendHandshakeMessage
 
+const maxFrameSize = 64 * 1024 // 64 KiB is plenty for a protobuf handshake
+
 // defaultReceiveHandshakeMessage receives handshake bytes and its signature from the connection.
 // Format: [handshake length][handshake bytes][signature length][signature]
 func defaultReceiveHandshakeMessage(conn net.Conn) ([]byte, []byte, error) {
-	// Read handshake length
-	lenBuf := make([]byte, MsgLenFieldSize)
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, nil, fmt.Errorf("failed to read handshake length: %w", err)
-	}
-	handshakeLen := binary.BigEndian.Uint32(lenBuf)
+	var lenBuf [MsgLenFieldSize]byte
 
-	// Read handshake bytes
-	handshakeBytes := make([]byte, handshakeLen)
-	if _, err := io.ReadFull(conn, handshakeBytes); err != nil {
-		return nil, nil, fmt.Errorf("failed to read handshake bytes: %w", err)
+	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+		return nil, nil, fmt.Errorf("read handshake len: %w", err)
+	}
+	handshakeLen := binary.BigEndian.Uint32(lenBuf[:])
+	if handshakeLen == 0 || handshakeLen > maxFrameSize {
+		return nil, nil, fmt.Errorf("invalid handshake length %d", handshakeLen)
 	}
 
-	// Read signature length
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, nil, fmt.Errorf("failed to read signature length: %w", err)
+	handshake := make([]byte, handshakeLen)
+	if _, err := io.ReadFull(conn, handshake); err != nil {
+		return nil, nil, fmt.Errorf("read handshake: %w", err)
 	}
-	sigLen := binary.BigEndian.Uint32(lenBuf)
 
-	// Read signature
+	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+		return nil, nil, fmt.Errorf("read signature len: %w", err)
+	}
+	sigLen := binary.BigEndian.Uint32(lenBuf[:])
+	if sigLen == 0 || sigLen > maxFrameSize {
+		return nil, nil, fmt.Errorf("invalid signature length %d", sigLen)
+	}
+
 	signature := make([]byte, sigLen)
 	if _, err := io.ReadFull(conn, signature); err != nil {
-		return nil, nil, fmt.Errorf("failed to read signature: %w", err)
+		return nil, nil, fmt.Errorf("read signature: %w", err)
 	}
 
-	return handshakeBytes, signature, nil
+	return handshake, signature, nil
 }
 
 // receiveHandshakeMessage receives handshake bytes and its signature from the connection
@@ -119,23 +132,21 @@ func GetALTSKeySize(protocol string) (int, error) {
 	}
 }
 
+// defaultExpandKey always runs HKDF–SHA-256 so the key material is
+// uniformly random even when the raw ECDH secret is longer than needed.
 func defaultExpandKey(sharedSecret []byte, protocol string, info []byte) ([]byte, error) {
 	keySize, err := GetALTSKeySize(protocol)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get key size: %w", err)
-	}
-	if keySize <= len(sharedSecret) {
-		return sharedSecret[:keySize], nil
+		return nil, err
 	}
 
-	// Use HKDF with SHA-256
-	hkdf := hkdf.New(sha256.New, sharedSecret, nil, info)
+	// HKDF with empty salt (ok for ECDH) & caller-provided info.
+	h := hkdf.New(sha256.New, sharedSecret, nil, info)
 
 	key := make([]byte, keySize)
-	if _, err := io.ReadFull(hkdf, key); err != nil {
-		return nil, fmt.Errorf("failed to expand key: %w", err)
+	if _, err := io.ReadFull(h, key); err != nil {
+		return nil, fmt.Errorf("expand key: %w", err)
 	}
-
 	return key, nil
 }
 

@@ -3,11 +3,14 @@
 package conn
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"net"
 
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 )
 
@@ -61,29 +64,93 @@ type Conn struct {
 	overhead int
 }
 
-// NewConn creates a new secure channel instance given the other party role and
-// handshaking result.
-var NewConn = func (c net.Conn, side Side, recordProtocol string, key, protected []byte) (net.Conn, error) {
-	newCrypto := protocols[recordProtocol]
-	if newCrypto == nil {
+func init() {
+	registerFactory(common.RecordProtocolAESGCM, newAESGCM)
+	registerFactory(common.RecordProtocolAESGCMReKey, newAESGCMRekey)
+}
+
+type aesGCMRecord struct {
+	aead     cipher.AEAD
+	overhead int
+}
+
+func newAESGCM(s common.Side, key []byte) (common.ALTSRecordCrypto, error) {
+	if len(key) != common.KeySizeAESGCM {
+		return nil, fmt.Errorf("aesgcm: need %d-byte key, got %d", common.KeySizeAESGCM, len(key))
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	return &aesGCMRecord{aead: aead, overhead: aead.Overhead()}, nil
+}
+
+// newAESGCMRekey expects the 44-byte bundle: 32-byte key || 12-byte counter mask.
+// We ignore the counter-mask here (your existing frame layer may XOR it with the
+// sequence number; if you haven’t implemented re-keying yet just drop it).
+func newAESGCMRekey(s common.Side, keyData []byte) (common.ALTSRecordCrypto, error) {
+	if len(keyData) != common.KeySizeAESGCMReKey {
+		return nil, fmt.Errorf("aesgcm-rekey: need %d-byte keyData, got %d",
+			common.KeySizeAESGCMReKey, len(keyData))
+	}
+	return newAESGCM(s, keyData[:common.KeySizeAESGCM])
+}
+
+func (r *aesGCMRecord) EncryptionOverhead() int { return r.overhead }
+
+func (r *aesGCMRecord) Encrypt(dst, plain []byte) ([]byte, error) {
+	nonce := make([]byte, r.aead.NonceSize())
+	return r.aead.Seal(dst, nonce, plain, nil), nil
+}
+
+func (r *aesGCMRecord) Decrypt(dst, cipherTxt []byte) ([]byte, error) {
+	nonce := make([]byte, r.aead.NonceSize())
+	plain, err := r.aead.Open(dst, nonce, cipherTxt, nil)
+	if err != nil {
+		return nil, fmt.Errorf("aesgcm decrypt: %w", err)
+	}
+	return plain, nil
+}
+
+// NewConn creates a new ALTS secure channel after the handshake.
+//
+// Params
+//
+//	c              – the raw TCP connection returned by net.Dial / Accept
+//	side           – common.ClientSide or common.ServerSide
+//	recordProtocol – string negotiated during the handshake
+//	key            – expanded key material for the record protocol
+//	protected      – any bytes already read from the socket that belong to
+//	                 the first encrypted frame (nil in the usual path)
+//
+// It returns a *Conn that transparently Encrypts/Decrypts every frame.
+var NewConn = func(
+	c net.Conn,
+	side Side,
+	recordProtocol string,
+	key, protected []byte,
+) (net.Conn, error) {
+
+	factory, ok := lookupFactory(recordProtocol)
+	if !ok {
 		return nil, fmt.Errorf("negotiated unknown next_protocol %q", recordProtocol)
 	}
-	crypto, err := newCrypto(side, key)
+	crypto, err := factory(side, key)
 	if err != nil {
 		return nil, fmt.Errorf("protocol %q: %v", recordProtocol, err)
 	}
+
 	overhead := MsgLenFieldSize + msgTypeFieldSize + crypto.EncryptionOverhead()
 	payloadLengthLimit := altsRecordDefaultLength - overhead
+
+	// If the caller already peeked bytes from the socket (rare) copy them
 	var protectedBuf []byte
 	if protected == nil {
-		// We pre-allocate protected to be of size
-		// 2*altsRecordDefaultLength-1 during initialization. We only
-		// read from the network into protected when protected does not
-		// contain a complete frame, which is at most
-		// altsRecordDefaultLength-1 (bytes). And we read at most
-		// altsRecordDefaultLength (bytes) data into protected at one
-		// time. Therefore, 2*altsRecordDefaultLength-1 is large enough
-		// to buffer data read from the network.
+		// 2*altsRecordDefaultLength-1 is enough to hold one full frame
 		protectedBuf = make([]byte, 0, 2*altsRecordDefaultLength-1)
 	} else {
 		protectedBuf = make([]byte, len(protected))
@@ -95,8 +162,8 @@ var NewConn = func (c net.Conn, side Side, recordProtocol string, key, protected
 		crypto:             crypto,
 		payloadLengthLimit: payloadLengthLimit,
 		protected:          protectedBuf,
-		writeBuf:           make([]byte, altsWriteBufferInitialSize),
 		nextFrame:          protectedBuf,
+		writeBuf:           make([]byte, altsWriteBufferInitialSize),
 		overhead:           overhead,
 	}
 	return altsConn, nil

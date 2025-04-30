@@ -88,12 +88,12 @@ func newHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, remoteAdd
 	side Side, timeout time.Duration, opts interface{}) *secureHandshaker {
 
 	hs := &secureHandshaker{
-		conn:        conn,
+		conn:         conn,
 		keyExchanger: keyExchange,
-		remoteAddr:  remoteAddr,
-		side:        side,
-		protocol:    RecordProtocolXChaCha20Poly1305ReKey, // Default to XChaCha20-Poly1305
-		timeout:     timeout,
+		remoteAddr:   remoteAddr,
+		side:         side,
+		protocol:     RecordProtocolAESGCMReKey,
+		timeout:      timeout,
 	}
 
 	if side == ClientSide {
@@ -295,7 +295,7 @@ func (h *secureHandshaker) ServerHandshake(ctx context.Context) (net.Conn, crede
 	// Create ALTS connection
 	altsConn, err := NewConn(h.conn, h.side, h.protocol, expandedKey, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ALTS connection: %w", err)
+		return nil, nil, fmt.Errorf("failed to create ALTS connection on Server: %w", err)
 	}
 
 	// Clear expanded key
@@ -314,54 +314,61 @@ func (h *secureHandshaker) ServerHandshake(ctx context.Context) (net.Conn, crede
 	return altsConn, clientAuthInfo, nil
 }
 
-func (h *secureHandshaker) defaultReadRequestWithTimeout(ctx context.Context) ([]byte, []byte, error) {
-	readChan := make(chan handshakeData, 1)
+// defaultReadRequestWithTimeout blocks in-place (no goroutine) and relies
+// on conn deadlines to honour ctx cancellation.
+func (h *secureHandshaker) defaultReadRequestWithTimeout(
+	ctx context.Context,
+) ([]byte, []byte, error) {
 
-	go func() {
-		reqBytes, reqSig, err := ReceiveHandshakeMessage(h.conn)
-		readChan <- handshakeData{reqBytes, reqSig, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	case result := <-readChan:
-		if result.err != nil {
-			return nil, nil, fmt.Errorf("failed to receive handshake request: %w", result.err)
-		}
-		if len(result.bytes) == 0 {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = h.conn.SetReadDeadline(deadline)
+	}
+	bytes, sig, err := ReceiveHandshakeMessage(h.conn)
+	if err != nil {
+		// Map timeout to our public errors
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
 			return nil, nil, ErrPeerNotResponding
 		}
-		return result.bytes, result.signature, nil
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, nil, ctx.Err()
+		}
+		return nil, nil, fmt.Errorf("receive handshake request: %w", err)
 	}
+	if len(bytes) == 0 {
+		return nil, nil, ErrPeerNotResponding
+	}
+	// Clear deadline for future I/O
+	_ = h.conn.SetReadDeadline(time.Time{})
+	return bytes, sig, nil
 }
 
-func (h *secureHandshaker) defaultReadResponseWithTimeout(ctx context.Context, lastWrite time.Time) ([]byte, []byte, error) {
-	readChan := make(chan handshakeData, 1)
-	readStartTime := time.Now()
+// defaultReadResponseWithTimeout behaves like the request version but also
+// checks the elapsed time since last write to decide “peer not responding”.
+func (h *secureHandshaker) defaultReadResponseWithTimeout(
+	ctx context.Context,
+	lastWrite time.Time,
+) ([]byte, []byte, error) {
 
-	go func() {
-		respBytes, respSig, err := ReceiveHandshakeMessage(h.conn)
-		readChan <- handshakeData{respBytes, respSig, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		// If we've been reading for long enough and got no response, treat as unresponsive
-		if time.Since(readStartTime) >= h.timeout {
-			return nil, nil, ErrPeerNotResponding
-		}
-		return nil, nil, ctx.Err()
-	case result := <-readChan:
-		if result.err != nil {
-			return nil, nil, fmt.Errorf("failed to receive handshake response: %w", result.err)
-		}
-		// If nothing was written and nothing was read, peer is not responding
-		if len(result.bytes) == 0 && time.Since(lastWrite) > h.timeout {
-			return nil, nil, ErrPeerNotResponding
-		}
-		return result.bytes, result.signature, nil
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = h.conn.SetReadDeadline(deadline)
 	}
+	bytes, sig, err := ReceiveHandshakeMessage(h.conn)
+	if err != nil {
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			return nil, nil, ErrPeerNotResponding
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, nil, ctx.Err()
+		}
+		return nil, nil, fmt.Errorf("receive handshake response: %w", err)
+	}
+
+	// Detect silent peer
+	if len(bytes) == 0 && time.Since(lastWrite) >= h.timeout {
+		return nil, nil, ErrPeerNotResponding
+	}
+	_ = h.conn.SetReadDeadline(time.Time{})
+	return bytes, sig, nil
 }
 
 func (h *secureHandshaker) readResponseWithTimeout(ctx context.Context, lastWrite time.Time) ([]byte, []byte, error) {
