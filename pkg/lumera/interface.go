@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
@@ -15,6 +16,7 @@ import (
 type Client interface {
 	Auth() auth.Module
 	Action() action.Module
+	ActionMsg() action_msg.Module
 	SuperNode() supernode.Module
 	Tx() tx.Module
 	Node() node.Module

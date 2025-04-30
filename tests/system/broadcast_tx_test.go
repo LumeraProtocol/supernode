@@ -29,19 +29,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// TestCascadeE2E performs an end-to-end test of the Cascade functionality in the Lumera network.
-// This test covers the entire process from initializing services, setting up accounts,
-// creating and processing data through RaptorQ, submitting action requests to the blockchain,
-// and monitoring the task execution to completion.
-//
-// The test demonstrates how data flows through the Lumera system:
-// 1. Start services (blockchain, RaptorQ, supernode)
-// 2. Set up test accounts and keys
-// 3. Create test data and process it through RaptorQ
-// 4. Sign the data and RQ identifiers
-// 5. Submit a CASCADE action request with proper metadata
-// 6. Execute the Cascade operation with the action ID
-// 7. Monitor task completion and verify results
 func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	// Constants and Configuration Parameters

@@ -60,7 +60,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Initialize Lumera client
-		lumeraClient, err := initLumeraClient(ctx, appConfig)
+		lumeraClient, err := initLumeraClient(ctx, appConfig, kr)
 		if err != nil {
 			return fmt.Errorf("failed to initialize Lumera client: %w", err)
 		}

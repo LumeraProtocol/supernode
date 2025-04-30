@@ -32,3 +32,10 @@ func WithKeyring(k keyring.Keyring) Option {
 		c.keyring = k
 	}
 }
+
+// WithKeyName sets the key name to use for signing
+func WithKeyName(keyName string) Option {
+	return func(c *Config) {
+		c.KeyName = keyName
+	}
+}
