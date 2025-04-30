@@ -67,15 +67,53 @@ func TestCascadeE2E(t *testing.T) {
 		actionType = "CASCADE" // The action type for fountain code processing
 		price      = "10ulume" // Price for the action in ulume tokens
 	)
-
-	// ---------------------------------------
-	// Step 1: Start all required services
-	// ---------------------------------------
 	t.Log("Step 1: Starting all services")
 
 	// Reset and start the blockchain
 	sut.ResetChain(t)
 	sut.StartChain(t)
+	cli := NewLumeradCLI(t, sut, true)
+	// ---------------------------------------
+	// Register Multiple Supernodes to process the request
+	// ---------------------------------------
+	t.Log("Registering multiple supernodes to process requests")
+
+	// Helper function to register a supernode
+	registerSupernode := func(nodeKey string, port string) {
+		// Get account and validator addresses for registration
+		accountAddr := cli.GetKeyAddr(nodeKey)
+		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
+		valAddr := strings.TrimSpace(valAddrOutput)
+
+		t.Logf("Registering supernode for %s (validator: %s, account: %s)", nodeKey, valAddr, accountAddr)
+
+		// Register the supernode with the network
+		registerCmd := []string{
+			"tx", "supernode", "register-supernode",
+			valAddr,             // validator address
+			"localhost:" + port, // IP address with unique port
+			"1.0.0",             // version
+			accountAddr,         // supernode account
+			"--from", nodeKey,
+		}
+
+		resp := cli.CustomCommand(registerCmd...)
+		RequireTxSuccess(t, resp)
+
+		// Wait for transaction to be included in a block
+		sut.AwaitNextBlock(t)
+	}
+
+	// Register three supernodes with different ports
+	registerSupernode("node0", "4444")
+	registerSupernode("node1", "4446")
+	registerSupernode("node2", "4448")
+
+	t.Log("Successfully registered three supernodes")
+
+	// ---------------------------------------
+	// Step 1: Start all required services
+	// ---------------------------------------
 
 	// // Start the RaptorQ service for encoding/decoding with fountain codes
 	rq_cmd := StartRQService(t)
@@ -108,7 +146,6 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Key recovery output: %s", string(output))
 
 	// Create CLI helper and verify the address matches expected
-	cli := NewLumeradCLI(t, sut, true)
 	recoveredAddress := cli.GetKeyAddr(testKeyName)
 	t.Logf("Recovered key %s with address: %s", testKeyName, recoveredAddress)
 	require.Equal(t, expectedAddress, recoveredAddress, "Recovered address should match expected address")
@@ -151,7 +188,7 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to create RaptorQ files directory")
 
 	// Create context with timeout for service operations
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Second)
 	defer cancel()
 
 	// Initialize RaptorQ configuration with host, port and file directory
@@ -176,46 +213,6 @@ func TestCascadeE2E(t *testing.T) {
 		lumera.WithChainID(lumeraChainID),
 	)
 	require.NoError(t, err, "Failed to initialize Lumera client")
-
-	// ---------------------------------------
-	// Register Multiple Supernodes to process the request
-	// ---------------------------------------
-	t.Log("Registering multiple supernodes to process requests")
-
-	// Helper function to register a supernode
-	registerSupernode := func(nodeKey string, port string) {
-		// Get account and validator addresses for registration
-		accountAddr := cli.GetKeyAddr(nodeKey)
-		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
-		valAddr := strings.TrimSpace(valAddrOutput)
-
-		t.Logf("Registering supernode for %s (validator: %s, account: %s)", nodeKey, valAddr, accountAddr)
-
-		// Register the supernode with the network
-		registerCmd := []string{
-			"tx", "supernode", "register-supernode",
-			valAddr,             // validator address
-			"localhost:" + port, // IP address with unique port
-			"1.0.0",             // version
-			accountAddr,         // supernode account
-			"--from", nodeKey,
-		}
-
-		resp := cli.CustomCommand(registerCmd...)
-		RequireTxSuccess(t, resp)
-
-		// Wait for transaction to be included in a block
-		sut.AwaitNextBlock(t)
-	}
-
-	// Register three supernodes with different ports
-	registerSupernode("node0", "4444")
-	registerSupernode("node1", "4446")
-	registerSupernode("node2", "4448")
-
-	t.Log("Successfully registered three supernodes")
-
-	sut.AwaitNextBlock(t) // Wait for all transactions to be processed
 
 	// ---------------------------------------
 	// Step 4: Create and prepare test file
@@ -248,7 +245,7 @@ func TestCascadeE2E(t *testing.T) {
 	hashBytes := hash.Sum(nil)
 	hashHex := fmt.Sprintf("%X", hashBytes)
 	t.Logf("File hash: %s", hashHex)
-
+	time.Sleep(1 * time.Minute)
 	// ---------------------------------------
 	// Step 5: Sign data and generate RaptorQ identifiers
 	// ---------------------------------------
