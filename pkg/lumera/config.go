@@ -1,6 +1,10 @@
 package lumera
 
-import "github.com/cosmos/cosmos-sdk/crypto/keyring"
+import (
+	"time"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+)
 
 // Config holds all the configuration needed for the client
 type Config struct {
@@ -10,8 +14,8 @@ type Config struct {
 	// ChainID is the ID of the chain
 	ChainID string
 
-	// Timeout is the default request timeout in seconds
-	Timeout int
+	// Timeout is the default request timeout
+	Timeout time.Duration
 
 	// keyring is the keyring conf for the node sign & verify
 	keyring keyring.Keyring

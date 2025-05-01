@@ -3,7 +3,6 @@ package net
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
@@ -29,13 +28,8 @@ type supernodeClient struct {
 var _ SupernodeClient = (*supernodeClient)(nil)
 
 // NewSupernodeClient creates a new supernode client
-func NewSupernodeClient(
-	ctx context.Context,
-	logger log.Logger,
-	keyring keyring.Keyring,
-	localCosmosAddress string,
-	targetSupernode lumera.Supernode,
-	clientOptions *client.ClientOptions,
+func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
+	localCosmosAddress string, targetSupernode lumera.Supernode, clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
 	// Validate required parameters
 	if logger == nil {
@@ -111,27 +105,9 @@ func NewSupernodeClient(
 }
 
 // UploadInputData sends data to the supernode for cascade processing
-func (c *supernodeClient) UploadInputData(
-	ctx context.Context,
-	in *supernodeservice.UploadInputDataRequest,
-	opts ...grpc.CallOption,
+func (c *supernodeClient) UploadInputData(ctx context.Context,
+	in *supernodeservice.UploadInputDataRequest, opts ...grpc.CallOption,
 ) (*supernodeservice.UploadInputDataResponse, error) {
-	// Get file info for logging
-	fileInfo, err := os.Stat(in.FilePath)
-	var fileSize int64
-	if err != nil {
-		c.logger.Warn(ctx, "Failed to get file stats",
-			"filePath", in.FilePath,
-			"error", err)
-	} else {
-		fileSize = fileInfo.Size()
-	}
-
-	c.logger.Debug(ctx, "Uploading input data",
-		"actionID", in.ActionID,
-		"filename", in.Filename,
-		"filePath", in.FilePath,
-		"fileSize", fileSize)
 
 	resp, err := c.cascadeClient.UploadInputData(ctx, in, opts...)
 	if err != nil {
@@ -139,9 +115,7 @@ func (c *supernodeClient) UploadInputData(
 	}
 
 	c.logger.Info(ctx, "Input data uploaded successfully",
-		"actionID", in.ActionID,
-		"filename", in.Filename,
-		"filePath", in.FilePath)
+		"actionID", in.ActionID, "filename", in.Filename, "filePath", in.FilePath)
 
 	return resp, nil
 }

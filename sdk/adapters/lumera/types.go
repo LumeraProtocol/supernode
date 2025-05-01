@@ -31,6 +31,8 @@ type Action struct {
 	ExpirationTime string
 }
 
+type Supernodes []Supernode
+
 // Supernode represents information about a supernode in the network
 type Supernode struct {
 	CosmosAddress string          // Blockchain identity of the supernode
