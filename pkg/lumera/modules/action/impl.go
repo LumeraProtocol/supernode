@@ -47,3 +47,13 @@ func (m *module) GetActionFee(ctx context.Context, dataSize string) (*types.Quer
 
 	return resp, nil
 }
+
+// GetParams fetches the action module parameters
+func (m *module) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
+	resp, err := m.client.Params(ctx, &types.QueryParamsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get action params: %w", err)
+	}
+
+	return resp, nil
+}
