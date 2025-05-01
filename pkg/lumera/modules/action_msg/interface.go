@@ -11,6 +11,7 @@ import (
 // FinalizeActionResult represents the result of a finalized action
 type FinalizeActionResult struct {
 	TxHash  string // Transaction hash
+	Code    uint32 // Code of the transaction
 	Success bool   // Whether the transaction was successful
 }
 
@@ -21,7 +22,7 @@ type Module interface {
 		ctx context.Context,
 		actionId string,
 		rqIdsIds []string,
-		rqIdsOti []string,
+		rqIdsOti []byte,
 	) (*FinalizeActionResult, error)
 }
 

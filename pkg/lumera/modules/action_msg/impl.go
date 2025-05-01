@@ -6,13 +6,14 @@ import (
 	"fmt"
 
 	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/codec/types"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -25,8 +26,8 @@ const (
 	defaultGasLimit      = uint64(200000)
 	defaultMinGasLimit   = uint64(100000)
 	defaultMaxGasLimit   = uint64(1000000)
-	defaultGasAdjustment = float64(1.5)
-	defaultGasPadding    = uint64(10000) // Added to simulated gas
+	defaultGasAdjustment = float64(3.0)
+	defaultGasPadding    = uint64(50000)
 )
 
 // module implements the Module interface
@@ -36,12 +37,11 @@ type module struct {
 	kr            keyring.Keyring
 	keyName       string
 	chainID       string
-	nodeAddr      string
-	gasLimit      uint64  // Default gas limit
-	minGasLimit   uint64  // Minimum gas limit
-	maxGasLimit   uint64  // Maximum gas limit
-	gasAdjustment float64 // Gas adjustment multiplier
-	gasPadding    uint64  // Added to simulated gas
+	gasLimit      uint64
+	minGasLimit   uint64
+	maxGasLimit   uint64
+	gasAdjustment float64
+	gasPadding    uint64
 }
 
 // newModule creates a new ActionMsg module client
@@ -62,16 +62,12 @@ func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainI
 		return nil, fmt.Errorf("chain ID cannot be empty")
 	}
 
-	// Extract node address from connection
-	nodeAddr := conn.Target()
-
 	return &module{
 		conn:          conn,
 		client:        actiontypes.NewMsgClient(conn),
 		kr:            kr,
 		keyName:       keyName,
 		chainID:       chainID,
-		nodeAddr:      nodeAddr,
 		gasLimit:      defaultGasLimit,
 		minGasLimit:   defaultMinGasLimit,
 		maxGasLimit:   defaultMaxGasLimit,
@@ -85,7 +81,7 @@ func (m *module) FinalizeCascadeAction(
 	ctx context.Context,
 	actionId string,
 	rqIdsIds []string,
-	rqIdsOti []string,
+	rqIdsOti []byte,
 ) (*FinalizeActionResult, error) {
 	// Basic validation
 	if actionId == "" {
@@ -109,6 +105,8 @@ func (m *module) FinalizeCascadeAction(
 		return nil, fmt.Errorf("failed to get address from key: %w", err)
 	}
 	creator := addr.String()
+
+	logtrace.Info(ctx, "finalize action started", logtrace.Fields{"creator": creator})
 
 	// Create CASCADE metadata
 	metadata := map[string]interface{}{
@@ -139,6 +137,8 @@ func (m *module) FinalizeCascadeAction(
 		return nil, fmt.Errorf("failed to get account info: %w", err)
 	}
 
+	logtrace.Info(ctx, "account info retrieved", logtrace.Fields{"accountNumber": accInfo.AccountNumber})
+
 	// Create client context with keyring
 	clientCtx := client.Context{}.
 		WithCodec(encCfg.Codec).
@@ -146,54 +146,67 @@ func (m *module) FinalizeCascadeAction(
 		WithKeyring(m.kr).
 		WithBroadcastMode("sync")
 
-	// Create transaction factory with initial gas values
+	// Simulate transaction to get gas estimate
+	txBuilder, err := tx.Factory{}.
+		WithTxConfig(clientCtx.TxConfig).
+		WithKeybase(m.kr).
+		WithAccountNumber(accInfo.AccountNumber).
+		WithSequence(accInfo.Sequence).
+		WithChainID(m.chainID).
+		WithGas(m.gasLimit).
+		WithGasAdjustment(m.gasAdjustment).
+		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
+		BuildUnsignedTx(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unsigned tx for simulation: %w", err)
+	}
+	pubKey, err := key.GetPubKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key: %w", err)
+	}
+	txBuilder.SetSignatures(signingtypes.SignatureV2{
+		PubKey:   pubKey, // your signing pubkey
+		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
+		Sequence: accInfo.Sequence,
+	})
+	simulatedGas, err := m.simulateTx(ctx, clientCtx, txBuilder)
+	if err != nil {
+		return nil, fmt.Errorf("simulation failed: %w", err)
+	}
+
+	adjustedGas := uint64(float64(simulatedGas) * m.gasAdjustment)
+	gasToUse := adjustedGas + m.gasPadding
+
+	// Apply gas bounds
+	if gasToUse > m.maxGasLimit {
+		gasToUse = m.maxGasLimit
+	}
+
+	logtrace.Info(ctx, "using simulated gas", logtrace.Fields{"simulatedGas": simulatedGas, "adjustedGas": gasToUse})
+
+	// Create transaction factory with final gas
 	factory := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
 		WithKeybase(m.kr).
 		WithAccountNumber(accInfo.AccountNumber).
 		WithSequence(accInfo.Sequence).
 		WithChainID(m.chainID).
-		WithGas(m.gasLimit).                // Use default initially
-		WithGasAdjustment(m.gasAdjustment). // Configurable adjustment
+		WithGas(gasToUse).
+		WithGasAdjustment(m.gasAdjustment).
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT)
 
-	// Build unsigned transaction
-	txBuilder, err := factory.BuildUnsignedTx(msg)
+	// Build and sign transaction
+	txBuilder, err = factory.BuildUnsignedTx(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build unsigned tx: %w", err)
 	}
 
-	// Simulate transaction to get accurate gas estimation
-	simulatedGas, err := m.simulateTx(ctx, clientCtx, txBuilder)
-	if err != nil {
-		return nil, fmt.Errorf("simulation failed: %v, using default gas limit of %d", err, m.gasLimit)
-	}
-
-	// Apply gas adjustment and padding to simulated gas value
-	adjustedGas := uint64(float64(simulatedGas) * m.gasAdjustment)
-	gasToUse := adjustedGas + m.gasPadding
-
-	// Apply gas bounds
-	if gasToUse < m.minGasLimit {
-		return nil, fmt.Errorf("adjusted gas (%d) below minimum, transaction requires minimum gas limit: %d", adjustedGas+m.gasPadding, m.minGasLimit)
-	} else if gasToUse > m.maxGasLimit {
-		return nil, fmt.Errorf("adjusted gas (%d) above maximum, transaction exceeds maximum gas limit: %d", adjustedGas+m.gasPadding, m.maxGasLimit)
-	}
-
-	// Update factory with calculated gas
-	factory = factory.WithGas(gasToUse)
-
-	// Rebuild transaction with updated gas
-	txBuilder, err = factory.BuildUnsignedTx(msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to rebuild unsigned tx: %w", err)
-	}
-
-	// Sign transaction
 	err = tx.Sign(ctx, factory, m.keyName, txBuilder, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
+
+	logtrace.Info(ctx, "transaction signed successfully", nil)
 
 	// Broadcast transaction
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
@@ -205,22 +218,37 @@ func (m *module) FinalizeCascadeAction(
 	if err != nil {
 		return &FinalizeActionResult{
 			Success: false,
-			TxHash:  "", // Empty when failed
+			TxHash:  "",
 		}, fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
+	logtrace.Info(ctx, "transaction broadcast success", logtrace.Fields{"txHash": resp.TxHash})
+
 	return &FinalizeActionResult{
 		TxHash:  resp.TxHash,
+		Code:    resp.Code,
 		Success: true,
 	}, nil
 }
 
 // Helper function to simulate transaction and return gas used
 func (m *module) simulateTx(ctx context.Context, clientCtx client.Context, txBuilder client.TxBuilder) (uint64, error) {
-	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
+	// First, let's see what's in the txBuilder
+	tx := txBuilder.GetTx()
+	logtrace.Info(ctx, "transaction for simulation", logtrace.Fields{
+		"messages": fmt.Sprintf("%v", tx.GetMsgs()),
+		"fee":      fmt.Sprintf("%v", tx.GetFee()),
+		"gas":      tx.GetGas(),
+	})
+
+	txBytes, err := clientCtx.TxConfig.TxEncoder()(tx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode transaction for simulation: %w", err)
 	}
+
+	logtrace.Info(ctx, "transaction encoded for simulation", logtrace.Fields{
+		"bytesLength": len(txBytes),
+	})
 
 	// Create gRPC client for tx service
 	txClient := txtypes.NewServiceClient(m.conn)
@@ -230,10 +258,32 @@ func (m *module) simulateTx(ctx context.Context, clientCtx client.Context, txBui
 		TxBytes: txBytes,
 	}
 
+	// Check if we have the tx in the request too
+	if simReq.Tx != nil {
+		logtrace.Info(ctx, "simulation request has tx field", logtrace.Fields{
+			"txFieldPresent": true,
+		})
+	}
+
+	logtrace.Info(ctx, "sending simulation request", logtrace.Fields{
+		"requestBytes": len(simReq.TxBytes),
+		"requestType":  fmt.Sprintf("%T", simReq),
+	})
+
 	simRes, err := txClient.Simulate(ctx, simReq)
 	if err != nil {
-		return 0, fmt.Errorf("simulation failed: %w", err)
+		logtrace.Error(ctx, "simulation error details", logtrace.Fields{
+			"error":        err.Error(),
+			"errorType":    fmt.Sprintf("%T", err),
+			"requestBytes": len(simReq.TxBytes),
+		})
+		return 0, fmt.Errorf("simulation error: %w", err)
 	}
+
+	logtrace.Info(ctx, "simulation response", logtrace.Fields{
+		"gasUsed":   simRes.GasInfo.GasUsed,
+		"gasWanted": simRes.GasInfo.GasWanted,
+	})
 
 	return simRes.GasInfo.GasUsed, nil
 }
@@ -282,20 +332,28 @@ func (m *module) getAccountInfo(ctx context.Context, address string) (*AccountIn
 	}
 
 	// Unmarshal account
-	var account sdk.AccountI
+	var account authtypes.AccountI
 	err = m.getEncodingConfig().InterfaceRegistry.UnpackAny(resp.Account, &account)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal account: %w", err)
+		return nil, fmt.Errorf("failed to unpack account: %w", err)
+	}
+
+	// Convert to BaseAccount
+	baseAcc, ok := account.(*authtypes.BaseAccount)
+	if !ok {
+		return nil, fmt.Errorf("received account is not a BaseAccount")
 	}
 
 	return &AccountInfo{
-		AccountNumber: account.GetAccountNumber(),
-		Sequence:      account.GetSequence(),
+		AccountNumber: baseAcc.AccountNumber,
+		Sequence:      baseAcc.Sequence,
 	}, nil
 }
 
 // makeEncodingConfig creates an EncodingConfig for transaction handling
 func makeEncodingConfig() EncodingConfig {
+	amino := codec.NewLegacyAmino()
+
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(interfaceRegistry)
 	authtypes.RegisterInterfaces(interfaceRegistry)
@@ -308,6 +366,7 @@ func makeEncodingConfig() EncodingConfig {
 		InterfaceRegistry: interfaceRegistry,
 		Codec:             marshaler,
 		TxConfig:          txConfig,
+		Amino:             amino,
 	}
 }
 
@@ -318,9 +377,10 @@ func (m *module) getEncodingConfig() EncodingConfig {
 
 // EncodingConfig specifies the concrete encoding types to use
 type EncodingConfig struct {
-	InterfaceRegistry codectypes.InterfaceRegistry
+	InterfaceRegistry types.InterfaceRegistry
 	Codec             codec.Codec
 	TxConfig          client.TxConfig
+	Amino             *codec.LegacyAmino
 }
 
 // AccountInfo holds account information for transaction signing

@@ -133,6 +133,24 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "id files have been stored", fields)
 
+	faresponse, err := task.lumeraClient.ActionMsg().FinalizeCascadeAction(ctx, actionDetails.ActionID, res.RQIDs, task.RQInfo.rqIDEncodeParams.Oti)
+	if err != nil {
+		logtrace.Info(ctx, "failed to finalize action", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+			"taskID":            task.ID(),
+			"actionID":          actionDetails.ActionID})
+	}
+
+	if faresponse == nil {
+		fields[logtrace.FieldError] = "finalize action response is nil"
+	}
+
+	logtrace.Info(ctx, "finalize action response", logtrace.Fields{
+		"taskID":   task.ID(),
+		"actionID": actionDetails.ActionID,
+		"response": faresponse.TxHash,
+		"Code":     faresponse.Code})
+
 	// Store RaptorQ symbols
 	if err = task.storeRaptorQSymbols(ctx); err != nil {
 		fields[logtrace.FieldError] = err.Error()

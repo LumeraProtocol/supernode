@@ -79,7 +79,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Registering multiple supernodes to process requests")
 
 	// Helper function to register a supernode
-	registerSupernode := func(nodeKey string, port string) {
+	registerSupernode := func(nodeKey string, port string, addr string) {
 		// Get account and validator addresses for registration
 		accountAddr := cli.GetKeyAddr(nodeKey)
 		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
@@ -93,7 +93,7 @@ func TestCascadeE2E(t *testing.T) {
 			valAddr,             // validator address
 			"localhost:" + port, // IP address with unique port
 			"1.0.0",             // version
-			accountAddr,         // supernode account
+			addr,                // supernode account
 			"--from", nodeKey,
 		}
 
@@ -105,10 +105,13 @@ func TestCascadeE2E(t *testing.T) {
 	}
 
 	// Register three supernodes with different ports
-	registerSupernode("node0", "4444")
-	// registerSupernode("node1", "4446")
-	// registerSupernode("node2", "4448")
+	registerSupernode("node0", "4444", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4")
+	registerSupernode("node1", "4446", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c")
+	registerSupernode("node2", "4448", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
 
+	cli.FundAddress("lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "100000ulume")
+	cli.FundAddressWithNode("lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "100000ulume", "node1")
+	cli.FundAddressWithNode("lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "100000ulume", "node2")
 	t.Log("Successfully registered three supernodes")
 
 	// ---------------------------------------
@@ -120,8 +123,8 @@ func TestCascadeE2E(t *testing.T) {
 	defer StopRQService(rq_cmd) // Ensure service is stopped after test
 
 	// Start the supernode service to process cascade requests
-	// cmds := StartAllSupernodes(t)
-	// defer StopAllSupernodes(cmds) // Ensure service is stopped after test
+	cmds := StartAllSupernodes(t)
+	defer StopAllSupernodes(cmds) // Ensure service is stopped after test
 
 	// ---------------------------------------
 	// Step 2: Set up test account and keys
@@ -247,6 +250,7 @@ func TestCascadeE2E(t *testing.T) {
 	hashBytes := hash.Sum(nil)
 	hashHex := fmt.Sprintf("%X", hashBytes)
 	t.Logf("File hash: %s", hashHex)
+	time.Sleep(1 * time.Minute)
 	// ---------------------------------------
 	// Step 5: Sign data and generate RaptorQ identifiers
 	// ---------------------------------------
@@ -502,6 +506,8 @@ func TestCascadeE2E(t *testing.T) {
 			}
 		}
 	}
+
+	time.Sleep(10 * time.Minute) // Wait for supernode processing
 	require.NotEmpty(t, successfulSupernode, "Should have a successful supernode in events")
 	t.Logf("Cascade successfully processed by supernode: %s", successfulSupernode)
 }
