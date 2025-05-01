@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -141,7 +142,7 @@ func initLumeraClient(ctx context.Context, config *config.Config) (lumera.Client
 		ctx,
 		lumera.WithGRPCAddr(config.LumeraClientConfig.GRPCAddr),
 		lumera.WithChainID(config.LumeraClientConfig.ChainID),
-		lumera.WithTimeout(config.LumeraClientConfig.Timeout),
+		lumera.WithTimeout(time.Duration(config.LumeraClientConfig.Timeout)*time.Second),
 	)
 }
 

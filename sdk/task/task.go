@@ -57,7 +57,7 @@ type BaseTask struct {
 func (t *BaseTask) EmitEvent(ctx context.Context, eventType event.EventType, data map[string]interface{}) {
 	if t.onEvent != nil {
 		// Create event with the provided context
-		e := event.NewEvent(ctx, eventType, t.TaskID, string(t.TaskType), data)
+		e := event.NewEvent(ctx, eventType, t.TaskID, string(t.TaskType), t.ActionID, data)
 		// Pass context to the callback
 		t.onEvent(ctx, e)
 	}

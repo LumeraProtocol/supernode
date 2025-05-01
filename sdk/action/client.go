@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/LumeraProtocol/supernode/sdk/config"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -17,8 +18,8 @@ type Client interface {
 	StartCascade(ctx context.Context, fileHash string, actionID string, filePath string, signedData string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
-	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
-	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
+	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
+	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
 }
 
 // ClientImpl implements the Client interface
@@ -33,12 +34,7 @@ type ClientImpl struct {
 var _ Client = (*ClientImpl)(nil)
 
 // NewClient creates a new action client
-func NewClient(
-	ctx context.Context,
-	config config.Config,
-	logger log.Logger,
-	keyring keyring.Keyring,
-) (Client, error) {
+func NewClient(ctx context.Context, config config.Config, logger log.Logger, keyring keyring.Keyring) (Client, error) {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
@@ -57,12 +53,11 @@ func NewClient(
 }
 
 // StartCascade initiates a cascade operation
-func (c *ClientImpl) StartCascade(
-	ctx context.Context,
-	fileHash string, // Hash of the file to process
-	actionID string, // ID of the action to perform
-	filePath string, // Path to the file on disk
-	signedData string, // Optional signed authorization data
+func (c *ClientImpl) StartCascade(ctx context.Context,
+	fileHash string,
+	actionID string,
+	filePath string,
+	signedData string,
 ) (string, error) {
 	c.logger.Debug(ctx, "Starting cascade operation",
 		"fileHash", fileHash,
@@ -82,6 +77,11 @@ func (c *ClientImpl) StartCascade(
 		c.logger.Error(ctx, "Empty file path provided")
 		return "", ErrEmptyFilePath
 	}
+	_, err := os.Stat(filePath)
+	if err != nil {
+		c.logger.Error(ctx, "File not found", "filePath", filePath)
+		return "", ErrEmptyFileNotFound
+	}
 
 	taskID, err := c.taskManager.CreateCascadeTask(ctx, fileHash, actionID, filePath, signedData)
 	if err != nil {
@@ -95,14 +95,13 @@ func (c *ClientImpl) StartCascade(
 
 // GetTask retrieves a task by its ID
 func (c *ClientImpl) GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool) {
-	c.logger.Debug(ctx, "Getting task", "taskID", taskID)
 	task, found := c.taskManager.GetTask(ctx, taskID)
-	if !found {
-		c.logger.Debug(ctx, "Task not found", "taskID", taskID)
-	} else {
-		c.logger.Debug(ctx, "Task found", "taskID", taskID, "status", task.Status)
+	if found {
+		return task, true
 	}
-	return task, found
+	c.logger.Debug(ctx, "Task not found", "taskID", taskID)
+
+	return nil, false
 }
 
 // DeleteTask removes a task by its ID
@@ -113,32 +112,35 @@ func (c *ClientImpl) DeleteTask(ctx context.Context, taskID string) error {
 		return fmt.Errorf("task ID cannot be empty")
 	}
 
-	err := c.taskManager.DeleteTask(ctx, taskID)
-	if err != nil {
+	if err := c.taskManager.DeleteTask(ctx, taskID); err != nil {
 		c.logger.Error(ctx, "Failed to delete task", "taskID", taskID, "error", err)
 		return fmt.Errorf("failed to delete task: %w", err)
 	}
-
 	c.logger.Info(ctx, "Task deleted successfully", "taskID", taskID)
+
 	return nil
 }
 
 // SubscribeToEvents registers a handler for specific event types
-func (c *ClientImpl) SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) {
-	c.logger.Debug(ctx, "Subscribing to events via task manager", "eventType", eventType)
-	if c.taskManager != nil {
-		c.taskManager.SubscribeToEvents(ctx, eventType, handler)
-	} else {
-		c.logger.Warn(ctx, "TaskManager is nil, cannot subscribe to events")
+func (c *ClientImpl) SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error {
+	if c.taskManager == nil {
+		return fmt.Errorf("TaskManager is nil, cannot subscribe to events")
 	}
+
+	c.logger.Debug(ctx, "Subscribing to events via task manager", "eventType", eventType)
+	c.taskManager.SubscribeToEvents(ctx, eventType, handler)
+
+	return nil
 }
 
 // SubscribeToAllEvents registers a handler for all events
-func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Handler) {
-	c.logger.Debug(ctx, "Subscribing to all events via task manager")
-	if c.taskManager != nil {
-		c.taskManager.SubscribeToAllEvents(ctx, handler)
-	} else {
-		c.logger.Warn(ctx, "TaskManager is nil, cannot subscribe to all events")
+func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Handler) error {
+	if c.taskManager == nil {
+		return fmt.Errorf("TaskManager is nil, cannot subscribe to events")
 	}
+
+	c.logger.Debug(ctx, "Subscribing to all events via task manager")
+	c.taskManager.SubscribeToAllEvents(ctx, handler)
+
+	return nil
 }

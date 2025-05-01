@@ -1,6 +1,10 @@
 package lumera
 
-import "github.com/cosmos/cosmos-sdk/crypto/keyring"
+import (
+	"time"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+)
 
 // Option is a function that applies a change to Config
 type Option func(*Config)
@@ -20,9 +24,9 @@ func WithChainID(chainID string) Option {
 }
 
 // WithTimeout sets the default timeout
-func WithTimeout(seconds int) Option {
+func WithTimeout(duration time.Duration) Option {
 	return func(c *Config) {
-		c.Timeout = seconds
+		c.Timeout = duration
 	}
 }
 

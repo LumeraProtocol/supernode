@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
@@ -23,7 +24,7 @@ type Client interface {
 type ConfigParams struct {
 	GRPCAddr string
 	ChainID  string
-	Timeout  int
+	Timeout  time.Duration
 }
 
 type Adapter struct {
