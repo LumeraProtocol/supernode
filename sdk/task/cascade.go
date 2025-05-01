@@ -46,24 +46,26 @@ func NewCascadeTask(
 
 // Run executes the full cascade‐task lifecycle.
 func (t *CascadeTask) Run(ctx context.Context) error {
-	t.logEvent(ctx, event.TaskStarted, "Running cascade task")
+	t.logEvent(ctx, event.TaskStarted, "Running cascade task", nil)
 
 	action, err := t.fetchAndValidateAction(ctx, t.ActionID)
 	if err != nil {
 		return t.fail(ctx, event.TaskProgressActionVerificationFailed, err)
 	}
-	t.logEvent(ctx, event.TaskProgressActionVerified, "Action verified.")
+	t.logEvent(ctx, event.TaskProgressActionVerified, "Action verified.", nil)
 
 	supernodes, err := t.fetchSupernodes(ctx, action.Height)
 	if err != nil {
 		return t.fail(ctx, event.TaskProgressSupernodesUnavailable, err)
 	}
-	t.logEvent(ctx, event.TaskProgressSupernodesFound, "Supernodes found.")
+	t.logEvent(ctx, event.TaskProgressSupernodesFound, "Supernodes found.", map[string]interface{}{
+		"count": len(supernodes),
+	})
 
 	if err := t.registerWithSupernodes(ctx, supernodes); err != nil {
 		return t.fail(ctx, event.TaskProgressRegistrationFailure, err)
 	}
-	t.logEvent(ctx, event.TaskCompleted, "Cascade task completed successfully")
+	t.logEvent(ctx, event.TaskCompleted, "Cascade task completed successfully", nil)
 	t.Status = StatusCompleted
 
 	return nil
@@ -94,6 +96,7 @@ func (t *CascadeTask) fetchSupernodes(ctx context.Context, height int64) (lumera
 	if err != nil {
 		return nil, fmt.Errorf("fetch supernodes: %w", err)
 	}
+	t.logger.Info(ctx, "Supernodes fetched", "count", len(sns))
 
 	if len(sns) == 0 {
 		return nil, errors.New("no supernodes found")
@@ -126,6 +129,8 @@ func (t *CascadeTask) fetchSupernodes(ctx context.Context, height int64) (lumera
 	if len(healthy) == 0 {
 		return nil, errors.New("no healthy supernodes found")
 	}
+	t.logger.Info(ctx, "Healthy supernodes", "count", len(healthy))
+
 	return healthy, nil
 }
 
@@ -172,7 +177,11 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lumera.Supernode,
 	factory *net.ClientFactory, req *supernodeservice.UploadInputDataRequest) error {
 
-	t.logEvent(ctx, event.TaskProgressRegistrationInProgress, "attempting registration with supernode")
+	t.logEvent(ctx, event.TaskProgressRegistrationInProgress, "attempting registration with supernode", map[string]interface{}{
+		"supernode":  sn.GrpcEndpoint,
+		"sn-address": sn.CosmosAddress,
+		"iteration":  index + 1,
+	})
 
 	client, err := factory.CreateClient(ctx, sn)
 	if err != nil {
@@ -195,10 +204,21 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lum
 	return nil
 }
 
-// logEvent is a tiny convenience wrapper.
-func (t *CascadeTask) logEvent(ctx context.Context, evt event.EventType, msg string) {
-	t.logger.Info(ctx, msg, "taskID", t.TaskID, "actionID", t.ActionID)
-	t.EmitEvent(ctx, evt, nil)
+// logEvent writes a structured log entry **and** emits the SDK event.
+func (t *CascadeTask) logEvent(ctx context.Context, evt event.EventType, msg string, additionalInfo map[string]interface{}) {
+	// Base fields that are always present
+	kvs := []interface{}{
+		"taskID", t.TaskID,
+		"actionID", t.ActionID,
+	}
+
+	// Merge additional fields
+	for k, v := range additionalInfo {
+		kvs = append(kvs, k, v)
+	}
+
+	t.logger.Info(ctx, msg, kvs...)
+	t.EmitEvent(ctx, evt, additionalInfo)
 }
 
 func (t *CascadeTask) fail(ctx context.Context, failureEvent event.EventType, err error) error {

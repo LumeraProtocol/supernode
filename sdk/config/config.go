@@ -6,7 +6,8 @@ import (
 )
 
 const (
-	DefaultLocalCosmosAddress = "tcp://127.0.0.1:26657"
+	DefaultLocalCosmosAddress = "lumera1qv3"     // Example address - replace with actual
+	DefaultChainID            = "lumera-testnet" // Example chain ID - replace with actual
 	DefaultGRPCAddr           = "127.0.0.1:9090"
 	DefaultTimeout            = 10 * time.Second
 )
@@ -38,6 +39,7 @@ func New(opts ...Option) (*Config, error) {
 		Lumera: LumeraConfig{
 			GRPCAddr: DefaultGRPCAddr,
 			Timeout:  DefaultTimeout,
+			ChainID:  DefaultChainID,
 		},
 	}
 
