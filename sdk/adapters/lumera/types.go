@@ -28,7 +28,7 @@ type Action struct {
 	ID             string
 	State          ACTION_STATE
 	Height         int64
-	ExpirationTime string
+	ExpirationTime int64
 }
 
 // Supernode represents information about a supernode in the network

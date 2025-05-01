@@ -211,6 +211,8 @@ func TestCascadeE2E(t *testing.T) {
 		ctx,
 		lumera.WithGRPCAddr(lumeraGRPCAddr),
 		lumera.WithChainID(lumeraChainID),
+		lumera.WithKeyring(keplrKeyring),
+		lumera.WithKeyName(testKeyName),
 	)
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
@@ -245,7 +247,6 @@ func TestCascadeE2E(t *testing.T) {
 	hashBytes := hash.Sum(nil)
 	hashHex := fmt.Sprintf("%X", hashBytes)
 	t.Logf("File hash: %s", hashHex)
-	time.Sleep(1 * time.Minute)
 	// ---------------------------------------
 	// Step 5: Sign data and generate RaptorQ identifiers
 	// ---------------------------------------
@@ -404,10 +405,12 @@ func TestCascadeE2E(t *testing.T) {
 			GRPCAddr string
 			ChainID  string
 			Timeout  int
+			KeyName  string
 		}{
 			GRPCAddr: lumeraGRPCAddr,
 			ChainID:  lumeraChainID,
 			Timeout:  300, // 30 seconds timeout
+			KeyName:  testKeyName,
 		},
 	}
 

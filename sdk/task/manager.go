@@ -56,9 +56,14 @@ func NewManager(
 			GRPCAddr: config.Lumera.GRPCAddr,
 			ChainID:  config.Lumera.ChainID,
 			Timeout:  config.Lumera.Timeout,
+			KeyName:  config.Lumera.KeyName,
 		},
 		kr,
 		logger)
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create Lumera client: %v", err))
+	}
 
 	taskCache, err := NewTaskCache(ctx, logger)
 	if err != nil {

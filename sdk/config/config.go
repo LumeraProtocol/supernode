@@ -10,5 +10,6 @@ type Config struct {
 		GRPCAddr string
 		ChainID  string
 		Timeout  int
+		KeyName  string
 	}
 }
