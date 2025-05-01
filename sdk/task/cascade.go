@@ -417,15 +417,15 @@ func (t *CascadeTask) validateAction(ctx context.Context) (lumera.Action, error)
 		return lumera.Action{}, errors.New("no action found with the specified ID")
 	}
 
-	// // Check action state
-	// if action.State != lumera.ACTION_STATE_PENDING {
-	// 	t.logger.Error(ctx, "Action is in invalid state",
-	// 		"taskID", t.TaskID,
-	// 		"actionID", t.ActionID,
-	// 		"state", action.State,
-	// 		"expectedState", lumera.ACTION_STATE_PENDING)
-	// 	return lumera.Action{}, fmt.Errorf("action is in %s state, expected PENDING", action.State)
-	// }
+	// Check action state
+	if action.State != lumera.ACTION_STATE_PENDING {
+		t.logger.Error(ctx, "Action is in invalid state",
+			"taskID", t.TaskID,
+			"actionID", t.ActionID,
+			"state", action.State,
+			"expectedState", lumera.ACTION_STATE_PENDING)
+		return lumera.Action{}, fmt.Errorf("action is in %s state, expected PENDING", action.State)
+	}
 
 	t.logger.Debug(ctx, "Action validated successfully",
 		"taskID", t.TaskID,

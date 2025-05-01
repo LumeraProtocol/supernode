@@ -57,6 +57,7 @@ func (f *ClientFactory) CreateClient(ctx context.Context, supernode lumera.Super
 	// Ensure endpoint has port
 	endpoint := AddPortIfMissing(supernode.GrpcEndpoint, f.config.DefaultSupernodePort)
 
+	fmt.Printf("Supernode endpoint: %s\n", endpoint)
 	f.logger.Debug(ctx, "Creating supernode client",
 		"supernode", supernode.CosmosAddress,
 		"endpoint", endpoint)
