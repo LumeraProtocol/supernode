@@ -2,11 +2,7 @@ package log
 
 import (
 	"context"
-	"io"
-	"net"
-	"net/http"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log/hooks"
 )
 
@@ -56,11 +52,12 @@ func init() {
 
 // GetExternalIPAddress returns external IP address
 func GetExternalIPAddress() (externalIP string, err error) {
-	if ip != "" {
+	return "localhost", nil
+	/*if ip != "" {
 		return ip, nil
 	}
 
-	resp, err := http.Get("http://ipinfo.io/ip")
+	resp, err := http.Get("https://api.ipify.org")
 	if err != nil {
 		return "", err
 	}
@@ -76,5 +73,5 @@ func GetExternalIPAddress() (externalIP string, err error) {
 		return "", errors.Errorf("invalid IP response from %s", "ipconf.ip")
 	}
 
-	return string(body), nil
+	return string(body), nil*/
 }
