@@ -143,8 +143,6 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 
 	// Message Finalize Action
 
-	task.lumeraClient.
-
 	return &UploadInputDataResponse{
 		Success: true,
 		Message: "successfully uploaded input data",

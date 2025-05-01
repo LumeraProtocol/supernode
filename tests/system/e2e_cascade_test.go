@@ -70,8 +70,8 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Step 1: Starting all services")
 
 	// Reset and start the blockchain
-	// sut.ResetChain(t)
-	// sut.StartChain(t)
+	sut.ResetChain(t)
+	sut.StartChain(t)
 	cli := NewLumeradCLI(t, sut, true)
 	// ---------------------------------------
 	// Register Multiple Supernodes to process the request
