@@ -147,6 +147,10 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	return s, nil
 }
 
+func (s *DHT) NodesLen() int {
+	return len(s.ht.nodes())
+}
+
 func (s *DHT) getExternalIP() (string, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()

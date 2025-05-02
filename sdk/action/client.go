@@ -3,7 +3,6 @@ package action
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/LumeraProtocol/supernode/sdk/config"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -15,7 +14,7 @@ import (
 
 // Client defines the interface for action operations
 type Client interface {
-	StartCascade(ctx context.Context, fileHash string, actionID string, filePath string, signedData string) (string, error)
+	StartCascade(ctx context.Context, data []byte, actionID string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
@@ -53,26 +52,21 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger, key
 }
 
 // StartCascade initiates a cascade operation
-func (c *ClientImpl) StartCascade(ctx context.Context, fileHash string, actionID string, filePath string, signedData string) (string, error) {
-	if fileHash == "" {
-		c.logger.Error(ctx, "Empty file hash provided")
-		return "", ErrEmptyFileHash
-	}
+func (c *ClientImpl) StartCascade(ctx context.Context,
+	data []byte,
+	actionID string,
+) (string, error) {
+
 	if actionID == "" {
 		c.logger.Error(ctx, "Empty action ID provided")
 		return "", ErrEmptyActionID
 	}
-	if filePath == "" {
-		c.logger.Error(ctx, "Empty file path provided")
-		return "", ErrEmptyFilePath
-	}
-	_, err := os.Stat(filePath)
-	if err != nil {
-		c.logger.Error(ctx, "File not found", "filePath", filePath)
-		return "", ErrEmptyFileNotFound
+	if len(data) == 0 {
+		c.logger.Error(ctx, "Empty data provided")
+		return "", ErrEmptyData
 	}
 
-	taskID, err := c.taskManager.CreateCascadeTask(ctx, actionID, filePath)
+	taskID, err := c.taskManager.CreateCascadeTask(ctx, data, actionID)
 	if err != nil {
 		c.logger.Error(ctx, "Failed to create cascade task", "error", err)
 		return "", fmt.Errorf("failed to create cascade task: %w", err)

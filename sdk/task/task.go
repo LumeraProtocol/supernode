@@ -29,7 +29,6 @@ const (
 )
 
 // EventCallback is a function that processes events from tasks
-// Now includes context parameter for proper context propagation
 type EventCallback func(ctx context.Context, e event.Event)
 
 // Task is the interface that all task types must implement

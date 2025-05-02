@@ -3,7 +3,6 @@ package lumera
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
@@ -25,6 +24,7 @@ type ConfigParams struct {
 	GRPCAddr string
 	ChainID  string
 	Timeout  time.Duration
+	KeyName  string
 }
 
 type Adapter struct {
@@ -66,6 +66,10 @@ func NewAdapter(
 		options = append(options, lumeraclient.WithKeyring(kr))
 	}
 
+	if config.KeyName != "" {
+		options = append(options, lumeraclient.WithKeyName(config.KeyName))
+	}
+
 	// Initialize the client
 	client, err := lumeraclient.NewClient(ctx, options...)
 	if err != nil {
@@ -90,6 +94,15 @@ func (a *Adapter) GetAction(ctx context.Context, actionID string) (Action, error
 		return Action{}, fmt.Errorf("failed to get action: %w", err)
 	}
 
+	// Add validation
+	if resp == nil {
+		return Action{}, fmt.Errorf("received nil response for action %s", actionID)
+	}
+
+	if resp.Action == nil {
+		return Action{}, fmt.Errorf("action %s not found", actionID)
+	}
+
 	action := toSdkAction(resp)
 	a.logger.Debug(ctx, "Successfully retrieved action",
 		"actionID", action.ID,
@@ -102,7 +115,14 @@ func (a *Adapter) GetAction(ctx context.Context, actionID string) (Action, error
 func (a *Adapter) GetSupernodes(ctx context.Context, height int64) ([]Supernode, error) {
 	a.logger.Debug(ctx, "Getting top supernodes for block", "height", height)
 
-	resp, err := a.client.SuperNode().GetTopSuperNodesForBlock(ctx, uint64(height))
+	// Safely convert int64 to uint64
+	var blockHeight uint64
+	if height < 0 {
+		return nil, fmt.Errorf("invalid block height: %d", height)
+	}
+	blockHeight = uint64(height)
+
+	resp, err := a.client.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernodes", "height", height, "error", err)
 		return nil, fmt.Errorf("failed to get supernodes: %w", err)
@@ -113,12 +133,14 @@ func (a *Adapter) GetSupernodes(ctx context.Context, height int64) ([]Supernode,
 
 	return supernodes, nil
 }
+
 func toSdkAction(resp *actiontypes.QueryGetActionResponse) Action {
+
 	return Action{
 		ID:             resp.Action.ActionID,
 		State:          ACTION_STATE(resp.Action.State.String()),
-		Height:         int64(resp.Action.BlockHeight),
-		ExpirationTime: strconv.FormatInt(resp.Action.ExpirationTime, 10),
+		Height:         resp.Action.BlockHeight,
+		ExpirationTime: resp.Action.ExpirationTime,
 	}
 }
 
@@ -134,10 +156,12 @@ func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supe
 			continue
 		}
 
+		// Check if States slice has at least one element
 		if len(sn.States) == 0 {
 			continue
 		}
 
+		// Check if the first state is active
 		if sn.States[0].State.String() != string(SUPERNODE_STATE_ACTIVE) {
 			continue
 		}
@@ -156,8 +180,14 @@ func getLatestIP(supernode *sntypes.SuperNode) (string, error) {
 		return "", fmt.Errorf("supernode is nil")
 	}
 
+	// Check if the slice has elements before accessing it
 	if len(supernode.PrevIpAddresses) == 0 {
 		return "", fmt.Errorf("no ip history exists for the supernode")
+	}
+
+	// Access the first element safely
+	if supernode.PrevIpAddresses[0] == nil {
+		return "", fmt.Errorf("first IP address in history is nil")
 	}
 
 	return supernode.PrevIpAddresses[0].Address, nil

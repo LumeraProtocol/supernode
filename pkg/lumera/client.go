@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
@@ -15,6 +16,7 @@ type lumeraClient struct {
 	cfg          *Config
 	authMod      auth.Module
 	actionMod    action.Module
+	actionMsgMod action_msg.Module
 	supernodeMod supernode.Module
 	txMod        tx.Module
 	nodeMod      node.Module
@@ -49,6 +51,17 @@ func newClient(ctx context.Context, opts ...Option) (Client, error) {
 		return nil, err
 	}
 
+	actionMsgModule, err := action_msg.NewModule(
+		conn.GetConn(),
+		cfg.keyring,
+		cfg.KeyName,
+		cfg.ChainID,
+	)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	supernodeModule, err := supernode.NewModule(conn.GetConn())
 	if err != nil {
 		conn.Close()
@@ -71,6 +84,7 @@ func newClient(ctx context.Context, opts ...Option) (Client, error) {
 		cfg:          cfg,
 		authMod:      authModule,
 		actionMod:    actionModule,
+		actionMsgMod: actionMsgModule,
 		supernodeMod: supernodeModule,
 		txMod:        txModule,
 		nodeMod:      nodeModule,
@@ -86,6 +100,11 @@ func (c *lumeraClient) Auth() auth.Module {
 // Action returns the Action module client
 func (c *lumeraClient) Action() action.Module {
 	return c.actionMod
+}
+
+// ActionMsg returns the ActionMsg module client
+func (c *lumeraClient) ActionMsg() action_msg.Module {
+	return c.actionMsgMod
 }
 
 // SuperNode returns the SuperNode module client

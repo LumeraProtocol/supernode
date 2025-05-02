@@ -1,8 +1,8 @@
 package system
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha3"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/raptorq"
+	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -79,7 +79,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Registering multiple supernodes to process requests")
 
 	// Helper function to register a supernode
-	registerSupernode := func(nodeKey string, port string) {
+	registerSupernode := func(nodeKey string, port string, addr string) {
 		// Get account and validator addresses for registration
 		accountAddr := cli.GetKeyAddr(nodeKey)
 		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
@@ -93,7 +93,7 @@ func TestCascadeE2E(t *testing.T) {
 			valAddr,             // validator address
 			"localhost:" + port, // IP address with unique port
 			"1.0.0",             // version
-			accountAddr,         // supernode account
+			addr,                // supernode account
 			"--from", nodeKey,
 		}
 
@@ -105,19 +105,18 @@ func TestCascadeE2E(t *testing.T) {
 	}
 
 	// Register three supernodes with different ports
-	registerSupernode("node0", "4444")
-	registerSupernode("node1", "4446")
-	registerSupernode("node2", "4448")
+	registerSupernode("node0", "4444", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4")
+	registerSupernode("node1", "4446", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c")
+	registerSupernode("node2", "4448", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
 
+	cli.FundAddress("lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "100000ulume")
+	cli.FundAddressWithNode("lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "100000ulume", "node1")
+	cli.FundAddressWithNode("lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "100000ulume", "node2")
 	t.Log("Successfully registered three supernodes")
 
 	// ---------------------------------------
 	// Step 1: Start all required services
 	// ---------------------------------------
-
-	// // Start the RaptorQ service for encoding/decoding with fountain codes
-	rq_cmd := StartRQService(t)
-	defer StopRQService(rq_cmd) // Ensure service is stopped after test
 
 	// Start the supernode service to process cascade requests
 	cmds := StartAllSupernodes(t)
@@ -161,7 +160,7 @@ func TestCascadeE2E(t *testing.T) {
 	keplrKeyring, err := keyring.InitKeyring("memory", "")
 	require.NoError(t, err, "Failed to initialize in-memory keyring")
 
-	// Add the same key to the in-memory keyring for consistency
+	// Add the same key to the in-memory keyring
 	record, err := keyring.RecoverAccountFromMnemonic(keplrKeyring, testKeyName, testMnemonic)
 	require.NoError(t, err, "Failed to recover account from mnemonic in local keyring")
 
@@ -178,55 +177,26 @@ func TestCascadeE2E(t *testing.T) {
 	require.Contains(t, balanceOutput, fundAmount[:len(fundAmount)-5],
 		"Account should have the funded amount")
 
-	// ---------------------------------------
-	// Step 3: Set up RaptorQ service and clients
-	// ---------------------------------------
-	t.Log("Step 3: Setting up RaptorQ service and initializing clients")
-
-	// Create directory for RaptorQ files if it doesn't exist
-	err = os.MkdirAll(raptorQFilesDir, 0755)
-	require.NoError(t, err, "Failed to create RaptorQ files directory")
-
-	// Create context with timeout for service operations
-	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Second)
-	defer cancel()
-
-	// Initialize RaptorQ configuration with host, port and file directory
-	rqConfig := raptorq.NewConfig()
-	rqConfig.Host = raptorQHost
-	rqConfig.Port = raptorQPort
-	rqConfig.RqFilesDir = raptorQFilesDir
-
-	// Create RaptorQ client and establish connection
-	client := raptorq.NewClient()
-	address := fmt.Sprintf("%s:%d", raptorQHost, raptorQPort)
-	t.Logf("Connecting to RaptorQ server at %s", address)
-	connection, err := client.Connect(ctx, address)
-	require.NoError(t, err, "Failed to connect to RaptorQ server")
-	defer connection.Close()
-
 	// Initialize Lumera blockchain client for interactions
 	t.Log("Initializing Lumera client")
-	lumeraClient, err := lumera.NewClient(
-		ctx,
-		lumera.WithGRPCAddr(lumeraGRPCAddr),
-		lumera.WithChainID(lumeraChainID),
-	)
+	//
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
 	// ---------------------------------------
-	// Step 4: Create and prepare test file
+	// Step 4: Create and prepare layout file for RaptorQ encoding
 	// ---------------------------------------
 	t.Log("Step 4: Creating test file for RaptorQ encoding")
 
 	// Create a test file with sample data in a temporary directory
-	testFileName := filepath.Join(t.TempDir(), "testfile.data")
+
+	testFileName := "testfile.data"
+	testFileFullpath := filepath.Join(t.TempDir(), testFileName)
 	testData := []byte("This is test data for RaptorQ encoding in the Lumera network")
-	err = os.WriteFile(testFileName, testData, 0644)
+	err = os.WriteFile(testFileFullpath, testData, 0644)
 	require.NoError(t, err, "Failed to write test file")
 
 	// Read the file into memory for processing
-	file, err := os.Open(testFileName)
+	file, err := os.Open(testFileFullpath)
 	require.NoError(t, err, "Failed to open test file")
 	defer file.Close()
 
@@ -238,85 +208,47 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to read file contents")
 	t.Logf("Read %d bytes from test file", len(data))
 
-	// Calculate SHA3-256 hash of the file data for identification
-	// This hash is used in metadata and for CASCADE operation
-	hash := sha3.New256()
-	hash.Write(data)
-	hashBytes := hash.Sum(nil)
-	hashHex := fmt.Sprintf("%X", hashBytes)
-	t.Logf("File hash: %s", hashHex)
-	time.Sleep(1 * time.Minute)
-	// ---------------------------------------
-	// Step 5: Sign data and generate RaptorQ identifiers
-	// ---------------------------------------
-	t.Log("Step 5: Signing data and generating RaptorQ identifiers")
+	rqCodec := codec.NewRaptorQCodec(raptorQFilesDir)
 
-	// Sign the original file data for verification purposes
-	// This signature proves the data came from this account
-	signedData, err := keyring.SignBytes(keplrKeyring, testKeyName, data)
-	base64EncodedData := base64.StdEncoding.EncodeToString(signedData)
-	require.NoError(t, err, "Failed to sign data")
-	t.Logf("Signed data length: %d bytes", len(signedData))
-
-	// Initialize RaptorQ client for fountain code processing
-	rq := connection.RaptorQ(rqConfig, lumeraClient)
-
-	// Get current block hash or use file hash as fallback
-	// Block hash adds randomness to the fountain code generation
-	// blockHash := hashHex // Default to file hash
-	// latestBlock, err := lumeraClient.Node().GetLatestBlock(ctx)
-	// if err == nil && latestBlock != nil && len(latestBlock.BlockId.Hash) > 0 {
-	// 	blockHash = fmt.Sprintf("%X", latestBlock.BlockId.Hash)
-	// }
-	// t.Logf("Using block hash: %s", blockHash)
-
-	t.Log("Generating RQ identifiers")
-	genRqIdsResp, err := rq.GenRQIdentifiersFiles(ctx, raptorq.GenRQIdentifiersFilesRequest{
-
-		RqMax:            50,
-		Data:             data,
-		CreatorSNAddress: localAddr.String(),
-		SignedData:       base64EncodedData,
+	ctx := context.Background()
+	encodeRes, err := rqCodec.Encode(ctx, codec.EncodeRequest{
+		Data:   data,
+		TaskID: "1",
 	})
-	require.NoError(t, err, "Failed to generate RQ identifiers")
 
-	t.Logf("RQ identifiers generated successfully with RQ_IDs_IC: %d", genRqIdsResp.RQIDsIc)
+	metadataFile := encodeRes.Metadata
 
-	// ---------------------------------------
-	// Step 6: Sign the RQ IDs file for verification
-	// ---------------------------------------
-	t.Log("Step 6: Signing the RQ IDs file for the action request")
+	// Marshal metadata to JSON and convert to bytes
+	me, err := json.Marshal(metadataFile)
+	require.NoError(t, err, "Failed to marshal metadata to JSON")
 
-	// Base64 encode the RQIDsFile for consistent transmission
-	// IMPORTANT: We sign the encoded version, not the raw bytes
-	rqIdsFileBase64 := base64.StdEncoding.EncodeToString(genRqIdsResp.RQIDsFile)
-	t.Logf("Base64 encoded RQ IDs file length: %d", len(rqIdsFileBase64))
+	// regular
+	regularbase64EncodedData := base64.StdEncoding.EncodeToString(me)
+	t.Logf("Base64 encoded RQ IDs file length: %d", len(regularbase64EncodedData))
 
-	// Sign the Base64-encoded RQ IDs file
-	// This critical step creates a signature that proves ownership
-	rqIdsSignature, err := keyring.SignBytes(keplrKeyring, testKeyName, []byte(rqIdsFileBase64))
-	require.NoError(t, err, "Failed to sign Base64-encoded RQIDsFile")
-
-	// Encode the signature itself to base64 for consistent format
-	rqIdsSignatureBase64 := base64.StdEncoding.EncodeToString(rqIdsSignature)
+	//signed
+	signedMetaData, err := keyring.SignBytes(keplrKeyring, testKeyName, me)
+	signedbase64EncodedData := base64.StdEncoding.EncodeToString(signedMetaData)
+	t.Logf("Base64 signed RQ IDs file length: %d", len(signedbase64EncodedData))
 
 	// Format according to expected verification pattern: Base64(rq_ids).signature
-	// This format allows verification of both the data and the signature
-	signatureFormat := fmt.Sprintf("%s.%s", rqIdsFileBase64, rqIdsSignatureBase64)
+
+	signatureFormat := fmt.Sprintf("%s.%s", regularbase64EncodedData, signedbase64EncodedData)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
 
-	// ---------------------------------------
-	// Step 7: Create metadata and submit action request
+	// Data hash with blake3
+	hash, err := Blake3Hash(data)
+	require.NoError(t, err, "Failed to compute Blake3 hash")
 	// ---------------------------------------
 	t.Log("Step 7: Creating metadata and submitting action request")
 
 	// Create CascadeMetadata struct with all required fields
 	// This structured approach ensures all required fields are included
 	cascadeMetadata := types.CascadeMetadata{
-		DataHash:   hashHex,                      // Hash of the original file
-		FileName:   filepath.Base(testFileName),  // Original filename
-		RqIdsIc:    uint64(genRqIdsResp.RQIDsIc), // Count of RQ identifiers
-		Signatures: signatureFormat,              // Combined signature format
+		DataHash:   string(hash),                    // Hash of the original file
+		FileName:   filepath.Base(testFileFullpath), // Original filename
+		RqIdsIc:    uint64(121),                     // Count of RQ identifiers
+		Signatures: signatureFormat,                 // Combined signature format
 	}
 
 	// Marshal the struct to JSON for the blockchain transaction
@@ -392,23 +324,20 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Set up action client configuration
 	// This defines how to connect to network services
+
+	accConfig := sdkconfig.AccountConfig{
+		LocalCosmosAddress: recoveredAddress,
+	}
+
+	lumraConfig := sdkconfig.LumeraConfig{
+		GRPCAddr: lumeraGRPCAddr,
+		ChainID:  lumeraChainID,
+		Timeout:  300, // 30 seconds timeout
+		KeyName:  testKeyName,
+	}
 	actionConfig := sdkconfig.Config{
-		Network: struct {
-			DefaultSupernodePort int
-			LocalCosmosAddress   string
-		}{
-			DefaultSupernodePort: 4444,             // Default supernode gRPC port
-			LocalCosmosAddress:   recoveredAddress, // Account address
-		},
-		Lumera: struct {
-			GRPCAddr string
-			ChainID  string
-			Timeout  int
-		}{
-			GRPCAddr: lumeraGRPCAddr,
-			ChainID:  lumeraChainID,
-			Timeout:  300, // 30 seconds timeout
-		},
+		Account: accConfig,
+		Lumera:  lumraConfig,
 	}
 
 	// Initialize action client for cascade operations
@@ -421,18 +350,13 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to create action client")
 
 	// Start cascade operation with all required parameters
-	// INPUTS:
-	// - hashHex: File hash for identification
-	// - actionID: The blockchain action ID
-	// - testFileName: Path to the original file
-	// - signedData: Proof of data ownership
+
 	t.Logf("Starting cascade operation with action ID: %s", actionID)
 	taskID, err := actionClient.StartCascade(
 		ctx,
-		hashHex,           // File hash
-		actionID,          // Action ID from the events
-		testFileName,      // Path to the test file
-		base64EncodedData, // Signed data
+		data,     // data []byte
+		actionID, // Action ID from the transaction
+
 	)
 	require.NoError(t, err, "Failed to start cascade operation")
 	require.NotEmpty(t, taskID, "Task ID should not be empty")
@@ -499,6 +423,24 @@ func TestCascadeE2E(t *testing.T) {
 			}
 		}
 	}
+
+	time.Sleep(10 * time.Minute) // Wait for supernode processing
 	require.NotEmpty(t, successfulSupernode, "Should have a successful supernode in events")
 	t.Logf("Cascade successfully processed by supernode: %s", successfulSupernode)
+}
+
+// lumeraClient, err := lumera.NewClient(
+// 		ctx,
+// 		lumera.WithGRPCAddr(lumeraGRPCAddr),
+// 		lumera.WithChainID(lumeraChainID),
+// 		lumera.WithKeyring(keplrKeyring),
+// 		lumera.WithKeyName(testKeyName),
+// 	)
+
+func Blake3Hash(msg []byte) ([]byte, error) {
+	hasher := blake3.New(32, nil)
+	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {
+		return nil, err
+	}
+	return hasher.Sum(nil), nil
 }
