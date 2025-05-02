@@ -57,7 +57,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		return EncodeResponse{}, fmt.Errorf("mkdir %s: %w", symbolsDir, err)
 	}
 
-	_, err = processor.EncodeFile(tmpPath, symbolsDir, blockSize)
+	resp, err := processor.EncodeFile(tmpPath, symbolsDir, blockSize)
 	if err != nil {
 		os.Remove(tmpPath)
 		return EncodeResponse{}, fmt.Errorf("raptorq encode: %w", err)
@@ -67,17 +67,15 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	_ = os.Remove(tmpPath)
 
 	/* ---------- 4.  read the layout JSON ---------- */
-
-	layoutPath := filepath.Join(symbolsDir, "_raptorq_layout.json")
-	layoutData, err := os.ReadFile(layoutPath)
+	layoutData, err := os.ReadFile(resp.LayoutFilePath)
 	if err != nil {
-		return EncodeResponse{}, fmt.Errorf("read layout %s: %w", layoutPath, err)
+		return EncodeResponse{}, fmt.Errorf("read layout %s: %w", resp.LayoutFilePath, err)
 	}
 
-	var resp EncodeResponse
+	var encodeResp EncodeResponse
 	if err := json.Unmarshal(layoutData, &resp); err != nil {
 		return EncodeResponse{}, fmt.Errorf("unmarshal layout: %w", err)
 	}
 
-	return resp, nil
+	return encodeResp, nil
 }
