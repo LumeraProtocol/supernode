@@ -290,6 +290,15 @@ func (c LumeradCli) GetKeyAddr(name string) string {
 
 const defaultSrcAddr = "node0"
 
+func (c LumeradCli) FundAddressWithNode(destAddr, amount string, nodeAddr string) string {
+	require.NotEmpty(c.t, destAddr)
+	require.NotEmpty(c.t, amount)
+	cmd := []string{"tx", "bank", "send", nodeAddr, destAddr, amount}
+	rsp := c.CustomCommand(cmd...)
+	RequireTxSuccess(c.t, rsp)
+	return rsp
+}
+
 // FundAddress sends the token amount to the destination address
 func (c LumeradCli) FundAddress(destAddr, amount string) string {
 	require.NotEmpty(c.t, destAddr)

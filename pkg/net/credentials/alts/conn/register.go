@@ -4,6 +4,10 @@ import (
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 )
 
+func init() {
+	RegisterALTSRecordProtocols()
+}
+
 var (
 	// ALTS record protocol names.
 	ALTSRecordProtocols = make([]string, 0)

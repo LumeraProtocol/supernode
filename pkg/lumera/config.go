@@ -19,6 +19,9 @@ type Config struct {
 
 	// keyring is the keyring conf for the node sign & verify
 	keyring keyring.Keyring
+
+	// KeyName is the name of the key to use for signing
+	KeyName string
 }
 
 // DefaultConfig returns a default configuration
@@ -26,6 +29,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		GRPCAddr: "localhost:9090",
 		ChainID:  "lumera",
-		Timeout:  10,
+		Timeout:  30,
+		KeyName:  "",
 	}
 }

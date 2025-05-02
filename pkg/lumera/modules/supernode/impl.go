@@ -56,10 +56,20 @@ func (m *module) GetSupernodeBySupernodeAddress(ctx context.Context, address str
 		SupernodeAddress: address,
 	})
 	if err != nil {
-		fmt.Errorf("failed to get supernode: %w", err)
+		return nil, fmt.Errorf("failed to get supernode: %w", err)
 	}
 
 	return resp.Supernode, nil
+}
+
+// GetParams fetches the supernode module parameters
+func (m *module) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
+	resp, err := m.client.Params(ctx, &types.QueryParamsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supernode params: %w", err)
+	}
+
+	return resp, nil
 }
 
 func Exists(nodes []*types.SuperNode, snAccAddress string) bool {

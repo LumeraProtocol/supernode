@@ -45,3 +45,29 @@ func init() {
 		return msg, fields
 	}))
 }
+
+// GetExternalIPAddress returns external IP address
+func GetExternalIPAddress() (externalIP string, err error) {
+	return "localhost", nil
+	/*if ip != "" {
+		return ip, nil
+	}
+
+	resp, err := http.Get("https://api.ipify.org")
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	if net.ParseIP(string(body)) == nil {
+		return "", errors.Errorf("invalid IP response from %s", "ipconf.ip")
+	}
+
+	return string(body), nil*/
+}

@@ -127,7 +127,7 @@ func (s *Supernode) Stop(ctx context.Context) error {
 }
 
 // initLumeraClient initializes the Lumera client based on configuration
-func initLumeraClient(ctx context.Context, config *config.Config) (lumera.Client, error) {
+func initLumeraClient(ctx context.Context, config *config.Config, kr keyring.Keyring) (lumera.Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -143,6 +143,9 @@ func initLumeraClient(ctx context.Context, config *config.Config) (lumera.Client
 		lumera.WithGRPCAddr(config.LumeraClientConfig.GRPCAddr),
 		lumera.WithChainID(config.LumeraClientConfig.ChainID),
 		lumera.WithTimeout(time.Duration(config.LumeraClientConfig.Timeout)*time.Second),
+		lumera.WithTimeout(config.LumeraClientConfig.Timeout),
+		lumera.WithKeyring(kr),
+		lumera.WithKeyName(config.SupernodeConfig.KeyName),
 	)
 }
 

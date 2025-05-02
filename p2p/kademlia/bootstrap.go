@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
@@ -20,10 +21,10 @@ const (
 )
 
 func (s *DHT) skipBadBootstrapAddrs() {
-	skipAddress1 := fmt.Sprintf("%s:%d", "127.0.0.1", s.options.Port)
-	skipAddress2 := fmt.Sprintf("%s:%d", "localhost", s.options.Port)
-	s.cache.Set(skipAddress1, []byte("true"))
-	s.cache.Set(skipAddress2, []byte("true"))
+	//skipAddress1 := fmt.Sprintf("%s:%d", "127.0.0.1", s.options.Port)
+	//skipAddress2 := fmt.Sprintf("%s:%d", "localhost", s.options.Port)
+	//s.cache.Set(skipAddress1, []byte("true"))
+	//s.cache.Set(skipAddress2, []byte("true"))
 }
 
 func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
@@ -31,9 +32,10 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 		return nil, errors.New("empty address")
 	}
 
-	if strings.Contains(extP2P, "0.0.0.0") {
+	/*if strings.Contains(extP2P, "0.0.0.0") {
+		fmt.Println("skippping node")
 		return nil, errors.New("invalid address")
-	}
+	}*/
 
 	if extP2P == selfAddr {
 		return nil, errors.New("self address")
@@ -151,6 +153,10 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 		// Convert the map to a slice
 		for _, node := range mapNodes {
+			node.Port = node.Port + 1
+			hID, _ := utils.Sha3256hash(node.ID)
+			node.HashedID = hID
+			fmt.Println("node adding", node.String(), "hashed id", string(node.HashedID))
 			boostrapNodes = append(boostrapNodes, node)
 		}
 	}

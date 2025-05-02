@@ -2,7 +2,7 @@
 # Supernode Configuration
 supernode:
   key_name: "testkey2"
-  identity: "lumera1ae37km54w88f783cktmpyd3fny0ycdn69ftt6e"
+  identity: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c"
   ip_address: "0.0.0.0"
   port: 4446
 
