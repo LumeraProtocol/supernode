@@ -24,9 +24,9 @@ func NewCascadeActionServer(service *cascadeService.CascadeService) *CascadeActi
 func (server *CascadeActionServer) Desc() *grpc.ServiceDesc {
 	return &pb.CascadeService_ServiceDesc
 }
-func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_UploadInputDataServer) error {
+func (server *CascadeActionServer) Register(stream pb.CascadeService_RegisterServer) error {
 	fields := logtrace.Fields{
-		logtrace.FieldMethod: "UploadInputData",
+		logtrace.FieldMethod: "Register",
 		logtrace.FieldModule: "CascadeActionServer",
 	}
 
@@ -52,7 +52,7 @@ func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_Uplo
 
 		// Check which type of message we received
 		switch x := req.RequestType.(type) {
-		case *pb.UploadInputDataRequest_Chunk:
+		case *pb.RegisterRequest_Chunk:
 			// Add data chunk to our collection
 			allData = append(allData, x.Chunk.Data...)
 			logtrace.Info(ctx, "received data chunk", logtrace.Fields{
@@ -60,13 +60,12 @@ func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_Uplo
 				"total_size_so_far": len(allData),
 			})
 
-		case *pb.UploadInputDataRequest_Metadata:
+		case *pb.RegisterRequest_Metadata:
 			// Store metadata - this should be the final message
 			metadata = x.Metadata
 			logtrace.Info(ctx, "received metadata", logtrace.Fields{
-				"filename":  metadata.Filename,
+				"task_id":   metadata.TaskId,
 				"action_id": metadata.ActionId,
-				"data_hash": metadata.DataHash,
 			})
 		}
 	}
@@ -79,7 +78,8 @@ func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_Uplo
 
 	// Process the complete data
 	task := server.service.NewCascadeRegistrationTask()
-	res, err := task.UploadInputData(ctx, &cascadeService.UploadInputDataRequest{
+	res, err := task.Register(ctx, &cascadeService.RegisterRequest{
+		TaskID:   metadata.TaskId,
 		ActionID: metadata.ActionId,
 		Data:     allData,
 	})
@@ -91,7 +91,7 @@ func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_Uplo
 	}
 
 	// Send the response
-	return stream.SendMsg(&pb.UploadInputDataResponse{
+	return stream.SendMsg(&pb.RegisterResponse{
 		Success: res.Success,
 		Message: res.Message,
 	})
