@@ -143,7 +143,6 @@ func initLumeraClient(ctx context.Context, config *config.Config, kr keyring.Key
 		lumera.WithGRPCAddr(config.LumeraClientConfig.GRPCAddr),
 		lumera.WithChainID(config.LumeraClientConfig.ChainID),
 		lumera.WithTimeout(time.Duration(config.LumeraClientConfig.Timeout)*time.Second),
-		lumera.WithTimeout(config.LumeraClientConfig.Timeout),
 		lumera.WithKeyring(kr),
 		lumera.WithKeyName(config.SupernodeConfig.KeyName),
 	)

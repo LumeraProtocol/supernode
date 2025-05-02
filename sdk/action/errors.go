@@ -6,15 +6,14 @@ import (
 )
 
 var (
-	ErrEmptyFileHash     = errors.New("file hash cannot be empty")
-	ErrEmptyActionID     = errors.New("action ID cannot be empty")
-	ErrEmptyFilePath     = errors.New("file path cannot be empty")
-	ErrEmptyFileNotFound = errors.New("file not found at the specified path")
-	ErrNoValidAction     = errors.New("no action found with the specified ID")
-	ErrInvalidAction     = errors.New("action is not in a valid state")
-	ErrNoSupernodes      = errors.New("no valid supernodes available")
-	ErrTaskCreation      = errors.New("failed to create task")
-	ErrCommunication     = errors.New("communication with supernode failed")
+	ErrEmptyData     = errors.New("data cannot be empty")
+	ErrEmptyActionID = errors.New("action ID cannot be empty")
+	ErrEmptyFileName = errors.New("file name cannot be empty")
+	ErrNoValidAction = errors.New("no action found with the specified ID")
+	ErrInvalidAction = errors.New("action is not in a valid state")
+	ErrNoSupernodes  = errors.New("no valid supernodes available")
+	ErrTaskCreation  = errors.New("failed to create task")
+	ErrCommunication = errors.New("communication with supernode failed")
 )
 
 // SupernodeError represents an error related to supernode operations

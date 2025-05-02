@@ -17,7 +17,7 @@ const MAX_EVENT_WORKERS = 100
 
 // Manager handles task creation and management
 type Manager interface {
-	CreateCascadeTask(ctx context.Context, actionID, filePath string) (string, error)
+	CreateCascadeTask(ctx context.Context, data []byte, actionID string) (string, error)
 	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)
 	DeleteTask(ctx context.Context, taskID string) error
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
@@ -82,8 +82,11 @@ func NewManager(
 }
 
 // CreateCascadeTask creates and starts a Cascade task using the new pattern
-func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, actionID string, filePath string) (string, error) {
-	m.logger.Info(ctx, "Creating cascade task", "filePath", filePath, "actionID", actionID)
+func (m *ManagerImpl) CreateCascadeTask(
+	ctx context.Context,
+	data []byte,
+	actionID string,
+) (string, error) {
 
 	// Generate task ID
 	// slice this to 8 bytes
@@ -102,7 +105,7 @@ func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, actionID string, fi
 		logger:   m.logger,
 	}
 	// Create cascade-specific task
-	task := NewCascadeTask(baseTask, filePath)
+	task := NewCascadeTask(baseTask, data, actionID)
 
 	// Store task in cache
 	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade)

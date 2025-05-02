@@ -6,17 +6,17 @@ import (
 	"google.golang.org/grpc"
 )
 
-type RegisterCascadeRequest struct {
+type CascadeSupernodeRegisterRequest struct {
+	Data     []byte
 	ActionID string
-	TaskID   string
-	FilePath string
+	TaskId   string
 }
 
-type RegisterCascadeResponse struct {
+type CascadeSupernodeRegisterResponse struct {
 	Success bool
 	Message string
 }
 
 type CascadeServiceClient interface {
-	RegisterCascade(ctx context.Context, in *RegisterCascadeRequest, opts ...grpc.CallOption) (*RegisterCascadeResponse, error)
+	CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
 }

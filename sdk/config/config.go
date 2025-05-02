@@ -9,7 +9,7 @@ const (
 	DefaultLocalCosmosAddress = "lumera1qv3"     // Example address - replace with actual
 	DefaultChainID            = "lumera-testnet" // Example chain ID - replace with actual
 	DefaultGRPCAddr           = "127.0.0.1:9090"
-	DefaultTimeout            = 10 * time.Second
+	DefaultTimeout            = 10
 )
 
 // AccountConfig holds peer-to-peer addresses, ports, etc.
@@ -22,6 +22,7 @@ type LumeraConfig struct {
 	GRPCAddr string        // REQUIRED – e.g. "127.0.0.1:9090"
 	ChainID  string        // REQUIRED – e.g. "lumera-mainnet"
 	Timeout  time.Duration // OPTIONAL – defaults to DefaultTimeout
+	KeyName  string
 }
 
 type Config struct {

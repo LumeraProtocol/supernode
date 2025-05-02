@@ -23,14 +23,20 @@ const (
 
 type CascadeTask struct {
 	BaseTask
-	FilePath string
+	data     []byte
+	actionId string
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
-func NewCascadeTask(base BaseTask, filePath string) *CascadeTask {
+func NewCascadeTask(
+	base BaseTask,
+	data []byte,
+	actionId string,
+
+) *CascadeTask {
 	return &CascadeTask{
 		BaseTask: base,
-		FilePath: filePath,
+		data:     data,
 	}
 }
 
@@ -145,10 +151,10 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	}
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, factoryCfg)
 
-	req := &supernodeservice.RegisterCascadeRequest{
+	req := &supernodeservice.CascadeSupernodeRegisterRequest{
+		Data:     t.data,
 		ActionID: t.ActionID,
-		FilePath: t.FilePath,
-		TaskID:   t.TaskID,
+		TaskId:   t.TaskID,
 	}
 
 	var lastErr error
@@ -162,8 +168,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	return fmt.Errorf("failed to upload to all supernodes: %w", lastErr)
 }
-func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lumera.Supernode,
-	factory *net.ClientFactory, req *supernodeservice.RegisterCascadeRequest) error {
+func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {
 
 	t.logEvent(ctx, event.TaskProgressRegistrationInProgress, "attempting registration with supernode", map[string]interface{}{
 		"supernode": sn.GrpcEndpoint, "sn-address": sn.CosmosAddress, "iteration": index + 1})

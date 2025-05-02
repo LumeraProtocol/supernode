@@ -3,8 +3,6 @@ package supernodeservice
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
@@ -30,64 +28,39 @@ func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient,
 	}
 }
 
-func (a *cascadeAdapter) RegisterCascade(ctx context.Context, in *RegisterCascadeRequest, opts ...grpc.CallOption) (*RegisterCascadeResponse, error) {
-	a.logger.Debug(ctx, "RegisterCascade through adapter", "task_id", in.TaskID, "actionID", in.ActionID, "filePath", in.FilePath)
-
-	// Open the file for reading
-	file, err := os.Open(in.FilePath)
-	if err != nil {
-		a.logger.Error(ctx, "Failed to open file for reading",
-			"error", err)
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// Get file size for logging and progress tracking
-	fileInfo, err := file.Stat()
-	if err != nil {
-		a.logger.Error(ctx, "Failed to get file stats",
-			"error", err)
-		return nil, fmt.Errorf("failed to get file stats: %w", err)
-	}
-
-	fileSize := fileInfo.Size()
-	a.logger.Debug(ctx, "File opened for streaming",
-		"fileSize", fileSize)
-
+func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
 	// Create the client stream
 	stream, err := a.client.Register(ctx, opts...)
 	if err != nil {
-		a.logger.Error(ctx, "Failed to create upload stream",
+		a.logger.Error(ctx, "Failed to create register stream",
 			"error", err)
 		return nil, err
 	}
 
-	// Define chunk size (could be configurable)
-	const chunkSize = 1024 //  1 KB
-	buffer := make([]byte, chunkSize)
+	// Define chunk size
+	const chunkSize = 1024 // 1 KB
 
-	// Track progress
+	// Keep track of how much data we've processed
 	bytesRead := int64(0)
+	totalBytes := int64(len(in.Data))
 	chunkIndex := 0
 
-	// Read and send file in chunks
-	for {
-		n, err := file.Read(buffer)
-		if err == io.EOF {
-			break // End of file
-		}
-		if err != nil {
-			a.logger.Error(ctx, "Error reading file chunk",
-				"chunkIndex", chunkIndex,
-				"error", err)
-			return nil, fmt.Errorf("error reading file: %w", err)
+	// Read and send data in chunks
+	for bytesRead < totalBytes {
+		// Determine size of the next chunk
+		end := bytesRead + chunkSize
+		if end > totalBytes {
+			end = totalBytes
 		}
 
-		// Only send what was actually read
+		// Prepare the chunk data
+		chunkData := in.Data[bytesRead:end]
+
+		// Create the chunk request
 		chunk := &cascade.RegisterRequest{
 			RequestType: &cascade.RegisterRequest_Chunk{
 				Chunk: &cascade.DataChunk{
-					Data: buffer[:n],
+					Data: chunkData,
 				},
 			},
 		}
@@ -97,10 +70,10 @@ func (a *cascadeAdapter) RegisterCascade(ctx context.Context, in *RegisterCascad
 			return nil, fmt.Errorf("failed to send chunk: %w", err)
 		}
 
-		bytesRead += int64(n)
-		progress := float64(bytesRead) / float64(fileSize) * 100
+		bytesRead += int64(len(chunkData))
+		progress := float64(bytesRead) / float64(totalBytes) * 100
 
-		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", n, "progress", fmt.Sprintf("%.1f%%", progress))
+		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", len(chunkData), "progress", fmt.Sprintf("%.1f%%", progress))
 
 		chunkIndex++
 	}
@@ -109,30 +82,31 @@ func (a *cascadeAdapter) RegisterCascade(ctx context.Context, in *RegisterCascad
 	metadata := &cascade.RegisterRequest{
 		RequestType: &cascade.RegisterRequest_Metadata{
 			Metadata: &cascade.Metadata{
-				TaskId:   in.TaskID,
+				TaskId:   in.TaskId,
 				ActionId: in.ActionID,
 			},
 		},
 	}
 
 	if err := stream.Send(metadata); err != nil {
-		a.logger.Error(ctx, "Failed to send metadata", "task_id", in.TaskID, "actionID", in.ActionID, "error", err)
+		a.logger.Error(ctx, "Failed to send metadata", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
 		return nil, fmt.Errorf("failed to send metadata: %w", err)
 	}
 
+	a.logger.Debug(ctx, "Sent metadata", "TaskId", in.TaskId, "ActionID", in.ActionID)
+
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
-		a.logger.Error(ctx, "Failed to close stream and receive response", "task_id", in.TaskID, "actionID", in.ActionID, "error", err)
+		a.logger.Error(ctx, "Failed to close stream and receive response", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
 		return nil, fmt.Errorf("failed to receive response: %w", err)
 	}
 
-	response := &RegisterCascadeResponse{
+	response := &CascadeSupernodeRegisterResponse{
 		Success: resp.Success,
 		Message: resp.Message,
 	}
 
-	a.logger.Info(ctx, "Successfully Registered with Supernode", "task_id", in.TaskID, "actionID", in.ActionID, "fileSize", fileSize,
-		"success", resp.Success, "message", resp.Message)
+	a.logger.Info(ctx, "Successfully registered supernode data", "TaskId", in.TaskId, "ActionID", in.ActionID, "dataSize", totalBytes, "success", resp.Success, "message", resp.Message)
 
 	return response, nil
 }
