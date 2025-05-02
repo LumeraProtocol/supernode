@@ -20,22 +20,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// UploadInputDataRequest contains parameters for upload request
-type UploadInputDataRequest struct {
+// RegisterRequest contains parameters for upload request
+type RegisterRequest struct {
+	TaskID   string
 	ActionID string
 	Data     []byte
 }
 
-// UploadInputDataResponse contains the result of upload
-type UploadInputDataResponse struct {
+// RegisterResponse contains the result of upload
+type RegisterResponse struct {
 	Success bool
 	Message string
 }
 
-// UploadInputData processes the upload request for cascade input data
-func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *UploadInputDataRequest) (*UploadInputDataResponse, error) {
+// Register processes the upload request for cascade input data
+func (task *CascadeRegistrationTask) Register(ctx context.Context, req *RegisterRequest) (*RegisterResponse, error) {
 	fields := logtrace.Fields{
-		logtrace.FieldMethod:  "UploadInputData",
+		logtrace.FieldMethod:  "Register",
 		logtrace.FieldRequest: req,
 	}
 
@@ -163,7 +164,7 @@ func (task *CascadeRegistrationTask) UploadInputData(ctx context.Context, req *U
 	}
 	logtrace.Info(ctx, "raptor-q symbols have been stored", fields)
 
-	return &UploadInputDataResponse{
+	return &RegisterResponse{
 		Success: true,
 		Message: "successfully uploaded input data",
 	}, nil

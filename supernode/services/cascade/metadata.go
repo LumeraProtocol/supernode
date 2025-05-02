@@ -31,8 +31,6 @@ type GenRQIdentifiersFilesResponse struct {
 	RQIDs []string
 	// RedundantMetadataFiles is a list of redundant files that are generated from the Metadata file
 	RedundantMetadataFiles [][]byte
-	// Compressed[B64(JSON(layout)).Signature]
-	B64EncodedMetadataFileWithSignatureCompressed []byte
 }
 
 // GenRQIdentifiersFiles generates Redundant Metadata Files and IDs
@@ -51,13 +49,14 @@ func GenRQIdentifiersFiles(ctx context.Context, req GenRQIdentifiersFilesRequest
 	encMetadataFileWithSignature := buffer.Bytes()
 
 	// Generate the specified number of variant IDs
-	_, RQIDsFiles, err := GetIDFiles(ctx, encMetadataFileWithSignature, req.IC, req.RqMax)
+	rqIdIds, rqIDsFiles, err := GetIDFiles(ctx, encMetadataFileWithSignature, req.IC, req.RqMax)
 	if err != nil {
 		return resp, errors.Errorf("get ID Files: %w", err)
 	}
 
 	return GenRQIdentifiersFilesResponse{
-		RedundantMetadataFiles: RQIDsFiles,
+		RedundantMetadataFiles: rqIDsFiles,
+		RQIDs:                  rqIdIds,
 	}, nil
 }
 
