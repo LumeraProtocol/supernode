@@ -21,8 +21,6 @@ type SuperNodeServiceInterface interface {
 // SuperNodeService common "class" for Services
 type SuperNodeService struct {
 	*task.Worker
-	// *files.Storage
-
 	P2PClient p2p.Client
 }
 

@@ -2,11 +2,7 @@ package log
 
 import (
 	"context"
-	"io"
-	"net"
-	"net/http"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log/hooks"
 )
 
@@ -32,10 +28,6 @@ const (
 
 // ContextWithPrefix returns a new context with PrefixKey value.
 func ContextWithPrefix(ctx context.Context, prefix string) context.Context {
-	ip, err := GetExternalIPAddress()
-	if err != nil {
-		WithContext(ctx).WithError(err).Error("unable to fetch server ip")
-	}
 
 	ctx = ContextWithServer(ctx, ip)
 
@@ -52,29 +44,4 @@ func init() {
 		fields["prefix"] = ctxValue
 		return msg, fields
 	}))
-}
-
-// GetExternalIPAddress returns external IP address
-func GetExternalIPAddress() (externalIP string, err error) {
-	if ip != "" {
-		return ip, nil
-	}
-
-	resp, err := http.Get("http://ipinfo.io/ip")
-	if err != nil {
-		return "", err
-	}
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	if net.ParseIP(string(body)) == nil {
-		return "", errors.Errorf("invalid IP response from %s", "ipconf.ip")
-	}
-
-	return string(body), nil
 }

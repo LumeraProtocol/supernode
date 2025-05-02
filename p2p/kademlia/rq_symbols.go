@@ -3,6 +3,7 @@ package kademlia
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/log"
@@ -48,64 +49,63 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------
+// 1. Scan dir → send ALL symbols (no sampling)
+// ---------------------------------------------------------------------
 func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) error {
-	keys, err := utils.ReadDirFilenames(dir)
+	// Collect relative file paths like "block_0/foo.sym"
+	keySet, err := utils.ReadDirFilenames(dir)
 	if err != nil {
 		return fmt.Errorf("read dir filenames: %w", err)
 	}
 
-	// Iterate over sorted keys in batches
-	batchKeys := make(map[string][]byte)
-	count := 0
+	// Turn the set into a sorted slice for deterministic batching
+	keys := make([]string, 0, len(keySet))
+	for k := range keySet {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 
-	log.WithContext(ctx).WithField("total-count", len(keys)).WithField("txid", txid).WithField("dir", dir).Info("read dir & found keys")
-	for key := range keys {
-		batchKeys[key] = nil
-		count++
-		if count%loadSymbolsBatchSize == 0 {
-			if err := s.storeSymbolsInP2P(ctx, dir, batchKeys); err != nil {
-				return err
-			}
-			batchKeys = make(map[string][]byte) // Reset batchKeys after storing
+	log.WithContext(ctx).
+		WithField("txid", txid).
+		WithField("dir", dir).
+		WithField("total", len(keys)).
+		Info("p2p-worker: storing ALL RaptorQ symbols")
+
+	// Batch-flush at loadSymbolsBatchSize
+	for start := 0; start < len(keys); {
+		end := start + loadSymbolsBatchSize
+		if end > len(keys) {
+			end = len(keys)
 		}
+		if err := s.storeSymbolsInP2P(ctx, dir, keys[start:end]); err != nil {
+			return err
+		}
+		start = end
 	}
 
-	// Store any remaining symbols in the last batch
-	if len(batchKeys) > 0 {
-		if err := s.storeSymbolsInP2P(ctx, dir, batchKeys); err != nil {
-			return fmt.Errorf("scanDirAndStoreSymbols: store symbols in p2p: %w", err)
-		}
-
-		log.WithContext(ctx).WithField("dir", dir).WithField("txid", txid).Info("rq_symbols worker: stored raptorQ symbols in p2p")
-	}
-
+	// Mark this directory as completed in rqstore
 	if err := s.rqstore.SetIsCompleted(txid); err != nil {
-		return fmt.Errorf("error updating first batch stored flag in rq DB: %w", err)
+		return fmt.Errorf("set is-completed: %w", err)
 	}
-
 	return nil
 }
-func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, batchKeys map[string][]byte) error {
-	loadedSymbols, err := utils.LoadSymbols(dir, batchKeys)
+
+// ---------------------------------------------------------------------
+// 2. Load → StoreBatch → Delete for a slice of keys
+// ---------------------------------------------------------------------
+func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, keys []string) error {
+	loaded, err := utils.LoadSymbols(dir, keys)
 	if err != nil {
-		return fmt.Errorf("p2p worker: load batch symbols from db: %w", err)
-	}
-	// Prepare batch for P2P storage
-	result := make([][]byte, len(loadedSymbols))
-	i := 0
-	for _, value := range loadedSymbols {
-		result[i] = value
-		i++
+		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	// Store the loaded symbols in P2P
-	if err := s.StoreBatch(ctx, result, 1, dir); err != nil {
-		return fmt.Errorf("p2p worker: store batch raptorq symbols in p2p: %w", err)
+	if err := s.StoreBatch(ctx, loaded, 1, dir); err != nil {
+		return fmt.Errorf("p2p store batch: %w", err)
 	}
 
-	if err := utils.DeleteSymbols(ctx, dir, loadedSymbols); err != nil {
-		return fmt.Errorf("p2p worker: delete batch symbols from db: %w", err)
+	if err := utils.DeleteSymbols(ctx, dir, keys); err != nil {
+		return fmt.Errorf("delete symbols: %w", err)
 	}
-
 	return nil
 }
