@@ -1,14 +1,14 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
-	"crypto/sha256"
 
-	"golang.org/x/crypto/hkdf"
 	"github.com/cosmos/gogoproto/proto"
+	"golang.org/x/crypto/hkdf"
 
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
 )
@@ -24,22 +24,22 @@ func defaultSendHandshakeMessage(conn net.Conn, handshakeBytes, signature []byte
 	// Calculate total message size and allocate a single buffer
 	totalSize := MsgLenFieldSize + len(handshakeBytes) + MsgLenFieldSize + len(signature)
 	buf := make([]byte, totalSize)
-	
+
 	// Write all data into the buffer
 	offset := 0
-	
+
 	// Write handshake length
 	binary.BigEndian.PutUint32(buf[offset:], uint32(len(handshakeBytes)))
 	offset += MsgLenFieldSize
-	
+
 	// Write handshake bytes
 	copy(buf[offset:], handshakeBytes)
 	offset += len(handshakeBytes)
-	
+
 	// Write signature length
 	binary.BigEndian.PutUint32(buf[offset:], uint32(len(signature)))
 	offset += MsgLenFieldSize
-	
+
 	// Write signature
 	copy(buf[offset:], signature)
 
@@ -124,19 +124,19 @@ func defaultExpandKey(sharedSecret []byte, protocol string, info []byte) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key size: %w", err)
 	}
-	if (keySize <= len(sharedSecret)) {
+	if keySize <= len(sharedSecret) {
 		return sharedSecret[:keySize], nil
 	}
 
-    // Use HKDF with SHA-256
-    hkdf := hkdf.New(sha256.New, sharedSecret, nil, info)
-    
-    key := make([]byte, keySize)
-    if _, err := io.ReadFull(hkdf, key); err != nil {
-        return nil, fmt.Errorf("failed to expand key: %w", err)
-    }
+	// Use HKDF with SHA-256
+	hkdf := hkdf.New(sha256.New, sharedSecret, nil, info)
 
-    return key, nil
+	key := make([]byte, keySize)
+	if _, err := io.ReadFull(hkdf, key); err != nil {
+		return nil, fmt.Errorf("failed to expand key: %w", err)
+	}
+
+	return key, nil
 }
 
 // ExpandKey derives protocol-specific keys from the shared secret using HKDF
@@ -144,16 +144,16 @@ var ExpandKey ExpandKeyFunc = defaultExpandKey
 
 // For XChaCha20Poly1305ReKey, helper to split the expanded key into key and nonce
 func SplitKeyAndNonce(expandedKey []byte) (key, nonce []byte) {
-    if len(expandedKey) != KeySizeXChaCha20Poly1305ReKey {
-        return nil, nil
-    }
-    return expandedKey[:32], expandedKey[32:]
+	if len(expandedKey) != KeySizeXChaCha20Poly1305ReKey {
+		return nil, nil
+	}
+	return expandedKey[:32], expandedKey[32:]
 }
 
 // For AESGCMReKey, helper to split the expanded key into key and counter mask
 func SplitKeyAndCounterMask(expandedKey []byte) (key, counterMask []byte) {
-    if len(expandedKey) != KeySizeAESGCMReKey {
-        return nil, nil
-    }
-    return expandedKey[:32], expandedKey[32:]
+	if len(expandedKey) != KeySizeAESGCMReKey {
+		return nil, nil
+	}
+	return expandedKey[:32], expandedKey[32:]
 }

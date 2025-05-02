@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
 	supernodeTypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
@@ -120,7 +121,7 @@ func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, bloc
 			SupernodeAccount: addr, // Use the real account address for testing
 			PrevIpAddresses: []*supernodeTypes.IPAddressHistory{
 				{
-					Address: "127.0.0.1:900" + string('0'+i),
+					Address: "127.0.0.1:900" + strconv.Itoa(i),
 					Height:  10,
 				},
 			},

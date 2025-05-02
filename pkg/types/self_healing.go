@@ -246,7 +246,7 @@ type SelfHealingChallengeEvent struct {
 // Hash returns the hash of the self-healing challenge reports
 func (s SelfHealingReports) Hash() string {
 	data, _ := json.Marshal(s)
-	hash, _ := utils.Sha3256hash(data)
+	hash, _ := utils.Blake3Hash(data)
 
 	return string(hash)
 }

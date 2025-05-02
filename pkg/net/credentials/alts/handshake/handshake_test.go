@@ -209,7 +209,8 @@ func (h *hsInterceptor) cleanup() {
 }
 
 func TestHandshakerConcurrentHandshakes(t *testing.T) {
-	kr := CreateTestKeyring()
+	clientKr := CreateTestKeyring()
+	serverKr := CreateTestKeyring()
 
 	testCases := []struct {
 		name          string
@@ -302,15 +303,17 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			shouldWaitInNewConn = tc.newConnWait
 
 			// Create handshake pairs
-			for i := 0; i < tc.numHandshakes; i++ {
+			for i := range tc.numHandshakes {
 				accountClient := fmt.Sprintf("client-%d", i)
 				accountServer := fmt.Sprintf("server-%d", i)
-				addresses := SetupTestAccounts(t, kr, []string{accountClient, accountServer})
+				testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})
+				clientAddr := testAccounts[0].Address
 
-				clientAddr := addresses[0]
-				serverAddr := addresses[1]
-				clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
-				serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Supernode)
+				testAccounts = SetupTestAccounts(t, serverKr, []string{accountServer})
+				serverAddr := testAccounts[0].Address
+
+				clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
+				serverKE := SetupTestKeyExchange(t, serverKr, serverAddr, securekeyx.Supernode)
 
 				// Setup test pipes
 				clientConn, serverConn := net.Pipe()
@@ -439,13 +442,16 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 }
 
 func TestHandshakerContext(t *testing.T) {
-	kr := CreateTestKeyring()
+	clientKr := CreateTestKeyring()
+	serverKr := CreateTestKeyring()
 
-	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
-	clientAddr := addresses[0]
-	serverAddr := addresses[1]
+	testAccounts := SetupTestAccounts(t, clientKr, []string{"client"})
+	clientAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
+	serverAddr := testAccounts[0].Address
+
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
 
 	t.Run("Context timeout", func(t *testing.T) {
 		client, server := net.Pipe()
@@ -498,13 +504,16 @@ func TestHandshakerContext(t *testing.T) {
 }
 
 func TestUnresponsivePeer(t *testing.T) {
-	kr := CreateTestKeyring()
+	clientKr := CreateTestKeyring()
+	serverKr := CreateTestKeyring()
 
-	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
-	clientAddr := addresses[0]
-	serverAddr := addresses[1]
+	testAccounts := SetupTestAccounts(t, clientKr, []string{"client"})
+	clientAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
+	serverAddr := testAccounts[0].Address
+
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
 
 	handshakeTimeout := 100 * time.Millisecond
 	conn := testutil.NewUnresponsiveTestConn(time.Hour) // Create unresponsive conn
@@ -632,13 +641,16 @@ func TestClient_ComputeSharedSecretFailure(t *testing.T) {
 }
 
 func TestClientHandshakeSemaphore(t *testing.T) {
-	kr := CreateTestKeyring()
+	clientKr := CreateTestKeyring()
+	serverKr := CreateTestKeyring()
 
-	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
-	clientAddr := addresses[0]
-	serverAddr := addresses[1]
+	testAccounts := SetupTestAccounts(t, clientKr, []string{"client"})
+	clientAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, kr, clientAddr, securekeyx.Simplenode)
+	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
+	serverAddr := testAccounts[0].Address
+
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -666,8 +678,8 @@ func TestClientHandshakeSemaphore(t *testing.T) {
 func TestServerHandshakeSemaphore(t *testing.T) {
 	kr := CreateTestKeyring()
 
-	addresses := SetupTestAccounts(t, kr, []string{"client", "server"})
-	serverAddr := addresses[1]
+	testAccounts := SetupTestAccounts(t, kr, []string{"server"})
+	serverAddr := testAccounts[0].Address
 
 	serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
 	client, server := net.Pipe()

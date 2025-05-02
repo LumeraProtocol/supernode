@@ -69,7 +69,7 @@ type SHExecutionMetrics struct {
 // Hash returns the hash of the metrics
 func (m *Metrics) Hash() string {
 	data, _ := json.Marshal(m)
-	hash, _ := utils.Sha3256hash(data)
+	hash, _ := utils.Blake3Hash(data)
 
 	return string(hash)
 }

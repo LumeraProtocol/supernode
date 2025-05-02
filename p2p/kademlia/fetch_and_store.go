@@ -9,9 +9,9 @@ import (
 
 	json "github.com/json-iterator/go"
 
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 	"github.com/cenkalti/backoff/v4"
 )
 
@@ -368,8 +368,8 @@ func VerifyAndFilter(decompressedMap map[string][]byte) (map[string][]byte, []st
 			continue
 		}
 
-		// Compute the SHA256 hash of the value using the helper function
-		hash, err := utils.Sha3256hash(value)
+		// Compute the Blake3 hash of the value using the helper function
+		hash, err := utils.Blake3Hash(value)
 		if err != nil {
 			failedKeys = append(failedKeys, key)
 			log.WithError(err).Error("failed to compute hash")

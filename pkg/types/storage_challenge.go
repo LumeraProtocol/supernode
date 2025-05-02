@@ -190,7 +190,7 @@ type StorageChallengeMessages []Message
 // Hash returns the hash of the storage-challenge challenge log data
 func (mdl StorageChallengeMessages) Hash() string {
 	data, _ := json.Marshal(mdl)
-	hash, _ := utils.Sha3256hash(data)
+	hash, _ := utils.Blake3Hash(data)
 
 	return string(hash)
 }
@@ -236,7 +236,7 @@ type AggregatedScoreList []AggregatedScore
 
 func (asl AggregatedScoreList) Hash() string {
 	data, _ := json.Marshal(asl)
-	hash, _ := utils.Sha3256hash(data)
+	hash, _ := utils.Blake3Hash(data)
 
 	return string(hash)
 }

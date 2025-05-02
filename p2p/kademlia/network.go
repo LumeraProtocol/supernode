@@ -143,7 +143,7 @@ func (s *Network) handleFindNode(ctx context.Context, message *Message) (res []b
 	s.dht.addNode(ctx, message.Sender)
 
 	// the closest contacts
-	hashedTargetID, _ := utils.Sha3256hash(request.Target)
+	hashedTargetID, _ := utils.Blake3Hash(request.Target)
 	closest, _ := s.dht.ht.closestContacts(K, hashedTargetID, []*Node{message.Sender})
 
 	response := &FindNodeResponse{
@@ -232,7 +232,7 @@ func (s *Network) handleStoreData(ctx context.Context, message *Message) (res []
 	s.dht.addNode(ctx, message.Sender)
 
 	// format the key
-	key, _ := utils.Sha3256hash(request.Data)
+	key, _ := utils.Blake3Hash(request.Data)
 
 	value, err := s.dht.store.Retrieve(ctx, key)
 	if err != nil || len(value) == 0 {

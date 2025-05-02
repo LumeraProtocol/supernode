@@ -24,7 +24,7 @@ type HCSummaryStats struct {
 // Hash returns the hash of the SCSummaryStats
 func (ss *HCSummaryStatsRes) Hash() string {
 	data, _ := json.Marshal(ss)
-	hash, _ := utils.Sha3256hash(data)
+	hash, _ := utils.Blake3Hash(data)
 
 	return string(hash)
 }

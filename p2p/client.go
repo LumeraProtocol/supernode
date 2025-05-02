@@ -22,7 +22,7 @@ type Client interface {
 	// - the base58 encoded identifier will be returned
 	Store(ctx context.Context, data []byte, typ int) (string, error)
 
-	// StoreBatch will store a batch of values with their SHA256 hash as the key
+	// StoreBatch will store a batch of values with their Blake3 hash as the key
 	StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error
 
 	// Delete a key, value
@@ -41,10 +41,10 @@ type Client interface {
 	// - the base58 encoded identifier will be returned
 	LocalStore(ctx context.Context, key string, data []byte) (string, error)
 
-	// DisableKey adds key to disabled keys list - It takes in a B58 encoded SHA-256 hash
+	// DisableKey adds key to disabled keys list - It takes in a B58 encoded blake3 hash
 	DisableKey(ctx context.Context, b58EncodedHash string) error
 
-	// EnableKey removes key from disabled list - It takes in a B58 encoded SHA-256 hash
+	// EnableKey removes key from disabled list - It takes in a B58 encoded blake3 hash
 	EnableKey(ctx context.Context, b58EncodedHash string) error
 
 	// GetLocalKeys returns a list of all keys stored locally

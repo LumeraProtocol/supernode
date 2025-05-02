@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jmoiron/sqlx"
@@ -542,7 +542,7 @@ func (s *Store) storeRecord(key []byte, value []byte, typ int, isOriginal bool) 
 	return nil
 }
 
-// storeBatchRecord will store a batch of values with their SHA256 hash as the key
+// storeBatchRecord will store a batch of values with their Blake3 hash as the key
 func (s *Store) storeBatchRecord(values [][]byte, typ int, isOriginal bool) error {
 	hkeys := make([]UpdateMessage, len(values))
 
@@ -565,8 +565,8 @@ func (s *Store) storeBatchRecord(values [][]byte, typ int, isOriginal bool) erro
 		// For each value, calculate its hash and insert into DB
 		now := time.Now().UTC()
 		for i := 0; i < len(values); i++ {
-			// Compute the SHA256 hash
-			hashed, err := utils.Sha3256hash(values[i])
+			// Compute the Blake3 hash
+			hashed, err := utils.Blake3Hash(values[i])
 			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("cannot compute hash: %w", err)

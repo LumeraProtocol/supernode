@@ -132,4 +132,4 @@ Data stored in the network is:
 
 - Use `localOnly: true` with `Retrieve()` to only check local storage
 - DHT operations use a modified Kademlia with `Alpha=6` for parallelism
-- Key format is base58-encoded SHA-256 hash of the data
+- Key format is base58-encoded Blake3 hash of the data

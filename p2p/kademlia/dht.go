@@ -85,7 +85,6 @@ type Options struct {
 }
 
 // NewDHT returns a new DHT node
-// NewDHT returns a new DHT node
 func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Options, rqstore rqstore.Store) (*DHT, error) {
 	// validate the options, if it's invalid, set them to default value
 	if options.IP == "" {
@@ -207,7 +206,7 @@ func (s *DHT) retryStore(ctx context.Context, key []byte, data []byte, typ int) 
 
 // Store the data into the network
 func (s *DHT) Store(ctx context.Context, data []byte, typ int) (string, error) {
-	key, _ := utils.Sha3256hash(data)
+	key, _ := utils.Blake3Hash(data)
 
 	retKey := base58.Encode(key)
 	// store the key to queries storage
@@ -224,7 +223,7 @@ func (s *DHT) Store(ctx context.Context, data []byte, typ int) (string, error) {
 	return retKey, nil
 }
 
-// StoreBatch will store a batch of values with their SHA256 hash as the key
+// StoreBatch will store a batch of values with their Blake3 hash as the key
 func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error {
 	log.WithContext(ctx).WithField("taskID", taskID).WithField("records", len(values)).Info("store db batch begin")
 	if err := s.store.StoreBatch(ctx, values, typ, true); err != nil {
@@ -823,7 +822,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	closestNode := nl.Nodes[0]
 	// if it's a find node, reset the refresh timer
 	if iterativeType == IterateFindNode {
-		hashedTargetID, _ := utils.Sha3256hash(target)
+		hashedTargetID, _ := utils.Blake3Hash(target)
 		bucket := s.ht.bucketIndex(s.ht.self.HashedID, hashedTargetID)
 		log.P2P().WithContext(ctx).Debugf("bucket for target: %v", sKey)
 
@@ -1173,7 +1172,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 			}
 		}(n)
 	}
-	skey, _ := utils.Sha3256hash(data)
+	skey, _ := utils.Blake3Hash(data)
 
 	// Collect results from parallel requests
 	for i := 0; i < Alpha && i < len(nl.Nodes); i++ {
@@ -1259,8 +1258,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 
 	log.WithContext(ctx).WithField("task-id", id).WithField("keys", len(values)).WithField("len nodes", len(s.ht.nodes())).Info("iterate batch store begin")
 	for i := 0; i < len(values); i++ {
-
-		target, _ := utils.Sha3256hash(values[i])
+		target, _ := utils.Blake3Hash(values[i])
 		hashes[i] = target
 		top6 := s.ht.closestContactsWithInlcudingNode(Alpha, target, s.ignorelist.ToNodeList(), nil)
 

@@ -5,13 +5,13 @@ import (
 	"container/heap"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
+	"lukechampine.com/blake3"
 	"math"
 	"math/big"
 	"net"
@@ -28,7 +28,6 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/klauspost/compress/zstd"
-	"golang.org/x/crypto/sha3"
 )
 
 const (
@@ -89,25 +88,6 @@ func SafeErrStr(err error) string {
 	}
 
 	return ""
-}
-
-// Sha3256hash returns SHA-256 hash of input message
-func Sha3256hash(msg []byte) ([]byte, error) {
-	hasher := sha3.New256()
-	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {
-		return nil, err
-	}
-	return hasher.Sum(nil), nil
-}
-
-// GetHashStringFromBytes generate sha256 hash string from a given byte array
-func GetHashStringFromBytes(msg []byte) string {
-	h := sha3.New256()
-	if _, err := io.Copy(h, bytes.NewReader(msg)); err != nil {
-		return ""
-	}
-
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // SafeString returns value of str ptr or empty string if ptr is nil
@@ -187,21 +167,39 @@ func EqualStrList(a, b []string) error {
 	return nil
 }
 
-// GetHashFromString generate sha256 hash from a given string
-func GetHashFromString(inputString string) string {
-	h := sha3.New256()
-	h.Write([]byte(inputString))
+// Blake3Hash returns Blake3 hash of input message
+func Blake3Hash(msg []byte) ([]byte, error) {
+	hasher := blake3.New(32, nil)
+	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {
+		return nil, err
+	}
+	return hasher.Sum(nil), nil
+}
+
+// GetHashFromBytes generate blake3 hash string from a given byte array
+func GetHashFromBytes(msg []byte) string {
+	h := blake3.New(32, nil)
+	if _, err := io.Copy(h, bytes.NewReader(msg)); err != nil {
+		return ""
+	}
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func ComputeSHA256HashOfFile(filePath string) ([]byte, error) {
+// GetHashFromString returns blake3 hash of a given string
+func GetHashFromString(s string) []byte {
+	sum := blake3.Sum256([]byte(s))
+	return sum[:]
+}
+
+func ComputeHashOfFile(filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	hasher := sha256.New()
+	hasher := blake3.New(32, nil)
 	if _, err := io.Copy(hasher, file); err != nil {
 		return nil, err
 	}
@@ -232,7 +230,7 @@ func BytesToInt(inputBytes []byte) *big.Int {
 func ComputeXorDistanceBetweenTwoStrings(string1, string2 string) *big.Int {
 	string1Hash := GetHashFromString(string1)
 	string2Hash := GetHashFromString(string2)
-	xorDistance, _ := XORBytes([]byte(string1Hash), []byte(string2Hash))
+	xorDistance, _ := XORBytes(string1Hash, string2Hash)
 	return big.NewInt(0).SetBytes(xorDistance)
 }
 

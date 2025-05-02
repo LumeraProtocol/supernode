@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jmoiron/sqlx"
 )
@@ -185,7 +185,7 @@ func (s *Store) DeleteRepKey(hkey string) error {
 	return nil
 }
 
-// StoreBatchRepKeys will store a batch of values with their SHA256 hash as the key
+// StoreBatchRepKeys will store a batch of values with their Blake3 hash as the key
 func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port uint16) error {
 	operation := func() error {
 		tx, err := s.db.Beginx()

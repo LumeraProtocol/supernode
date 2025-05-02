@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -88,21 +88,21 @@ func TestStore(t *testing.T) {
 	r2 := []byte("test-record-2")
 	r3 := []byte("test-record-3")
 
-	hashed, err := utils.Sha3256hash(r1)
+	hashed, err := utils.Blake3Hash(r1)
 	if err != nil {
 		t.Fatalf("failed to hash record: %v", err)
 	}
 
 	r1Key := hex.EncodeToString(hashed)
 
-	hashed, err = utils.Sha3256hash(r2)
+	hashed, err = utils.Blake3Hash(r2)
 	if err != nil {
 		t.Fatalf("failed to hash record: %v", err)
 	}
 
 	r2Key := hex.EncodeToString(hashed)
 
-	hashed, err = utils.Sha3256hash(r3)
+	hashed, err = utils.Blake3Hash(r3)
 	if err != nil {
 		t.Fatalf("failed to hash record: %v", err)
 	}

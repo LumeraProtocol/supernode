@@ -88,7 +88,6 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 }
 
 // ConfigureBootstrapNodes connects with lumera client & gets p2p boostrap ip & port
-// ConfigureBootstrapNodes connects with lumera client & gets p2p boostrap ip & port
 func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
 	if bootstrapNodes != "" {
 		return s.setBootstrapNodesFromConfigVar(ctx, bootstrapNodes)

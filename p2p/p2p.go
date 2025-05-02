@@ -21,7 +21,7 @@ import (
 
 const (
 	logPrefix = "p2p"
-	// B is the number of bits in a SHA256 hash
+	// B is the number of bits in a Blake3 hash
 	B = 256
 )
 
@@ -122,7 +122,7 @@ func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
 	return s.dht.Store(ctx, data, typ)
 }
 
-// StoreBatch will store a batch of values with their SHA256 hash as the key
+// StoreBatch will store a batch of values with their Blake3 hash as the key
 func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) error {
 	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
@@ -292,7 +292,7 @@ func (s *p2p) LocalStore(ctx context.Context, key string, data []byte) (string, 
 	return s.dht.LocalStore(ctx, key, data)
 }
 
-// DisableKey adds key to disabled keys list - It takes in a B58 encoded SHA-256 hash
+// DisableKey adds key to disabled keys list - It takes in a B58 encoded Blake3 hash
 func (s *p2p) DisableKey(ctx context.Context, b58EncodedHash string) error {
 	decoded := base58.Decode(b58EncodedHash)
 	if len(decoded) != B/8 {
@@ -302,7 +302,7 @@ func (s *p2p) DisableKey(ctx context.Context, b58EncodedHash string) error {
 	return s.metaStore.Store(ctx, decoded)
 }
 
-// EnableKey removes key from disabled list - It takes in a B58 encoded SHA-256 hash
+// EnableKey removes key from disabled list - It takes in a B58 encoded Blake3 hash
 func (s *p2p) EnableKey(ctx context.Context, b58EncodedHash string) error {
 	decoded := base58.Decode(b58EncodedHash)
 	if len(decoded) != B/8 {
