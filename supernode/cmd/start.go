@@ -11,10 +11,10 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
+	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/supernode/config"
 	"github.com/LumeraProtocol/supernode/supernode/node/action/server/cascade"
@@ -86,28 +86,17 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return err
 		}
 
-		// Initialize RaptorQ client connection
-		raptorQClientConnection, err := raptorq.NewClient().Connect(ctx, appConfig.RaptorQConfig.ServiceAddress)
-		if err != nil {
-			logtrace.Error(ctx, "Failed to initialize raptor q client connection interface", logtrace.Fields{
-				"error": err.Error(),
-			})
-			return err
-		}
-
 		// Configure cascade service
 		cService := cascadeService.NewCascadeService(
 			&cascadeService.Config{
 				Config: common.Config{
 					SupernodeAccountAddress: appConfig.SupernodeConfig.KeyName,
 				},
-				RaptorQServiceAddress: appConfig.RaptorQConfig.ServiceAddress,
-				RqFilesDir:            appConfig.GetRaptorQFilesDir(),
+				RqFilesDir: appConfig.GetRaptorQFilesDir(),
 			},
 			lumeraClient,
 			*p2pService,
-			raptorQClientConnection.RaptorQ(raptorq.NewConfig(), lumeraClient),
-			raptorq.NewClient(),
+			codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
 			rqStore,
 		)
 

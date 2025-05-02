@@ -152,7 +152,7 @@ func (s *DHT) getExternalIP() (string, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// if listen IP is localhost - then return itself
-	if s.ht.self.IP == "127.0.0.1" || s.ht.self.IP == "localhost" {
+	if s.ht.self.IP == "127.0.0.1" || s.ht.self.IP == "localhost" || s.ht.self.IP == "0.0.0.0" {
 		return s.ht.self.IP, nil
 	}
 
@@ -1042,10 +1042,8 @@ func (s *DHT) sendStoreData(ctx context.Context, n *Node, request *StoreDataRequ
 
 // add a node into the appropriate k bucket, return the removed node if it's full
 func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
-	fmt.Println("add node called", node.String())
 	// ensure this is not itself address
 	if bytes.Equal(node.ID, s.ht.self.ID) {
-		fmt.Println("self node skipped")
 		log.P2P().WithContext(ctx).Debug("trying to add itself")
 		return nil
 	}
@@ -1405,8 +1403,6 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 	var wg sync.WaitGroup
 
 	for key, node := range nodes {
-
-		fmt.Println("node in batch store network")
 		log.WithContext(ctx).WithField("Port#", node.String()).Info("node")
 		if s.ignorelist.Banned(node) {
 			log.WithContext(ctx).WithField("node", node.String()).Debug("Ignoring banned node in batch store network call")

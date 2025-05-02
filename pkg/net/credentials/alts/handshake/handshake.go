@@ -88,12 +88,12 @@ func newHandshaker(keyExchange securekeyx.KeyExchanger, conn net.Conn, remoteAdd
 	side Side, timeout time.Duration, opts interface{}) *secureHandshaker {
 
 	hs := &secureHandshaker{
-		conn:        conn,
+		conn:         conn,
 		keyExchanger: keyExchange,
-		remoteAddr:  remoteAddr,
-		side:        side,
-		protocol:    RecordProtocolXChaCha20Poly1305ReKey, // Default to XChaCha20-Poly1305
-		timeout:     timeout,
+		remoteAddr:   remoteAddr,
+		side:         side,
+		protocol:     RecordProtocolXChaCha20Poly1305ReKey, // Default to XChaCha20-Poly1305
+		timeout:      timeout,
 	}
 
 	if side == ClientSide {
@@ -212,7 +212,6 @@ func (h *secureHandshaker) ClientHandshake(ctx context.Context) (net.Conn, crede
 	// Create ALTS connection
 	altsConn, err := NewConn(h.conn, h.side, h.protocol, expandedKey, nil)
 	if err != nil {
-		fmt.Println("Failed to create ALTS connection on client: %w", err)
 		return nil, nil, fmt.Errorf("failed to create ALTS connection: %w", err)
 	}
 

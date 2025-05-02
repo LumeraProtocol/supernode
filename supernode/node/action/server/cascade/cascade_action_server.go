@@ -80,12 +80,8 @@ func (server *CascadeActionServer) UploadInputData(stream pb.CascadeService_Uplo
 	// Process the complete data
 	task := server.service.NewCascadeRegistrationTask()
 	res, err := task.UploadInputData(ctx, &cascadeService.UploadInputDataRequest{
-		Filename:   metadata.Filename,
-		ActionID:   metadata.ActionId,
-		DataHash:   metadata.DataHash,
-		RqMax:      metadata.RqMax,
-		SignedData: metadata.SignedData,
-		Data:       allData,
+		ActionID: metadata.ActionId,
+		Data:     allData,
 	})
 
 	if err != nil {

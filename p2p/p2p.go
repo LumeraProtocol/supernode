@@ -248,7 +248,6 @@ func (s *p2p) configure(ctx context.Context) error {
 	if s.config.BootstrapNodes != "" && s.config.ExternalIP != "" {
 		kadOpts.ExternalIP = s.config.ExternalIP
 	}
-
 	// new a kademlia distributed hash table
 	dht, err := kademlia.NewDHT(ctx, s.store, s.metaStore, kadOpts, s.rqstore)
 

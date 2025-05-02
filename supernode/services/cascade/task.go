@@ -3,25 +3,12 @@ package cascade
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/pkg/raptorq"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
-// RQInfo holds RaptorQ-related information
-type RQInfo struct {
-	rqIDsIC          uint32
-	rqIDs            []string
-	rqIDEncodeParams raptorq.EncoderParameters
-
-	rqIDsFile []byte
-	rawRqFile []byte
-	rqIDFiles [][]byte
-}
-
 // CascadeRegistrationTask is the task for cascade registration
 type CascadeRegistrationTask struct {
-	RQInfo
 	*CascadeService
 
 	*common.SuperNodeTask
@@ -51,8 +38,7 @@ func NewCascadeRegistrationTask(service *CascadeService) *CascadeRegistrationTas
 	task := &CascadeRegistrationTask{
 		SuperNodeTask:  common.NewSuperNodeTask(logPrefix),
 		CascadeService: service,
-		storage: common.NewStorageHandler(service.P2PClient, service.raptorQClient,
-			service.config.RaptorQServiceAddress, service.config.RqFilesDir, service.rqstore),
+		storage:        common.NewStorageHandler(service.P2PClient, service.config.RqFilesDir, service.rqstore),
 	}
 
 	return task
