@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 

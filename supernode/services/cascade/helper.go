@@ -57,7 +57,7 @@ func (task *CascadeRegistrationTask) decodeCascadeMetadata(ctx context.Context, 
 }
 
 func (task *CascadeRegistrationTask) verifyDataHash(ctx context.Context, data []byte, expected string, f logtrace.Fields) error {
-	dh, _ := utils.Sha3256hash(data)
+	dh, _ := utils.Blake3Hash(data)
 	b64 := utils.B64Encode(dh)
 	if string(b64) != expected {
 		return task.wrapErr(ctx, "data hash doesn't match", errors.New(""), f)

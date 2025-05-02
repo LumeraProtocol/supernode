@@ -1,69 +1,69 @@
-# name: tests
+name: tests
 
-# on:
-#   push:
-#     paths-ignore:
-#       - '**.md'
-#       - 'docs/**'
-#       - '.gitignore'
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
 
-# jobs:
-#   unit-tests:
-#     name: unit-tests
-#     runs-on: ubuntu-latest
+jobs:
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#       - name: Set up Go
-#         uses: actions/setup-go@v4
-#         with:
-#           go-version: '1.24'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
 
-#       - name: Install dependencies
-#         run: go mod download
+      - name: Install dependencies
+        run: go mod download
 
-#       - name: Run unit tests
-#         run: go test ./... -v
+      - name: Run unit tests
+        run: go test ./... -v
 
-#   integration-tests:
-#     name: integration-tests
-#     runs-on: ubuntu-latest
+  integration-tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#       - name: Set up Go
-#         uses: actions/setup-go@v4
-#         with:
-#           go-version: '1.24'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
  
-#       - name: Run integration tests
-#         run: go test -v -p 1 -count=1 -tags=integration ./...
+      - name: Run integration tests
+        run: go test -v -p 1 -count=1 -tags=integration ./...
 
-#   system-tests:
-#     name: system-tests
-#     runs-on: ubuntu-latest
+  system-tests:
+    name: system-tests
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#       - name: Set up Go
-#         uses: actions/setup-go@v4
-#         with:
-#           go-version: '1.24'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
 
-#       - name: Install dependencies
-#         run: cd tests/system && go mod download
+      - name: Install dependencies
+        run: cd tests/system && go mod download
 
-#       - name: Install lumera
-#         run: cd tests/scripts && ./install-lumera.sh
+      - name: Install lumera
+        run: cd tests/scripts && ./install-lumera.sh
         
-#       - name: Copy CSV file to home directory
-#         run: cp claims.csv ~/
+      - name: Copy CSV file to home directory
+        run: cp claims.csv ~/
  
-#       - name: Run system tests
-#         run: cd tests/system && go test -tags=system_test -v .
+      - name: Run system tests
+        run: cd tests/system && go test -tags=system_test -v .
