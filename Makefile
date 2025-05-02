@@ -27,7 +27,7 @@ DATA_DIR=tests/system/supernode-data
 CONFIG_FILE=supernode/config.test-1.yml
 
 # Consolidated target that runs all setup steps
-setup-all: install-supernode install-rqservice install-lumera
+setup-all: install-supernode install-nodes
 	@echo "All setup steps completed successfully!"
 
 # Setup the supernode test environment
@@ -35,9 +35,6 @@ install-supernode:
 	@echo "Setting up supernode test environment..."
 	@bash tests/scripts/install-sn.sh $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE)
 
-install-rqservice:
-	@echo "Installing and running rq-service in $(DATA_DIR)..."
-	@bash tests/scripts/install-rq-service.sh $(DATA_DIR)
 
 install-lumera:
 	cd tests/scripts && ./install-lumera.sh
