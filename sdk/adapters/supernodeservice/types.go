@@ -6,20 +6,17 @@ import (
 	"google.golang.org/grpc"
 )
 
-type UploadInputDataRequest struct {
-	Filename   string
-	ActionID   string
-	DataHash   string
-	SignedData string
-	RqMax      int32
-	FilePath   string
+type RegisterCascadeRequest struct {
+	ActionID string
+	TaskID   string
+	FilePath string
 }
 
-type UploadInputDataResponse struct {
+type RegisterCascadeResponse struct {
 	Success bool
 	Message string
 }
 
 type CascadeServiceClient interface {
-	UploadInputData(ctx context.Context, in *UploadInputDataRequest, opts ...grpc.CallOption) (*UploadInputDataResponse, error)
+	RegisterCascade(ctx context.Context, in *RegisterCascadeRequest, opts ...grpc.CallOption) (*RegisterCascadeResponse, error)
 }

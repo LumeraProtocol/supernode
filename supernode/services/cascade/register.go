@@ -2,22 +2,8 @@ package cascade
 
 import (
 	"context"
-	"encoding/hex"
-	"strings"
 
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
-	json "github.com/json-iterator/go"
-
-	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
-	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // RegisterRequest contains parameters for upload request
@@ -33,226 +19,75 @@ type RegisterResponse struct {
 	Message string
 }
 
-// Register processes the upload request for cascade input data
+// Register processes the upload request for cascade input data.
+// 1- Fetch & validate action (it should be a cascade action registered on the chain)
+// 2- Ensure this super-node is eligible to process the action (should be in the top supernodes list for the action block height)
+// 3- Get the cascade metadata from the action: it contains the data hash and the signatures
+//
+//	Assuming data hash is a base64 encoded string of blake3 hash of the data
+//	The signatures field is: b64(JSON(Layout)).Signature where Layout is codec.Layout
+//	The layout is a JSON object that contains the metadata of the data
+//
+// 4- Verify the data hash (the data hash should match the one in the action ticket) - again, hash function should be blake3
+// 5- Generate Symbols with codec (RQ-Go Library) (the data should be encoded using the codec)
+// 6- Extract the layout and the signature from Step 3. Verify the signature using the creator's public key (creator address is in the action)
+// 7- Generate RQ-ID files from the layout that we generated locally and then match those with the ones in the action
+// 8- Verify the IDs in the layout and the metadata (the IDs should match the ones in the action)
+// 9- Store the artefacts in P2P Storage (the redundant metadata files and the symbols from the symbols dir)
 func (task *CascadeRegistrationTask) Register(ctx context.Context, req *RegisterRequest) (*RegisterResponse, error) {
-	fields := logtrace.Fields{
-		logtrace.FieldMethod:  "Register",
-		logtrace.FieldRequest: req,
-	}
+	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
 
-	// Get action details from Lumera
-	actionRes, err := task.lumeraClient.Action().GetAction(ctx, req.ActionID)
+	/* 1. Fetch & validate action -------------------------------------------------- */
+	action, err := task.fetchAction(ctx, req.ActionID, fields)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to get action", fields)
-		return nil, status.Errorf(codes.Internal, "failed to get action")
+		return nil, err
 	}
-	if actionRes.GetAction().ActionID == "" {
-		logtrace.Error(ctx, "action not found", fields)
-		return nil, status.Errorf(codes.Internal, "action not found")
-	}
-	actionDetails := actionRes.GetAction()
-	logtrace.Info(ctx, "action has been retrieved", fields)
 
-	topSNsRes, err := task.lumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, uint64(actionDetails.BlockHeight))
+	/* 2. Ensure this super-node is eligible -------------------------------------- */
+	if err := task.ensureIsTopSupernode(ctx, uint64(action.BlockHeight), fields); err != nil {
+		return nil, err
+	}
+
+	/* 3. Decode cascade metadata -------------------------------------------------- */
+	cascadeMeta, err := task.decodeCascadeMetadata(ctx, action.Metadata, fields)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to get top SNs", fields)
-		return nil, status.Errorf(codes.Internal, "failed to get top SNs")
-	}
-	logtrace.Info(ctx, "top sns have been fetched", fields)
-
-	// Verify current supernode is in the top list
-	if !supernode.Exists(topSNsRes.Supernodes, task.config.SupernodeAccountAddress) {
-		logtrace.Error(ctx, "current supernode do not exist in the top sns list", fields)
-		return nil, status.Errorf(codes.Internal, "current supernode does not exist in the top sns list")
-	}
-	logtrace.Info(ctx, "current supernode exists in the top sns list", fields)
-
-	// Parse the action metadata to CascadeMetadata
-	var cascadeMetadata actiontypes.CascadeMetadata
-	if err := proto.Unmarshal(actionDetails.Metadata, &cascadeMetadata); err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to unmarshal cascade metadata", fields)
-		return nil, status.Errorf(codes.Internal, "failed to unmarshal cascade metadata")
+		return nil, err
 	}
 
-	// Verify data hash matches action metadata
-	dataHash, _ := utils.Sha3256hash(req.Data)
-	hash := utils.B64Encode(dataHash)
-	if hex.EncodeToString(hash) != cascadeMetadata.DataHash {
-		logtrace.Error(ctx, "data hash doesn't match", fields)
-		return nil, status.Errorf(codes.Internal, "data hash doesn't match")
-	}
-	logtrace.Info(ctx, "request data-hash has been matched with the action data-hash", fields)
-
-	encodeRequest := codec.EncodeRequest{
-		Data:   req.Data,
-		TaskID: task.ID(),
+	/* 4. Verify data hash --------------------------------------------------------- */
+	if err := task.verifyDataHash(ctx, req.Data, cascadeMeta.DataHash, fields); err != nil {
+		return nil, err
 	}
 
-	resp, err := task.codec.Encode(ctx, encodeRequest)
+	/* 5. Encode the raw data ------------------------------------------------------ */
+	encResp, err := task.encodeInput(ctx, req.Data, fields)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to encode data", fields)
-		return nil, status.Errorf(codes.Internal, "failed to encode data")
+		return nil, err
 	}
 
-	encodedMetadata, signature, err := extractSignatureAndFirstPart(cascadeMetadata.Signatures)
+	/* 6. Signature verification + layout decode ---------------------------------- */
+	layout, signature, err := task.verifySignatureAndDecodeLayout(
+		ctx, cascadeMeta.Signatures, action.Creator, encResp.Metadata, fields,
+	)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to extract signature and first part", fields)
-		return nil, status.Errorf(codes.Internal, "failed to extract signature and first part")
+		return nil, err
 	}
 
-	// Verify signature against the encodedRQIDFile generated by the supernode
-	err = task.lumeraClient.Auth().Verify(ctx, actionDetails.GetCreator(), []byte(encodedMetadata), []byte(signature))
+	/* 7. Generate RQ-ID files ----------------------------------------------------- */
+	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, signature, action.Creator, encResp.Metadata, fields)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to verify signature", fields)
-		return nil, status.Errorf(codes.Internal, "failed to verify signature")
+		return nil, err
 	}
 
-	// Decode the metadata file
-	layout, err := decodeMetadataFile(encodedMetadata)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to decode metadata file", fields)
-		return nil, status.Errorf(codes.Internal, "failed to decode metadata file")
+	/* 8. Consistency checks ------------------------------------------------------- */
+	if err := verifyIDs(ctx, layout, encResp.Metadata); err != nil {
+		return nil, task.wrapErr(ctx, "failed to verify IDs", err, fields)
 	}
 
-	// Generate RaptorQ identifiers
-	res, err := GenRQIdentifiersFiles(ctx, GenRQIdentifiersFilesRequest{
-		Metadata:         resp.Metadata,
-		CreatorSNAddress: actionDetails.GetCreator(),
-		RqMax:            uint32(cascadeMetadata.RqIdsMax),
-		Signature:        signature,
-		IC:               uint32(cascadeMetadata.RqIdsIc),
-	})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to generate RQID Files", fields)
-		return nil, status.Errorf(codes.Internal, "failed to generate RQID Files")
-	}
-	logtrace.Info(ctx, "rq symbols, rq-ids and rqid-files have been generated", fields)
-
-	// Verify that the symbol identifiers match between versions
-	if err := verifyIDs(ctx, layout, resp.Metadata); err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to verify IDs", fields)
-		return nil, status.Errorf(codes.Internal, "failed to verify IDs")
-	}
-	// About to store ID files
-	logtrace.Info(ctx, "About to store ID files", logtrace.Fields{
-		"taskID":    task.ID(),
-		"fileCount": 0,
-	})
-
-	// Store ID files to P2P
-	if err = task.storeIDFiles(ctx, res.RedundantMetadataFiles); err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to store ID files", fields)
-		return nil, status.Errorf(codes.Internal, "failed to store ID files")
-	}
-	logtrace.Info(ctx, "id files have been stored", fields)
-
-	// Store RaptorQ symbols
-	if err = task.storeRaptorQSymbols(ctx, resp.SymbolsDir); err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "error storing raptor-q symbols", fields)
-		return nil, status.Errorf(codes.Internal, "error storing raptor-q symbols")
-	}
-	logtrace.Info(ctx, "raptor-q symbols have been stored", fields)
-
-	return &RegisterResponse{
-		Success: true,
-		Message: "successfully uploaded input data",
-	}, nil
-}
-
-// extractSignatureAndFirstPart extracts the signature and first part from the encoded data
-// data is expected to be in format: b64(JSON(Layout)).Signature
-func extractSignatureAndFirstPart(data string) (encodedMetadata string, signature string, err error) {
-	parts := strings.Split(data, ".")
-	if len(parts) < 2 {
-		return "", "", errors.New("invalid data format")
+	/* 9. Persist artefacts -------------------------------------------------------- */
+	if err := task.storeArtefacts(ctx, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
+		return nil, err
 	}
 
-	// The first part is the base64 encoded data
-	return parts[0], parts[1], nil
-}
-
-func decodeMetadataFile(data string) (layout codec.Layout, err error) {
-	// Decode the base64 encoded data
-	decodedData, err := utils.B64Decode([]byte(data))
-	if err != nil {
-		return layout, errors.Errorf("failed to decode data: %w", err)
-	}
-
-	// Unmarshal the decoded data into a layout
-	if err := json.Unmarshal(decodedData, &layout); err != nil {
-		return layout, errors.Errorf("failed to unmarshal data: %w", err)
-	}
-
-	return layout, nil
-}
-
-func verifyIDs(ctx context.Context, ticketMetadata, metadata codec.Layout) error {
-	// Verify that the symbol identifiers match between versions
-	if err := utils.EqualStrList(ticketMetadata.Blocks[0].Symbols, metadata.Blocks[0].Symbols); err != nil {
-		return errors.Errorf("symbol identifiers don't match: %w", err)
-	}
-
-	// Verify that the block hashes match
-	if ticketMetadata.Blocks[0].Hash != metadata.Blocks[0].Hash {
-		return errors.New("block hashes don't match")
-	}
-
-	return nil
-}
-
-// storeIDFiles stores ID files to P2P
-func (task *CascadeRegistrationTask) storeIDFiles(ctx context.Context, metadataFiles [][]byte) error {
-	ctx = context.WithValue(ctx, log.TaskIDKey, task.ID())
-	task.storage.TaskID = task.ID()
-
-	// Log basic info before storing
-	logtrace.Info(ctx, "Storing ID files", logtrace.Fields{
-		"taskID": task.ID(),
-	})
-
-	// Check if files exist
-	if len(metadataFiles) == 0 {
-		logtrace.Error(ctx, "No ID files to store", nil)
-		return errors.New("no ID files to store")
-	}
-
-	// Store files with better error handling
-	if err := task.storage.StoreBatch(ctx, metadataFiles, common.P2PDataCascadeMetadata); err != nil {
-		logtrace.Error(ctx, "Store operation failed", logtrace.Fields{
-			"error":     err.Error(),
-			"fileCount": len(metadataFiles),
-		})
-		return errors.Errorf("store ID files into kademlia: %w", err)
-	}
-
-	logtrace.Info(ctx, "ID files stored successfully", nil)
-	return nil
-}
-
-// storeRaptorQSymbols stores RaptorQ symbols to P2P
-func (task *CascadeRegistrationTask) storeRaptorQSymbols(ctx context.Context, symbolsDir string) error {
-	// Add improved logging
-	logtrace.Info(ctx, "Storing RaptorQ symbols", logtrace.Fields{
-		"taskID": task.ID(),
-	})
-
-	err := task.storage.StoreRaptorQSymbolsIntoP2P(ctx, task.ID(), symbolsDir)
-	if err != nil {
-		logtrace.Error(ctx, "Failed to store RaptorQ symbols", logtrace.Fields{
-			"taskID": task.ID(),
-			"error":  err.Error(),
-		})
-	}
-	return err
+	return &RegisterResponse{Success: true, Message: "successfully uploaded input data"}, nil
 }

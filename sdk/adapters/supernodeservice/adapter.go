@@ -30,17 +30,13 @@ func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient,
 	}
 }
 
-func (a *cascadeAdapter) UploadInputData(ctx context.Context, in *UploadInputDataRequest, opts ...grpc.CallOption) (*UploadInputDataResponse, error) {
-	a.logger.Debug(ctx, "Uploading input data through adapter",
-		"filename", in.Filename,
-		"actionID", in.ActionID,
-		"filePath", in.FilePath)
+func (a *cascadeAdapter) RegisterCascade(ctx context.Context, in *RegisterCascadeRequest, opts ...grpc.CallOption) (*RegisterCascadeResponse, error) {
+	a.logger.Debug(ctx, "RegisterCascade through adapter", "task_id", in.TaskID, "actionID", in.ActionID, "filePath", in.FilePath)
 
 	// Open the file for reading
 	file, err := os.Open(in.FilePath)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to open file for reading",
-			"filePath", in.FilePath,
 			"error", err)
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
@@ -50,18 +46,16 @@ func (a *cascadeAdapter) UploadInputData(ctx context.Context, in *UploadInputDat
 	fileInfo, err := file.Stat()
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get file stats",
-			"filePath", in.FilePath,
 			"error", err)
 		return nil, fmt.Errorf("failed to get file stats: %w", err)
 	}
 
 	fileSize := fileInfo.Size()
 	a.logger.Debug(ctx, "File opened for streaming",
-		"filePath", in.FilePath,
 		"fileSize", fileSize)
 
 	// Create the client stream
-	stream, err := a.client.UploadInputData(ctx, opts...)
+	stream, err := a.client.Register(ctx, opts...)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to create upload stream",
 			"error", err)
@@ -90,8 +84,8 @@ func (a *cascadeAdapter) UploadInputData(ctx context.Context, in *UploadInputDat
 		}
 
 		// Only send what was actually read
-		chunk := &cascade.UploadInputDataRequest{
-			RequestType: &cascade.UploadInputDataRequest_Chunk{
+		chunk := &cascade.RegisterRequest{
+			RequestType: &cascade.RegisterRequest_Chunk{
 				Chunk: &cascade.DataChunk{
 					Data: buffer[:n],
 				},
@@ -99,68 +93,46 @@ func (a *cascadeAdapter) UploadInputData(ctx context.Context, in *UploadInputDat
 		}
 
 		if err := stream.Send(chunk); err != nil {
-			a.logger.Error(ctx, "Failed to send data chunk",
-				"chunkIndex", chunkIndex,
-				"error", err)
+			a.logger.Error(ctx, "Failed to send data chunk", "chunkIndex", chunkIndex, "error", err)
 			return nil, fmt.Errorf("failed to send chunk: %w", err)
 		}
 
 		bytesRead += int64(n)
 		progress := float64(bytesRead) / float64(fileSize) * 100
 
-		a.logger.Debug(ctx, "Sent data chunk",
-			"chunkIndex", chunkIndex,
-			"chunkSize", n,
-			"progress", fmt.Sprintf("%.1f%%", progress))
+		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", n, "progress", fmt.Sprintf("%.1f%%", progress))
 
 		chunkIndex++
 	}
 
 	// Send metadata as the final message
-	metadata := &cascade.UploadInputDataRequest{
-		RequestType: &cascade.UploadInputDataRequest_Metadata{
+	metadata := &cascade.RegisterRequest{
+		RequestType: &cascade.RegisterRequest_Metadata{
 			Metadata: &cascade.Metadata{
-				Filename:   in.Filename,
-				ActionId:   in.ActionID,
-				DataHash:   in.DataHash,
-				RqMax:      in.RqMax,
-				SignedData: in.SignedData,
+				TaskId:   in.TaskID,
+				ActionId: in.ActionID,
 			},
 		},
 	}
 
 	if err := stream.Send(metadata); err != nil {
-		a.logger.Error(ctx, "Failed to send metadata",
-			"filename", in.Filename,
-			"actionID", in.ActionID,
-			"error", err)
+		a.logger.Error(ctx, "Failed to send metadata", "task_id", in.TaskID, "actionID", in.ActionID, "error", err)
 		return nil, fmt.Errorf("failed to send metadata: %w", err)
 	}
 
-	a.logger.Debug(ctx, "Sent metadata",
-		"filename", in.Filename,
-		"actionID", in.ActionID)
-
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
-		a.logger.Error(ctx, "Failed to close stream and receive response",
-			"filename", in.Filename,
-			"actionID", in.ActionID,
-			"error", err)
+		a.logger.Error(ctx, "Failed to close stream and receive response", "task_id", in.TaskID, "actionID", in.ActionID, "error", err)
 		return nil, fmt.Errorf("failed to receive response: %w", err)
 	}
 
-	response := &UploadInputDataResponse{
+	response := &RegisterCascadeResponse{
 		Success: resp.Success,
 		Message: resp.Message,
 	}
 
-	a.logger.Info(ctx, "Successfully uploaded input data",
-		"filename", in.Filename,
-		"actionID", in.ActionID,
-		"fileSize", fileSize,
-		"success", resp.Success,
-		"message", resp.Message)
+	a.logger.Info(ctx, "Successfully Registered with Supernode", "task_id", in.TaskID, "actionID", in.ActionID, "fileSize", fileSize,
+		"success", resp.Success, "message", resp.Message)
 
 	return response, nil
 }

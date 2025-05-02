@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -24,23 +23,14 @@ const (
 
 type CascadeTask struct {
 	BaseTask
-	FileHash   string
-	FilePath   string
-	SignedData string
+	FilePath string
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
-func NewCascadeTask(
-	base BaseTask,
-	fileHash string,
-	filePath string,
-	signedData string,
-) *CascadeTask {
+func NewCascadeTask(base BaseTask, filePath string) *CascadeTask {
 	return &CascadeTask{
-		BaseTask:   base,
-		FileHash:   fileHash,
-		FilePath:   filePath,
-		SignedData: signedData,
+		BaseTask: base,
+		FilePath: filePath,
 	}
 }
 
@@ -155,12 +145,10 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	}
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, factoryCfg)
 
-	req := &supernodeservice.UploadInputDataRequest{
-		Filename:   filepath.Base(t.FilePath),
-		ActionID:   t.ActionID,
-		DataHash:   t.FileHash,
-		SignedData: t.SignedData,
-		FilePath:   t.FilePath,
+	req := &supernodeservice.RegisterCascadeRequest{
+		ActionID: t.ActionID,
+		FilePath: t.FilePath,
+		TaskID:   t.TaskID,
 	}
 
 	var lastErr error
@@ -175,13 +163,10 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	return fmt.Errorf("failed to upload to all supernodes: %w", lastErr)
 }
 func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lumera.Supernode,
-	factory *net.ClientFactory, req *supernodeservice.UploadInputDataRequest) error {
+	factory *net.ClientFactory, req *supernodeservice.RegisterCascadeRequest) error {
 
 	t.logEvent(ctx, event.TaskProgressRegistrationInProgress, "attempting registration with supernode", map[string]interface{}{
-		"supernode":  sn.GrpcEndpoint,
-		"sn-address": sn.CosmosAddress,
-		"iteration":  index + 1,
-	})
+		"supernode": sn.GrpcEndpoint, "sn-address": sn.CosmosAddress, "iteration": index + 1})
 
 	client, err := factory.CreateClient(ctx, sn)
 	if err != nil {
@@ -192,7 +177,7 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lum
 	uploadCtx, cancel := context.WithTimeout(ctx, registrationTimeout)
 	defer cancel()
 
-	resp, err := client.UploadInputData(uploadCtx, req)
+	resp, err := client.RegisterCascade(uploadCtx, req)
 	if err != nil {
 		return fmt.Errorf("upload to %s: %w", sn.CosmosAddress, err)
 	}
