@@ -114,6 +114,20 @@ func TestCascadeE2E(t *testing.T) {
 	cli.FundAddressWithNode("lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "100000ulume", "node2")
 	t.Log("Successfully registered three supernodes")
 
+	queryHeight := sut.AwaitNextBlock(t)
+	args := []string{
+		"query",
+		"supernode",
+		"get-top-super-nodes-for-block",
+		fmt.Sprint(queryHeight),
+		"--output", "json",
+	}
+
+	// Get initial response to compare against
+	resp := cli.CustomQuery(args...)
+
+	t.Logf("Initial response: %s", resp)
+
 	// ---------------------------------------
 	// Step 1: Start all required services
 	// ---------------------------------------
@@ -178,7 +192,7 @@ func TestCascadeE2E(t *testing.T) {
 		"Account should have the funded amount")
 
 	// Initialize Lumera blockchain client for interactions
-	t.Log("Initializing Lumera client")
+
 	//
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
@@ -216,23 +230,33 @@ func TestCascadeE2E(t *testing.T) {
 		TaskID: "1",
 	})
 
+	require.NoError(t, err, "Failed to encode data with RaptorQ")
+
 	metadataFile := encodeRes.Metadata
 
 	// Marshal metadata to JSON and convert to bytes
 	me, err := json.Marshal(metadataFile)
 	require.NoError(t, err, "Failed to marshal metadata to JSON")
 
-	// regular
+	// Step 1: Encode the metadata JSON as base64 string
+	// This becomes the first part of our signature format
 	regularbase64EncodedData := base64.StdEncoding.EncodeToString(me)
 	t.Logf("Base64 encoded RQ IDs file length: %d", len(regularbase64EncodedData))
 
-	//signed
-	signedMetaData, err := keyring.SignBytes(keplrKeyring, testKeyName, me)
+	// Step 2: Sign the base64-encoded string (NOT the raw JSON bytes)
+	// The verification process expects that the creator signed the base64 string
+	// IMPORTANT: This is the key fix - sign the base64 string, not the raw JSON
+	signedMetaData, err := keyring.SignBytes(keplrKeyring, testKeyName, []byte(regularbase64EncodedData))
+	require.NoError(t, err, "Failed to sign metadata")
+
+	// Step 3: Encode the resulting signature as base64
 	signedbase64EncodedData := base64.StdEncoding.EncodeToString(signedMetaData)
 	t.Logf("Base64 signed RQ IDs file length: %d", len(signedbase64EncodedData))
 
-	// Format according to expected verification pattern: Base64(rq_ids).signature
-
+	// Step 4: Format according to the expected verification pattern: Base64(rq_ids).signature
+	// This format is expected by VerifySignature in the CascadeActionHandler.RegisterAction method
+	// - regularbase64EncodedData: The base64-encoded metadata (what was signed)
+	// - signedbase64EncodedData: The base64-encoded signature of the above
 	signatureFormat := fmt.Sprintf("%s.%s", regularbase64EncodedData, signedbase64EncodedData)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
 
@@ -416,7 +440,7 @@ func TestCascadeE2E(t *testing.T) {
 	// This confirms the cascade operation was processed correctly
 	var successfulSupernode string
 	for _, e := range taskEntry.Events {
-		if e.Type == event.SupernodeSucceeded {
+		if e.Type == event.TaskCompleted {
 			if addr, ok := e.Data["supernode_address"].(string); ok {
 				successfulSupernode = addr
 				break
@@ -428,14 +452,6 @@ func TestCascadeE2E(t *testing.T) {
 	require.NotEmpty(t, successfulSupernode, "Should have a successful supernode in events")
 	t.Logf("Cascade successfully processed by supernode: %s", successfulSupernode)
 }
-
-// lumeraClient, err := lumera.NewClient(
-// 		ctx,
-// 		lumera.WithGRPCAddr(lumeraGRPCAddr),
-// 		lumera.WithChainID(lumeraChainID),
-// 		lumera.WithKeyring(keplrKeyring),
-// 		lumera.WithKeyName(testKeyName),
-// 	)
 
 func Blake3Hash(msg []byte) ([]byte, error) {
 	hasher := blake3.New(32, nil)

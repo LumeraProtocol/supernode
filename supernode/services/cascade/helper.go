@@ -42,7 +42,17 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 	logtrace.Info(ctx, "Fetched Top Supernodes", f)
 
 	if !supernode.Exists(top.Supernodes, task.config.SupernodeAccountAddress) {
-		return task.wrapErr(ctx, "current supernode does not exist in the top SMs list", errors.New(""), f)
+		// Build information about supernodes for better error context
+		addresses := make([]string, len(top.Supernodes))
+		for i, sn := range top.Supernodes {
+			addresses[i] = sn.SupernodeAccount
+		}
+		logtrace.Info(ctx, "Supernode not in top list", logtrace.Fields{
+			"currentAddress": task.config.SupernodeAccountAddress,
+			"topSupernodes":  addresses,
+		})
+		return task.wrapErr(ctx, "current supernode does not exist in the top SNs list",
+			errors.Errorf("current address: %s, top supernodes: %v", task.config.SupernodeAccountAddress, addresses), f)
 	}
 
 	return nil
