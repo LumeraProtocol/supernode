@@ -53,18 +53,7 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger, key
 }
 
 // StartCascade initiates a cascade operation
-func (c *ClientImpl) StartCascade(ctx context.Context,
-	fileHash string,
-	actionID string,
-	filePath string,
-	signedData string,
-) (string, error) {
-	c.logger.Debug(ctx, "Starting cascade operation",
-		"fileHash", fileHash,
-		"actionID", actionID,
-		"filePath", filePath,
-	)
-
+func (c *ClientImpl) StartCascade(ctx context.Context, fileHash string, actionID string, filePath string, signedData string) (string, error) {
 	if fileHash == "" {
 		c.logger.Error(ctx, "Empty file hash provided")
 		return "", ErrEmptyFileHash
@@ -83,7 +72,7 @@ func (c *ClientImpl) StartCascade(ctx context.Context,
 		return "", ErrEmptyFileNotFound
 	}
 
-	taskID, err := c.taskManager.CreateCascadeTask(ctx, fileHash, actionID, filePath, signedData)
+	taskID, err := c.taskManager.CreateCascadeTask(ctx, actionID, filePath)
 	if err != nil {
 		c.logger.Error(ctx, "Failed to create cascade task", "error", err)
 		return "", fmt.Errorf("failed to create cascade task: %w", err)

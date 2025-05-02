@@ -104,18 +104,18 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	}, nil
 }
 
-// UploadInputData sends data to the supernode for cascade processing
-func (c *supernodeClient) UploadInputData(ctx context.Context,
-	in *supernodeservice.UploadInputDataRequest, opts ...grpc.CallOption,
-) (*supernodeservice.UploadInputDataResponse, error) {
+// RegisterCascade sends data to the supernode for cascade processing
+func (c *supernodeClient) RegisterCascade(ctx context.Context,
+	in *supernodeservice.RegisterCascadeRequest, opts ...grpc.CallOption,
+) (*supernodeservice.RegisterCascadeResponse, error) {
 
-	resp, err := c.cascadeClient.UploadInputData(ctx, in, opts...)
+	resp, err := c.cascadeClient.RegisterCascade(ctx, in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("upload input data failed: %w", err)
 	}
 
 	c.logger.Info(ctx, "Input data uploaded successfully",
-		"actionID", in.ActionID, "filename", in.Filename, "filePath", in.FilePath)
+		"actionID", in.ActionID, "filePath", in.FilePath)
 
 	return resp, nil
 }

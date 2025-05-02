@@ -11,8 +11,8 @@ import (
 
 // SupernodeClient defines the interface for communicating with supernodes
 type SupernodeClient interface {
-	// UploadInputData uploads input data for cascade processing
-	UploadInputData(ctx context.Context, in *supernodeservice.UploadInputDataRequest, opts ...grpc.CallOption) (*supernodeservice.UploadInputDataResponse, error)
+	//RegisterCascade uploads input data to Supernode for processing cascade request
+	RegisterCascade(ctx context.Context, in *supernodeservice.RegisterCascadeRequest, opts ...grpc.CallOption) (*supernodeservice.RegisterCascadeResponse, error)
 
 	// HealthCheck performs a health check on the supernode
 	HealthCheck(ctx context.Context) (*grpc_health_v1.HealthCheckResponse, error)
