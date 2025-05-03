@@ -262,6 +262,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Data hash with blake3
 	hash, err := Blake3Hash(data)
+	b64EncodedHash := base64.StdEncoding.EncodeToString(hash)
 	require.NoError(t, err, "Failed to compute Blake3 hash")
 	// ---------------------------------------
 	t.Log("Step 7: Creating metadata and submitting action request")
@@ -269,7 +270,7 @@ func TestCascadeE2E(t *testing.T) {
 	// Create CascadeMetadata struct with all required fields
 	// This structured approach ensures all required fields are included
 	cascadeMetadata := types.CascadeMetadata{
-		DataHash:   string(hash),                    // Hash of the original file
+		DataHash:   b64EncodedHash,                  // Hash of the original file
 		FileName:   filepath.Base(testFileFullpath), // Original filename
 		RqIdsIc:    uint64(121),                     // Count of RQ identifiers
 		Signatures: signatureFormat,                 // Combined signature format
@@ -306,6 +307,11 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Wait for transaction to be included in a block
 	sut.AwaitNextBlock(t)
+	time.Sleep(5 * time.Second)
+
+	// Verify the account can be queried with its public key
+	accountResp := cli.CustomQuery("q", "auth", "account", recoveredAddress)
+	require.Contains(t, accountResp, "public_key", "Account public key should be available")
 
 	// Extract transaction hash from response for verification
 	txHash := gjson.Get(actionRequestResp, "txhash").String()

@@ -11,8 +11,8 @@ import (
 )
 
 type SupernodeConfig struct {
-	Identity  string `yaml:"identity"`
 	KeyName   string `yaml:"key_name"`
+	Identity  string `yaml:"identity"`
 	IpAddress string `yaml:"ip_address"`
 	Port      uint16 `yaml:"port"`
 }

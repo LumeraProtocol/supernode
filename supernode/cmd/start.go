@@ -90,7 +90,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		cService := cascadeService.NewCascadeService(
 			&cascadeService.Config{
 				Config: common.Config{
-					SupernodeAccountAddress: appConfig.SupernodeConfig.KeyName,
+					SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
 				},
 				RqFilesDir: appConfig.GetRaptorQFilesDir(),
 			},
@@ -117,6 +117,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 			kr,
 			cascadeActionServer,
 		)
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC server: %w", err)
+		}
 
 		// Start the services
 		RunServices(ctx, grpcServer, cService, *p2pService)

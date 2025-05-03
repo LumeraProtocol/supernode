@@ -66,6 +66,7 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 	}
 
 	/* 6. Signature verification + layout decode ---------------------------------- */
+
 	layout, signature, err := task.verifySignatureAndDecodeLayout(
 		ctx, cascadeMeta.Signatures, action.Creator, encResp.Metadata, fields,
 	)

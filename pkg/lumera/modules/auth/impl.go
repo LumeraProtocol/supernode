@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/types"
-
-	// cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"google.golang.org/grpc"
 )
@@ -40,26 +42,60 @@ func (m *module) AccountInfoByAddress(ctx context.Context, addr string) (*authty
 }
 
 func (m *module) Verify(ctx context.Context, accAddress string, data, signature []byte) (err error) {
-
 	// Validate the address
 	addr, err := types.AccAddressFromBech32(accAddress)
 	if err != nil {
 		return fmt.Errorf("invalid address: %w", err)
 	}
 
-	accInfo, err := m.AccountInfoByAddress(ctx, addr.String())
+	logtrace.Info(ctx, "Verifying signature", logtrace.Fields{"address": addr.String()})
+
+	// Use Account RPC instead of AccountInfo to get the full account with public key
+	accResp, err := m.client.Account(ctx, &authtypes.QueryAccountRequest{
+		Address: addr.String(),
+	})
 	if err != nil {
-		return fmt.Errorf("account info: %w", err)
+		return fmt.Errorf("failed to get account: %w", err)
 	}
 
-	pubKey := accInfo.Info.GetPubKey()
+	// Unpack the account from Any type
+	var account types.AccountI
+	if err := m.getEncodingConfig().InterfaceRegistry.UnpackAny(accResp.Account, &account); err != nil {
+		return fmt.Errorf("failed to unpack account: %w", err)
+	}
+
+	pubKey := account.GetPubKey()
 	if pubKey == nil {
 		return fmt.Errorf("public key is nil")
 	}
-
+	logtrace.Info(ctx, "Public key retrieved", logtrace.Fields{"pubKey": pubKey.String()})
 	if !pubKey.VerifySignature(data, signature) {
 		return fmt.Errorf("invalid signature")
 	}
 
 	return nil
+}
+
+// getEncodingConfig returns the module's encoding config
+func (m *module) getEncodingConfig() EncodingConfig {
+	amino := codec.NewLegacyAmino()
+
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(interfaceRegistry)
+	authtypes.RegisterInterfaces(interfaceRegistry)
+
+	marshaler := codec.NewProtoCodec(interfaceRegistry)
+
+	return EncodingConfig{
+		InterfaceRegistry: interfaceRegistry,
+		Codec:             marshaler,
+		Amino:             amino,
+	}
+}
+
+// EncodingConfig specifies the concrete encoding types to use
+type EncodingConfig struct {
+	InterfaceRegistry codectypes.InterfaceRegistry
+	Codec             codec.Codec
+	Amino             *codec.LegacyAmino
 }

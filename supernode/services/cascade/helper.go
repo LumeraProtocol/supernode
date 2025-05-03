@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"encoding/base64"
 
 	"strings"
 
@@ -92,10 +93,26 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract signature and first part", err, f)
 	}
+	logtrace.Info(ctx, "signature and first part have been extracted", f)
 
-	if err := task.lumeraClient.Auth().Verify(ctx, creator, []byte(file), []byte(sig)); err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify signature", err, f)
+	// Decode the base64-encoded signature
+	sigBytes, err := base64.StdEncoding.DecodeString(sig)
+	if err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode signature from base64", err, f)
 	}
+
+	// Log the verification attempt for the node creator
+	logtrace.Info(ctx, "verifying signature from node creator", logtrace.Fields{
+		"creator": creator,
+		"taskID":  task.ID(),
+	})
+
+	// Pass the decoded signature bytes for verification
+	if err := task.lumeraClient.Auth().Verify(ctx, creator, []byte(file), sigBytes); err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify node creator signature", err, f)
+	}
+
+	logtrace.Info(ctx, "node creator signature successfully verified", f)
 
 	layout, err := decodeMetadataFile(file)
 	if err != nil {

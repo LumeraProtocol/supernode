@@ -27,8 +27,6 @@ DATA_DIR=tests/system/supernode-data
 CONFIG_FILE=supernode/config.test-1.yml
 
 # Consolidated target that runs all setup steps
-setup-all: install-supernode install-nodes
-	@echo "All setup steps completed successfully!"
 
 # Setup the supernode test environment
 install-supernode:
@@ -50,3 +48,11 @@ CONFIG_FILE3=supernode/config.test-3.yml
 install-nodes:
 	@echo "Setting up additional supernode environments..."
 	@bash tests/scripts/multinode.sh $(DATA_DIR) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
+
+setup-all:
+	@echo "Cleaning up existing data directories..."
+	@rm -rf $(DATA_DIR) $(DATA_DIR2) $(DATA_DIR3)
+	@echo "Running installation targets..."
+	@$(MAKE) install-supernode
+	@$(MAKE) install-nodes
+	@echo "Setup complete."
