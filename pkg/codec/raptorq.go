@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	raptorq "github.com/LumeraProtocol/rq-go"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 type raptorQ struct {
@@ -30,6 +31,8 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	}
 	defer processor.Free()
 
+	logtrace.Info(ctx, "RaptorQ processor created", logtrace.Fields{
+		"data-size": len(req.Data)})
 	/* ---------- 2.  persist req.Data to a temp file ---------- */
 
 	tmp, err := os.CreateTemp("", "rq-encode-*")
@@ -57,6 +60,10 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		return EncodeResponse{}, fmt.Errorf("mkdir %s: %w", symbolsDir, err)
 	}
 
+	logtrace.Info(ctx, "RaptorQ processor encoding", logtrace.Fields{
+		"symbols-dir": symbolsDir,
+		"temp-file":   tmpPath})
+
 	resp, err := processor.EncodeFile(tmpPath, symbolsDir, blockSize)
 	if err != nil {
 		os.Remove(tmpPath)
@@ -64,18 +71,22 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	}
 
 	/* we no longer need the temp file */
-	_ = os.Remove(tmpPath)
+	// _ = os.Remove(tmpPath)
 
 	/* ---------- 4.  read the layout JSON ---------- */
 	layoutData, err := os.ReadFile(resp.LayoutFilePath)
+
+	logtrace.Info(ctx, "RaptorQ processor layout file", logtrace.Fields{
+		"layout-file": resp.LayoutFilePath})
 	if err != nil {
 		return EncodeResponse{}, fmt.Errorf("read layout %s: %w", resp.LayoutFilePath, err)
 	}
 
 	var encodeResp EncodeResponse
-	if err := json.Unmarshal(layoutData, &resp); err != nil {
+	if err := json.Unmarshal(layoutData, &encodeResp.Metadata); err != nil {
 		return EncodeResponse{}, fmt.Errorf("unmarshal layout: %w", err)
 	}
+	encodeResp.SymbolsDir = symbolsDir
 
 	return encodeResp, nil
 }

@@ -203,9 +203,9 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Create a test file with sample data in a temporary directory
 
-	testFileName := "testfile.data"
+	testFileName := "testfile.txt"
 	testFileFullpath := filepath.Join(t.TempDir(), testFileName)
-	testData := []byte("This is test data for RaptorQ encoding in the Lumera network")
+	testData := []byte("This is test data for RaptorQ encoding in the Lumera nasaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaasassasetwork")
 	err = os.WriteFile(testFileFullpath, testData, 0644)
 	require.NoError(t, err, "Failed to write test file")
 
@@ -245,7 +245,6 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Step 2: Sign the base64-encoded string (NOT the raw JSON bytes)
 	// The verification process expects that the creator signed the base64 string
-	// IMPORTANT: This is the key fix - sign the base64 string, not the raw JSON
 	signedMetaData, err := keyring.SignBytes(keplrKeyring, testKeyName, []byte(regularbase64EncodedData))
 	require.NoError(t, err, "Failed to sign metadata")
 
@@ -255,7 +254,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Step 4: Format according to the expected verification pattern: Base64(rq_ids).signature
 	// This format is expected by VerifySignature in the CascadeActionHandler.RegisterAction method
-	// - regularbase64EncodedData: The base64-encoded metadata (what was signed)
+	// - regularbase64EncodedData: The base64-encoded metadata
 	// - signedbase64EncodedData: The base64-encoded signature of the above
 	signatureFormat := fmt.Sprintf("%s.%s", regularbase64EncodedData, signedbase64EncodedData)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
@@ -268,7 +267,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Step 7: Creating metadata and submitting action request")
 
 	// Create CascadeMetadata struct with all required fields
-	// This structured approach ensures all required fields are included
+
 	cascadeMetadata := types.CascadeMetadata{
 		DataHash:   b64EncodedHash,                  // Hash of the original file
 		FileName:   filepath.Base(testFileFullpath), // Original filename
