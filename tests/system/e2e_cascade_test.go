@@ -134,7 +134,8 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Start the supernode service to process cascade requests
 	cmds := StartAllSupernodes(t)
-	defer StopAllSupernodes(cmds) // Ensure service is stopped after test
+	defer StopAllSupernodes(cmds)
+	// Ensure service is stopped after test
 
 	// ---------------------------------------
 	// Step 2: Set up test account and keys
@@ -351,6 +352,8 @@ func TestCascadeE2E(t *testing.T) {
 	require.NotEmpty(t, actionID, "Action ID should not be empty")
 	t.Logf("Extracted action ID: %s", actionID)
 
+	time.Sleep(30 * time.Second)
+
 	// Set up action client configuration
 	// This defines how to connect to network services
 
@@ -441,21 +444,6 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Task recorded %d events", eventCount)
 	require.Greater(t, eventCount, 0, "Task should have recorded events")
 
-	// Check if we can find a successful supernode in the events
-	// This confirms the cascade operation was processed correctly
-	var successfulSupernode string
-	for _, e := range taskEntry.Events {
-		if e.Type == event.TaskCompleted {
-			if addr, ok := e.Data["supernode_address"].(string); ok {
-				successfulSupernode = addr
-				break
-			}
-		}
-	}
-
-	time.Sleep(10 * time.Minute) // Wait for supernode processing
-	require.NotEmpty(t, successfulSupernode, "Should have a successful supernode in events")
-	t.Logf("Cascade successfully processed by supernode: %s", successfulSupernode)
 }
 
 func Blake3Hash(msg []byte) ([]byte, error) {

@@ -8,43 +8,6 @@ import (
 	"time"
 )
 
-func StartRQService(t *testing.T) *exec.Cmd {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("unable to get working directory: %v", err)
-	}
-
-	binPath := filepath.Join(wd, "supernode-data", "rqservice", "target", "release", "rq-service")
-	configPath := filepath.Join(wd, "supernode-data", "rqservice", "examples", "rqconfig.toml")
-
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		t.Fatalf("rq-service binary not found at %s; did you run install-rqservice?", binPath)
-	}
-
-	cmd := exec.Command(binPath, "-c", configPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start rq-service: %v", err)
-	}
-
-	time.Sleep(2 * time.Second)
-	return cmd
-}
-
-// StopRQService cleanly kills the started process.
-// Call via defer immediately after StartRQService.
-func StopRQService(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	_ = cmd.Process.Kill()
-	_, _ = cmd.Process.Wait()
-}
-
-// StartAllSupernodes launches all three supernode instances.
-// Returns an array of exec.Cmd pointers that should be stopped with StopAllSupernodes.
 func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 	// Determine the project root (assumes tests run from project root)
 	wd, err := os.Getwd()

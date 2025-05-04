@@ -17,7 +17,6 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
@@ -25,9 +24,6 @@ import (
 
 func TestP2PBasicIntegration(t *testing.T) {
 	log.Println("Starting P2P test...")
-
-	conn.RegisterALTSRecordProtocols()
-	defer conn.UnregisterALTSRecordProtocols()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()

@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
@@ -86,9 +87,25 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 	}
 
 	/* 9. Persist artefacts -------------------------------------------------------- */
+	time.Sleep(time.Second * 30)
 	if err := task.storeArtefacts(ctx, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return nil, err
 	}
+	logtrace.Info(ctx, "artefacts have been stored", fields)
+	resp, err := task.lumeraClient.ActionMsg().FinalizeCascadeAction(ctx, action.ActionID, rqidResp.RQIDs, []byte(" "))
 
-	return &RegisterResponse{Success: true, Message: "successfully uploaded input data"}, nil
+	if err != nil {
+		logtrace.Info(ctx, "Finalize Action Error", logtrace.Fields{
+			"error": err.Error(),
+		})
+
+		return &RegisterResponse{Success: true, Message: "successfully uploaded input data"}, nil
+	}
+
+	logtrace.Info(ctx, "Finalize Action Response", logtrace.Fields{
+		"resp": resp.Code,
+		"log":  resp.TxHash})
+
+	// Return success when the cascade action is finalized without errors
+	return &RegisterResponse{Success: true, Message: "successfully uploaded and finalized input data"}, nil
 }

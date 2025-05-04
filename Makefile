@@ -24,9 +24,12 @@ gen-cascade:
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
 DATA_DIR=tests/system/supernode-data
-CONFIG_FILE=supernode/config.test-1.yml
+DATA_DIR2=tests/system/supernode-data2
+DATA_DIR3=tests/system/supernode-data3
+CONFIG_FILE=tests/system/config.test-1.yml
+CONFIG_FILE2=tests/system/config.test-2.yml
+CONFIG_FILE3=tests/system/config.test-3.yml
 
-# Consolidated target that runs all setup steps
 
 # Setup the supernode test environment
 install-supernode:
@@ -37,14 +40,6 @@ install-supernode:
 install-lumera:
 	cd tests/scripts && ./install-lumera.sh
 
-
-# Define the additional paths - add these to your Makefile
-DATA_DIR2=tests/system/supernode-data2
-DATA_DIR3=tests/system/supernode-data3
-CONFIG_FILE2=supernode/config.test-2.yml
-CONFIG_FILE3=supernode/config.test-3.yml
-
-# Add this target to your Makefile
 install-nodes:
 	@echo "Setting up additional supernode environments..."
 	@bash tests/scripts/multinode.sh $(DATA_DIR) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)

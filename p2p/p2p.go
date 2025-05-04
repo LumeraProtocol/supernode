@@ -73,7 +73,9 @@ func (s *p2p) Run(ctx context.Context) error {
 
 // run the kademlia network
 func (s *p2p) run(ctx context.Context) error {
+
 	ctx = log.ContextWithPrefix(ctx, logPrefix)
+	log.P2P().WithContext(ctx).Info("Running  kademlia network")
 	// configure the kademlia dht for p2p service
 	if err := s.configure(ctx); err != nil {
 		return errors.Errorf("configure kademlia dht: %w", err)
@@ -84,10 +86,12 @@ func (s *p2p) run(ctx context.Context) error {
 
 	// start the node for kademlia network
 	if err := s.dht.Start(ctx); err != nil {
+		log.P2P().WithContext(ctx).WithError(err).Error("failed to start kademlia network")
 		return errors.Errorf("start the kademlia network: %w", err)
 	}
 
 	if err := s.dht.ConfigureBootstrapNodes(ctx, s.config.BootstrapNodes); err != nil {
+		log.P2P().WithContext(ctx).WithError(err).Error("failed to configure bootstrap nodes")
 		log.P2P().WithContext(ctx).WithError(err).Error("failed to get bootstap ip")
 	}
 

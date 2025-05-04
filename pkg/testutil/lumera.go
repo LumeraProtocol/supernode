@@ -8,6 +8,7 @@ import (
 	supernodeTypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
@@ -23,6 +24,7 @@ import (
 type MockLumeraClient struct {
 	authMod      *MockAuthModule
 	actionMod    *MockActionModule
+	actionMsgMod *MockActionMsgModule
 	supernodeMod *MockSupernodeModule
 	txMod        *MockTxModule
 	nodeMod      *MockNodeModule
@@ -33,12 +35,15 @@ type MockLumeraClient struct {
 // NewMockLumeraClient creates a new mock Lumera client for testing
 func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client, error) {
 	actionMod := &MockActionModule{}
+	actionMsgMod := &MockActionMsgModule{}
 	supernodeMod := &MockSupernodeModule{addresses: addresses}
 	txMod := &MockTxModule{}
 	nodeMod := &MockNodeModule{}
 
 	return &MockLumeraClient{
+		authMod:      &MockAuthModule{},
 		actionMod:    actionMod,
+		actionMsgMod: actionMsgMod,
 		supernodeMod: supernodeMod,
 		txMod:        txMod,
 		nodeMod:      nodeMod,
@@ -55,6 +60,11 @@ func (c *MockLumeraClient) Auth() auth.Module {
 // Action returns the Action module client
 func (c *MockLumeraClient) Action() action.Module {
 	return c.actionMod
+}
+
+// ActionMsg returns the ActionMsg module client
+func (c *MockLumeraClient) ActionMsg() action_msg.Module {
+	return c.actionMsgMod
 }
 
 // SuperNode returns the SuperNode module client
@@ -103,6 +113,22 @@ func (m *MockActionModule) GetActionFee(ctx context.Context, dataSize string) (*
 	return &types.QueryGetActionFeeResponse{}, nil
 }
 
+func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
+	return &types.QueryParamsResponse{}, nil
+}
+
+// MockActionMsgModule implements the action_msg.Module interface for testing
+type MockActionMsgModule struct{}
+
+// Add methods as needed based on the actual action_msg.Module interface
+// For now, this is a placeholder implementation
+
+// FinalizeCascadeAction implements the required method from action_msg.Module interface
+func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string, data []byte) (*action_msg.FinalizeActionResult, error) {
+	// Mock implementation returns success with empty result
+	return &action_msg.FinalizeActionResult{}, nil
+}
+
 // MockSupernodeModule implements the supernode.Module interface for testing
 type MockSupernodeModule struct {
 	addresses []string
@@ -140,6 +166,10 @@ func (m *MockSupernodeModule) GetSuperNode(ctx context.Context, address string) 
 
 func (m *MockSupernodeModule) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*supernodeTypes.SuperNode, error) {
 	return &supernodeTypes.SuperNode{}, nil
+}
+
+func (m *MockSupernodeModule) GetParams(ctx context.Context) (*supernodeTypes.QueryParamsResponse, error) {
+	return &supernodeTypes.QueryParamsResponse{}, nil
 }
 
 // MockTxModule implements the tx.Module interface for testing

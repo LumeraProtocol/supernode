@@ -23,8 +23,8 @@ p2p:
 # Lumera Chain Configuration
 lumera:
   grpc_addr: "localhost:9090"
-  chain_id: "lumera"
-  timeout: 10
+  chain_id: "testing"
+  timeout: 300
 
 # RaptorQ Configuration
 raptorq:
