@@ -2,6 +2,8 @@ module github.com/LumeraProtocol/supernode/sdk
 
 go 1.24.1
 
+toolchain go1.24.2
+
 replace github.com/LumeraProtocol/supernode => ../
 
 require (
@@ -10,6 +12,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/dgraph-io/ristretto/v2 v2.2.0
 	github.com/google/uuid v1.6.0
+	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.72.0
 )
 
@@ -133,7 +136,7 @@ require (
 	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/spf13/viper v1.20.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tendermint/go-amino v0.16.0 // indirect

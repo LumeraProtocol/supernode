@@ -13,6 +13,8 @@ import (
 )
 
 // Client defines the interface for action operations
+//
+//go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=client_mock.go
 type Client interface {
 	StartCascade(ctx context.Context, data []byte, actionID string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error
@@ -52,11 +54,7 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger, key
 }
 
 // StartCascade initiates a cascade operation
-func (c *ClientImpl) StartCascade(ctx context.Context,
-	data []byte,
-	actionID string,
-) (string, error) {
-
+func (c *ClientImpl) StartCascade(ctx context.Context, data []byte, actionID string) (string, error) {
 	if actionID == "" {
 		c.logger.Error(ctx, "Empty action ID provided")
 		return "", ErrEmptyActionID
