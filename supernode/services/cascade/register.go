@@ -99,8 +99,7 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 		logtrace.Info(ctx, "Finalize Action Error", logtrace.Fields{
 			"error": err.Error(),
 		})
-
-		return &RegisterResponse{Success: true, Message: "successfully uploaded input data"}, nil
+		return nil, err
 	}
 
 	logtrace.Info(ctx, "Finalize Action Response", logtrace.Fields{

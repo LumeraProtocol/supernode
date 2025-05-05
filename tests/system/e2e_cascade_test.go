@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -112,11 +113,12 @@ func TestCascadeE2E(t *testing.T) {
 	registerSupernode("node0", "4444", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4")
 	registerSupernode("node1", "4446", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c")
 	registerSupernode("node2", "4448", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
+	t.Log("Successfully registered three supernodes")
 
+	// Fund Lume
 	cli.FundAddress("lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "100000ulume")
 	cli.FundAddressWithNode("lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "100000ulume", "node1")
 	cli.FundAddressWithNode("lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "100000ulume", "node2")
-	t.Log("Successfully registered three supernodes")
 
 	queryHeight := sut.AwaitNextBlock(t)
 	args := []string{
@@ -189,12 +191,6 @@ func TestCascadeE2E(t *testing.T) {
 	require.Equal(t, expectedAddress, localAddr.String(),
 		"Local keyring address should match expected address")
 	t.Logf("Successfully recovered key in local keyring with matching address: %s", localAddr.String())
-
-	// Verify account has sufficient balance for transactions
-	balanceOutput := cli.CustomQuery("query", "bank", "balances", recoveredAddress)
-	t.Logf("Balance for account: %s", balanceOutput)
-	require.Contains(t, balanceOutput, fundAmount[:len(fundAmount)-5],
-		"Account should have the funded amount")
 
 	// Initialize Lumera blockchain client for interactions
 
@@ -447,6 +443,26 @@ func TestCascadeE2E(t *testing.T) {
 	eventCount := len(taskEntry.Events)
 	t.Logf("Task recorded %d events", eventCount)
 	require.Greater(t, eventCount, 0, "Task should have recorded events")
+
+	// ----------------------------------
+	// Step 11: Verify fee deduction
+	// ----------------------------------
+	t.Log("Step 11: Verifying fee deduction")
+
+	// Query final balance
+	finalBalance := cli.QueryBalance(recoveredAddress, "ulume")
+	t.Logf("Final balance: %d ulume", finalBalance)
+
+	// Parse initial fund amount and expected price
+	initialFundAmount, err := strconv.ParseInt(strings.TrimSuffix(fundAmount, "ulume"), 10, 64)
+	require.NoError(t, err, "Failed to parse fund amount")
+	expectedPriceFee, err := strconv.ParseInt(strings.TrimSuffix(price, "ulume"), 10, 64)
+	require.NoError(t, err, "Failed to parse price")
+
+	// Verify fee deduction
+	t.Logf("Initial fund: %d ulume, Action price: %d ulume", initialFundAmount, expectedPriceFee)
+	require.Less(t, finalBalance, initialFundAmount, "Fee should have been deducted from creator's account")
+	t.Logf("Verified fee deduction: account balance (%d) is less than initial fund (%d)", finalBalance, initialFundAmount)
 
 }
 
