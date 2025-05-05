@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -107,5 +108,5 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 		"log":  resp.TxHash})
 
 	// Return success when the cascade action is finalized without errors
-	return &RegisterResponse{Success: true, Message: "successfully uploaded and finalized input data"}, nil
+	return &RegisterResponse{Success: true, Message: fmt.Sprintf("successfully uploaded and finalized input data with txID: %s", resp.TxHash)}, nil
 }

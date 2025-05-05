@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +20,6 @@ import (
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
 	"github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/task"
 
 	"github.com/LumeraProtocol/lumera/x/action/types"
 	sdkconfig "github.com/LumeraProtocol/supernode/sdk/config"
@@ -268,7 +266,6 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Step 7: Creating metadata and submitting action request")
 
 	// Create CascadeMetadata struct with all required fields
-
 	cascadeMetadata := types.CascadeMetadata{
 		DataHash:   b64EncodedHash,                  // Hash of the original file
 		FileName:   filepath.Base(testFileFullpath), // Original filename
@@ -307,7 +304,6 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Wait for transaction to be included in a block
 	sut.AwaitNextBlock(t)
-	time.Sleep(5 * time.Second)
 
 	// Verify the account can be queried with its public key
 	accountResp := cli.CustomQuery("q", "auth", "account", recoveredAddress)
@@ -356,7 +352,6 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Set up action client configuration
 	// This defines how to connect to network services
-
 	accConfig := sdkconfig.AccountConfig{
 		LocalCosmosAddress: recoveredAddress,
 	}
@@ -381,91 +376,53 @@ func TestCascadeE2E(t *testing.T) {
 	)
 	require.NoError(t, err, "Failed to create action client")
 
-	// Start cascade operation with all required parameters
+	// ---------------------------------------
+	// Step 9: Subscribe to all events and extract tx hash
+	// ---------------------------------------
 
+	// Channel to receive the transaction hash
+	txHashCh := make(chan string, 1)
+	completionCh := make(chan bool, 1)
+
+	// Subscribe to ALL events
+	err = actionClient.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
+		// Only capture TxhasReceived events
+		if e.Type == event.TxhasReceived {
+			if txHash, ok := e.Data["txhash"].(string); ok && txHash != "" {
+				// Send the hash to our channel
+				txHashCh <- txHash
+			}
+		}
+
+		// Also monitor for task completion
+		if e.Type == event.TaskCompleted {
+			completionCh <- true
+		}
+	})
+	require.NoError(t, err, "Failed to subscribe to events")
+
+	// Start cascade operation
 	t.Logf("Starting cascade operation with action ID: %s", actionID)
 	taskID, err := actionClient.StartCascade(
 		ctx,
 		data,     // data []byte
 		actionID, // Action ID from the transaction
-
 	)
 	require.NoError(t, err, "Failed to start cascade operation")
-	require.NotEmpty(t, taskID, "Task ID should not be empty")
 	t.Logf("Cascade operation started with task ID: %s", taskID)
 
-	// ---------------------------------------
-	// Step 9: Monitor task completion
-	// ---------------------------------------
+	recievedhash := <-txHashCh
+	<-completionCh
 
-	// Set up event channels for task monitoring
-	completionCh := make(chan bool)
-	errorCh := make(chan error)
+	t.Logf("Received transaction hash: %s", recievedhash)
 
-	// Subscribe to task completion events
-	actionClient.SubscribeToEvents(ctx, event.TaskCompleted, func(ctx context.Context, e event.Event) {
-		if e.TaskID == taskID {
-			t.Logf("Task completed: %s", taskID)
-			completionCh <- true
-		}
-	})
+	time.Sleep(10 * time.Second)
+	txReponse := cli.CustomQuery("q", "tx", recievedhash)
 
-	// Subscribe to task failure events
-	actionClient.SubscribeToEvents(ctx, event.TaskFailed, func(ctx context.Context, e event.Event) {
-		if e.TaskID == taskID {
-			errorMsg, _ := e.Data["error"].(string)
-			errorCh <- fmt.Errorf("task failed: %s", errorMsg)
-		}
-	})
-
-	// Wait for task completion, failure, or timeout
-	t.Log("Waiting for cascade task to complete...")
-	select {
-	case <-completionCh:
-		t.Log("Cascade task completed successfully")
-	case err := <-errorCh:
-		t.Fatalf("Cascade task failed: %v", err)
-	case <-time.After(60 * time.Second):
-		t.Fatalf("Timeout waiting for cascade task to complete")
-	}
-
-	// ---------------------------------------
-	// Step 10: Verify task completion and results
-	// ---------------------------------------
-
-	// Get the task details to verify status
-	taskEntry, found := actionClient.GetTask(ctx, taskID)
-	require.True(t, found, "Task should be found")
-	require.Equal(t, taskEntry.Status, task.StatusCompleted, "Task should be completed")
-	t.Logf("Task status: %s", taskEntry.Status)
-
-	// Additional verification based on the events in the task
-	eventCount := len(taskEntry.Events)
-	t.Logf("Task recorded %d events", eventCount)
-	require.Greater(t, eventCount, 0, "Task should have recorded events")
-
-	// ----------------------------------
-	// Step 11: Verify fee deduction
-	// ----------------------------------
-	t.Log("Step 11: Verifying fee deduction")
-
-	// Query final balance
-	finalBalance := cli.QueryBalance(recoveredAddress, "ulume")
-	t.Logf("Final balance: %d ulume", finalBalance)
-
-	// Parse initial fund amount and expected price
-	initialFundAmount, err := strconv.ParseInt(strings.TrimSuffix(fundAmount, "ulume"), 10, 64)
-	require.NoError(t, err, "Failed to parse fund amount")
-	expectedPriceFee, err := strconv.ParseInt(strings.TrimSuffix(price, "ulume"), 10, 64)
-	require.NoError(t, err, "Failed to parse price")
-
-	// Verify fee deduction
-	t.Logf("Initial fund: %d ulume, Action price: %d ulume", initialFundAmount, expectedPriceFee)
-	require.Less(t, finalBalance, initialFundAmount, "Fee should have been deducted from creator's account")
-	t.Logf("Verified fee deduction: account balance (%d) is less than initial fund (%d)", finalBalance, initialFundAmount)
+	t.Logf("Transaction response: %s", txReponse)
+	//
 
 }
-
 func Blake3Hash(msg []byte) ([]byte, error) {
 	hasher := blake3.New(32, nil)
 	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {

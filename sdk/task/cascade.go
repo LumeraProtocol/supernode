@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
@@ -189,6 +190,12 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lum
 		return fmt.Errorf("upload rejected by %s: %s", sn.CosmosAddress, resp.Message)
 	}
 
+	txhash := CleanTxHash(resp.Message)
+	t.logEvent(ctx, event.TxhasReceived, "txhash received", map[string]interface{}{
+		"txhash":    txhash,
+		"supernode": sn.CosmosAddress,
+	})
+
 	t.logger.Info(ctx, "upload OK", "taskID", t.TaskID, "address", sn.CosmosAddress)
 	return nil
 }
@@ -224,4 +231,15 @@ func (t *CascadeTask) fail(ctx context.Context, failureEvent event.EventType, er
 	})
 
 	return err
+}
+
+func CleanTxHash(input string) string {
+	// Split by colon and get the last part
+	parts := strings.Split(input, ":")
+	if len(parts) <= 1 {
+		return input
+	}
+
+	// Return the last part with spaces trimmed
+	return strings.TrimSpace(parts[len(parts)-1])
 }
