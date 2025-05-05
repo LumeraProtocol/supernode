@@ -124,7 +124,7 @@ type MockActionMsgModule struct{}
 // For now, this is a placeholder implementation
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface
-func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string, data []byte) (*action_msg.FinalizeActionResult, error) {
+func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, rqIDs []string) (*action_msg.FinalizeActionResult, error) {
 	// Mock implementation returns success with empty result
 	return &action_msg.FinalizeActionResult{}, nil
 }

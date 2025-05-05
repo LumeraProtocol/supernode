@@ -170,6 +170,7 @@ var goroutinesToIgnore = []string{
 	"runtime.goexit",
 	"created by runtime.gc",
 	"created by runtime/trace.Start",
+	"created by github.com/godbus/dbus.(*Conn).Auth",
 	"interestingGoroutines",
 	"runtime.MHeap_Scavenger",
 	"signal.signal_recv",
