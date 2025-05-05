@@ -23,6 +23,7 @@ const (
 	TaskProgressRegistrationFailure      EventType = "task.progress.registration_failure"
 	TaskProgressRegistrationSuccessful   EventType = "task.progress.registration_successful"
 	TaskCompleted                        EventType = "task.completed"
+	TxhasReceived                        EventType = "txhash.received"
 	TaskFailed                           EventType = "task.failed"
 )
 

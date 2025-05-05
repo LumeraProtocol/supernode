@@ -3,6 +3,7 @@ package action_msg
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	actionapi "github.com/LumeraProtocol/lumera/api/lumera/action"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
@@ -22,13 +23,13 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// Default gas parameters
+// Default parameters
 const (
 	defaultGasLimit      = uint64(200000)
-	defaultMinGasLimit   = uint64(100000)
-	defaultMaxGasLimit   = uint64(1000000)
-	defaultGasAdjustment = float64(3.0)
+	defaultGasAdjustment = float64(1.5)
 	defaultGasPadding    = uint64(50000)
+	defaultFeeDenom      = "ulume"
+	defaultGasPrice      = "0.000001" // Price per unit of gas
 )
 
 // module implements the Module interface
@@ -39,10 +40,10 @@ type module struct {
 	keyName       string
 	chainID       string
 	gasLimit      uint64
-	minGasLimit   uint64
-	maxGasLimit   uint64
 	gasAdjustment float64
 	gasPadding    uint64
+	feeDenom      string
+	gasPrice      string
 }
 
 // newModule creates a new ActionMsg module client
@@ -70,11 +71,24 @@ func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainI
 		keyName:       keyName,
 		chainID:       chainID,
 		gasLimit:      defaultGasLimit,
-		minGasLimit:   defaultMinGasLimit,
-		maxGasLimit:   defaultMaxGasLimit,
 		gasAdjustment: defaultGasAdjustment,
 		gasPadding:    defaultGasPadding,
+		feeDenom:      defaultFeeDenom,
+		gasPrice:      defaultGasPrice,
 	}, nil
+}
+
+// calculateFee calculates the transaction fee based on gas usage
+func (m *module) calculateFee(gasAmount uint64) string {
+	gasPrice, _ := strconv.ParseFloat(m.gasPrice, 64)
+	feeAmount := gasPrice * float64(gasAmount)
+
+	// Ensure we have at least 1 token as fee to meet minimum requirements
+	if feeAmount < 1 {
+		feeAmount = 1
+	}
+
+	return fmt.Sprintf("%.0f%s", feeAmount, m.feeDenom)
 }
 
 // FinalizeCascadeAction finalizes a CASCADE action with the given parameters
@@ -142,6 +156,9 @@ func (m *module) FinalizeCascadeAction(
 		WithKeyring(m.kr).
 		WithBroadcastMode("sync")
 
+	// Use a minimal fee for simulation
+	minFee := fmt.Sprintf("1%s", m.feeDenom)
+
 	// Simulate transaction to get gas estimate
 	txBuilder, err := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
@@ -152,36 +169,41 @@ func (m *module) FinalizeCascadeAction(
 		WithGas(m.gasLimit).
 		WithGasAdjustment(m.gasAdjustment).
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
-		WithFees("1000stake").
+		WithFees(minFee).
 		BuildUnsignedTx(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build unsigned tx for simulation: %w", err)
 	}
+
 	pubKey, err := key.GetPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
+
 	txBuilder.SetSignatures(signingtypes.SignatureV2{
-		PubKey:   pubKey, // your signing pubkey
+		PubKey:   pubKey,
 		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
 		Sequence: accInfo.Sequence,
 	})
+
 	simulatedGas, err := m.simulateTx(ctx, clientCtx, txBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("simulation failed: %w", err)
 	}
 
+	// Calculate gas with adjustment and padding
 	adjustedGas := uint64(float64(simulatedGas) * m.gasAdjustment)
 	gasToUse := adjustedGas + m.gasPadding
 
-	// Apply gas bounds
-	if gasToUse > m.maxGasLimit {
-		gasToUse = m.maxGasLimit
-	}
+	// Calculate fee based on adjusted gas
+	fee := m.calculateFee(gasToUse)
+	logtrace.Info(ctx, "using simulated gas and calculated fee", logtrace.Fields{
+		"simulatedGas": simulatedGas,
+		"adjustedGas":  gasToUse,
+		"fee":          fee,
+	})
 
-	logtrace.Info(ctx, "using simulated gas", logtrace.Fields{"simulatedGas": simulatedGas, "adjustedGas": gasToUse})
-
-	// Create transaction factory with final gas
+	// Create transaction factory with final gas and calculated fee
 	factory := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
 		WithKeybase(m.kr).
@@ -190,7 +212,8 @@ func (m *module) FinalizeCascadeAction(
 		WithChainID(m.chainID).
 		WithGas(gasToUse).
 		WithGasAdjustment(m.gasAdjustment).
-		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT)
+		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
+		WithFees(fee)
 
 	// Build and sign transaction
 	txBuilder, err = factory.BuildUnsignedTx(msg)
@@ -253,13 +276,6 @@ func (m *module) simulateTx(ctx context.Context, clientCtx client.Context, txBui
 	// Simulate transaction
 	simReq := &txtypes.SimulateRequest{
 		TxBytes: txBytes,
-	}
-
-	// Check if we have the tx in the request too
-	if simReq.Tx != nil {
-		logtrace.Info(ctx, "simulation request has tx field", logtrace.Fields{
-			"txFieldPresent": true,
-		})
 	}
 
 	logtrace.Info(ctx, "sending simulation request", logtrace.Fields{

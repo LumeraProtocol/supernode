@@ -1,15 +1,15 @@
 module github.com/LumeraProtocol/supernode/sdk
 
-go 1.24.0
+go 1.24.1
 
 replace github.com/LumeraProtocol/supernode => ../
 
 require (
+	github.com/LumeraProtocol/lumera v0.4.5
 	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/dgraph-io/ristretto/v2 v2.2.0
 	github.com/google/uuid v1.6.0
-	golang.org/x/sync v0.13.0
 	google.golang.org/grpc v1.72.0
 )
 
@@ -29,7 +29,6 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/LumeraProtocol/lumera v0.4.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect
 	github.com/bytedance/sonic v1.13.2 // indirect
@@ -150,6 +149,7 @@ require (
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/term v0.31.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
