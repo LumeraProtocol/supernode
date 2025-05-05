@@ -4,7 +4,7 @@ package action
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	"github.com/LumeraProtocol/lumera/x/action/types"
 	"google.golang.org/grpc"
 )
 

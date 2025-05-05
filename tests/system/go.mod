@@ -1,6 +1,6 @@
 module github.com/LumeraProtocol/supernode/tests/systemtests
 
-go 1.24.0
+go 1.24.1
 
 replace github.com/LumeraProtocol/supernode => ../../
 
@@ -29,6 +29,10 @@ require (
 
 require (
 	cosmossdk.io/math v1.5.3
+<<<<<<< HEAD
+	github.com/LumeraProtocol/lumera v0.4.5
+=======
+>>>>>>> fixTests
 	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
 	github.com/LumeraProtocol/supernode/sdk v0.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.17
@@ -45,7 +49,10 @@ require (
 	cosmossdk.io/depinject v1.2.0 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
 	cosmossdk.io/log v1.5.1 // indirect
+<<<<<<< HEAD
 	cosmossdk.io/schema v1.1.0 // indirect
+=======
+>>>>>>> fixTests
 	cosmossdk.io/store v1.1.2 // indirect
 	cosmossdk.io/x/tx v0.14.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -53,12 +60,18 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/LumeraProtocol/lumera v0.4.4 // indirect
+<<<<<<< HEAD
 	github.com/LumeraProtocol/rq-go v0.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
+=======
+	github.com/LumeraProtocol/lumera v0.4.4 // indirect
+	github.com/LumeraProtocol/rq-go v0.2.1 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bgentry/speakeasy v0.2.0 // indirect
+>>>>>>> fixTests
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
@@ -114,6 +127,10 @@ require (
 	github.com/hashicorp/go-plugin v1.6.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+<<<<<<< HEAD
+=======
+	github.com/hashicorp/hcl v1.0.0 // indirect
+>>>>>>> fixTests
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
 	github.com/huandu/skiplist v1.2.1 // indirect
@@ -127,6 +144,10 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/linxGnu/grocksdb v1.9.8 // indirect
+<<<<<<< HEAD
+=======
+	github.com/magiconair/properties v1.8.10 // indirect
+>>>>>>> fixTests
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
@@ -146,6 +167,10 @@ require (
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
+<<<<<<< HEAD
+=======
+	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
+>>>>>>> fixTests
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
@@ -163,7 +188,10 @@ require (
 	go.etcd.io/bbolt v1.4.0-alpha.0.0.20240404170359-43604f3112c5 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+<<<<<<< HEAD
 	golang.org/x/arch v0.15.0 // indirect
+=======
+>>>>>>> fixTests
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
@@ -173,6 +201,10 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250422160041-2d3770c4ea7f // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
+<<<<<<< HEAD
+=======
+	gopkg.in/ini.v1 v1.67.0 // indirect
+>>>>>>> fixTests
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect

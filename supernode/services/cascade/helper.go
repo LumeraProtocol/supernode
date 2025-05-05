@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
 )
 
 func (task *CascadeRegistrationTask) fetchAction(ctx context.Context, actionID string, f logtrace.Fields) (*actiontypes.Action, error) {
@@ -161,7 +161,7 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 	}
 	logtrace.Error(ctx, msg, f)
 
-	return status.Errorf(codes.Internal, msg)
+	return status.Errorf(codes.Internal, "%s", msg)
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data

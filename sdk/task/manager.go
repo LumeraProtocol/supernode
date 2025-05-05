@@ -196,7 +196,7 @@ func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 	case event.TaskFailed:
 		var err error
 		if errMsg, ok := e.Data["error"].(string); ok {
-			err = fmt.Errorf(errMsg)
+			err = fmt.Errorf("%s", errMsg)
 			m.logger.Error(ctx, "Task failed", "taskID", e.TaskID, "taskType", e.TaskType, "error", errMsg)
 		} else {
 			m.logger.Error(ctx, "Task failed with unknown error", "taskID", e.TaskID, "taskType", e.TaskType)

@@ -2,10 +2,11 @@ package testutil
 
 import (
 	"context"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 	"strconv"
 
-	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
-	supernodeTypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
+	"github.com/LumeraProtocol/lumera/x/action/types"
+	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
@@ -30,6 +31,11 @@ type MockLumeraClient struct {
 	nodeMod      *MockNodeModule
 	kr           keyring.Keyring
 	addresses    []string // Store node addresses for testing
+}
+
+func (c *MockLumeraClient) ActionMsg() action_msg.Module {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewMockLumeraClient creates a new mock Lumera client for testing
@@ -105,6 +111,11 @@ func (m *MockAuthModule) Verify(ctx context.Context, accAddress string, data, si
 // MockActionModule implements the action.Module interface for testing
 type MockActionModule struct{}
 
+func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockActionModule) GetAction(ctx context.Context, actionID string) (*types.QueryGetActionResponse, error) {
 	return &types.QueryGetActionResponse{}, nil
 }
@@ -132,6 +143,11 @@ func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionI
 // MockSupernodeModule implements the supernode.Module interface for testing
 type MockSupernodeModule struct {
 	addresses []string
+}
+
+func (m *MockSupernodeModule) GetParams(ctx context.Context) (*supernodeTypes.QueryParamsResponse, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*supernodeTypes.QueryGetTopSuperNodesForBlockResponse, error) {

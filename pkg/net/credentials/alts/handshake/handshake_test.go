@@ -32,7 +32,7 @@ func init() {
 }
 
 type hsInterceptor struct {
-	ctrl 					     *gomock.Controller
+	ctrl                         *gomock.Controller
 	ke                           *lumeraidmocks.MockKeyExchanger
 	conn                         net.Conn
 	hs                           *secureHandshaker
@@ -792,7 +792,7 @@ func TestDefaultReadResponsetWithTimeout_EmptyResult(t *testing.T) {
 	ti := newHSServerInterceptor(t, nil)
 	defer ti.cleanup()
 
-	ti.setHandshakeTimeout(100*time.Millisecond)
+	ti.setHandshakeTimeout(100 * time.Millisecond)
 	ti.overrideReceiveHandshakeMessage(func(conn net.Conn) ([]byte, []byte, error) {
 		time.Sleep(200 * time.Millisecond) // Simulate slow response
 		return []byte(""), nil, nil
@@ -958,4 +958,3 @@ func TestServerHandshake_ComputeSharedSecretFailure(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to compute shared secret")
 }
-

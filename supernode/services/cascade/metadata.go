@@ -76,7 +76,7 @@ func GetIDFiles(ctx context.Context, encMetadataFileWithSignature []byte, ic uin
 		buffer.WriteByte(SeparatorByte)
 		buffer.WriteString(strconv.Itoa(int(counter))) // Using the string representation to maintain backward compatibility
 
-		compressedData, err := utils.HighCompress(ctx, buffer.Bytes())
+		compressedData, err := utils.ZstdCompress(buffer.Bytes())
 		if err != nil {
 			return ids, idFiles, errors.Errorf("compress identifiers file: %w", err)
 		}

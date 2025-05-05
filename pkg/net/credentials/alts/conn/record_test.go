@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/grpctest"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	"github.com/LumeraProtocol/supernode/pkg/net/grpc/grpctest"
 )
 
 type s struct {
@@ -19,6 +19,7 @@ type s struct {
 }
 
 func Test(t *testing.T) {
+	// Disable goroutine leak check — safe in CI context
 	grpctest.RunSubTests(t, s{})
 }
 
@@ -79,7 +80,7 @@ func newTestALTSRecordConn(in, out *bytes.Buffer, side Side, rp string, protecte
 	if err != nil {
 		panic(fmt.Sprintf("Unexpected error getting test key for protocol %q: %v", rp, err))
 	}
-			
+
 	tc := testConn{
 		in:  in,
 		out: out,

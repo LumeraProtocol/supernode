@@ -1,6 +1,8 @@
 module github.com/LumeraProtocol/supernode/sdk
 
-go 1.24.0
+go 1.24.1
+
+toolchain go1.24.2
 
 replace github.com/LumeraProtocol/supernode => ../
 
@@ -29,7 +31,7 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/LumeraProtocol/lumera v0.4.4 // indirect
+	github.com/LumeraProtocol/lumera v0.4.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect
 	github.com/bytedance/sonic v1.13.2 // indirect

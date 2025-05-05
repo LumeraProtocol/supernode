@@ -22,11 +22,12 @@ import (
 	"github.com/LumeraProtocol/supernode/sdk/event"
 	"github.com/LumeraProtocol/supernode/sdk/task"
 
-	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	"github.com/LumeraProtocol/lumera/x/action/types"
 	sdkconfig "github.com/LumeraProtocol/supernode/sdk/config"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // TestCascadeE2E performs an end-to-end test of the Cascade functionality in the Lumera network.
@@ -64,10 +65,13 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Action request parameters
 	const (
-		actionType = "CASCADE" // The action type for fountain code processing
-		price      = "10ulume" // Price for the action in ulume tokens
+		actionType = "CASCADE"    // The action type for fountain code processing
+		price      = "10200ulume" // Price for the action in ulume tokens
 	)
 	t.Log("Step 1: Starting all services")
+
+	// Update the genesis file with action parameters
+	sut.ModifyGenesisJSON(t, SetActionParams(t))
 
 	// Reset and start the blockchain
 	sut.ResetChain(t)
@@ -352,7 +356,7 @@ func TestCascadeE2E(t *testing.T) {
 	require.NotEmpty(t, actionID, "Action ID should not be empty")
 	t.Logf("Extracted action ID: %s", actionID)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	// Set up action client configuration
 	// This defines how to connect to network services
@@ -452,4 +456,32 @@ func Blake3Hash(msg []byte) ([]byte, error) {
 		return nil, err
 	}
 	return hasher.Sum(nil), nil
+}
+
+// SetActionParams sets the initial parameters for the action module in genesis
+func SetActionParams(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+		state, err := sjson.SetRawBytes(genesis, "app_state.action.params", []byte(`{
+            "base_action_fee": {
+                "amount": "10000",
+                "denom": "ulume"
+            },
+            "expiration_duration": "24h0m0s",
+            "fee_per_byte": {
+                "amount": "100",
+                "denom": "ulume"
+            },
+            "foundation_fee_share": "0.000000000000000000",
+            "max_actions_per_block": "10",
+            "max_dd_and_fingerprints": "50",
+            "max_processing_time": "1h0m0s",
+            "max_raptor_q_symbols": "50",
+            "min_processing_time": "1m0s",
+            "min_super_nodes": "1",
+            "super_node_fee_share": "1.000000000000000000"
+        }`))
+		require.NoError(t, err)
+		return state
+	}
 }
