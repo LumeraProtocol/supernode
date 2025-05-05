@@ -92,7 +92,8 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 		return nil, err
 	}
 	logtrace.Info(ctx, "artefacts have been stored", fields)
-	resp, err := task.lumeraClient.ActionMsg().FinalizeCascadeAction(ctx, action.ActionID, rqidResp.RQIDs, []byte(" "))
+
+	resp, err := task.lumeraClient.ActionMsg().FinalizeCascadeAction(ctx, action.ActionID, rqidResp.RQIDs)
 
 	if err != nil {
 		logtrace.Info(ctx, "Finalize Action Error", logtrace.Fields{

@@ -7,9 +7,9 @@ import (
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
 
-	sntypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

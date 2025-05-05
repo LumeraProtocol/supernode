@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/LumeraProtocol/supernode/gen/lumera/action/types"
-	supernodeTypes "github.com/LumeraProtocol/supernode/gen/lumera/supernode/types"
+	"github.com/LumeraProtocol/lumera/x/action/types"
+	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
