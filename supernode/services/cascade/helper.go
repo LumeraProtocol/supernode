@@ -161,7 +161,7 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 	}
 	logtrace.Error(ctx, msg, f)
 
-	return status.Errorf(codes.Internal, msg)
+	return status.Errorf(codes.Internal, "%s", msg)
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data

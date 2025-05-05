@@ -23,6 +23,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
+	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
 )
 
@@ -57,6 +58,8 @@ func (s *TestServiceImpl) TestMethod(ctx context.Context, req *pb.TestRequest) (
 }
 
 func TestSecureGRPCConnection(t *testing.T) {
+	snkeyring.InitSDKConfig()
+
 	conn.RegisterALTSRecordProtocols()
 	defer conn.UnregisterALTSRecordProtocols()
 
