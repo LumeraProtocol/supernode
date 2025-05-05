@@ -22,7 +22,6 @@ type Module interface {
 		ctx context.Context,
 		actionId string,
 		rqIdsIds []string,
-		rqIdsOti []byte,
 	) (*FinalizeActionResult, error)
 }
 

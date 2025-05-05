@@ -1,6 +1,6 @@
 module github.com/LumeraProtocol/supernode/tests/systemtests
 
-go 1.24.0
+go 1.24.1
 
 replace github.com/LumeraProtocol/supernode => ../../
 
@@ -29,6 +29,7 @@ require (
 
 require (
 	cosmossdk.io/math v1.5.3
+	github.com/LumeraProtocol/lumera v0.4.5
 	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
 	github.com/LumeraProtocol/supernode/sdk v0.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.17
@@ -53,7 +54,6 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/LumeraProtocol/lumera v0.4.4 // indirect
 	github.com/LumeraProtocol/rq-go v0.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"lukechampine.com/blake3"
 	"math"
 	"math/big"
 	"net"
@@ -22,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"golang.org/x/sync/semaphore"
@@ -416,6 +417,16 @@ func RandomDuration(min, max int) time.Duration {
 	binary.Read(rand.Reader, binary.LittleEndian, &n) // read a random uint64
 	randomMillisecond := min + int(n%(uint64(max-min+1)))
 	return time.Duration(randomMillisecond) * time.Millisecond
+}
+
+func ZstdCompress(data []byte) ([]byte, error) {
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd encoder: %v", err)
+	}
+	defer encoder.Close()
+
+	return encoder.EncodeAll(data, nil), nil
 }
 
 // HighCompress compresses the data

@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
 )
 
 func (task *CascadeRegistrationTask) fetchAction(ctx context.Context, actionID string, f logtrace.Fields) (*actiontypes.Action, error) {

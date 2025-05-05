@@ -2,10 +2,10 @@ package action_msg
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
-	actiontypes "github.com/LumeraProtocol/supernode/gen/lumera/action/types"
+	actionapi "github.com/LumeraProtocol/lumera/api/lumera/action"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
@@ -19,6 +19,7 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Default gas parameters
@@ -81,7 +82,6 @@ func (m *module) FinalizeCascadeAction(
 	ctx context.Context,
 	actionId string,
 	rqIdsIds []string,
-	rqIdsOti []byte,
 ) (*FinalizeActionResult, error) {
 	// Basic validation
 	if actionId == "" {
@@ -89,9 +89,6 @@ func (m *module) FinalizeCascadeAction(
 	}
 	if len(rqIdsIds) == 0 {
 		return nil, fmt.Errorf("rq_ids_ids cannot be empty for cascade action")
-	}
-	if len(rqIdsOti) == 0 {
-		return nil, fmt.Errorf("rq_ids_oti cannot be empty for cascade action")
 	}
 
 	// Get creator address from keyring
@@ -109,15 +106,14 @@ func (m *module) FinalizeCascadeAction(
 	logtrace.Info(ctx, "finalize action started", logtrace.Fields{"creator": creator})
 
 	// Create CASCADE metadata
-	metadata := map[string]interface{}{
-		"rq_ids_ids": rqIdsIds,
-		"rq_ids_oti": rqIdsOti,
+	cascadeMeta := actionapi.CascadeMetadata{
+		RqIdsIds: rqIdsIds,
 	}
 
-	// Convert metadata to JSON
-	metadataJSON, err := json.Marshal(metadata)
+	// Convert metadata to JSON instead of binary protobuf
+	metadataBytes, err := protojson.Marshal(&cascadeMeta)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+		return nil, fmt.Errorf("failed to marshal metadata to JSON: %w", err)
 	}
 
 	// Create the message
@@ -125,7 +121,7 @@ func (m *module) FinalizeCascadeAction(
 		Creator:    creator,
 		ActionId:   actionId,
 		ActionType: "CASCADE",
-		Metadata:   string(metadataJSON),
+		Metadata:   string(metadataBytes),
 	}
 
 	// Create encoding config
@@ -156,6 +152,7 @@ func (m *module) FinalizeCascadeAction(
 		WithGas(m.gasLimit).
 		WithGasAdjustment(m.gasAdjustment).
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
+		WithFees("1000stake").
 		BuildUnsignedTx(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build unsigned tx for simulation: %w", err)
