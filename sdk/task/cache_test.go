@@ -52,8 +52,6 @@ func TestTaskCache_ConcurrentAccess(t *testing.T) {
 	}
 }
 
-/* ---------- Set / Get ---------------------------------------------------- */
-
 func TestTaskCache_SetGet(t *testing.T) {
 	ctx := context.Background()
 	tc := newTestCache(t)
@@ -79,8 +77,6 @@ func TestTaskCache_SetGet(t *testing.T) {
 	}
 }
 
-/* ---------- UpdateStatus ------------------------------------------------- */
-
 func TestTaskCache_UpdateStatus(t *testing.T) {
 	ctx := context.Background()
 	tc := newTestCache(t)
@@ -94,8 +90,6 @@ func TestTaskCache_UpdateStatus(t *testing.T) {
 	ent, _ := tc.Get(ctx, "jobX")
 	assert.Equal(t, StatusProcessing, ent.Status)
 }
-
-/* ---------- AddEvent ----------------------------------------------------- */
 
 func TestTaskCache_AddEvent(t *testing.T) {
 	ctx := context.Background()
@@ -112,8 +106,6 @@ func TestTaskCache_AddEvent(t *testing.T) {
 	assert.Len(t, ent.Events, 1)
 	assert.Equal(t, ev, ent.Events[0])
 }
-
-/* ---------- Delete ------------------------------------------------------- */
 
 func TestTaskCache_Delete(t *testing.T) {
 	ctx := context.Background()

@@ -126,10 +126,6 @@ func TestClient_GetTask(t *testing.T) {
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                 DeleteTask                                 */
-/* -------------------------------------------------------------------------- */
-
 func TestClient_DeleteTask(t *testing.T) {
 	ctx := context.Background()
 	mockErr := errors.New("delete fail")
