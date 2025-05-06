@@ -25,12 +25,7 @@ type CascadeTask struct {
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
-func NewCascadeTask(
-	base BaseTask,
-	data []byte,
-	actionId string,
-
-) *CascadeTask {
+func NewCascadeTask(base BaseTask, data []byte, actionId string) *CascadeTask {
 	return &CascadeTask{
 		BaseTask: base,
 		data:     data,

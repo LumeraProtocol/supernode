@@ -14,6 +14,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
+//go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=lumera_mock.go
 type Client interface {
 	GetAction(ctx context.Context, actionID string) (Action, error)
 	GetSupernodes(ctx context.Context, height int64) ([]Supernode, error)
@@ -33,12 +34,7 @@ type Adapter struct {
 }
 
 // NewAdapter creates a new Adapter with dependencies explicitly injected
-func NewAdapter(
-	ctx context.Context,
-	config ConfigParams,
-	kr keyring.Keyring,
-	logger log.Logger,
-) (Client, error) {
+func NewAdapter(ctx context.Context, config ConfigParams, kr keyring.Keyring, logger log.Logger) (Client, error) {
 	// Set default logger if nil
 	if logger == nil {
 		logger = log.NewNoopLogger()
@@ -104,10 +100,8 @@ func (a *Adapter) GetAction(ctx context.Context, actionID string) (Action, error
 	}
 
 	action := toSdkAction(resp)
-	a.logger.Debug(ctx, "Successfully retrieved action",
-		"actionID", action.ID,
-		"state", action.State,
-		"height", action.Height)
+	a.logger.Debug(ctx, "Successfully retrieved action", "actionID", action.ID,
+		"state", action.State, "height", action.Height)
 
 	return action, nil
 }

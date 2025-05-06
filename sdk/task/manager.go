@@ -16,6 +16,8 @@ import (
 const MAX_EVENT_WORKERS = 100
 
 // Manager handles task creation and management
+//
+//go:generate mockery --name=Manager --output=testutil/mocks --outpkg=mocks --filename=manager_mock.go
 type Manager interface {
 	CreateCascadeTask(ctx context.Context, data []byte, actionID string) (string, error)
 	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)
@@ -33,13 +35,7 @@ type ManagerImpl struct {
 	keyring      keyring.Keyring
 }
 
-func NewManager(
-	ctx context.Context,
-	config config.Config,
-	logger log.Logger,
-	kr keyring.Keyring,
-) (Manager, error) {
-
+func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr keyring.Keyring) (Manager, error) {
 	// 1 - Logger
 	if logger == nil {
 		logger = log.NewNoopLogger()
@@ -177,10 +173,7 @@ func (m *ManagerImpl) SubscribeToAllEvents(ctx context.Context, handler event.Ha
 
 // handleEvent processes events from tasks and updates cache
 func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
-	m.logger.Debug(ctx, "Handling task event",
-		"taskID", e.TaskID,
-		"taskType", e.TaskType,
-		"eventType", e.Type)
+	m.logger.Debug(ctx, "Handling task event", "taskID", e.TaskID, "taskType", e.TaskType, "eventType", e.Type)
 
 	// Update the cache with the event
 	m.taskCache.AddEvent(ctx, e.TaskID, e)

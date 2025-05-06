@@ -18,19 +18,10 @@ type FinalizeActionResult struct {
 // Module defines the interface for action messages operations
 type Module interface {
 	// FinalizeCascadeAction finalizes a CASCADE action with the given parameters
-	FinalizeCascadeAction(
-		ctx context.Context,
-		actionId string,
-		rqIdsIds []string,
-	) (*FinalizeActionResult, error)
+	FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*FinalizeActionResult, error)
 }
 
 // NewModule creates a new ActionMsg module client
-func NewModule(
-	conn *grpc.ClientConn,
-	kr keyring.Keyring,
-	keyName string,
-	chainID string,
-) (Module, error) {
+func NewModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
 	return newModule(conn, kr, keyName, chainID)
 }
