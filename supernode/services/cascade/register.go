@@ -3,7 +3,6 @@ package cascade
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
@@ -88,7 +87,6 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 	}
 
 	/* 9. Persist artefacts -------------------------------------------------------- */
-	time.Sleep(time.Second * 30)
 	if err := task.storeArtefacts(ctx, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return nil, err
 	}
