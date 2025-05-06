@@ -3,9 +3,11 @@ package cascade
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 
 	"strings"
 
+	"cosmossdk.io/math"
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
@@ -13,6 +15,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/golang/protobuf/proto"
 	json "github.com/json-iterator/go"
 	"google.golang.org/grpc/codes"
@@ -249,4 +252,42 @@ func (task *CascadeRegistrationTask) storeRaptorQSymbols(ctx context.Context, sy
 		})
 	}
 	return err
+}
+
+// verifyActionFee checks if the action fee is sufficient for the given data size
+// It fetches action parameters, calculates the required fee, and compares it with the action price
+func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action *actiontypes.Action, data []byte, fields logtrace.Fields) error {
+	// Fetch action parameters
+	params, err := task.lumeraClient.Action().GetParams(ctx)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to get action parameters", err, fields)
+	}
+
+	// Get base fee and fee per byte
+	baseFee := params.Params.BaseActionFee
+	feePerByte := params.Params.FeePerByte.Amount
+
+	// Calculate per-byte fee based on data size
+	dataBytes := len(data)
+	perByteFee := sdk.NewCoin(baseFee.Denom, feePerByte.Mul(math.NewInt(int64(dataBytes))))
+
+	// Calculate total fee
+	requiredFee := baseFee.Add(perByteFee)
+
+	// Log the calculated fee
+	logtrace.Info(ctx, "calculated required fee", logtrace.Fields{
+		"fee":       requiredFee.String(),
+		"dataBytes": dataBytes,
+	})
+	// Check if action price is less than required fee
+	if action.Price.IsLT(requiredFee) {
+		return task.wrapErr(
+			ctx,
+			"insufficient fee",
+			fmt.Errorf("expected at least %s, got %s", requiredFee.String(), action.Price.String()),
+			fields,
+		)
+	}
+
+	return nil
 }

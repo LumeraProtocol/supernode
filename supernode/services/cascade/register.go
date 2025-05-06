@@ -44,30 +44,34 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 		return nil, err
 	}
 
-	/* 2. Ensure this super-node is eligible -------------------------------------- */
+	/* 2. Verify action fee -------------------------------------------------------- */
+	if err := task.verifyActionFee(ctx, action, req.Data, fields); err != nil {
+		return nil, err
+	}
+
+	/* 3. Ensure this super-node is eligible -------------------------------------- */
 	if err := task.ensureIsTopSupernode(ctx, uint64(action.BlockHeight), fields); err != nil {
 		return nil, err
 	}
 
-	/* 3. Decode cascade metadata -------------------------------------------------- */
+	/* 4. Decode cascade metadata -------------------------------------------------- */
 	cascadeMeta, err := task.decodeCascadeMetadata(ctx, action.Metadata, fields)
 	if err != nil {
 		return nil, err
 	}
 
-	/* 4. Verify data hash --------------------------------------------------------- */
+	/* 5. Verify data hash --------------------------------------------------------- */
 	if err := task.verifyDataHash(ctx, req.Data, cascadeMeta.DataHash, fields); err != nil {
 		return nil, err
 	}
 
-	/* 5. Encode the raw data ------------------------------------------------------ */
+	/* 6. Encode the raw data ------------------------------------------------------ */
 	encResp, err := task.encodeInput(ctx, req.Data, fields)
 	if err != nil {
 		return nil, err
 	}
 
-	/* 6. Signature verification + layout decode ---------------------------------- */
-
+	/* 7. Signature verification + layout decode ---------------------------------- */
 	layout, signature, err := task.verifySignatureAndDecodeLayout(
 		ctx, cascadeMeta.Signatures, action.Creator, encResp.Metadata, fields,
 	)
@@ -75,25 +79,24 @@ func (task *CascadeRegistrationTask) Register(ctx context.Context, req *Register
 		return nil, err
 	}
 
-	/* 7. Generate RQ-ID files ----------------------------------------------------- */
+	/* 8. Generate RQ-ID files ----------------------------------------------------- */
 	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, signature, action.Creator, encResp.Metadata, fields)
 	if err != nil {
 		return nil, err
 	}
 
-	/* 8. Consistency checks ------------------------------------------------------- */
+	/* 9. Consistency checks ------------------------------------------------------- */
 	if err := verifyIDs(ctx, layout, encResp.Metadata); err != nil {
 		return nil, task.wrapErr(ctx, "failed to verify IDs", err, fields)
 	}
 
-	/* 9. Persist artefacts -------------------------------------------------------- */
+	/* 10. Persist artefacts -------------------------------------------------------- */
 	if err := task.storeArtefacts(ctx, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return nil, err
 	}
 	logtrace.Info(ctx, "artefacts have been stored", fields)
 
 	resp, err := task.lumeraClient.ActionMsg().FinalizeCascadeAction(ctx, action.ActionID, rqidResp.RQIDs)
-
 	if err != nil {
 		logtrace.Info(ctx, "Finalize Action Error", logtrace.Fields{
 			"error": err.Error(),
