@@ -11,20 +11,17 @@ import (
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/reflection" // Add this import
+	"google.golang.org/grpc/reflection"
 
-	// "github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx" //
+	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
 
-	// ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	// "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
-
-// NOTE : Implemented with insecure gRPC server for now,
-//       // secure gRPC server setup is commented out and will be updated later
 
 type service interface {
 	Desc() *grpc.ServiceDesc
@@ -42,10 +39,11 @@ type Server struct {
 
 // Run starts the server
 func (server *Server) Run(ctx context.Context) error {
-	// conn.RegisterALTSRecordProtocols()
-	// defer conn.UnregisterALTSRecordProtocols()
+
+	conn.RegisterALTSRecordProtocols()
+	defer conn.UnregisterALTSRecordProtocols()
 	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
-	// log.WithContext(ctx).Infof("Server identity: %s", server.config.Identity)
+	log.WithContext(ctx).Infof("Server identity: %s", server.config.Identity)
 	log.WithContext(ctx).Infof("Listening on: %s", server.config.ListenAddresses)
 	ctx = log.ContextWithPrefix(ctx, server.name)
 
@@ -77,7 +75,7 @@ func (server *Server) listen(ctx context.Context, address string) (err error) {
 	errCh := make(chan error, 1)
 	go func() {
 		defer errors.Recover(func(recErr error) { err = recErr })
-		log.WithContext(ctx).Infof("gRPC server listening insecurely on %q", address)
+		log.WithContext(ctx).Infof("gRPC server listening securely on %q", address)
 		if err := server.grpcServer.Serve(listen); err != nil {
 			errCh <- errors.Errorf("serve: %w", err).WithField("address", address)
 		}
@@ -95,24 +93,20 @@ func (server *Server) listen(ctx context.Context, address string) (err error) {
 }
 
 func (server *Server) setupGRPCServer() error {
-	// --- Commented out secure credential setup ---
-	/*
-		// Create server credentials
-		serverCreds, err := ltc.NewServerCreds(<c.ServerOptions{
-			CommonOptions: ltc.CommonOptions{
-				Keyring:       server.kr,
-				LocalIdentity: server.config.Identity,
-				PeerType:      securekeyx.Supernode,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create server credentials: %w", err)
-		}
-	*/
+	// Create server credentials
+	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
+		CommonOptions: ltc.CommonOptions{
+			Keyring:       server.kr,
+			LocalIdentity: server.config.Identity,
+			PeerType:      securekeyx.Supernode,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create server credentials: %w", err)
+	}
 
-	// Initialize the gRPC server without credentials (insecure)
-	// server.grpcServer = grpc.NewServer(grpc.Creds(serverCreds)) // Original secure version
-	server.grpcServer = grpc.NewServer()
+	// Initialize the gRPC server with credentials (secure)
+	server.grpcServer = grpc.NewServer(grpc.Creds(serverCreds))
 
 	// Initialize and register the health server
 	server.healthServer = health.NewServer()
@@ -169,6 +163,6 @@ func New(config *Config, name string, kr keyring.Keyring, services ...service) (
 		config:   config,
 		services: services,
 		name:     name,
-		kr:       kr, // Keyring is kept for now
+		kr:       kr,
 	}, nil
 }

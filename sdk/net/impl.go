@@ -1,18 +1,21 @@
+// File: impl.go
 package net
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
+	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
+	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
+	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -31,11 +34,13 @@ var _ SupernodeClient = (*supernodeClient)(nil)
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
 	localCosmosAddress string, targetSupernode lumera.Supernode, clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
+	// Register ALTS protocols, just like in the test
+	conn.RegisterALTSRecordProtocols()
+
 	// Validate required parameters
 	if logger == nil {
 		return nil, fmt.Errorf("logger cannot be nil")
 	}
-	// We still keep the keyring check for future reference
 	if keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
@@ -44,33 +49,27 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	}
 
 	// Create client credentials
-	/*
-		clientCreds, err := credentials.NewClientCreds(&credentials.ClientOptions{
-			CommonOptions: credentials.CommonOptions{
-				Keyring:       keyring,
-				LocalIdentity: localCosmosAddress,
-				PeerType:      securekeyx.Supernode,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create credentials: %w", err)
-		}
-	*/
+	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
+		CommonOptions: ltc.CommonOptions{
+			Keyring:       keyring,
+			LocalIdentity: localCosmosAddress,
+			PeerType:      securekeyx.Supernode,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credentials: %w", err)
+	}
 
-	// Format connection address without identity for insecure connection
-	targetAddress := targetSupernode.GrpcEndpoint
+	// Format connection address with identity for secure connection
+	targetAddress := ltc.FormatAddressWithIdentity(
+		targetSupernode.CosmosAddress,
+		targetSupernode.GrpcEndpoint,
+	)
 
-	logger.Debug(ctx, "Connecting to supernode insecurely", "address", targetAddress)
-
-	// Use provided client options or defaults
-	// options := clientOptions
-	// if options == nil {
-	// 	options = client.DefaultClientOptions()
-	// }
-
-	// Connect to server with insecure credentials
-	// grpcClient := client.NewClient(clientCreds)
-	// conn, err := grpcClient.Connect(ctx, targetAddress, options)
+	logger.Debug(ctx, "Connecting to supernode securely",
+		"endpoint", targetSupernode.GrpcEndpoint,
+		"target_id", targetSupernode.CosmosAddress,
+		"local_id", localCosmosAddress)
 
 	// Use provided client options or defaults
 	options := clientOptions
@@ -78,8 +77,8 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		options = client.DefaultClientOptions()
 	}
 
-	// Direct insecure connection via the grpc client wrapper
-	grpcClient := client.NewClient(insecure.NewCredentials())
+	// Connect to server with secure credentials
+	grpcClient := client.NewClient(clientCreds)
 	conn, err := grpcClient.Connect(ctx, targetAddress, options)
 
 	if err != nil {
@@ -87,7 +86,9 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			targetSupernode.CosmosAddress, err)
 	}
 
-	logger.Info(ctx, "Connected to supernode insecurely", "address", targetSupernode.CosmosAddress)
+	logger.Info(ctx, "Connected to supernode securely",
+		"address", targetSupernode.CosmosAddress,
+		"endpoint", targetSupernode.GrpcEndpoint)
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(
@@ -104,15 +105,14 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	}, nil
 }
 
-// UploadInputData sends data to the supernode for cascade processing
+// RegisterCascade sends registration request to the supernode for cascade processing
 func (c *supernodeClient) RegisterCascade(ctx context.Context, in *supernodeservice.CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*supernodeservice.CascadeSupernodeRegisterResponse, error) {
-
 	resp, err := c.cascadeClient.CascadeSupernodeRegister(ctx, in, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("upload input data failed: %w", err)
+		return nil, fmt.Errorf("cascade registration failed: %w", err)
 	}
 
-	c.logger.Info(ctx, "Input data uploaded successfully",
+	c.logger.Info(ctx, "Cascade registered successfully",
 		"actionID", in.ActionID, "taskId", in.TaskId)
 
 	return resp, nil
@@ -133,7 +133,12 @@ func (c *supernodeClient) HealthCheck(ctx context.Context) (*grpc_health_v1.Heal
 func (c *supernodeClient) Close(ctx context.Context) error {
 	if c.conn != nil {
 		c.logger.Debug(ctx, "Closing connection to supernode")
-		return c.conn.Close()
+		err := c.conn.Close()
+
+		// Cleanup ALTS protocols when client is closed
+		conn.UnregisterALTSRecordProtocols()
+
+		return err
 	}
 	return nil
 }
