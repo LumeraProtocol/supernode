@@ -153,6 +153,7 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 		// Convert the map to a slice
 		for _, node := range mapNodes {
+			node.Port = node.Port + 1
 			hID, _ := utils.Blake3Hash(node.ID)
 			node.HashedID = hID
 			fmt.Println("node adding", node.String(), "hashed id", string(node.HashedID))
