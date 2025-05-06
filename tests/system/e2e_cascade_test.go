@@ -65,7 +65,7 @@ func TestCascadeE2E(t *testing.T) {
 	// Action request parameters
 	const (
 		actionType = "CASCADE"    // The action type for fountain code processing
-		price      = "10200ulume" // Price for the action in ulume tokens
+		price      = "23800ulume" // Price for the action in ulume tokens
 	)
 	t.Log("Step 1: Starting all services")
 
