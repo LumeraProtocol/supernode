@@ -124,7 +124,7 @@ func (t *CascadeTask) fetchSupernodes(ctx context.Context, height int64) (lumera
 	}
 	t.logger.Info(ctx, "Healthy supernodes", "count", len(healthy))
 
-	return sns, nil
+	return healthy, nil
 }
 
 // isServing pings the super-node once with a short timeout.
