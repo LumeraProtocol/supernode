@@ -51,11 +51,25 @@ jobs:
         uses: ./.github/actions/setup-env  
  
       - name: Install dependencies
-        run: cd tests/system && go mod download
+        run: |
+          go mod download
+          cd tests/system && go mod download
 
-      - name: Install lumera
+      - name: Install Lumera
         run: cd tests/scripts && ./install-lumera.sh
         
+      - name: Setup Supernode environments
+        run: |
+          cd tests/scripts
+          bash ./setup-supernodes.sh all \
+            ../../supernode/main.go \
+            ../system/supernode-data \
+            ../system/config.test-1.yml \
+            ../system/supernode-data2 \
+            ../system/config.test-2.yml \
+            ../system/supernode-data3 \
+            ../system/config.test-3.yml
+      
       - name: Copy CSV file to home directory
         run: cp claims.csv ~/
  

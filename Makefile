@@ -1,4 +1,4 @@
-.PHONY: test-unit test-integration test-system tests-system-setup
+.PHONY: test-unit test-integration test-system tests-system-setup setup-supernodes install-lumera
 
 # Run unit tests (regular tests with code)
 test-unit:
@@ -30,24 +30,13 @@ CONFIG_FILE=tests/system/config.test-1.yml
 CONFIG_FILE2=tests/system/config.test-2.yml
 CONFIG_FILE3=tests/system/config.test-3.yml
 
-
-# Setup the supernode test environment
-install-supernode:
-	@echo "Setting up supernode test environment..."
-	@bash tests/scripts/install-sn.sh $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE)
-
+# Setup script
+SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 
 install-lumera:
 	cd tests/scripts && ./install-lumera.sh
 
-install-nodes:
-	@echo "Setting up additional supernode environments..."
-	@bash tests/scripts/multinode.sh $(DATA_DIR) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
-
-setup-all:
-	@echo "Cleaning up existing data directories..."
-	@rm -rf $(DATA_DIR) $(DATA_DIR2) $(DATA_DIR3)
-	@echo "Running installation targets..."
-	@$(MAKE) install-supernode
-	@$(MAKE) install-nodes
-	@echo "Setup complete."
+# Single target to setup all supernode environments
+install-supernodes:
+	@echo "Setting up all supernode environments..."
+	@bash $(SETUP_SCRIPT) all $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
