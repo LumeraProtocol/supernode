@@ -37,7 +37,7 @@ jobs:
         uses: ./.github/actions/setup-env  
  
       - name: Run integration tests
-        run: go test -v -p 1 -count=1 -tags=integration ./...
+        run:  cd tests/integration && go test -v .
 
   system-tests:
     name: system-tests

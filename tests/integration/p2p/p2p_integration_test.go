@@ -27,6 +27,8 @@ import (
 func TestP2PBasicIntegration(t *testing.T) {
 	log.Println("Starting P2P test...")
 
+	os.Setenv("INTEGRATION_TEST", "true")
+	defer os.Unsetenv("INTEGRATION_TEST")
 	snkeyring.InitSDKConfig()
 	conn.RegisterALTSRecordProtocols()
 	defer conn.UnregisterALTSRecordProtocols()
