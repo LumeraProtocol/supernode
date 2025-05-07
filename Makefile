@@ -1,4 +1,4 @@
-.PHONY: test-unit test-integration test-system tests-system-setup setup-supernodes install-lumera
+.PHONY: test-unit test-integration test-system install-lumera setup-supernodes system-test-setup
 
 # Run unit tests (regular tests with code)
 test-unit:
@@ -33,10 +33,24 @@ CONFIG_FILE3=tests/system/config.test-3.yml
 # Setup script
 SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 
+# Install Lumera
 install-lumera:
-	cd tests/scripts && ./install-lumera.sh
+	@echo "Installing Lumera..."
+	@chmod +x tests/scripts/install-lumera.sh
+	@sudo tests/scripts/install-lumera.sh
 
-# Single target to setup all supernode environments
-install-supernodes:
+# Setup supernode environments
+setup-supernodes:
 	@echo "Setting up all supernode environments..."
+	@chmod +x $(SETUP_SCRIPT)
 	@bash $(SETUP_SCRIPT) all $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
+
+# Complete system test setup (Lumera + Supernodes)
+system-test-setup: install-lumera setup-supernodes
+	@echo "System test environment setup complete."
+	@if [ -f claims.csv ]; then cp claims.csv ~/; echo "Copied claims.csv to home directory."; fi
+
+# Run system tests with complete setup
+test-system-full: system-test-setup
+	@echo "Running system tests..."
+	@cd tests/system && go test -tags=system_test -v .
