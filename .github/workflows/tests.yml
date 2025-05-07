@@ -73,9 +73,6 @@ jobs:
             ../system/config.test-2.yml \
             ../system/supernode-data3 \
             ../system/config.test-3.yml
-      
-      - name: Copy CSV file to home directory
-        run: cp claims.csv ~/
  
       - name: Run system tests
-        run: cd tests/system && go test -tags=system_test -v .
+        run: cd tests/system && go test -v .

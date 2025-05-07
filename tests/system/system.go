@@ -733,20 +733,17 @@ func (n Node) RPCAddr() string {
 	return fmt.Sprintf("tcp://%s:%d", n.IP, n.RPCPort)
 }
 
-// locateExecutable looks up the binary in $HOME/go/bin.
 func locateExecutable(file string) string {
 	if strings.TrimSpace(file) == "" {
 		panic("executable binary name must not be empty")
 	}
-
-	// Get user's home directory
-	homeDir, err := os.UserHomeDir()
+	path, err := exec.LookPath(file)
 	if err != nil {
 		panic(fmt.Sprintf("unexpected error %s", err.Error()))
 	}
-
-	// Return path in $HOME/go/bin
-	path := filepath.Join(homeDir, "go", "bin", file)
+	if path == "" {
+		panic(fmt.Sprintf("%q not founc", file))
+	}
 	return path
 }
 
