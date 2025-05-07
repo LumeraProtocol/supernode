@@ -1,4 +1,4 @@
-.PHONY: test-unit test-integration test-system tests-system-setup
+.PHONY: test-unit test-integration test-system install-lumera setup-supernodes system-test-setup
 
 # Run unit tests (regular tests with code)
 test-unit:
@@ -30,24 +30,27 @@ CONFIG_FILE=tests/system/config.test-1.yml
 CONFIG_FILE2=tests/system/config.test-2.yml
 CONFIG_FILE3=tests/system/config.test-3.yml
 
+# Setup script
+SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 
-# Setup the supernode test environment
-install-supernode:
-	@echo "Setting up supernode test environment..."
-	@bash tests/scripts/install-sn.sh $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE)
-
-
+# Install Lumera
 install-lumera:
-	cd tests/scripts && ./install-lumera.sh
+	@echo "Installing Lumera..."
+	@chmod +x tests/scripts/install-lumera.sh
+	@sudo tests/scripts/install-lumera.sh
 
-install-nodes:
-	@echo "Setting up additional supernode environments..."
-	@bash tests/scripts/multinode.sh $(DATA_DIR) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
+# Setup supernode environments
+setup-supernodes:
+	@echo "Setting up all supernode environments..."
+	@chmod +x $(SETUP_SCRIPT)
+	@bash $(SETUP_SCRIPT) all $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
 
-setup-all:
-	@echo "Cleaning up existing data directories..."
-	@rm -rf $(DATA_DIR) $(DATA_DIR2) $(DATA_DIR3)
-	@echo "Running installation targets..."
-	@$(MAKE) install-supernode
-	@$(MAKE) install-nodes
-	@echo "Setup complete."
+# Complete system test setup (Lumera + Supernodes)
+system-test-setup: install-lumera setup-supernodes
+	@echo "System test environment setup complete."
+	@if [ -f claims.csv ]; then cp claims.csv ~/; echo "Copied claims.csv to home directory."; fi
+
+# Run system tests with complete setup
+test-system-full: system-test-setup
+	@echo "Running system tests..."
+	@cd tests/system && go test -tags=system_test -v .
