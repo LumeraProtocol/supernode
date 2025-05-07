@@ -71,6 +71,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Update the genesis file with action parameters
 	sut.ModifyGenesisJSON(t, SetActionParams(t))
+	sut.ModifyGenesisJSON(t, SetClaimParamss(t))
 
 	// Reset and start the blockchain
 	sut.ResetChain(t)
@@ -454,6 +455,17 @@ func SetActionParams(t *testing.T) GenesisMutator {
             "min_super_nodes": "1",
             "super_node_fee_share": "1.000000000000000000"
         }`))
+		require.NoError(t, err)
+		return state
+	}
+}
+
+func SetClaimParamss(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+		state, err := sjson.SetRawBytes(genesis, "app_state.claim.params", []byte(`{
+			"total_claimable_amount": "12383801540459"
+		}`))
 		require.NoError(t, err)
 		return state
 	}
