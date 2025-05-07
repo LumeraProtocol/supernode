@@ -51,6 +51,8 @@ func TestCascadeE2E(t *testing.T) {
 	const testMnemonic = "odor kiss switch swarm spell make planet bundle skate ozone path planet exclude butter atom ahead angle royal shuffle door prevent merry alter robust"
 	const expectedAddress = "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4"
 	const testKeyName = "testkey1"
+	const userKeyName = "user"
+	const userMnemonic = "little tone alley oval festival gloom sting asthma crime select swap auto when trip luxury pact risk sister pencil about crisp upon opera timber"
 	const fundAmount = "1000000ulume"
 
 	// Network and service configuration constants
@@ -168,27 +170,60 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Recovered key %s with address: %s", testKeyName, recoveredAddress)
 	require.Equal(t, expectedAddress, recoveredAddress, "Recovered address should match expected address")
 
+	// Add user key to the blockchain using the provided mnemonic
+	cmd = exec.Command(
+		binaryPath,
+		"keys", "add", userKeyName,
+		"--recover",
+		"--keyring-backend=test",
+		"--home", homePath,
+	)
+	cmd.Stdin = strings.NewReader(userMnemonic + "\n")
+	output, err = cmd.CombinedOutput()
+	require.NoError(t, err, "User key recovery failed: %s", string(output))
+	t.Logf("User key recovery output: %s", string(output))
+
+	// Get the user address
+	userAddress := cli.GetKeyAddr(userKeyName)
+	t.Logf("Recovered user key with address: %s", userAddress)
+
 	// Fund the account with tokens for transactions
-	t.Logf("Funding address %s with %s", recoveredAddress, fundAmount)
+	t.Logf("Funding test address %s with %s", recoveredAddress, fundAmount)
 	cli.FundAddress(recoveredAddress, fundAmount)      // ulume tokens for action fees
 	cli.FundAddress(recoveredAddress, "10000000stake") // stake tokens
-	sut.AwaitNextBlock(t)                              // Wait for funding transaction to be processed
+
+	// Fund user account
+	t.Logf("Funding user address %s with %s", userAddress, fundAmount)
+	cli.FundAddress(userAddress, fundAmount)      // ulume tokens for action fees
+	cli.FundAddress(userAddress, "10000000stake") // stake tokens
+
+	sut.AwaitNextBlock(t) // Wait for funding transaction to be processed
 
 	// Create an in-memory keyring for cryptographic operations
 	// This keyring is separate from the blockchain keyring and used for local signing
 	keplrKeyring, err := keyring.InitKeyring("memory", "")
 	require.NoError(t, err, "Failed to initialize in-memory keyring")
 
-	// Add the same key to the in-memory keyring
+	// Add the test key to the in-memory keyring
 	record, err := keyring.RecoverAccountFromMnemonic(keplrKeyring, testKeyName, testMnemonic)
-	require.NoError(t, err, "Failed to recover account from mnemonic in local keyring")
+	require.NoError(t, err, "Failed to recover test account from mnemonic in local keyring")
+
+	// Also add the user key to the in-memory keyring
+	userRecord, err := keyring.RecoverAccountFromMnemonic(keplrKeyring, userKeyName, userMnemonic)
+	require.NoError(t, err, "Failed to recover user account from mnemonic in local keyring")
 
 	// Verify the addresses match between chain and local keyring
 	localAddr, err := record.GetAddress()
 	require.NoError(t, err, "Failed to get address from record")
 	require.Equal(t, expectedAddress, localAddr.String(),
 		"Local keyring address should match expected address")
-	t.Logf("Successfully recovered key in local keyring with matching address: %s", localAddr.String())
+	t.Logf("Successfully recovered test key in local keyring with matching address: %s", localAddr.String())
+
+	userLocalAddr, err := userRecord.GetAddress()
+	require.NoError(t, err, "Failed to get user address from record")
+	require.Equal(t, userAddress, userLocalAddr.String(),
+		"User local keyring address should match user address")
+	t.Logf("Successfully recovered user key in local keyring with matching address: %s", userLocalAddr.String())
 
 	// Initialize Lumera blockchain client for interactions
 
@@ -242,9 +277,8 @@ func TestCascadeE2E(t *testing.T) {
 	regularbase64EncodedData := base64.StdEncoding.EncodeToString(me)
 	t.Logf("Base64 encoded RQ IDs file length: %d", len(regularbase64EncodedData))
 
-	// Step 2: Sign the base64-encoded string (NOT the raw JSON bytes)
-	// The verification process expects that the creator signed the base64 string
-	signedMetaData, err := keyring.SignBytes(keplrKeyring, testKeyName, []byte(regularbase64EncodedData))
+	// Step 2: Sign the base64-encoded string with user key instead of testkey1
+	signedMetaData, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(regularbase64EncodedData))
 	require.NoError(t, err, "Failed to sign metadata")
 
 	// Step 3: Encode the resulting signature as base64
@@ -285,15 +319,15 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Requesting cascade action with metadata: %s", metadata)
 	t.Logf("Action type: %s, Price: %s, Expiration: %s", actionType, price, expirationTime)
 
-	// Submit the action request transaction to the blockchain
+	// Submit the action request transaction to the blockchain using user key
 	// This registers the request with metadata for supernodes to process
 	actionRequestResp := cli.CustomCommand(
 		"tx", "action", "request-action",
-		actionType,     // CASCADE action type
-		metadata,       // JSON metadata with all required fields
-		price,          // Price in ulume tokens
-		expirationTime, // Unix timestamp for expiration
-		"--from", testKeyName,
+		actionType,            // CASCADE action type
+		metadata,              // JSON metadata with all required fields
+		price,                 // Price in ulume tokens
+		expirationTime,        // Unix timestamp for expiration
+		"--from", userKeyName, // Use user key for transaction submission
 		"--gas", "auto",
 		"--gas-adjustment", "1.5",
 	)
@@ -306,8 +340,8 @@ func TestCascadeE2E(t *testing.T) {
 	sut.AwaitNextBlock(t)
 
 	// Verify the account can be queried with its public key
-	accountResp := cli.CustomQuery("q", "auth", "account", recoveredAddress)
-	require.Contains(t, accountResp, "public_key", "Account public key should be available")
+	accountResp := cli.CustomQuery("q", "auth", "account", userAddress)
+	require.Contains(t, accountResp, "public_key", "User account public key should be available")
 
 	// Extract transaction hash from response for verification
 	txHash := gjson.Get(actionRequestResp, "txhash").String()
@@ -420,8 +454,84 @@ func TestCascadeE2E(t *testing.T) {
 	txReponse := cli.CustomQuery("q", "tx", recievedhash)
 
 	t.Logf("Transaction response: %s", txReponse)
-	//
 
+	// ---------------------------------------
+	// Step 10: Validate Transaction Events
+	// ---------------------------------------
+	t.Log("Step 9: Validating transaction events and payments")
+
+	// Check for action_finalized event
+	events = gjson.Get(txReponse, "events").Array()
+	var actionFinalized bool
+	var feeSpent bool
+	var feeReceived bool
+	var fromAddress string
+	var toAddress string
+	var amount string
+
+	for _, event := range events {
+		// Check for action finalized event
+		if event.Get("type").String() == "action_finalized" {
+			actionFinalized = true
+			attrs := event.Get("attributes").Array()
+			for _, attr := range attrs {
+				if attr.Get("key").String() == "action_type" {
+					require.Equal(t, "ACTION_TYPE_CASCADE", attr.Get("value").String(), "Action type should be CASCADE")
+				}
+				if attr.Get("key").String() == "action_id" {
+					require.Equal(t, actionID, attr.Get("value").String(), "Action ID should match")
+				}
+			}
+		}
+
+		// Check for fee spent event
+		if event.Get("type").String() == "coin_spent" {
+			attrs := event.Get("attributes").Array()
+			for i, attr := range attrs {
+				if attr.Get("key").String() == "amount" && attr.Get("value").String() == price {
+					feeSpent = true
+					// Get the spender address from the same event group
+					for j, addrAttr := range attrs {
+						if j < i && addrAttr.Get("key").String() == "spender" {
+							fromAddress = addrAttr.Get("value").String()
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Check for fee received event
+		if event.Get("type").String() == "coin_received" {
+			attrs := event.Get("attributes").Array()
+			for i, attr := range attrs {
+				if attr.Get("key").String() == "amount" && attr.Get("value").String() == price {
+					feeReceived = true
+					// Get the receiver address from the same event group
+					for j, addrAttr := range attrs {
+						if j < i && addrAttr.Get("key").String() == "receiver" {
+							toAddress = addrAttr.Get("value").String()
+							break
+						}
+					}
+					amount = attr.Get("value").String()
+				}
+			}
+		}
+	}
+
+	// Validate events
+	require.True(t, actionFinalized, "Action finalized event should be emitted")
+	require.True(t, feeSpent, "Fee spent event should be emitted")
+	require.True(t, feeReceived, "Fee received event should be emitted")
+
+	// Validate payment flow
+	t.Logf("Payment flow: %s paid %s to %s", fromAddress, amount, toAddress)
+	require.NotEmpty(t, fromAddress, "Spender address should not be empty")
+	require.NotEmpty(t, toAddress, "Receiver address should not be empty")
+	require.Equal(t, price, amount, "Payment amount should match action price")
+
+	t.Log("Test completed successfully!")
 }
 func Blake3Hash(msg []byte) ([]byte, error) {
 	hasher := blake3.New(32, nil)
