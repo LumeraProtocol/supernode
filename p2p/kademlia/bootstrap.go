@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	bootstrapRetryInterval = 10
-	badAddrExpiryHours     = 12
+	bootstrapRetryInterval  = 10
+	badAddrExpiryHours      = 12
+	defaultSuperNodeP2PPort = 4444
 )
 
 func (s *DHT) skipBadBootstrapAddrs() {
@@ -46,24 +47,46 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 		return nil, errors.New("configure: skip bad p2p boostrap addr")
 	}
 
-	addr := strings.Split(extP2P, ":")
-	if len(addr) != 2 {
-		return nil, errors.New("wrong number of field")
+	// Extract IP and port from the address
+	var ip string
+	var port uint16
+
+	if idx := strings.LastIndex(extP2P, ":"); idx != -1 {
+		ip = extP2P[:idx]
+		portStr := extP2P[idx+1:]
+
+		// If we have a port in the address, parse it
+		if portStr != "" {
+			portNum, err := strconv.ParseUint(portStr, 10, 16)
+			if err != nil {
+				return nil, errors.New("invalid port number")
+			}
+
+			// For system testing, use port+1 if SYSTEM_TEST=true
+			if os.Getenv("SYSTEM_TEST") == "true" {
+				port = uint16(portNum) + 1
+				log.P2P().WithField("original_port", portNum).
+					WithField("adjusted_port", port).
+					Info("Using port+1 for system testing")
+			} else {
+				// For normal P2P operation, always use the default port
+				port = defaultNetworkPort
+			}
+		}
+	} else {
+		// No port in the address
+		ip = extP2P
+		port = defaultNetworkPort
 	}
-	ip := addr[0]
 
 	if ip == "" {
 		return nil, errors.New("empty ip")
 	}
 
-	port, err := strconv.ParseUint(addr[1], 10, 16)
-	if err != nil {
-		return nil, errors.New("invalid port number")
-	}
-
+	// Create the node with the correct IP and port
 	return &Node{
 		IP:   ip,
-		Port: uint16(port),
+		Port: port,
 	}, nil
 }
 
@@ -154,9 +177,6 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 		// Convert the map to a slice
 		for _, node := range mapNodes {
-			if os.Getenv("INTEGRATION_TEST") != "true" {
-				node.Port = node.Port + 1
-			}
 			hID, _ := utils.Blake3Hash(node.ID)
 			node.HashedID = hID
 			fmt.Println("node adding", node.String(), "hashed id", string(node.HashedID))
