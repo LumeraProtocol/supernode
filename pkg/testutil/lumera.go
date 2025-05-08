@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/LumeraProtocol/lumera/x/action/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/types"
@@ -135,29 +134,7 @@ type MockSupernodeModule struct {
 }
 
 func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*supernodeTypes.QueryGetTopSuperNodesForBlockResponse, error) {
-	// Create supernodes with the actual node addresses supplied in the test
-	supernodes := make([]*supernodeTypes.SuperNode, 0, len(m.addresses))
-
-	for i, addr := range m.addresses {
-		if i >= 2 { // Only use first couple for bootstrap
-			break
-		}
-
-		supernode := &supernodeTypes.SuperNode{
-			SupernodeAccount: addr, // Use the real account address for testing
-			PrevIpAddresses: []*supernodeTypes.IPAddressHistory{
-				{
-					Address: "127.0.0.1:900" + strconv.Itoa(i),
-					Height:  10,
-				},
-			},
-		}
-		supernodes = append(supernodes, supernode)
-	}
-
-	return &supernodeTypes.QueryGetTopSuperNodesForBlockResponse{
-		Supernodes: supernodes,
-	}, nil
+	return &supernodeTypes.QueryGetTopSuperNodesForBlockResponse{}, nil
 }
 
 func (m *MockSupernodeModule) GetSuperNode(ctx context.Context, address string) (*supernodeTypes.QueryGetSuperNodeResponse, error) {
@@ -202,11 +179,7 @@ func (m *MockNodeModule) Verify(accAddress string, data []byte, signature []byte
 
 func (m *MockNodeModule) GetLatestBlock(ctx context.Context) (*cmtservice.GetLatestBlockResponse, error) {
 	return &cmtservice.GetLatestBlockResponse{
-		SdkBlock: &cmtservice.Block{
-			Header: cmtservice.Header{
-				Height: 100,
-			},
-		},
+		SdkBlock: &cmtservice.Block{},
 	}, nil
 }
 
