@@ -18,7 +18,7 @@ Create a `config.yml` file in the same directory as your binary:
 # Supernode Configuration
 supernode:
   key_name: "mykey"  # The name you'll use when creating your key
-  identity: ""  # Leave empty, will fill after creating key
+  identity: ""  # Add the adrress here after adding key
   ip_address: "0.0.0.0"
   port: 4444
 
@@ -26,7 +26,7 @@ supernode:
 keyring:
   backend: "test"  # Options: test, file, os
   dir: "keys"
-  password: "keyring-password"  # Only for "file" backend
+  
 
 # P2P Network Configuration
 p2p:
