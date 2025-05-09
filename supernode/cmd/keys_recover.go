@@ -71,8 +71,8 @@ Example:
 
 		// Check expected word count (BIP39 mnemonics are typically 12 or 24 words)
 		wordCount := len(strings.Fields(mnemonic))
-		if wordCount != 12 && wordCount != 15 && wordCount != 18 && wordCount != 21 && wordCount != 24 {
-			return fmt.Errorf("mnemonic should have 12, 15, 18, 21, or 24 words, found %d words", wordCount)
+		if wordCount != 24 {
+			return fmt.Errorf("mnemonic should have 24 words exactly, found %d words", wordCount)
 		}
 
 		// Recover account from mnemonic

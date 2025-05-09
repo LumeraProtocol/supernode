@@ -1,14 +1,14 @@
 # Supernode Configuration
 supernode:
-  key_name: "mukey"  # Account name for the supernode in keyring
-  identity: "lumera1uarju67x0hzetfzhgktay3h25pgxdy7yxap2xk"  # Identity of the supernode, lumera address
+  key_name: "mykey"  # Account name for the supernode in keyring
+  identity: "lumera1ccmw5plzuldntum2rz6kq6uq346vtrhrvwfzsa"  # Identity of the supernode, lumera address
   ip_address: "0.0.0.0"
   port: 4444
   
 
 # Keyring Configuration
 keyring:
-  backend: "test"  # Options: test, file, os
+  backend: "os"  # Options: test, file, os
   dir: "keys"  # Keyring directory in home folder
   password: "keyring-password"  # Only used for 'file' backend
 
@@ -28,5 +28,4 @@ lumera:
 
 # RaptorQ Configuration
 raptorq:
-  service_address: "localhost:50051"
   files_dir: "raptorq_files"

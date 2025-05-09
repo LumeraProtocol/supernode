@@ -15,6 +15,79 @@ var (
 	appConfig *config.Config
 )
 
+// fileExists checks if a file exists at the given path
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// findConfigFile searches for config files in multiple locations
+func findConfigFile() string {
+	// If config file is explicitly specified, use it
+	if cfgFile != "" {
+		return cfgFile
+	}
+
+	// Try current working directory first (for go run)
+	workingDir, err := os.Getwd()
+	if err == nil {
+		yamlPath := filepath.Join(workingDir, "config.yaml")
+		ymlPath := filepath.Join(workingDir, "config.yml")
+
+		if fileExists(yamlPath) {
+			return yamlPath
+		}
+		if fileExists(ymlPath) {
+			return ymlPath
+		}
+	}
+
+	// Then try executable directory (for binary)
+	execPath, err := os.Executable()
+	if err == nil {
+		execDir := filepath.Dir(execPath)
+		yamlPath := filepath.Join(execDir, "config.yaml")
+		ymlPath := filepath.Join(execDir, "config.yml")
+
+		if fileExists(yamlPath) {
+			return yamlPath
+		}
+		if fileExists(ymlPath) {
+			return ymlPath
+		}
+	}
+
+	return ""
+}
+
+// setupBaseDir configures the base directory if not specified
+func setupBaseDir() (string, error) {
+	if baseDir != "" {
+		return baseDir, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	return filepath.Join(homeDir, ".supernode"), nil
+}
+
+// logConfig logs information about config and base directory
+func logConfig(configPath, baseDirPath string) {
+	// For config file
+	absPath, err := filepath.Abs(configPath)
+	if err == nil {
+		fmt.Printf("Using config file: %s\n", absPath)
+	} else {
+		fmt.Printf("Using config file: %s\n", configPath)
+	}
+
+	// For base directory
+	fmt.Printf("Using base directory: %s\n", baseDirPath)
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "supernode",
 	Short: "Lumera CLI tool for key management",
@@ -26,42 +99,21 @@ This application allows you to create and recover keys using mnemonics.`,
 			return nil
 		}
 
-		// Set default base directory to home if not specified
-		if baseDir == "" {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("failed to get home directory: %w", err)
-			}
-			baseDir = filepath.Join(homeDir, ".supernode")
+		// Setup base directory
+		setupDir, err := setupBaseDir()
+		if err != nil {
+			return err
 		}
+		baseDir = setupDir
 
-		// If config file path not specified, use the one next to the binary
+		// Find config file
+		cfgFile = findConfigFile()
 		if cfgFile == "" {
-			// Get the directory where the binary is located
-			execPath, err := os.Executable()
-			if err == nil {
-				execDir := filepath.Dir(execPath)
-				cfgFile = filepath.Join(execDir, "config.yaml")
-
-				// If not found, try config.yml
-				if _, err := os.Stat(cfgFile); err != nil {
-					ymlConfig := filepath.Join(execDir, "config.yml")
-					if _, err := os.Stat(ymlConfig); err == nil {
-						cfgFile = ymlConfig
-					}
-				}
-			}
+			return fmt.Errorf("no config file found in working directory or executable directory")
 		}
 
-		// Get absolute path for clarity in logs
-		absPath, err := filepath.Abs(cfgFile)
-		if err == nil {
-			fmt.Printf("Using config file: %s\n", absPath)
-		} else {
-			fmt.Printf("Using config file: %s\n", cfgFile)
-		}
-
-		fmt.Printf("Using base directory: %s\n", baseDir)
+		// Log configuration
+		logConfig(cfgFile, baseDir)
 
 		// Load configuration
 		appConfig, err = config.LoadConfig(cfgFile, baseDir)
@@ -83,6 +135,6 @@ func Execute() {
 
 func init() {
 	// Allow user to override config file location with --config flag
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "Config file path (default ./config.yaml )")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "Config file path (default is ./config.yaml or ./config.yml)")
 	rootCmd.PersistentFlags().StringVarP(&baseDir, "basedir", "d", "", "Base directory for all data (default is ~/.supernode)")
 }

@@ -38,8 +38,7 @@ type LumeraClientConfig struct {
 }
 
 type RaptorQConfig struct {
-	ServiceAddress string `yaml:"service_address"`
-	FilesDir       string `yaml:"files_dir"`
+	FilesDir string `yaml:"files_dir"`
 }
 
 type Config struct {

@@ -19,7 +19,7 @@ import (
 const (
 	bootstrapRetryInterval  = 10
 	badAddrExpiryHours      = 12
-	defaultSuperNodeP2PPort = 4444
+	defaultSuperNodeP2PPort = 4445
 )
 
 func (s *DHT) skipBadBootstrapAddrs() {

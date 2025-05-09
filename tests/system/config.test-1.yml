@@ -27,5 +27,4 @@ lumera:
 
 # RaptorQ Configuration
 raptorq:
-  service_address: "localhost:50051"
   files_dir: "raptorq_files"  # Relative to base_dir

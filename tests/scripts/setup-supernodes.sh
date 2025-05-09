@@ -45,13 +45,19 @@ setup_primary() {
     mkdir -p "$DATA_DIR"
 
     # Check if binary already exists
-    if [ ! -f "$DATA_DIR/supernode" ]; then
-        info "Building supernode binary from $SUPERNODE_SRC..."
-        go build -o "$DATA_DIR/supernode" "$SUPERNODE_SRC" || error "Failed to build supernode binary"
-        success "Supernode binary built successfully"
-    else
-        info "Supernode binary already exists, skipping build..."
-    fi
+   if [ ! -f "$DATA_DIR/supernode" ]; then
+    info "Building supernode binary from $SUPERNODE_SRC..."
+    CGO_ENABLED=1 \
+    GOOS=linux \
+    GOARCH=amd64 \
+    go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o "$DATA_DIR/supernode" "$SUPERNODE_SRC" || error "Failed to build supernode binary"
+    success "Supernode binary built successfully"
+else
+    info "Supernode binary already exists, skipping build..."
+fi
 
     # Check if config already exists
     if [ ! -f "$DATA_DIR/config.yaml" ]; then

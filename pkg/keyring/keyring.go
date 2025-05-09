@@ -26,7 +26,9 @@ const (
 	Name                 = "lumera"
 
 	// Default keyring name
-	KeyringServiceName = "lumera-keyring"
+	KeyringServiceName = "supernode-keyring"
+
+	defaultEntropySize = 256 // Default entropy size for mnemonic generation
 )
 
 // InitSDKConfig initializes the SDK configuration with Lumera-specific settings
@@ -73,7 +75,7 @@ func InitKeyring(backend, dir string) (keyring.Keyring, error) {
 		KeyringServiceName,
 		backendType,
 		dir,
-		nil, //TODO : Fix this, Using nil for stdin to avoid interactive prompts when using test backend
+		nil, //Using nil for stdin to avoid interactive prompts when using test backend
 		cdc,
 	)
 	if err != nil {
@@ -84,8 +86,8 @@ func InitKeyring(backend, dir string) (keyring.Keyring, error) {
 }
 
 // GenerateMnemonic generates a new BIP39 mnemonic
-func GenerateMnemonic(entropySize int) (string, error) {
-	entropy, err := bip39.NewEntropy(entropySize)
+func GenerateMnemonic() (string, error) {
+	entropy, err := bip39.NewEntropy(defaultEntropySize)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate entropy: %w", err)
 	}
@@ -101,7 +103,7 @@ func GenerateMnemonic(entropySize int) (string, error) {
 // CreateNewAccount creates a new account in the keyring
 func CreateNewAccount(kr keyring.Keyring, name string, entropySize int) (string, *keyring.Record, error) {
 	// Generate a new mnemonic
-	mnemonic, err := GenerateMnemonic(entropySize)
+	mnemonic, err := GenerateMnemonic()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate mnemonic: %w", err)
 	}
