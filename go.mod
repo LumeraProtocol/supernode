@@ -12,6 +12,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.13
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/gogoproto v1.7.0
+	github.com/dgraph-io/ristretto/v2 v2.2.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-errors/errors v1.5.1
 	github.com/golang/mock v1.6.0
