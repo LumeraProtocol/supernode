@@ -601,30 +601,4 @@ If you encounter issues with key management:
 supernode keys list
 ```
 
-#### Task Failures
-
-If tasks fail unexpectedly:
-
-1. Subscribe to all events to get detailed progress information
-2. Check that the action ID is valid and the action is in the correct state
-3. Ensure that there are enough supernodes available for processing
-
-```go
-// Subscribe to all events for detailed progress information
-client.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
-    fmt.Printf("Event: %s, Task: %s, Data: %v\n", e.Type, e.TaskID, e.Data)
-})
-```
-
-### Logging
-
-To enable more detailed logging for troubleshooting:
-
-```go
-// Create a logger with debug level
-logger := yourLoggerImplementation.WithLevel(Debug)
-
-// Pass the logger to the client
-client, err := action.NewClient(ctx, *cfg, logger, kr)
-```
 
