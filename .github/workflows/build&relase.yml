@@ -58,6 +58,11 @@ jobs:
           echo "- build_id: $build_id"
           echo "- binary_name: supernode-linux-amd64"
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebp-dev
+
       - name: Build binary
         run: |
           mkdir -p release
@@ -139,6 +144,11 @@ jobs:
         run: |
           repo_name=${GITHUB_REPOSITORY##*/}
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebp-dev
 
       - name: Build Release Version
         run: |
