@@ -1,0 +1,128 @@
+name: Build and Release Workflow
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write  # Needed for creating releases
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git Safe Directory
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Get Go version from go.mod
+        id: go-version
+        run: |
+          GO_VERSION=$(grep -E '^go [0-9]+\.[0-9]+(\.[0-9]+)?$' go.mod | cut -d ' ' -f 2)
+          echo "Found go directive version: $GO_VERSION"
+          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: true
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=1 \
+          GOOS=linux \
+          GOARCH=amd64 \
+          go build \
+          -trimpath \
+          -ldflags="-s -w" \
+          -o supernode-linux-amd64 \
+          github.com/LumeraProtocol/supernode/supernode/main.go
+
+      - name: Create release directory
+        run: |
+          mkdir -p release
+          cp supernode-linux-amd64 release/
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: supernode-binary
+          path: release/supernode-linux-amd64
+
+  release:
+    needs: build
+    # if: startsWith(github.ref, 'refs/tags/v') && (github.ref_type == 'tag') && (contains(github.ref, '.') && (contains(github.ref, 'v')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag information
+        id: tag_info
+        run: |
+          # Get the tag name
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          # Get the tag message
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' $TAG_NAME)
+          # If tag message is empty, use the tag name as message
+          if [ -z "$TAG_MESSAGE" ]; then
+            TAG_MESSAGE="Release $TAG_NAME"
+          fi
+          # Handle multiline tag messages
+          TAG_MESSAGE="${TAG_MESSAGE//'%'/'%25'}"
+          TAG_MESSAGE="${TAG_MESSAGE//$'\n'/'%0A'}"
+          TAG_MESSAGE="${TAG_MESSAGE//$'\r'/'%0D'}"
+          echo "tag_message=$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          
+          # Get the annotated tag commit
+          TAG_COMMIT=$(git rev-list -n 1 $TAG_NAME)
+          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: supernode-binary
+          path: release
+
+      - name: Make binary executable
+        run: chmod +x release/supernode-linux-amd64
+
+      - name: Publish the Release
+        uses: softprops/action-gh-release@v0.1.15
+        with:
+          tag_name: ${{ steps.tag_info.outputs.tag_name }}
+          files: release/*
+          generate_release_notes: true
+          body: |
+            ${{ steps.tag_info.outputs.tag_message }}
+            
+            Tag: ${{ steps.tag_info.outputs.tag_name }}
+            Commit: ${{ steps.tag_info.outputs.tag_commit }}
+            
+            Installation:
+            1. Download the binary
+            2. Make it executable: `chmod +x supernode-linux-amd64`
+            3. Run the binary: `./supernode-linux-amd64`
+          token: ${{ secrets.GITHUB_TOKEN }}
