@@ -18,7 +18,7 @@ Create a `config.yml` file in the same directory as your binary:
 # Supernode Configuration
 supernode:
   key_name: "mykey"  # The name you'll use when creating your key
-  identity: ""  # Add the adrress here after adding key
+  identity: "" The address you get back after getting the key
   ip_address: "0.0.0.0"
   port: 4444
 
@@ -49,7 +49,7 @@ raptorq:
 
 ### 3. Create or Recover a Key
 
-Create a new key (use the same name specified in your config):
+Create a new key (use the same name you will add in your config):
 ```bash
 supernode keys add mykey
 ```
