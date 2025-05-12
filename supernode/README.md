@@ -1,6 +1,6 @@
 # Lumera Supernode
 
-Lumera Supenrode is a companion application to lumera validators who want to provide cascase, sense and other serives and earn rewards.
+Lumera Supernode is a companion application for Lumera validators who want to provide cascade, sense, and other services to earn rewards.
 
 ## Quick Start
 
@@ -44,7 +44,6 @@ lumera:
 
 # RaptorQ Configuration
 raptorq:
-  service_address: "localhost:50051"
   files_dir: "raptorq_files"
 ```
 
@@ -89,8 +88,8 @@ supernode keys list
 - **key_name**: Must match the name you used when creating your key
 - **identity**: Must match the address generated for your key
 - **backend**: Use "test" for development, "file" or "os" for production
-- **p2p.port**: Default is 4445 - don't change 
-- ⚠️ **IMPORTANT:** Make sure sure have balance in the account to broadcast transactions to the lumera chain:
+- **p2p.port**: Default is 4445 - don't change this value
+- ⚠️ **IMPORTANT:** Make sure you have sufficient balance in the account to broadcast transactions to the Lumera chain
 
 ## Data Storage
 
