@@ -16,8 +16,8 @@ import (
 const MAX_EVENT_WORKERS = 100
 
 // Manager handles task creation and management
-//
-//go:generate mockery --name=Manager --output=testutil/mocks --outpkg=mocks --filename=manager_mock.go
+
+//go:generate mockgen -source=manager.go -destination=mocks/manager_mock.go -package=mocks
 type Manager interface {
 	CreateCascadeTask(ctx context.Context, data []byte, actionID string) (string, error)
 	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)

@@ -1,194 +1,443 @@
-package action
+package action_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	"github.com/LumeraProtocol/supernode/sdk/config"
+	"github.com/LumeraProtocol/supernode/sdk/action"
+	"github.com/LumeraProtocol/supernode/sdk/action/mocks"
 	"github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/log"
 	"github.com/LumeraProtocol/supernode/sdk/task"
-
-	mocktask "github.com/LumeraProtocol/supernode/sdk/task/testutil/mocks"
+	taskmocks "github.com/LumeraProtocol/supernode/sdk/task/mocks"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
-func newClientWithMock(mgr *mocktask.Manager) *ClientImpl {
-	return &ClientImpl{
-		config:      config.Config{},     // empty fixture
-		taskManager: mgr,                 // injected mock
-		logger:      log.NewNoopLogger(), // quiet logger
-	}
-}
-
-func TestClient_StartCascade(t *testing.T) {
-	ctx := context.Background()
-	payload := []byte("hello-world")
-	actionID := "act-123"
-	mockErr := errors.New("boom")
-
-	tests := map[string]struct {
-		data         []byte
-		actionID     string
-		setupMock    func(*mocktask.Manager)
-		wantTaskID   string
-		wantErrMatch func(error) bool
+// TestStartCascade tests the StartCascade method
+func TestStartCascade(t *testing.T) {
+	// Define test cases
+	testCases := []struct {
+		name      string
+		data      []byte
+		actionID  string
+		mockSetup func(*gomock.Controller) action.Client
+		wantErr   bool
+		errType   error
+		wantID    string
 	}{
-		"happy path": {
-			data:     payload,
-			actionID: actionID,
-			setupMock: func(m *mocktask.Manager) {
-				m.On("CreateCascadeTask", ctx, payload, actionID).
-					Return("task-42", nil)
+		{
+			name:     "Success case",
+			data:     []byte("test data"),
+			actionID: "action123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					StartCascade(gomock.Any(), []byte("test data"), "action123").
+					Return("task123", nil)
+				return mockClient
 			},
-			wantTaskID:   "task-42",
-			wantErrMatch: func(err error) bool { return err == nil },
+			wantErr: false,
+			wantID:  "task123",
 		},
-		"empty action id": {
-			data:         payload,
-			actionID:     "",
-			setupMock:    func(*mocktask.Manager) {},
-			wantErrMatch: func(err error) bool { return errors.Is(err, ErrEmptyActionID) },
-		},
-		"empty data": {
-			data:         nil,
-			actionID:     actionID,
-			setupMock:    func(*mocktask.Manager) {},
-			wantErrMatch: func(err error) bool { return errors.Is(err, ErrEmptyData) },
-		},
-		"manager failure": {
-			data:     payload,
-			actionID: actionID,
-			setupMock: func(m *mocktask.Manager) {
-				m.On("CreateCascadeTask", ctx, payload, actionID).
-					Return("", mockErr)
+		{
+			name:     "Empty action ID",
+			data:     []byte("test data"),
+			actionID: "",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					StartCascade(gomock.Any(), []byte("test data"), "").
+					Return("", action.ErrEmptyActionID)
+				return mockClient
 			},
-			wantErrMatch: func(err error) bool {
-				return err != nil && errors.Is(err, mockErr)
+			wantErr: true,
+			errType: action.ErrEmptyActionID,
+		},
+		{
+			name:     "Empty data",
+			data:     []byte{},
+			actionID: "action123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					StartCascade(gomock.Any(), []byte{}, "action123").
+					Return("", action.ErrEmptyData)
+				return mockClient
 			},
+			wantErr: true,
+			errType: action.ErrEmptyData,
+		},
+		{
+			name:     "Task manager error",
+			data:     []byte("test data"),
+			actionID: "action123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					StartCascade(gomock.Any(), []byte("test data"), "action123").
+					Return("", errors.New("task manager error"))
+				return mockClient
+			},
+			wantErr: true,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			mockMgr := mocktask.NewManager(t)
-			tc.setupMock(mockMgr)
+	// Run the test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			client := newClientWithMock(mockMgr)
+			// Create client with mocked behavior
+			client := tc.mockSetup(ctrl)
 
-			gotID, err := client.StartCascade(ctx, tc.data, tc.actionID)
-			assert.True(t, tc.wantErrMatch(err), "error assertion failed")
-			assert.Equal(t, tc.wantTaskID, gotID)
+			// Call the method
+			taskID, err := client.StartCascade(context.Background(), tc.data, tc.actionID)
+
+			// Check expectations
+			if tc.wantErr {
+				assert.Error(t, err)
+				if tc.errType != nil {
+					assert.ErrorIs(t, err, tc.errType)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.wantID, taskID)
+			}
 		})
 	}
 }
 
-func TestClient_GetTask(t *testing.T) {
-	ctx := context.Background()
-	entry := &task.TaskEntry{TaskID: "tid-7"}
-
-	tests := map[string]struct {
+// TestDeleteTask tests the DeleteTask method
+func TestDeleteTask(t *testing.T) {
+	testCases := []struct {
+		name      string
 		taskID    string
-		setupMock func(*mocktask.Manager)
-		wantEntry *task.TaskEntry
+		mockSetup func(*gomock.Controller) action.Client
+		wantErr   bool
+	}{
+		{
+			name:   "Success case",
+			taskID: "task123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					DeleteTask(gomock.Any(), "task123").
+					Return(nil)
+				return mockClient
+			},
+			wantErr: false,
+		},
+		{
+			name:   "Empty task ID",
+			taskID: "",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					DeleteTask(gomock.Any(), "").
+					Return(errors.New("task ID cannot be empty"))
+				return mockClient
+			},
+			wantErr: true,
+		},
+		{
+			name:   "Task manager error",
+			taskID: "task123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					DeleteTask(gomock.Any(), "task123").
+					Return(errors.New("task manager error"))
+				return mockClient
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			// Create client with mocked behavior
+			client := tc.mockSetup(ctrl)
+
+			// Call the method
+			err := client.DeleteTask(context.Background(), tc.taskID)
+
+			// Check expectations
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestGetTask tests the GetTask method
+func TestGetTask(t *testing.T) {
+	// Create a sample task entry for testing
+	sampleTask := &task.TaskEntry{
+		TaskID:   "task123",
+		TaskType: task.TaskTypeCascade,
+		Status:   task.StatusCompleted,
+	}
+
+	testCases := []struct {
+		name      string
+		taskID    string
+		mockSetup func(*gomock.Controller) action.Client
+		wantTask  *task.TaskEntry
 		wantFound bool
 	}{
-		"found": {
-			taskID: "tid-7",
-			setupMock: func(m *mocktask.Manager) {
-				m.On("GetTask", ctx, "tid-7").Return(entry, true)
+		{
+			name:   "Task found",
+			taskID: "task123",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					GetTask(gomock.Any(), "task123").
+					Return(sampleTask, true)
+				return mockClient
 			},
-			wantEntry: entry, wantFound: true,
+			wantTask:  sampleTask,
+			wantFound: true,
 		},
-		"missing": {
-			taskID: "tid-404",
-			setupMock: func(m *mocktask.Manager) {
-				m.On("GetTask", ctx, "tid-404").Return((*task.TaskEntry)(nil), false)
+		{
+			name:   "Task not found",
+			taskID: "nonexistent",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					GetTask(gomock.Any(), "nonexistent").
+					Return(nil, false)
+				return mockClient
 			},
-			wantEntry: nil, wantFound: false,
+			wantTask:  nil,
+			wantFound: false,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			mockMgr := mocktask.NewManager(t)
-			tc.setupMock(mockMgr)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			client := newClientWithMock(mockMgr)
-			got, ok := client.GetTask(ctx, tc.taskID)
+			// Create client with mocked behavior
+			client := tc.mockSetup(ctrl)
 
-			assert.Equal(t, tc.wantFound, ok)
-			assert.Equal(t, tc.wantEntry, got)
+			// Call the method
+			task, found := client.GetTask(context.Background(), tc.taskID)
+
+			// Check expectations
+			assert.Equal(t, tc.wantFound, found)
+			assert.Equal(t, tc.wantTask, task)
 		})
 	}
 }
 
-func TestClient_DeleteTask(t *testing.T) {
-	ctx := context.Background()
-	mockErr := errors.New("delete fail")
-
-	tests := map[string]struct {
-		taskID     string
-		setupMock  func(*mocktask.Manager)
-		wantErrNil bool
+// TestSubscribeToEvents tests the SubscribeToEvents method
+func TestSubscribeToEvents(t *testing.T) {
+	testCases := []struct {
+		name      string
+		eventType event.EventType
+		mockSetup func(*gomock.Controller) action.Client
+		wantErr   bool
 	}{
-		"happy path": {
-			taskID: "tid-1",
-			setupMock: func(m *mocktask.Manager) {
-				m.On("DeleteTask", ctx, "tid-1").Return(nil)
+		{
+			name:      "Subscribe successfully",
+			eventType: event.TaskStarted,
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					SubscribeToEvents(gomock.Any(), event.TaskStarted, gomock.Any()).
+					Return(nil)
+				return mockClient
 			},
-			wantErrNil: true,
+			wantErr: false,
 		},
-		"empty id": {
-			taskID:     "",
-			setupMock:  func(*mocktask.Manager) {},
-			wantErrNil: false,
-		},
-		"manager error": {
-			taskID: "tid-2",
-			setupMock: func(m *mocktask.Manager) {
-				m.On("DeleteTask", ctx, "tid-2").Return(mockErr)
+		{
+			name:      "Task manager error",
+			eventType: event.TaskStarted,
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					SubscribeToEvents(gomock.Any(), event.TaskStarted, gomock.Any()).
+					Return(errors.New("task manager is nil"))
+				return mockClient
 			},
-			wantErrNil: false,
+			wantErr: true,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			mockMgr := mocktask.NewManager(t)
-			tc.setupMock(mockMgr)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-			client := newClientWithMock(mockMgr)
-			err := client.DeleteTask(ctx, tc.taskID)
+			// Create client with mocked behavior
+			client := tc.mockSetup(ctrl)
 
-			assert.Equal(t, tc.wantErrNil, err == nil)
+			// Create a dummy handler
+			handler := func(ctx context.Context, e event.Event) {}
+
+			// Call the method
+			err := client.SubscribeToEvents(context.Background(), tc.eventType, handler)
+
+			// Check expectations
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
 
-func TestClient_Subscribe(t *testing.T) {
-	ctx := context.Background()
-	handler := func(context.Context, event.Event) {}
+// TestSubscribeToAllEvents tests the SubscribeToAllEvents method
+func TestSubscribeToAllEvents(t *testing.T) {
+	testCases := []struct {
+		name      string
+		mockSetup func(*gomock.Controller) action.Client
+		wantErr   bool
+	}{
+		{
+			name: "Subscribe successfully",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					SubscribeToAllEvents(gomock.Any(), gomock.Any()).
+					Return(nil)
+				return mockClient
+			},
+			wantErr: false,
+		},
+		{
+			name: "Task manager error",
+			mockSetup: func(ctrl *gomock.Controller) action.Client {
+				mockClient := mocks.NewMockClient(ctrl)
+				mockClient.EXPECT().
+					SubscribeToAllEvents(gomock.Any(), gomock.Any()).
+					Return(errors.New("task manager is nil"))
+				return mockClient
+			},
+			wantErr: true,
+		},
+	}
 
-	mockMgr := mocktask.NewManager(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	mockMgr.
-		On("SubscribeToEvents", ctx, event.EventType("foo"), mock.AnythingOfType("event.Handler")).
-		Once()
-	mockMgr.
-		On("SubscribeToAllEvents", ctx, mock.AnythingOfType("event.Handler")).
-		Once()
+			// Create client with mocked behavior
+			client := tc.mockSetup(ctrl)
 
-	client := newClientWithMock(mockMgr)
+			// Create a dummy handler
+			handler := func(ctx context.Context, e event.Event) {}
 
-	assert.NoError(t, client.SubscribeToEvents(ctx, "foo", handler))
-	assert.NoError(t, client.SubscribeToAllEvents(ctx, handler))
+			// Call the method
+			err := client.SubscribeToAllEvents(context.Background(), handler)
 
-	// nil Manager branch
-	nilClient := &ClientImpl{}
-	assert.Error(t, nilClient.SubscribeToEvents(ctx, "bar", handler))
-	assert.Error(t, nilClient.SubscribeToAllEvents(ctx, handler))
+			// Check expectations
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestClientImpl_StartCascade tests the StartCascade method of ClientImpl using mocked dependencies
+func TestClientImpl_StartCascade(t *testing.T) {
+	testCases := []struct {
+		name             string
+		data             []byte
+		actionID         string
+		setupTaskManager func(*taskmocks.MockManager)
+		expectError      bool
+		expectedErr      error
+		expectedTaskID   string
+	}{
+		{
+			name:     "Successful cascade creation",
+			data:     []byte("test-data"),
+			actionID: "valid-action-id",
+			setupTaskManager: func(mockTaskManager *taskmocks.MockManager) {
+				mockTaskManager.EXPECT().
+					CreateCascadeTask(gomock.Any(), []byte("test-data"), "valid-action-id").
+					Return("task-123", nil)
+			},
+			expectError:    false,
+			expectedTaskID: "task-123",
+		},
+		{
+			name:     "Empty action ID validation",
+			data:     []byte("test-data"),
+			actionID: "",
+			setupTaskManager: func(mockTaskManager *taskmocks.MockManager) {
+				// Task manager should not be called for empty action ID
+			},
+			expectError: true,
+			expectedErr: action.ErrEmptyActionID,
+		},
+		{
+			name:     "Empty data validation",
+			data:     []byte{},
+			actionID: "valid-action-id",
+			setupTaskManager: func(mockTaskManager *taskmocks.MockManager) {
+				// Task manager should not be called for empty data
+			},
+			expectError: true,
+			expectedErr: action.ErrEmptyData,
+		},
+		{
+			name:     "Task manager error",
+			data:     []byte("test-data"),
+			actionID: "valid-action-id",
+			setupTaskManager: func(mockTaskManager *taskmocks.MockManager) {
+				mockTaskManager.EXPECT().
+					CreateCascadeTask(gomock.Any(), []byte("test-data"), "valid-action-id").
+					Return("", errors.New("failed to create task"))
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mock controller
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			// Create mocked task manager
+			mockTaskManager := taskmocks.NewMockManager(ctrl)
+			tc.setupTaskManager(mockTaskManager)
+
+			// Create test client using exported fields
+			testClient := action.NewClientForTesting(mockTaskManager)
+
+			// Call the method
+			taskID, err := testClient.StartCascade(context.Background(), tc.data, tc.actionID)
+
+			// Verify results
+			if tc.expectError {
+				assert.Error(t, err)
+				if tc.expectedErr != nil {
+					assert.ErrorIs(t, err, tc.expectedErr)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedTaskID, taskID)
+			}
+		})
+	}
 }

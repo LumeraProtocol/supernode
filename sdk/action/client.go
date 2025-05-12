@@ -14,7 +14,7 @@ import (
 
 // Client defines the interface for action operations
 //
-//go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=client_mock.go
+//go:generate mockgen -source=client.go -destination=mocks/client_mock.go -package=mocks
 type Client interface {
 	StartCascade(ctx context.Context, data []byte, actionID string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error

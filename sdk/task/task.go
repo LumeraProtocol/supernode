@@ -32,6 +32,8 @@ const (
 type EventCallback func(ctx context.Context, e event.Event)
 
 // Task is the interface that all task types must implement
+//
+//go:generate mockgen -source=task.go -destination=mocks/task_mock.go -package=mocks
 type Task interface {
 	Run(ctx context.Context) error
 }

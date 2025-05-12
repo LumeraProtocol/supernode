@@ -9,6 +9,8 @@ import (
 )
 
 // SupernodeClient defines the interface for communicating with supernodes
+//
+//go:generate mockgen -source=client.go -destination=mocks/client_mock.go -package=mocks
 type SupernodeClient interface {
 	RegisterCascade(ctx context.Context, in *supernodeservice.CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*supernodeservice.CascadeSupernodeRegisterResponse, error)
 

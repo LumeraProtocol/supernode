@@ -3,8 +3,6 @@ package supernodeservice
 import (
 	"context"
 
-	"google.golang.org/grpc"
-
 	"github.com/LumeraProtocol/supernode/sdk/event"
 )
 
@@ -26,9 +24,4 @@ type CascadeSupernodeRegisterResponse struct {
 	Success bool
 	Message string
 	TxHash  string
-}
-
-//go:generate mockery --name=CascadeServiceClient --output=testutil/mocks --outpkg=mocks --filename=cascade_service_mock.go
-type CascadeServiceClient interface {
-	CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
 }

@@ -14,12 +14,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
-//go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=lumera_mock.go
-type Client interface {
-	GetAction(ctx context.Context, actionID string) (Action, error)
-	GetSupernodes(ctx context.Context, height int64) ([]Supernode, error)
-}
-
 // ConfigParams holds configuration parameters from global config
 type ConfigParams struct {
 	GRPCAddr string
