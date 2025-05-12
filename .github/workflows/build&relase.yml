@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write  # Needed for creating releases
+  contents: write
   packages: read
 
 jobs:
@@ -43,27 +43,45 @@ jobs:
           go-version: ${{ steps.go-version.outputs.version }}
           cache: true
 
+      - name: Prepare Build Variables
+        id: vars
+        run: |
+          repo_name=${GITHUB_REPOSITORY##*/}
+          
+          # For non-tag builds, use commit SHA as identifier
+          build_id=${GITHUB_SHA::7}
+          echo "build_id=$build_id" >> $GITHUB_OUTPUT
+          echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
+          
+          # Debug output
+          echo "Output variables:"
+          echo "- build_id: $build_id"
+          echo "- binary_name: supernode-linux-amd64"
+
       - name: Build binary
         run: |
+          mkdir -p release
+          
           CGO_ENABLED=1 \
           GOOS=linux \
           GOARCH=amd64 \
           go build \
           -trimpath \
           -ldflags="-s -w" \
-          -o supernode-linux-amd64 \
+          -o release/${{ steps.vars.outputs.binary_name }} \
           github.com/LumeraProtocol/supernode/supernode/main.go
-
-      - name: Create release directory
-        run: |
-          mkdir -p release
-          cp supernode-linux-amd64 release/
           
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: supernode-binary
-          path: release/supernode-linux-amd64
+          # Make binary executable
+          chmod +x release/${{ steps.vars.outputs.binary_name }}
+          
+          # Show build results
+          ls -la release/
+
+      # Fix permissions
+      - name: Fix Release Directory Permissions
+        run: |
+          sudo chown -R $USER:$USER release/
+          sudo chmod -R 755 release/
 
   release:
     needs: build
@@ -100,17 +118,56 @@ jobs:
           TAG_COMMIT=$(git rev-list -n 1 $TAG_NAME)
           echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
 
-      - name: Download artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: supernode-binary
-          path: release
+      - name: Configure Git Safe Directory
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
-      - name: Make binary executable
-        run: chmod +x release/supernode-linux-amd64
+      - name: Get Go version from go.mod
+        id: go-version
+        run: |
+          GO_VERSION=$(grep -E '^go [0-9]+\.[0-9]+(\.[0-9]+)?$' go.mod | cut -d ' ' -f 2)
+          echo "Found go directive version: $GO_VERSION"
+          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: true
+
+      - name: Prepare Release Variables
+        id: vars
+        run: |
+          repo_name=${GITHUB_REPOSITORY##*/}
+          echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
+
+      - name: Build Release Version
+        run: |
+          mkdir -p release
+          
+          CGO_ENABLED=1 \
+          GOOS=linux \
+          GOARCH=amd64 \
+          go build \
+          -trimpath \
+          -ldflags="-s -w" \
+          -o release/${{ steps.vars.outputs.binary_name }} \
+          github.com/LumeraProtocol/supernode/supernode/main.go
+          
+          # Make binary executable
+          chmod +x release/${{ steps.vars.outputs.binary_name }}
+          
+          # Show build results
+          ls -la release/
+
+      # Fix permissions
+      - name: Fix Release Directory Permissions
+        run: |
+          sudo chown -R $USER:$USER release/
+          sudo chmod -R 755 release/
 
       - name: Publish the Release
         uses: softprops/action-gh-release@v0.1.15
+        if: success()
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}
           files: release/*

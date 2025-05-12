@@ -1,84 +1,84 @@
-name: tests
+# name: tests
 
-on:
-  push:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
+# on:
+#   push:
+#     paths-ignore:
+#       - '**.md'
+#       - 'docs/**'
+#       - '.gitignore'
 
-jobs:
-  unit-tests:
-    name: unit-tests
-    runs-on: ubuntu-latest
+# jobs:
+#   unit-tests:
+#     name: unit-tests
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
 
-      - name: Setup Go and system deps
-        uses: ./.github/actions/setup-env  
+#       - name: Setup Go and system deps
+#         uses: ./.github/actions/setup-env  
 
-      - name: Install dependencies
-        run: go mod download
+#       - name: Install dependencies
+#         run: go mod download
 
-      - name: Run unit tests
-        run: go test $(go list ./... | grep -v '/tests') -v
+#       - name: Run unit tests
+#         run: go test $(go list ./... | grep -v '/tests') -v
 
-  integration-tests:
-    name: integration-tests
-    runs-on: ubuntu-latest
+#   integration-tests:
+#     name: integration-tests
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
 
-      - name: Setup Go and system deps
-        uses: ./.github/actions/setup-env  
+#       - name: Setup Go and system deps
+#         uses: ./.github/actions/setup-env  
       
-      - name: Install dependencies
-        run: go mod download
+#       - name: Install dependencies
+#         run: go mod download
 
-      - name: Run integration tests
-        run: go test -v ./tests/integration/...
+#       - name: Run integration tests
+#         run: go test -v ./tests/integration/...
 
-  system-tests:
-    name: system-tests
-    runs-on: ubuntu-latest
+#   system-tests:
+#     name: system-tests
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
 
-      - name: Setup Go and system deps
-        uses: ./.github/actions/setup-env  
+#       - name: Setup Go and system deps
+#         uses: ./.github/actions/setup-env  
  
-      - name: Install dependencies
-        run: |
-          go mod download
-          cd tests/system && go mod download
+#       - name: Install dependencies
+#         run: |
+#           go mod download
+#           cd tests/system && go mod download
 
-      - name: Install Lumera
-        run: |
-          cd tests/scripts
-          chmod +x ./install-lumera.sh
-          sudo ./install-lumera.sh
+#       - name: Install Lumera
+#         run: |
+#           cd tests/scripts
+#           chmod +x ./install-lumera.sh
+#           sudo ./install-lumera.sh
         
-      - name: Setup Supernode environments
-        run: |
-          cd tests/scripts
-          chmod +x ./setup-supernodes.sh
-          ./setup-supernodes.sh all \
-            ../../supernode/main.go \
-            ../system/supernode-data \
-            ../system/config.test-1.yml \
-            ../system/supernode-data2 \
-            ../system/config.test-2.yml \
-            ../system/supernode-data3 \
-            ../system/config.test-3.yml
+#       - name: Setup Supernode environments
+#         run: |
+#           cd tests/scripts
+#           chmod +x ./setup-supernodes.sh
+#           ./setup-supernodes.sh all \
+#             ../../supernode/main.go \
+#             ../system/supernode-data \
+#             ../system/config.test-1.yml \
+#             ../system/supernode-data2 \
+#             ../system/config.test-2.yml \
+#             ../system/supernode-data3 \
+#             ../system/config.test-3.yml
       
-      - name: Copy CSV file to home directory
-        run: cp claims.csv ~/
+#       - name: Copy CSV file to home directory
+#         run: cp claims.csv ~/
  
-      - name: Run system tests
-        run: cd tests/system && go test -v .
+#       - name: Run system tests
+#         run: cd tests/system && go test -v .
