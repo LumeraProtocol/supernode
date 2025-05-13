@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/net"
@@ -42,30 +43,47 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		return nil, err
 	}
 
+	// Open the file for reading
+	file, err := os.Open(in.FilePath)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to open file", "filePath", in.FilePath, "error", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Get file stats for progress tracking
+	fileInfo, err := file.Stat()
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get file stats", "filePath", in.FilePath, "error", err)
+		return nil, fmt.Errorf("failed to get file stats: %w", err)
+	}
+	totalBytes := fileInfo.Size()
+
 	// Define chunk size
 	const chunkSize = 1024 // 1 KB
 
 	// Keep track of how much data we've processed
 	bytesRead := int64(0)
-	totalBytes := int64(len(in.Data))
 	chunkIndex := 0
+	buffer := make([]byte, chunkSize)
 
 	// Read and send data in chunks
-	for bytesRead < totalBytes {
-		// Determine size of the next chunk
-		end := bytesRead + chunkSize
-		if end > totalBytes {
-			end = totalBytes
+	for {
+		// Read a chunk from the file
+		n, err := file.Read(buffer)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			a.logger.Error(ctx, "Failed to read file chunk", "chunkIndex", chunkIndex, "error", err)
+			return nil, fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
-		// Prepare the chunk data
-		chunkData := in.Data[bytesRead:end]
-
-		// Create the chunk request
+		// Create the chunk request with just the bytes we read
 		chunk := &cascade.RegisterRequest{
 			RequestType: &cascade.RegisterRequest_Chunk{
 				Chunk: &cascade.DataChunk{
-					Data: chunkData,
+					Data: buffer[:n],
 				},
 			},
 		}
@@ -75,10 +93,10 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 			return nil, fmt.Errorf("failed to send chunk: %w", err)
 		}
 
-		bytesRead += int64(len(chunkData))
+		bytesRead += int64(n)
 		progress := float64(bytesRead) / float64(totalBytes) * 100
 
-		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", len(chunkData), "progress", fmt.Sprintf("%.1f%%", progress))
+		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", n, "progress", fmt.Sprintf("%.1f%%", progress))
 
 		chunkIndex++
 	}
@@ -117,13 +135,7 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		}
 
 		// Log the streamed progress update
-		a.logger.Info(ctx, "Supernode progress update received",
-			"event_type", resp.EventType,
-			"message", resp.Message,
-			"tx_hash", resp.TxHash,
-			"task_id", in.TaskId,
-			"action_id", in.ActionID,
-		)
+		a.logger.Info(ctx, "Supernode progress update received", "event_type", resp.EventType, "message", resp.Message, "tx_hash", resp.TxHash, "task_id", in.TaskId, "action_id", in.ActionID)
 
 		if in.EventLogger != nil {
 			in.EventLogger(ctx, toSdkEvent(resp.EventType), resp.Message, nil)

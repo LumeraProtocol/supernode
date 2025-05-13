@@ -440,8 +440,8 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Starting cascade operation with action ID: %s", actionID)
 	taskID, err := actionClient.StartCascade(
 		ctx,
-		data,     // data []byte
-		actionID, // Action ID from the transaction
+		testFileFullpath, // path
+		actionID,         // Action ID from the transaction
 	)
 	require.NoError(t, err, "Failed to start cascade operation")
 	t.Logf("Cascade operation started with task ID: %s", taskID)

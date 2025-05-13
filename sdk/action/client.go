@@ -16,7 +16,7 @@ import (
 //
 //go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=client_mock.go
 type Client interface {
-	StartCascade(ctx context.Context, data []byte, actionID string) (string, error)
+	StartCascade(ctx context.Context, filePath string, actionID string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
@@ -54,17 +54,17 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger, key
 }
 
 // StartCascade initiates a cascade operation
-func (c *ClientImpl) StartCascade(ctx context.Context, data []byte, actionID string) (string, error) {
+func (c *ClientImpl) StartCascade(ctx context.Context, filePath string, actionID string) (string, error) {
 	if actionID == "" {
 		c.logger.Error(ctx, "Empty action ID provided")
 		return "", ErrEmptyActionID
 	}
-	if len(data) == 0 {
-		c.logger.Error(ctx, "Empty data provided")
+	if filePath == "" {
+		c.logger.Error(ctx, "Empty file path provided")
 		return "", ErrEmptyData
 	}
 
-	taskID, err := c.taskManager.CreateCascadeTask(ctx, data, actionID)
+	taskID, err := c.taskManager.CreateCascadeTask(ctx, filePath, actionID)
 	if err != nil {
 		c.logger.Error(ctx, "Failed to create cascade task", "error", err)
 		return "", fmt.Errorf("failed to create cascade task: %w", err)

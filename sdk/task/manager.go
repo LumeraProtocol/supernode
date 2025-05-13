@@ -19,7 +19,7 @@ const MAX_EVENT_WORKERS = 100
 //
 //go:generate mockery --name=Manager --output=testutil/mocks --outpkg=mocks --filename=manager_mock.go
 type Manager interface {
-	CreateCascadeTask(ctx context.Context, data []byte, actionID string) (string, error)
+	CreateCascadeTask(ctx context.Context, filePath string, actionID string) (string, error)
 	GetTask(ctx context.Context, taskID string) (*TaskEntry, bool)
 	DeleteTask(ctx context.Context, taskID string) error
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
@@ -78,14 +78,7 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr
 }
 
 // CreateCascadeTask creates and starts a Cascade task using the new pattern
-func (m *ManagerImpl) CreateCascadeTask(
-	ctx context.Context,
-	data []byte,
-	actionID string,
-) (string, error) {
-
-	// Generate task ID
-	// slice this to 8 bytes
+func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, actionID string) (string, error) {
 	taskID := uuid.New().String()[:8]
 
 	m.logger.Debug(ctx, "Generated task ID", "taskID", taskID)
@@ -101,7 +94,7 @@ func (m *ManagerImpl) CreateCascadeTask(
 		logger:   m.logger,
 	}
 	// Create cascade-specific task
-	task := NewCascadeTask(baseTask, data, actionID)
+	task := NewCascadeTask(baseTask, filePath, actionID)
 
 	// Store task in cache
 	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade)
@@ -109,10 +102,7 @@ func (m *ManagerImpl) CreateCascadeTask(
 	// Ensure task is stored before returning
 	m.taskCache.Wait()
 
-	// Start task asynchronously
 	go func() {
-		// Create a separate context for the goroutine
-
 		m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
 		err := task.Run(ctx)
 		if err != nil {

@@ -16,7 +16,7 @@ type LoggerFunc func(
 )
 
 type CascadeSupernodeRegisterRequest struct {
-	Data        []byte
+	FilePath    string
 	ActionID    string
 	TaskId      string
 	EventLogger LoggerFunc

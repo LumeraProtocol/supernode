@@ -24,15 +24,15 @@ const (
 
 type CascadeTask struct {
 	BaseTask
-	data     []byte
+	filePath string
 	actionId string
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
-func NewCascadeTask(base BaseTask, data []byte, actionId string) *CascadeTask {
+func NewCascadeTask(base BaseTask, filePath string, actionId string) *CascadeTask {
 	return &CascadeTask{
 		BaseTask: base,
-		data:     data,
+		filePath: filePath,
 		actionId: actionId,
 	}
 }
@@ -153,7 +153,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, factoryCfg)
 
 	req := &supernodeservice.CascadeSupernodeRegisterRequest{
-		Data:     t.data,
+		FilePath: t.filePath,
 		ActionID: t.ActionID,
 		TaskId:   t.TaskID,
 	}
