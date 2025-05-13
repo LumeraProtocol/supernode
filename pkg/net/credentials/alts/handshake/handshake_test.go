@@ -435,7 +435,7 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			}
 
 			// Verify concurrent handshake limits
-			require.LessOrEqual(t, stat.MaxConcurrentCalls, maxConcurrentHandshakes,
+			require.LessOrEqual(t, stat.GetMaxConcurrentCalls(), maxConcurrentHandshakes,
 				"concurrent handshakes exceeded limit")
 		})
 	}
