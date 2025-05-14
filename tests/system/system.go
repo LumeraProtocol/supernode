@@ -39,7 +39,6 @@ var (
 	DefaultTelemetryPort        = 7180
 	DefaultRestPort             = 8080
 	DefaultGrpcPort             = 9090
-	DefaultP2PPort              = 16656
 )
 
 // SystemUnderTest blockchain provisioning
