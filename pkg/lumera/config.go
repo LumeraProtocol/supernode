@@ -1,7 +1,7 @@
 package lumera
 
 import (
-	"time"
+	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
@@ -14,9 +14,6 @@ type Config struct {
 	// ChainID is the ID of the chain
 	ChainID string
 
-	// Timeout is the default request timeout
-	Timeout time.Duration
-
 	// keyring is the keyring conf for the node sign & verify
 	keyring keyring.Keyring
 
@@ -24,12 +21,25 @@ type Config struct {
 	KeyName string
 }
 
-// DefaultConfig returns a default configuration
-func DefaultConfig() *Config {
-	return &Config{
-		GRPCAddr: "localhost:9090",
-		ChainID:  "lumera",
-		Timeout:  30,
-		KeyName:  "",
+func NewConfig(grpcAddr, chainID string, keyName string, keyring keyring.Keyring) (*Config, error) {
+
+	if grpcAddr == "" {
+		return nil, fmt.Errorf("grpcAddr cannot be empty")
 	}
+	if chainID == "" {
+		return nil, fmt.Errorf("chainID cannot be empty")
+	}
+	if keyring == nil {
+		return nil, fmt.Errorf("keyring cannot be nil")
+	}
+	if keyName == "" {
+		return nil, fmt.Errorf("keyName cannot be empty")
+	}
+
+	return &Config{
+		GRPCAddr: grpcAddr,
+		ChainID:  chainID,
+		keyring:  keyring,
+		KeyName:  keyName,
+	}, nil
 }

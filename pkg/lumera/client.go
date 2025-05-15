@@ -24,13 +24,7 @@ type lumeraClient struct {
 }
 
 // newClient creates a new Lumera client with provided options
-func newClient(ctx context.Context, opts ...Option) (Client, error) {
-	cfg := DefaultConfig()
-
-	// Apply all options
-	for _, opt := range opts {
-		opt(cfg)
-	}
+func newClient(ctx context.Context, cfg *Config) (Client, error) {
 
 	// Create a single gRPC connection to be shared by all modules
 	conn, err := newGRPCConnection(ctx, cfg.GRPCAddr)

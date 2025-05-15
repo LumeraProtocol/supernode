@@ -25,6 +25,6 @@ type Client interface {
 }
 
 // NewClient creates a new Lumera client with provided options
-func NewClient(ctx context.Context, opts ...Option) (Client, error) {
-	return newClient(ctx, opts...)
+func NewClient(ctx context.Context, config *Config) (Client, error) {
+	return newClient(ctx, config)
 }

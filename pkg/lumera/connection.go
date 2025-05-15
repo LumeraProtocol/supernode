@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const DefaultTimeout = 30 * time.Second
+
 // Connection defines the interface for a client connection
 type Connection interface {
 	Close() error
@@ -22,7 +24,7 @@ type grpcConnection struct {
 
 // newGRPCConnection creates a new gRPC connection
 func newGRPCConnection(ctx context.Context, addr string) (Connection, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	dialCtx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 
 	// Note: Cosmos SDK doesn't support TLS for gRPC so we use insecure credentials

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -132,19 +131,13 @@ func initLumeraClient(ctx context.Context, config *config.Config, kr keyring.Key
 		return nil, fmt.Errorf("config is nil")
 	}
 
-	logtrace.Info(ctx, "Initializing Lumera client", logtrace.Fields{
-		"grpc_addr": config.LumeraClientConfig.GRPCAddr,
-		"chain_id":  config.LumeraClientConfig.ChainID,
-		"timeout":   config.LumeraClientConfig.Timeout,
-	})
-
+	lumeraConfig, err := lumera.NewConfig(config.LumeraClientConfig.GRPCAddr, config.LumeraClientConfig.ChainID, config.SupernodeConfig.KeyName, kr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Lumera config: %w", err)
+	}
 	return lumera.NewClient(
 		ctx,
-		lumera.WithGRPCAddr(config.LumeraClientConfig.GRPCAddr),
-		lumera.WithChainID(config.LumeraClientConfig.ChainID),
-		lumera.WithTimeout(time.Duration(config.LumeraClientConfig.Timeout)*time.Second),
-		lumera.WithKeyring(kr),
-		lumera.WithKeyName(config.SupernodeConfig.KeyName),
+		lumeraConfig,
 	)
 }
 

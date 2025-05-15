@@ -3,7 +3,6 @@ package lumera
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
@@ -27,8 +26,8 @@ type Client interface {
 type ConfigParams struct {
 	GRPCAddr string
 	ChainID  string
-	Timeout  time.Duration
 	KeyName  string
+	Keyring  keyring.Keyring
 }
 
 type Adapter struct {
@@ -37,40 +36,19 @@ type Adapter struct {
 }
 
 // NewAdapter creates a new Adapter with dependencies explicitly injected
-func NewAdapter(ctx context.Context, config ConfigParams, kr keyring.Keyring, logger log.Logger) (Client, error) {
+func NewAdapter(ctx context.Context, config ConfigParams, logger log.Logger) (Client, error) {
 	// Set default logger if nil
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
 
-	logger.Debug(ctx, "Creating Lumera adapter",
-		"grpcAddr", config.GRPCAddr,
-		"chainID", config.ChainID,
-		"timeout", config.Timeout)
-
-	// Create client options from the config
-	options := []lumeraclient.Option{
-		lumeraclient.WithGRPCAddr(config.GRPCAddr),
+	lumeraConfig, err := lumeraclient.NewConfig(config.GRPCAddr, config.ChainID, config.KeyName, config.Keyring)
+	if err != nil {
+		logger.Error(ctx, "Failed to create Lumera config", "error", err)
+		return nil, fmt.Errorf("failed to create Lumera config: %w", err)
 	}
-
-	if config.ChainID != "" {
-		options = append(options, lumeraclient.WithChainID(config.ChainID))
-	}
-
-	if config.Timeout > 0 {
-		options = append(options, lumeraclient.WithTimeout(config.Timeout))
-	}
-
-	if kr != nil {
-		options = append(options, lumeraclient.WithKeyring(kr))
-	}
-
-	if config.KeyName != "" {
-		options = append(options, lumeraclient.WithKeyName(config.KeyName))
-	}
-
 	// Initialize the client
-	client, err := lumeraclient.NewClient(ctx, options...)
+	client, err := lumeraclient.NewClient(ctx, lumeraConfig)
 	if err != nil {
 		logger.Error(ctx, "Failed to initialize Lumera client", "error", err)
 		return nil, fmt.Errorf("failed to initialize Lumera client: %w", err)

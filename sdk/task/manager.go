@@ -51,10 +51,9 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr
 		lumera.ConfigParams{
 			GRPCAddr: config.Lumera.GRPCAddr,
 			ChainID:  config.Lumera.ChainID,
-			Timeout:  config.Lumera.Timeout,
 			KeyName:  config.Lumera.KeyName,
+			Keyring:  kr,
 		},
-		kr,
 		logger)
 
 	if err != nil {
