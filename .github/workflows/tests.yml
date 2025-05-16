@@ -20,7 +20,9 @@ jobs:
         uses: ./.github/actions/setup-env  
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
+          go mod download
 
       - name: Run unit tests
         run: go test $(go list ./... | grep -v '/tests') -v
@@ -37,7 +39,9 @@ jobs:
         uses: ./.github/actions/setup-env  
       
       - name: Install dependencies
-        run: go mod download
+        run: |
+          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
+          go mod download
 
       - name: Run integration tests
         run: go test -v ./tests/integration/...
@@ -55,8 +59,9 @@ jobs:
  
       - name: Install dependencies
         run: |
+          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
           go mod download
-          cd tests/system && go mod download
+          cd tests/system && go env -w GOPRIVATE=github.com/LumeraProtocol/lumera && go mod download
 
       - name: Install Lumera
         run: |
