@@ -101,7 +101,7 @@ func GenerateMnemonic() (string, error) {
 }
 
 // CreateNewAccount creates a new account in the keyring
-func CreateNewAccount(kr keyring.Keyring, name string, entropySize int) (string, *keyring.Record, error) {
+func CreateNewAccount(kr keyring.Keyring, name string) (string, *keyring.Record, error) {
 	// Generate a new mnemonic
 	mnemonic, err := GenerateMnemonic()
 	if err != nil {

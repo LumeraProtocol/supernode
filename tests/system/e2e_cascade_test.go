@@ -397,13 +397,13 @@ func TestCascadeE2E(t *testing.T) {
 	// This defines how to connect to network services
 	accConfig := sdkconfig.AccountConfig{
 		LocalCosmosAddress: recoveredAddress,
+		KeyName:            testKeyName,
+		Keyring:            keplrKeyring,
 	}
 
 	lumraConfig := sdkconfig.LumeraConfig{
 		GRPCAddr: lumeraGRPCAddr,
 		ChainID:  lumeraChainID,
-		Timeout:  300, // 30 seconds timeout
-		KeyName:  testKeyName,
 	}
 	actionConfig := sdkconfig.Config{
 		Account: accConfig,
@@ -414,8 +414,8 @@ func TestCascadeE2E(t *testing.T) {
 	actionClient, err := action.NewClient(
 		ctx,
 		actionConfig,
-		nil,          // Nil logger - use default
-		keplrKeyring, // Use the in-memory keyring for signing
+		nil, // Nil logger - use default
+
 	)
 	require.NoError(t, err, "Failed to create action client")
 

@@ -39,12 +39,12 @@ type ClientImpl struct {
 var _ Client = (*ClientImpl)(nil)
 
 // NewClient creates a new action client
-func NewClient(ctx context.Context, config config.Config, logger log.Logger, keyring keyring.Keyring) (Client, error) {
+func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Client, error) {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
 
-	taskManager, err := task.NewManager(ctx, config, logger, keyring)
+	taskManager, err := task.NewManager(ctx, config, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task manager: %w", err)
 	}
@@ -53,7 +53,6 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger, key
 		config:      config,
 		taskManager: taskManager,
 		logger:      logger,
-		keyring:     keyring,
 	}, nil
 }
 

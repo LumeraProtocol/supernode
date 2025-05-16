@@ -43,7 +43,7 @@ Example:
 
 		// Generate mnemonic and create new account
 		// Default to 256 bits of entropy (24 words)
-		mnemonic, info, err := keyring.CreateNewAccount(kr, keyName, 256)
+		mnemonic, info, err := keyring.CreateNewAccount(kr, keyName)
 		if err != nil {
 			return fmt.Errorf("failed to create new account: %w", err)
 		}

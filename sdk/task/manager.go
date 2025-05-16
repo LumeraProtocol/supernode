@@ -35,7 +35,7 @@ type ManagerImpl struct {
 	keyring      keyring.Keyring
 }
 
-func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr keyring.Keyring) (Manager, error) {
+func NewManager(ctx context.Context, config config.Config, logger log.Logger) (Manager, error) {
 	// 1 - Logger
 	if logger == nil {
 		logger = log.NewNoopLogger()
@@ -51,8 +51,8 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr
 		lumera.ConfigParams{
 			GRPCAddr: config.Lumera.GRPCAddr,
 			ChainID:  config.Lumera.ChainID,
-			KeyName:  config.Lumera.KeyName,
-			Keyring:  kr,
+			KeyName:  config.Account.KeyName,
+			Keyring:  config.Account.Keyring,
 		},
 		logger)
 
@@ -72,7 +72,7 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger, kr
 		taskCache:    taskCache,
 		eventBus:     eventBus,
 		logger:       logger,
-		keyring:      kr,
+		keyring:      config.Account.Keyring,
 	}, nil
 }
 
