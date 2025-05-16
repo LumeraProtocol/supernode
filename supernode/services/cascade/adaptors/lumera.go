@@ -2,8 +2,9 @@ package adaptors
 
 import (
 	"context"
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/types"
+
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 )

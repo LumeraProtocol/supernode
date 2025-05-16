@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"cosmossdk.io/math"
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"

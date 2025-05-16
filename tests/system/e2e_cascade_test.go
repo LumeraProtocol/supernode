@@ -21,7 +21,7 @@ import (
 	"github.com/LumeraProtocol/supernode/sdk/action"
 	"github.com/LumeraProtocol/supernode/sdk/event"
 
-	"github.com/LumeraProtocol/lumera/x/action/types"
+	"github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sdkconfig "github.com/LumeraProtocol/supernode/sdk/config"
 
 	"github.com/stretchr/testify/require"

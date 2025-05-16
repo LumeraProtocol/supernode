@@ -3,8 +3,8 @@ package testutil
 import (
 	"context"
 
-	"github.com/LumeraProtocol/lumera/x/action/types"
-	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/types"
+	"github.com/LumeraProtocol/lumera/x/action/v1/types"
+	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"

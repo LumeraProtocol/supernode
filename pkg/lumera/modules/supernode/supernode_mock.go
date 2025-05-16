@@ -8,7 +8,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	types "github.com/LumeraProtocol/lumera/x/supernode/types"
+	types "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	gomock "github.com/golang/mock/gomock"
 )
 

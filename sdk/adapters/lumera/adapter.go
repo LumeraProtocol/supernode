@@ -6,9 +6,9 @@ import (
 
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/golang/protobuf/proto"

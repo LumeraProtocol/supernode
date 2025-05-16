@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	actionapi "github.com/LumeraProtocol/lumera/api/lumera/action"
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"

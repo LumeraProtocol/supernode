@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/lumera/x/action/types"
+	"github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"google.golang.org/grpc"
 )
 

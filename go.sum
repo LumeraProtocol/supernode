@@ -61,8 +61,8 @@ github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3
 github.com/DataDog/zstd v1.5.5 h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=
 github.com/DataDog/zstd v1.5.5/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
-github.com/LumeraProtocol/lumera v0.4.5 h1:eeDeUFMKYAbCKDZVZzPsFpdiypoWsFUD37fd49EyGSE=
-github.com/LumeraProtocol/lumera v0.4.5/go.mod h1:c1M+sjewuCvxw+pznwlspUzenDJI8Y+suKB3RFKS2Wo=
+github.com/LumeraProtocol/lumera v1.0.1 h1:gnSbyQfVeYS2pCvR2AxrD8UWR++IEVYz4ywk3GiI25k=
+github.com/LumeraProtocol/lumera v1.0.1/go.mod h1:c1M+sjewuCvxw+pznwlspUzenDJI8Y+suKB3RFKS2Wo=
 github.com/LumeraProtocol/rq-go v0.2.1 h1:8B3UzRChLsGMmvZ+UVbJsJj6JZzL9P9iYxbdUwGsQI4=
 github.com/LumeraProtocol/rq-go v0.2.1/go.mod h1:APnKCZRh1Es2Vtrd2w4kCLgAyaL5Bqrkz/BURoRJ+O8=
 github.com/Shopify/sarama v1.19.0/go.mod h1:FVkBWblsNy7DGZRfXLU0O9RCGt5g3g3yEuWXgklEdEo=

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/LumeraProtocol/lumera/x/supernode/types"
+	"github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 
 	"google.golang.org/grpc"
