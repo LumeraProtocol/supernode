@@ -25,7 +25,7 @@ var eventProgressMap = map[EventType]int{
 	SDKTaskStarted:           0,
 	SDKSupernodesUnavailable: 5,
 	SDKSupernodesFound:       10,
-	SDKRegistrationAttemp:    12,
+	SDKRegistrationAttempt:   12,
 	SDKRegistrationFailure:   12,
 	//Supernode
 	SupernodeActionRetrieved:   15,

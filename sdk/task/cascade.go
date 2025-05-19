@@ -137,7 +137,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	var lastErr error
 	for idx, sn := range supernodes {
 		// 1
-		t.LogEvent(ctx, event.SDKRegistrationAttemp, "attempting registration with supernode", event.EventData{
+		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
 			event.KeySupernodeAddress: sn.CosmosAddress,
 			event.KeyIteration:        idx + 1,

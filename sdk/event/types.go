@@ -17,7 +17,7 @@ const (
 	SDKTaskStarted            EventType = "sdk:started"
 	SDKSupernodesUnavailable  EventType = "sdk:supernodes_unavailable"
 	SDKSupernodesFound        EventType = "sdk:supernodes_found"
-	SDKRegistrationAttemp     EventType = "sdk:registration_in_progress"
+	SDKRegistrationAttempt    EventType = "sdk:registration_attempt"
 	SDKRegistrationFailure    EventType = "sdk:registration_failure"
 	SDKRegistrationSuccessful EventType = "sdk:registration_successful"
 	SDKTaskTxHashReceived     EventType = "sdk:txhash_received"
