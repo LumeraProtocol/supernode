@@ -431,15 +431,15 @@ func TestCascadeE2E(t *testing.T) {
 	// Subscribe to ALL events
 	err = actionClient.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
 		// Only capture TxhasReceived events
-		if e.Type == event.TxhasReceived {
-			if txHash, ok := e.Data["txhash"].(string); ok && txHash != "" {
+		if e.Type == event.SDKTaskTxHashReceived {
+			if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
 				// Send the hash to our channel
 				txHashCh <- txHash
 			}
 		}
 
 		// Also monitor for task completion
-		if e.Type == event.TaskCompleted {
+		if e.Type == event.SDKTaskCompleted {
 			completionCh <- true
 		}
 	})

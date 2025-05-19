@@ -14,45 +14,31 @@ type EventType string
 // These events are used to track the progress of tasks
 // and to notify subscribers about important changes in the system.
 const (
-	TaskStarted                            EventType = "task.started"
-	TaskProgressActionVerified             EventType = "task.progress.action_verified"
-	TaskProgressActionVerificationFailed   EventType = "task.progress.action_verification_failed"
-	TaskProgressSupernodesFound            EventType = "task.progress.supernode_found"
-	TaskProgressSupernodesUnavailable      EventType = "task.progress.supernodes_unavailable"
-	TaskProgressActionRetrievedBySupernode EventType = "task.progress.action_retrieved_by_supernode"
-	TaskProgressActionFeeValidated         EventType = "task.progress.action_fee_validated"
-	TaskProgressTopSupernodeCheckValidated EventType = "task.progress.top_sn_check_validated"
-	TaskProgressArtefactsStored            EventType = "task.progress.artefacts_stored"
-	TaskProgressCascadeMetadataDecoded     EventType = "task.progress.cascade_metadata_decoded"
-	TaskProgressDataHashVerified           EventType = "task.progress.data_hash_verified"
-	TaskProgressInputDataEncoded           EventType = "task.progress.input_data_encoded"
-	TaskProgressSignatureVerified          EventType = "task.progress.signature_verified"
-	TaskProgressRQIDFilesGenerated         EventType = "task.progress.rq_id_files_generated"
-	TaskProgressRQIDsVerified              EventType = "task.progress.rq_ids_verified"
-	TaskProgressActionFinalized            EventType = "task.progress.action_finalized"
-	TaskProgressRegistrationInProgress     EventType = "task.progress.registration_in_progress"
-	TaskProgressRegistrationFailure        EventType = "task.progress.registration_failure"
-	TaskProgressRegistrationSuccessful     EventType = "task.progress.registration_successful"
-	TaskCompleted                          EventType = "task.completed"
-	TxhasReceived                          EventType = "txhash.received"
-	TaskFailed                             EventType = "task.failed"
+	SDKTaskStarted            EventType = "sdk:started"
+	SDKSupernodesUnavailable  EventType = "sdk:supernodes_unavailable"
+	SDKSupernodesFound        EventType = "sdk:supernodes_found"
+	SDKRegistrationAttemp     EventType = "sdk:registration_in_progress"
+	SDKRegistrationFailure    EventType = "sdk:registration_failure"
+	SDKRegistrationSuccessful EventType = "sdk:registration_successful"
+	SDKTaskTxHashReceived     EventType = "sdk:txhash_received"
+	SDKTaskCompleted          EventType = "sdk:completed"
+	SDKTaskFailed             EventType = "sdk:failed"
 )
 
-// Task progress steps in order
-// This is the order in which events are expected to occur
-// during the task lifecycle. It is used to track progress.
-// The order of events in this slice should match the order
-// in which they are expected to occur in the task lifecycle.
-// The index of each event in this slice represents its
-// position in the task lifecycle. The first event in the slice is the
-// first event that should be emitted when a task starts.
-var taskProgressSteps = []EventType{
-	TaskStarted,
-	TaskProgressActionVerified,
-	TaskProgressSupernodesFound,
-	TaskProgressRegistrationInProgress,
-	TaskCompleted,
-}
+const (
+	SupernodeActionRetrieved   EventType = "supernode:action_retrieved"
+	SupernodeActionFeeVerified EventType = "supernode:action_fee_verified"
+	SupernodeTopCheckPassed    EventType = "supernode:top_check_passed"
+	SupernodeMetadataDecoded   EventType = "supernode:metadata_decoded"
+	SupernodeDataHashVerified  EventType = "supernode:data_hash_verified"
+	SupernodeInputEncoded      EventType = "supernode:input_encoded"
+	SupernodeSignatureVerified EventType = "supernode:signature_verified"
+	SupernodeRQIDGenerated     EventType = "supernode:rqid_generated"
+	SupernodeRQIDVerified      EventType = "supernode:rqid_verified"
+	SupernodeArtefactsStored   EventType = "supernode:artefacts_stored"
+	SupernodeActionFinalized   EventType = "supernode:action_finalized"
+	SupernodeUnknown           EventType = "supernode:unknown"
+)
 
 // EventData is a map of event data attributes using standardized keys
 type EventData map[EventDataKey]any
@@ -86,15 +72,4 @@ func NewEvent(ctx context.Context, eventType EventType, taskID, taskType string,
 		Data:      data,
 		ActionID:  actionID,
 	}
-}
-
-// GetTaskProgress returns current progress as (y, x), where y = current step number, x = total steps.
-func GetTaskProgress(current EventType) (int, int) {
-	for idx, step := range taskProgressSteps {
-		if step == current {
-			return idx + 1, len(taskProgressSteps)
-		}
-	}
-	// Unknown event, treat as 0 progress
-	return 0, len(taskProgressSteps)
 }

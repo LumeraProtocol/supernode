@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/event"
+	eventspkg "github.com/LumeraProtocol/supernode/sdk/event"
 	"github.com/LumeraProtocol/supernode/sdk/log"
-
 	"github.com/dgraph-io/ristretto/v2"
 )
 
@@ -17,7 +17,7 @@ type TaskEntry struct {
 	TaskID        string
 	ActionID      string
 	TaskType      TaskType
-	Status        TaskStatus
+	Status        eventspkg.TaskStatus
 	TxHash        string
 	Error         error
 	Events        []event.Event
@@ -78,7 +78,7 @@ func (tc *TaskCache) Set(ctx context.Context, taskID string, task Task, taskType
 		TaskID:        taskID,
 		ActionID:      actionID,
 		TaskType:      taskType,
-		Status:        StatusPending,
+		Status:        eventspkg.StatusPending,
 		Events:        make([]event.Event, 0),
 		CreatedAt:     now,
 		LastUpdatedAt: now,
@@ -101,8 +101,13 @@ func (tc *TaskCache) Get(ctx context.Context, taskID string) (*TaskEntry, bool) 
 	return entry, found
 }
 
+// GetProgress returns the current progress information for the task
+func (t *TaskEntry) GetProgress() eventspkg.ProgressInfo {
+	return eventspkg.GetLatestProgress(t.Events)
+}
+
 // UpdateStatus updates the status of a task in the cache atomically
-func (tc *TaskCache) UpdateStatus(ctx context.Context, taskID string, status TaskStatus, err error) bool {
+func (tc *TaskCache) UpdateStatus(ctx context.Context, taskID string, status eventspkg.TaskStatus, err error) bool {
 	mu := tc.getOrCreateMutex(taskID)
 	mu.Lock()
 	defer mu.Unlock()

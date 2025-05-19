@@ -18,16 +18,6 @@ const (
 	TaskTypeCascade TaskType = "CASCADE"
 )
 
-// TaskStatus represents the possible states of a task
-type TaskStatus string
-
-const (
-	StatusPending    TaskStatus = "PENDING"
-	StatusProcessing TaskStatus = "PROCESSING"
-	StatusCompleted  TaskStatus = "COMPLETED"
-	StatusFailed     TaskStatus = "FAILED"
-)
-
 // EventCallback is a function that processes events from tasks
 type EventCallback func(ctx context.Context, e event.Event)
 
@@ -52,7 +42,7 @@ type BaseTask struct {
 }
 
 // EmitEvent creates and sends an event with the specified type and data
-func (t *BaseTask) EmitEvent(ctx context.Context, eventType event.EventType, data event.EventData) {
+func (t *BaseTask) emitEvent(ctx context.Context, eventType event.EventType, data event.EventData) {
 	if t.onEvent != nil {
 		// Create event with the provided context
 		e := event.NewEvent(ctx, eventType, t.TaskID, string(t.TaskType), t.ActionID, data)
@@ -75,5 +65,5 @@ func (t *BaseTask) LogEvent(ctx context.Context, evt event.EventType, msg string
 	}
 
 	t.logger.Info(ctx, msg, kvs...)
-	t.EmitEvent(ctx, evt, additionalInfo)
+	t.emitEvent(ctx, evt, additionalInfo)
 }

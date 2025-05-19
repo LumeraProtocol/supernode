@@ -38,36 +38,27 @@ func NewCascadeTask(base BaseTask, filePath string, actionId string) *CascadeTas
 
 // Run executes the full cascade‐task lifecycle.
 func (t *CascadeTask) Run(ctx context.Context) error {
-	t.LogEvent(ctx, event.TaskStarted, "Running cascade task", nil)
 
-	// Use the already validated Action directly to get the height
+	t.LogEvent(ctx, event.SDKTaskStarted, "Running cascade task", nil)
+
+	// 1 - Fetch the supernodes
 	supernodes, err := t.fetchSupernodes(ctx, t.Action.Height)
+
 	if err != nil {
-		t.logger.Error(ctx, "Task failed", "taskID", t.TaskID, "actionID", t.ActionID, "error", err)
-		t.EmitEvent(ctx, event.TaskProgressSupernodesUnavailable, event.EventData{
-			event.KeyError: err.Error(),
-		})
-		t.EmitEvent(ctx, event.TaskFailed, event.EventData{
-			event.KeyError: err.Error(),
-		})
+		t.LogEvent(ctx, event.SDKSupernodesUnavailable, "Supernodes unavailable", event.EventData{event.KeyError: err.Error()})
+		t.LogEvent(ctx, event.SDKTaskFailed, "Task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
-	t.LogEvent(ctx, event.TaskProgressSupernodesFound, "Supernodes found.", event.EventData{
-		event.KeyCount: len(supernodes),
-	})
 
+	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes found.", event.EventData{event.KeyCount: len(supernodes)})
+
+	// 2 - Register with the supernodes
 	if err := t.registerWithSupernodes(ctx, supernodes); err != nil {
-		t.logger.Error(ctx, "Task failed", "taskID", t.TaskID, "actionID", t.ActionID, "error", err)
-		t.EmitEvent(ctx, event.TaskProgressRegistrationFailure, event.EventData{
-			event.KeyError: err.Error(),
-		})
-		t.EmitEvent(ctx, event.TaskFailed, event.EventData{
-			event.KeyError: err.Error(),
-		})
+		t.LogEvent(ctx, event.SDKTaskFailed, "Task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
 
-	t.LogEvent(ctx, event.TaskCompleted, "Cascade task completed successfully", nil)
+	t.LogEvent(ctx, event.SDKTaskCompleted, "Cascade task completed successfully", nil)
 
 	return nil
 }
@@ -77,7 +68,6 @@ func (t *CascadeTask) fetchSupernodes(ctx context.Context, height int64) (lumera
 	if err != nil {
 		return nil, fmt.Errorf("fetch supernodes: %w", err)
 	}
-	t.logger.Info(ctx, "Supernodes fetched", "count", len(sns))
 
 	if len(sns) == 0 {
 		return nil, errors.New("no supernodes found")
@@ -110,7 +100,6 @@ func (t *CascadeTask) fetchSupernodes(ctx context.Context, height int64) (lumera
 	if len(healthy) == 0 {
 		return nil, errors.New("no healthy supernodes found")
 	}
-	t.logger.Info(ctx, "Healthy supernodes", "count", len(healthy))
 
 	return healthy, nil
 }
@@ -124,8 +113,7 @@ func (t *CascadeTask) isServing(parent context.Context, sn lumera.Supernode) boo
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 	}).CreateClient(ctx, sn)
 	if err != nil {
-		logtrace.Info(ctx, "Failed to create client for supernode", logtrace.Fields{
-			logtrace.FieldMethod: "isServing"})
+		logtrace.Info(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
 		return false
 	}
 	defer client.Close(ctx)
@@ -148,23 +136,35 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	var lastErr error
 	for idx, sn := range supernodes {
+		// 1
+		t.LogEvent(ctx, event.SDKRegistrationAttemp, "attempting registration with supernode", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyIteration:        idx + 1,
+		})
 		if err := t.attemptRegistration(ctx, idx, sn, clientFactory, req); err != nil {
+			//
+			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
+				event.KeySupernode:        sn.GrpcEndpoint,
+				event.KeySupernodeAddress: sn.CosmosAddress,
+				event.KeyIteration:        idx + 1,
+				event.KeyError:            err.Error(),
+			})
 			lastErr = err
 			continue
 		}
+		t.LogEvent(ctx, event.SDKRegistrationSuccessful, "successfully registratered with supernode", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyIteration:        idx + 1,
+		})
 		return nil // success
 	}
 
 	return fmt.Errorf("failed to upload to all supernodes: %w", lastErr)
 }
 
-func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {
-	t.LogEvent(ctx, event.TaskProgressRegistrationInProgress, "attempting registration with supernode", event.EventData{
-		event.KeySupernode:        sn.GrpcEndpoint,
-		event.KeySupernodeAddress: sn.CosmosAddress,
-		event.KeyIteration:        index + 1,
-	})
-
+func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {
 	client, err := factory.CreateClient(ctx, sn)
 	if err != nil {
 		return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
@@ -185,14 +185,10 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, index int, sn lum
 		return fmt.Errorf("upload rejected by %s: %s", sn.CosmosAddress, resp.Message)
 	}
 
-	// Use txhash directly without cleaning
-	t.LogEvent(ctx, event.TxhasReceived, "txhash received", event.EventData{
+	t.LogEvent(ctx, event.SDKTaskTxHashReceived, "txhash received", event.EventData{
 		event.KeyTxHash:    resp.TxHash,
 		event.KeySupernode: sn.CosmosAddress,
 	})
 
-	t.logger.Info(ctx, "upload OK", "taskID", t.TaskID, "address", sn.CosmosAddress)
 	return nil
 }
-
-// logEvent writes a structured log entry **and** emits the SDK event.

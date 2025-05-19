@@ -7,8 +7,8 @@ import (
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/config"
 	"github.com/LumeraProtocol/supernode/sdk/event"
+	taskstatus "github.com/LumeraProtocol/supernode/sdk/event"
 	"github.com/LumeraProtocol/supernode/sdk/log"
-
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/google/uuid"
 )
@@ -121,7 +121,6 @@ func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, ac
 			// Error handling is done via events in the task.Run method
 			// This is just a failsafe in case something goes wrong
 			m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
-			m.taskCache.UpdateStatus(ctx, taskID, StatusFailed, err)
 		}
 	}()
 
@@ -182,13 +181,13 @@ func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 
 	// Update the task status based on event type
 	switch e.Type {
-	case event.TaskStarted:
+	case event.SDKTaskStarted:
 		m.logger.Info(ctx, "Task started", "taskID", e.TaskID, "taskType", e.TaskType)
-		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusProcessing, nil)
-	case event.TaskCompleted:
+		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusActive, nil)
+	case event.SDKTaskCompleted:
 		m.logger.Info(ctx, "Task completed", "taskID", e.TaskID, "taskType", e.TaskType)
-		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusCompleted, nil)
-	case event.TaskFailed:
+		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusCompleted, nil)
+	case event.SDKTaskFailed:
 		var err error
 		if errMsg, ok := e.Data[event.KeyError].(string); ok {
 			err = fmt.Errorf("%s", errMsg)
@@ -196,8 +195,8 @@ func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 		} else {
 			m.logger.Error(ctx, "Task failed with unknown error", "taskID", e.TaskID, "taskType", e.TaskType)
 		}
-		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusFailed, err)
-	case event.TxhasReceived:
+		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusFailed, err)
+	case event.SDKTaskTxHashReceived:
 		// Capture and store transaction hash from event
 		if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
 			m.logger.Info(ctx, "Transaction hash received", "taskID", e.TaskID, "txHash", txHash)

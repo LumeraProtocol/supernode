@@ -168,28 +168,28 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 	switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
-		return event.TaskProgressActionRetrievedBySupernode
+		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:
-		return event.TaskProgressActionFeeValidated
+		return event.SupernodeActionFeeVerified
 	case cascade.SupernodeEventType_TOP_SUPERNODE_CHECK_PASSED:
-		return event.TaskProgressTopSupernodeCheckValidated
+		return event.SupernodeTopCheckPassed
 	case cascade.SupernodeEventType_METADATA_DECODED:
-		return event.TaskProgressCascadeMetadataDecoded
+		return event.SupernodeMetadataDecoded
 	case cascade.SupernodeEventType_DATA_HASH_VERIFIED:
-		return event.TaskProgressDataHashVerified
+		return event.SupernodeDataHashVerified
 	case cascade.SupernodeEventType_INPUT_ENCODED:
-		return event.TaskProgressInputDataEncoded
+		return event.SupernodeInputEncoded
 	case cascade.SupernodeEventType_SIGNATURE_VERIFIED:
-		return event.TaskProgressSignatureVerified
+		return event.SupernodeSignatureVerified
 	case cascade.SupernodeEventType_RQID_GENERATED:
-		return event.TaskProgressRQIDFilesGenerated
+		return event.SupernodeRQIDGenerated
 	case cascade.SupernodeEventType_RQID_VERIFIED:
-		return event.TaskProgressRQIDsVerified
+		return event.SupernodeRQIDVerified
 	case cascade.SupernodeEventType_ARTEFACTS_STORED:
-		return event.TaskProgressArtefactsStored
+		return event.SupernodeArtefactsStored
 	case cascade.SupernodeEventType_ACTION_FINALIZED:
-		return event.TaskProgressActionFinalized
+		return event.SupernodeActionFinalized
 	default:
-		return event.EventType("task.progress.unknown")
+		return event.SupernodeUnknown
 	}
 }
