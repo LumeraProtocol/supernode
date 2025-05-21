@@ -18,9 +18,8 @@ type LumeraClient interface {
 
 	// Action Module
 	GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error)
-	GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error)
 	FinalizeAction(ctx context.Context, actionID string, rqids []string) (*action_msg.FinalizeActionResult, error)
-
+	GetActionFee(ctx context.Context, dataSize string) (*actiontypes.QueryGetActionFeeResponse, error)
 	// Auth
 	Verify(ctx context.Context, creator string, file []byte, sigBytes []byte) error
 }
@@ -40,8 +39,8 @@ func (c *Client) GetAction(ctx context.Context, actionID string) (*actiontypes.Q
 	return c.lc.Action().GetAction(ctx, actionID)
 }
 
-func (c *Client) GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error) {
-	return c.lc.Action().GetParams(ctx)
+func (c *Client) GetActionFee(ctx context.Context, dataSize string) (*actiontypes.QueryGetActionFeeResponse, error) {
+	return c.lc.Action().GetActionFee(ctx, dataSize)
 }
 
 func (c *Client) FinalizeAction(ctx context.Context, actionID string, rqids []string) (*action_msg.FinalizeActionResult, error) {

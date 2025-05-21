@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"cosmossdk.io/math"
@@ -201,21 +202,21 @@ func verifyIDs(ticketMetadata, metadata codec.Layout) error {
 // verifyActionFee checks if the action fee is sufficient for the given data size
 // It fetches action parameters, calculates the required fee, and compares it with the action price
 func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action *actiontypes.Action, dataSize int, fields logtrace.Fields) error {
-	// Fetch action parameters
-	params, err := task.lumeraClient.GetActionParams(ctx)
+
+	dataSizeInKBs := dataSize / 1024
+	fee, err := task.lumeraClient.GetActionFee(ctx, strconv.Itoa(dataSizeInKBs))
 	if err != nil {
-		return task.wrapErr(ctx, "failed to get action parameters", err, fields)
+		return task.wrapErr(ctx, "failed to get action fee", err, fields)
 	}
 
-	// Get base fee and fee per byte
-	baseFee := params.Params.BaseActionFee
-	feePerByte := params.Params.FeePerByte.Amount
+	// Parse fee amount from string to int64
+	amount, err := strconv.ParseInt(fee.Amount, 10, 64)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to parse fee amount", err, fields)
+	}
 
 	// Calculate per-byte fee based on data size
-	perByteFee := sdk.NewCoin(baseFee.Denom, feePerByte.Mul(math.NewInt(int64(dataSize))))
-
-	// Calculate total fee
-	requiredFee := baseFee.Add(perByteFee)
+	requiredFee := sdk.NewCoin("ulume", math.NewInt(amount))
 
 	// Log the calculated fee
 	logtrace.Info(ctx, "calculated required fee", logtrace.Fields{
