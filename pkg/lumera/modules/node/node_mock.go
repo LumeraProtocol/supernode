@@ -139,17 +139,3 @@ func (mr *MockModuleMockRecorder) Sign(snAccAddress, data interface{}) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Sign", reflect.TypeOf((*MockModule)(nil).Sign), snAccAddress, data)
 }
-
-// Verify mocks base method.
-func (m *MockModule) Verify(accAddress string, data, signature []byte) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Verify", accAddress, data, signature)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Verify indicates an expected call of Verify.
-func (mr *MockModuleMockRecorder) Verify(accAddress, data, signature interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Verify", reflect.TypeOf((*MockModule)(nil).Verify), accAddress, data, signature)
-}

@@ -20,6 +20,8 @@ import (
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	. "github.com/LumeraProtocol/supernode/pkg/testutil"
 )
 
@@ -302,6 +304,9 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			// Set whether NewConn should wait based on test case
 			shouldWaitInNewConn = tc.newConnWait
 
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
 			// Create handshake pairs
 			for i := range tc.numHandshakes {
 				accountClient := fmt.Sprintf("client-%d", i)
@@ -312,8 +317,37 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 				testAccounts = SetupTestAccounts(t, serverKr, []string{accountServer})
 				serverAddr := testAccounts[0].Address
 
-				clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
-				serverKE := SetupTestKeyExchange(t, serverKr, serverAddr, securekeyx.Supernode)
+				// create mocked validators
+				clientMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+				clientMockValidator.EXPECT().
+					AccountInfoByAddress(gomock.Any(), clientAddr).
+					Return(&authtypes.QueryAccountInfoResponse{
+						Info: &authtypes.BaseAccount{Address: clientAddr},
+					}, nil).
+					Times(1)
+				clientMockValidator.EXPECT().
+					GetSupernodeBySupernodeAddress(gomock.Any(), serverAddr).
+					Return(&sntypes.SuperNode{
+						SupernodeAccount: serverAddr,
+					}, nil).
+					Times(1)
+					
+				serverMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+				serverMockValidator.EXPECT().
+					GetSupernodeBySupernodeAddress(gomock.Any(), serverAddr).
+					Return(&sntypes.SuperNode{
+						SupernodeAccount: serverAddr,
+					}, nil).
+					Times(1)
+				serverMockValidator.EXPECT().
+					AccountInfoByAddress(gomock.Any(), clientAddr).
+					Return(&authtypes.QueryAccountInfoResponse{
+						Info: &authtypes.BaseAccount{Address: clientAddr},
+					}, nil).
+					Times(1)
+
+				clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode, clientMockValidator)
+				serverKE := SetupTestKeyExchange(t, serverKr, serverAddr, securekeyx.Supernode, serverMockValidator)
 
 				// Setup test pipes
 				clientConn, serverConn := net.Pipe()
@@ -442,6 +476,9 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 }
 
 func TestHandshakerContext(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	clientKr := CreateTestKeyring()
 	serverKr := CreateTestKeyring()
 
@@ -451,7 +488,14 @@ func TestHandshakerContext(t *testing.T) {
 	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
 	serverAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
+	mockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	mockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), clientAddr).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: clientAddr},
+		}, nil).
+		Times(1)
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode, mockValidator)
 
 	t.Run("Context timeout", func(t *testing.T) {
 		client, server := net.Pipe()
@@ -504,6 +548,9 @@ func TestHandshakerContext(t *testing.T) {
 }
 
 func TestUnresponsivePeer(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	clientKr := CreateTestKeyring()
 	serverKr := CreateTestKeyring()
 
@@ -513,7 +560,14 @@ func TestUnresponsivePeer(t *testing.T) {
 	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
 	serverAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
+	mockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	mockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), clientAddr).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: clientAddr},
+		}, nil).
+		Times(1)
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode, mockValidator)
 
 	handshakeTimeout := 100 * time.Millisecond
 	conn := testutil.NewUnresponsiveTestConn(time.Hour) // Create unresponsive conn
@@ -641,6 +695,9 @@ func TestClient_ComputeSharedSecretFailure(t *testing.T) {
 }
 
 func TestClientHandshakeSemaphore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	clientKr := CreateTestKeyring()
 	serverKr := CreateTestKeyring()
 
@@ -650,7 +707,15 @@ func TestClientHandshakeSemaphore(t *testing.T) {
 	testAccounts = SetupTestAccounts(t, serverKr, []string{"server"})
 	serverAddr := testAccounts[0].Address
 
-	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode)
+	mockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	mockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), clientAddr).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: clientAddr},
+		}, nil).
+		Times(1)
+
+	clientKE := SetupTestKeyExchange(t, clientKr, clientAddr, securekeyx.Simplenode, mockValidator)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -676,12 +741,22 @@ func TestClientHandshakeSemaphore(t *testing.T) {
 }
 
 func TestServerHandshakeSemaphore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	kr := CreateTestKeyring()
 
 	testAccounts := SetupTestAccounts(t, kr, []string{"server"})
 	serverAddr := testAccounts[0].Address
 
-	serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode)
+	mockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	mockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), serverAddr).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: serverAddr},
+		}, nil).
+		Times(1)
+	serverKE := SetupTestKeyExchange(t, kr, serverAddr, securekeyx.Simplenode, mockValidator)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()

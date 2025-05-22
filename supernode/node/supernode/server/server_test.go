@@ -6,6 +6,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"testing"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 )
 
 // --- Mock service implementing server.service ---
@@ -22,29 +23,38 @@ func (m *mockService) Desc() *grpc.ServiceDesc {
 
 func TestNewServer_WithValidConfig(t *testing.T) {
 	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
 	mockKeyring := NewMockKeyring(ctl)
+	mockLumeraClient := lumera.NewMockClient(ctl)
 
 	cfg := NewConfig()
-	s, err := New(cfg, "supernode-test", mockKeyring, &mockService{})
+	s, err := New(cfg, "supernode-test", mockKeyring, mockLumeraClient, &mockService{})
 	assert.NoError(t, err)
 	assert.NotNil(t, s)
 }
 
 func TestNewServer_WithNilConfig(t *testing.T) {
 	ctl := gomock.NewController(t)
-	mockKeyring := NewMockKeyring(ctl)
+	defer ctl.Finish()
 
-	s, err := New(nil, "supernode-test", mockKeyring)
+	mockKeyring := NewMockKeyring(ctl)
+	mockLumeraClient := lumera.NewMockClient(ctl)
+
+	s, err := New(nil, "supernode-test", mockKeyring, mockLumeraClient)
 	assert.Nil(t, s)
 	assert.EqualError(t, err, "config is nil")
 }
 
 func TestSetServiceStatusAndClose(t *testing.T) {
 	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+	
 	mockKeyring := NewMockKeyring(ctl)
+	mockLumeraClient := lumera.NewMockClient(ctl)
 
 	cfg := NewConfig()
-	s, _ := New(cfg, "test", mockKeyring, &mockService{})
+	s, _ := New(cfg, "test", mockKeyring, mockLumeraClient, &mockService{})
 	_ = s.setupGRPCServer()
 
 	s.SetServiceStatus("test.Service", grpc_health_v1.HealthCheckResponse_SERVING)

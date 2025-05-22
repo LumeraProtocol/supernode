@@ -109,7 +109,7 @@ func (t *CascadeTask) isServing(parent context.Context, sn lumera.Supernode) boo
 	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
 	defer cancel()
 
-	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, net.FactoryConfig{
+	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 	}).CreateClient(ctx, sn)
 	if err != nil {
@@ -126,7 +126,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	factoryCfg := net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 	}
-	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, factoryCfg)
+	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
 
 	req := &supernodeservice.CascadeSupernodeRegisterRequest{
 		FilePath: t.filePath,

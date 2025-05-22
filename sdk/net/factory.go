@@ -22,10 +22,11 @@ type ClientFactory struct {
 	keyring       keyring.Keyring
 	clientOptions *client.ClientOptions
 	config        FactoryConfig
+	lumeraClient  lumera.Client
 }
 
 // NewClientFactory creates a new client factory with the provided dependencies
-func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Keyring, config FactoryConfig) *ClientFactory {
+func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Keyring, lumeraClient lumera.Client, config FactoryConfig) *ClientFactory {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
@@ -38,6 +39,7 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 		keyring:       keyring,
 		clientOptions: client.DefaultClientOptions(),
 		config:        config,
+		lumeraClient:  lumeraClient,
 	}
 }
 
@@ -52,7 +54,8 @@ func (f *ClientFactory) CreateClient(ctx context.Context, supernode lumera.Super
 		"endpoint", supernode.GrpcEndpoint)
 
 	// Create client with dependencies
-	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config.LocalCosmosAddress, supernode, f.clientOptions)
+	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config.LocalCosmosAddress, supernode, f.lumeraClient,
+		f.clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create supernode client for %s: %w", supernode.CosmosAddress, err)
 	}

@@ -31,7 +31,8 @@ var _ SupernodeClient = (*supernodeClient)(nil)
 
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
-	localCosmosAddress string, targetSupernode lumera.Supernode, clientOptions *client.ClientOptions,
+	localCosmosAddress string, targetSupernode lumera.Supernode, lumeraClient lumera.Client,
+	clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
 	// Register ALTS protocols, just like in the test
 	conn.RegisterALTSRecordProtocols()
@@ -53,6 +54,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			Keyring:       keyring,
 			LocalIdentity: localCosmosAddress,
 			PeerType:      securekeyx.Supernode,
+			Validator:     nil,
 		},
 	})
 	if err != nil {

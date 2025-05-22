@@ -115,6 +115,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		grpcServer, err := server.New(serverConfig,
 			"service",
 			kr,
+			lumeraClient,
 			cascadeActionServer,
 		)
 		if err != nil {

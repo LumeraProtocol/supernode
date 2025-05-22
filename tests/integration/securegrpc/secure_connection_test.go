@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/golang/mock/gomock"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -24,7 +25,10 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
 	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
+	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 )
 
 func waitForServerReady(address string, timeout time.Duration) error {
@@ -58,6 +62,9 @@ func (s *TestServiceImpl) TestMethod(ctx context.Context, req *pb.TestRequest) (
 }
 
 func TestSecureGRPCConnection(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	snkeyring.InitSDKConfig()
 
 	conn.RegisterALTSRecordProtocols()
@@ -77,12 +84,42 @@ func TestSecureGRPCConnection(t *testing.T) {
 	testAccounts = testutil.SetupTestAccounts(t, serverKr, []string{"test-server"})
 	serverAddress := testAccounts[0].Address
 
+	// create mocked validators
+	clientMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	clientMockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), clientAddress).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: clientAddress},
+		}, nil).
+		Times(1)
+	clientMockValidator.EXPECT().
+		GetSupernodeBySupernodeAddress(gomock.Any(), serverAddress).
+		Return(&sntypes.SuperNode{
+			SupernodeAccount: serverAddress,
+		}, nil).
+		Times(1)
+		
+	serverMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
+	serverMockValidator.EXPECT().
+		GetSupernodeBySupernodeAddress(gomock.Any(), serverAddress).
+		Return(&sntypes.SuperNode{
+			SupernodeAccount: serverAddress,
+		}, nil).
+		Times(1)
+	serverMockValidator.EXPECT().
+		AccountInfoByAddress(gomock.Any(), clientAddress).
+		Return(&authtypes.QueryAccountInfoResponse{
+			Info: &authtypes.BaseAccount{Address: clientAddress},
+		}, nil).
+		Times(1)
+
 	// Create server credentials
 	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
 		CommonOptions: ltc.CommonOptions{
 			Keyring:       serverKr,
 			LocalIdentity: serverAddress,
 			PeerType:      securekeyx.Supernode,
+			Validator:     serverMockValidator,
 		},
 	})
 	require.NoError(t, err, "failed to create server credentials")
@@ -93,6 +130,7 @@ func TestSecureGRPCConnection(t *testing.T) {
 			Keyring:       clientKr,
 			LocalIdentity: clientAddress,
 			PeerType:      securekeyx.Simplenode,
+			Validator:     clientMockValidator,
 		},
 	})
 	require.NoError(t, err, "failed to create client credentials")

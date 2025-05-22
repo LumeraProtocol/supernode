@@ -121,6 +121,7 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 			Keyring:       options.Keyring,
 			LocalIdentity: string(options.ID),
 			PeerType:      securekeyx.Supernode,
+			Validator:     lumera.NewSecureKeyExchangeValidator(options.LumeraClient),
 		},
 	})
 	if err != nil {

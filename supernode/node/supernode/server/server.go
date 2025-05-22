@@ -17,6 +17,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
@@ -34,6 +35,7 @@ type Server struct {
 	name         string
 	kr           keyring.Keyring
 	grpcServer   *grpc.Server
+	lumeraClient lumera.Client
 	healthServer *health.Server
 }
 
@@ -99,6 +101,7 @@ func (server *Server) setupGRPCServer() error {
 			Keyring:       server.kr,
 			LocalIdentity: server.config.Identity,
 			PeerType:      securekeyx.Supernode,
+			Validator:     lumera.NewSecureKeyExchangeValidator(server.lumeraClient),
 		},
 	})
 	if err != nil {
@@ -154,7 +157,7 @@ func (server *Server) Close() {
 }
 
 // New returns a new Server instance.
-func New(config *Config, name string, kr keyring.Keyring, services ...service) (*Server, error) {
+func New(config *Config, name string, kr keyring.Keyring, lumeraClient lumera.Client, services ...service) (*Server, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -164,5 +167,6 @@ func New(config *Config, name string, kr keyring.Keyring, services ...service) (
 		services: services,
 		name:     name,
 		kr:       kr,
+		lumeraClient: lumeraClient,
 	}, nil
 }

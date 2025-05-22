@@ -92,7 +92,9 @@ type MockAuthModule struct{}
 // AccountInfoByAddress mocks the behavior of retrieving account info by address
 func (m *MockAuthModule) AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error) {
 	// Mock response: Return an empty response for testing, modify as needed
-	return &authtypes.QueryAccountInfoResponse{}, nil
+	return &authtypes.QueryAccountInfoResponse{
+		Info: &authtypes.BaseAccount{Address: addr},
+	}, nil
 }
 
 // Verify mocks the behavior of verifying data with a given account address
@@ -142,7 +144,9 @@ func (m *MockSupernodeModule) GetSuperNode(ctx context.Context, address string) 
 }
 
 func (m *MockSupernodeModule) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*supernodeTypes.SuperNode, error) {
-	return &supernodeTypes.SuperNode{}, nil
+	return &supernodeTypes.SuperNode{
+		SupernodeAccount: address,
+	}, nil
 }
 
 func (m *MockSupernodeModule) GetParams(ctx context.Context) (*supernodeTypes.QueryParamsResponse, error) {

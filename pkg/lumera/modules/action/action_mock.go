@@ -64,3 +64,18 @@ func (mr *MockModuleMockRecorder) GetActionFee(ctx, dataSize interface{}) *gomoc
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActionFee", reflect.TypeOf((*MockModule)(nil).GetActionFee), ctx, dataSize)
 }
+
+// GetParams mocks base method.
+func (m *MockModule) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetParams", ctx)
+	ret0, _ := ret[0].(*types.QueryParamsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetParams indicates an expected call of GetParams.
+func (mr *MockModuleMockRecorder) GetParams(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParams", reflect.TypeOf((*MockModule)(nil).GetParams), ctx)
+}

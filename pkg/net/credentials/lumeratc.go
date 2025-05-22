@@ -29,6 +29,7 @@ type CommonOptions struct {
 	LocalIdentity   string  // Local Cosmos address
 	PeerType   		securekeyx.PeerType // Local peer type
 	Curve      		ecdh.Curve
+	Validator 		securekeyx.KeyExchangerValidator
 }
 
 // ClientOptions contains client-specific configuration
@@ -106,6 +107,7 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 			optsCommon.LocalIdentity,
 			optsCommon.PeerType,
 			optsCommon.Curve,
+			optsCommon.Validator,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create secure key exchange: %w", err)

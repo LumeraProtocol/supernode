@@ -29,8 +29,9 @@ type TestAccount struct {
 }
 	
 // setupTestKeyExchange creates a key exchange instance for testing
-func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, peerType securekeyx.PeerType) *securekeyx.SecureKeyExchange {
-	ke, err := securekeyx.NewSecureKeyExchange(kb, addr, peerType, ecdh.P256())
+func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, 
+	peerType securekeyx.PeerType, validator securekeyx.KeyExchangerValidator) *securekeyx.SecureKeyExchange {
+	ke, err := securekeyx.NewSecureKeyExchange(kb, addr, peerType, ecdh.P256(), validator)
 	require.NoError(t, err)
 	return ke
 }
