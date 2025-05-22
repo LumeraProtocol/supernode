@@ -54,7 +54,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			Keyring:       keyring,
 			LocalIdentity: localCosmosAddress,
 			PeerType:      securekeyx.Supernode,
-			Validator:     nil,
+			Validator:     lumeraClient,
 		},
 	})
 	if err != nil {

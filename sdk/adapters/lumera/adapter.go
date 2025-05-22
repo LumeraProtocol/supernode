@@ -9,6 +9,7 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/golang/protobuf/proto"
@@ -16,8 +17,10 @@ import (
 
 //go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=lumera_mock.go
 type Client interface {
+	AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error)
 	GetAction(ctx context.Context, actionID string) (Action, error)
 	GetSupernodes(ctx context.Context, height int64) ([]Supernode, error)
+	GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*sntypes.SuperNode, error)
 	DecodeCascadeMetadata(ctx context.Context, action Action) (actiontypes.CascadeMetadata, error)
 	VerifySignature(ctx context.Context, accountAddr string, data []byte, signature []byte) error
 }
@@ -60,6 +63,37 @@ func NewAdapter(ctx context.Context, config ConfigParams, logger log.Logger) (Cl
 		client: client,
 		logger: logger,
 	}, nil
+}
+
+func (a *Adapter) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*sntypes.SuperNode, error) {
+	a.logger.Debug(ctx, "Getting supernode by address", "address", address)
+	resp, err := a.client.SuperNode().GetSupernodeBySupernodeAddress(ctx, address)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get supernode", "address", address, "error", err)
+		return nil, fmt.Errorf("failed to get supernode: %w", err)
+	}
+	if resp == nil {
+		a.logger.Error(ctx, "Received nil response for supernode", "address", address)
+		return nil, fmt.Errorf("received nil response for supernode %s", address)
+	}
+	a.logger.Debug(ctx, "Successfully retrieved supernode", "address", address)
+	return resp, nil
+}
+
+func (a *Adapter) AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error) {
+	a.logger.Debug(ctx, "Getting account info by address", "address", addr)
+	resp, err := a.client.Auth().AccountInfoByAddress(ctx, addr)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get account info", "address", addr, "error", err)
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+	if resp == nil {
+		a.logger.Error(ctx, "Received nil response for account info", "address", addr)
+		return nil, fmt.Errorf("received nil response for account info %s", addr)
+	}
+	a.logger.Debug(ctx, "Successfully retrieved account info", "address", addr)
+
+	return resp, nil
 }
 
 func (a *Adapter) GetAction(ctx context.Context, actionID string) (Action, error) {
