@@ -8,6 +8,7 @@ set -e  # Exit immediately if a command exits with a non-zero status
 
 # Support mode argument: 'latest-release' (default) or 'latest-tag'
 MODE="${1:-latest-release}"
+
 REPO="LumeraProtocol/lumera"
 GITHUB_API="https://api.github.com/repos/$REPO"
 
@@ -20,23 +21,32 @@ if [ "$MODE" == "latest-tag" ]; then
     else
         TAG_NAME=$(curl -s "$GITHUB_API/tags" | grep '"name"' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
     fi
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/lumera_${TAG_NAME}_linux_amd64.tar.gz"
+
 elif [[ "$MODE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     TAG_NAME="$MODE"
-else
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/lumera_${TAG_NAME}_linux_amd64.tar.gz"
+
+elif [ "$MODE" == "latest-release" ]; then
     echo "Fetching latest release information..."
     RELEASE_INFO=$(curl -s -S -L "$GITHUB_API/releases/latest")
+
+    # Extract tag name and download URL
     if command -v jq >/dev/null 2>&1; then
         TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
+        DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
     else
         TAG_NAME=$(echo "$RELEASE_INFO" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        DOWNLOAD_URL=$(echo "$RELEASE_INFO" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*linux_amd64\.tar\.gz[^"]*"' | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
     fi
+
+else
+    echo "❌ Error: Invalid mode '$MODE'"
+    echo "Usage: $0 [latest-release|latest-tag|vX.Y.Z]"
+    exit 1
 fi
 
-# Construct the download URL
-FILENAME="lumera_${TAG_NAME}_linux_amd64.tar.gz"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/${FILENAME}"
-
-echo "Downloading Lumera tag: $TAG_NAME"
+echo "Selected tag: $TAG_NAME"
 echo "Download URL: $DOWNLOAD_URL"
 
 if [ -z "$TAG_NAME" ] || [ -z "$DOWNLOAD_URL" ]; then
