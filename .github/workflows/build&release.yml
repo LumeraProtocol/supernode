@@ -30,18 +30,8 @@ jobs:
       - name: Configure Git Safe Directory
         run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
-      - name: Get Go version from go.mod
-        id: go-version
-        run: |
-          GO_VERSION=$(grep -E '^go [0-9]+\.[0-9]+(\.[0-9]+)?$' go.mod | cut -d ' ' -f 2)
-          echo "Found go directive version: $GO_VERSION"
-          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ steps.go-version.outputs.version }}
-          cache: true
+      - name: Setup Go and dependencies
+        uses: ./.github/actions/setup-env
 
       - name: Prepare Build Variables
         id: vars
@@ -57,13 +47,6 @@ jobs:
           echo "Output variables:"
           echo "- build_id: $build_id"
           echo "- binary_name: supernode-linux-amd64"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebp-dev
-          # Fix for Lumera module checksum issue
-          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
 
       - name: Build binary
         run: |
@@ -128,31 +111,14 @@ jobs:
       - name: Configure Git Safe Directory
         run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
-      - name: Get Go version from go.mod
-        id: go-version
-        run: |
-          GO_VERSION=$(grep -E '^go [0-9]+\.[0-9]+(\.[0-9]+)?$' go.mod | cut -d ' ' -f 2)
-          echo "Found go directive version: $GO_VERSION"
-          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ steps.go-version.outputs.version }}
-          cache: true
+      - name: Setup Go and dependencies
+        uses: ./.github/actions/setup-env
 
       - name: Prepare Release Variables
         id: vars
         run: |
           repo_name=${GITHUB_REPOSITORY##*/}
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebp-dev
-          # Fix for Lumera module checksum issue
-          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
 
       - name: Build Release Version
         run: |
