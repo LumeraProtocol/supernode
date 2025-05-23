@@ -27,7 +27,7 @@ require (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.0.1
+	github.com/LumeraProtocol/lumera v1.1.0
 	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.17
 	github.com/tidwall/gjson v1.14.2
