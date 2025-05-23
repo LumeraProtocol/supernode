@@ -6,7 +6,7 @@ replace github.com/LumeraProtocol/supernode/supernode => ./supernode
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.0.1
+	github.com/LumeraProtocol/lumera v1.1.0
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
