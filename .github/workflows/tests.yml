@@ -14,8 +14,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
 
@@ -33,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
@@ -52,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
@@ -67,7 +66,7 @@ jobs:
         run: |
           cd tests/scripts
           chmod +x ./install-lumera.sh
-          sudo ./install-lumera.sh
+          sudo ./install-lumera.sh latest-tag
         
       - name: Setup Supernode environments
         run: |
