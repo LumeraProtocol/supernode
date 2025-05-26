@@ -1,18 +1,16 @@
 package cascade
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"google.golang.org/grpc"
-	"io"
-	"lukechampine.com/blake3"
-	"os"
-	"path/filepath"
-
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
+	"google.golang.org/grpc"
+	"io"
+	"os"
 )
 
 type ActionServer struct {
@@ -162,31 +160,28 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	return nil
 }
 
-func initializeHasherAndTempFile() (*blake3.Hasher, *os.File, string, error) {
-	hasher := blake3.New(32, nil)
+func (server *ActionServer) HealthCheck(req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
+	ctx := context.Background()
 
-	tempFilePath := filepath.Join(os.TempDir(), fmt.Sprintf("cascade-upload-%d.tmp", os.Getpid()))
-	tempFile, err := os.Create(tempFilePath)
+	resp, err := server.factory.NewCascadeRegistrationTask().HealthCheck(ctx)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("could not create temp file: %w", err)
+		logtrace.Error(ctx, "error retrieving health-check metrics for supernode", logtrace.Fields{})
+		return nil, err
 	}
 
-	return hasher, tempFile, tempFilePath, nil
-}
-
-func replaceTempDirWithTaskDir(taskID, tempFilePath string, tempFile *os.File) (targetPath string, err error) {
-	if err := tempFile.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-		return "", fmt.Errorf("failed to close temp file: %w", err)
-	}
-
-	targetDir := filepath.Join(os.TempDir(), taskID)
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return "", fmt.Errorf("could not create task directory: %w", err)
-	}
-	targetPath = filepath.Join(targetDir, fmt.Sprintf("uploaded-%s.dat", taskID))
-	if err := os.Rename(tempFilePath, targetPath); err != nil {
-		return "", fmt.Errorf("could not move file to final location: %w", err)
-	}
-
-	return targetPath, nil
+	return &pb.HealthCheckResponse{
+		Cpu: &pb.HealthCheckResponse_CPU{
+			User:    resp.CPU.User,
+			Idle:    resp.CPU.Idle,
+			System:  resp.CPU.System,
+			Overall: resp.CPU.Overall,
+		},
+		Memory: &pb.HealthCheckResponse_Memory{
+			Total:     resp.Memory.Total,
+			Used:      resp.Memory.Used,
+			Available: resp.Memory.Available,
+			UsedPerc:  resp.Memory.UsedPerc,
+		},
+		TasksInProgress: resp.TasksInProgress,
+	}, nil
 }

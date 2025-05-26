@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CascadeService_Register_FullMethodName = "/cascade.CascadeService/Register"
+	CascadeService_Register_FullMethodName    = "/cascade.CascadeService/Register"
+	CascadeService_HealthCheck_FullMethodName = "/cascade.CascadeService/HealthCheck"
 )
 
 // CascadeServiceClient is the client API for CascadeService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CascadeServiceClient interface {
 	Register(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RegisterRequest, RegisterResponse], error)
+	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 }
 
 type cascadeServiceClient struct {
@@ -50,11 +52,22 @@ func (c *cascadeServiceClient) Register(ctx context.Context, opts ...grpc.CallOp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CascadeService_RegisterClient = grpc.BidiStreamingClient[RegisterRequest, RegisterResponse]
 
+func (c *cascadeServiceClient) HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthCheckResponse)
+	err := c.cc.Invoke(ctx, CascadeService_HealthCheck_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CascadeServiceServer is the server API for CascadeService service.
 // All implementations must embed UnimplementedCascadeServiceServer
 // for forward compatibility.
 type CascadeServiceServer interface {
 	Register(grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]) error
+	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
 	mustEmbedUnimplementedCascadeServiceServer()
 }
 
@@ -67,6 +80,9 @@ type UnimplementedCascadeServiceServer struct{}
 
 func (UnimplementedCascadeServiceServer) Register(grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Register not implemented")
+}
+func (UnimplementedCascadeServiceServer) HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
 }
 func (UnimplementedCascadeServiceServer) mustEmbedUnimplementedCascadeServiceServer() {}
 func (UnimplementedCascadeServiceServer) testEmbeddedByValue()                        {}
@@ -96,13 +112,36 @@ func _CascadeService_Register_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CascadeService_RegisterServer = grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]
 
+func _CascadeService_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CascadeServiceServer).HealthCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CascadeService_HealthCheck_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CascadeServiceServer).HealthCheck(ctx, req.(*HealthCheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CascadeService_ServiceDesc is the grpc.ServiceDesc for CascadeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CascadeService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "cascade.CascadeService",
 	HandlerType: (*CascadeServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "HealthCheck",
+			Handler:    _CascadeService_HealthCheck_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Register",
