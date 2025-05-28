@@ -74,7 +74,7 @@ jobs:
           chmod +x ./setup-supernodes.sh
           ./setup-supernodes.sh all \
             ../../supernode/main.go \
-            ../system/supernode-data \
+            ../system/supernode-data1 \
             ../system/config.test-1.yml \
             ../system/supernode-data2 \
             ../system/config.test-2.yml \

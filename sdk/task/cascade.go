@@ -111,6 +111,7 @@ func (t *CascadeTask) isServing(parent context.Context, sn lumera.Supernode) boo
 
 	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
+		PeerType:           t.config.Account.PeerType,
 	}).CreateClient(ctx, sn)
 	if err != nil {
 		logtrace.Info(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
@@ -125,6 +126,7 @@ func (t *CascadeTask) isServing(parent context.Context, sn lumera.Supernode) boo
 func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lumera.Supernodes) error {
 	factoryCfg := net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
+		PeerType:           t.config.Account.PeerType,
 	}
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
 

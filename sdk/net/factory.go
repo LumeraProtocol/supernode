@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/log"
@@ -14,6 +15,7 @@ import (
 // FactoryConfig contains configuration for the ClientFactory
 type FactoryConfig struct {
 	LocalCosmosAddress string
+	PeerType           securekeyx.PeerType
 }
 
 // ClientFactory creates and manages supernode clients
@@ -54,7 +56,7 @@ func (f *ClientFactory) CreateClient(ctx context.Context, supernode lumera.Super
 		"endpoint", supernode.GrpcEndpoint)
 
 	// Create client with dependencies
-	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config.LocalCosmosAddress, supernode, f.lumeraClient,
+	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config, supernode, f.lumeraClient,
 		f.clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create supernode client for %s: %w", supernode.CosmosAddress, err)

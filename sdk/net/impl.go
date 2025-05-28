@@ -31,7 +31,7 @@ var _ SupernodeClient = (*supernodeClient)(nil)
 
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
-	localCosmosAddress string, targetSupernode lumera.Supernode, lumeraClient lumera.Client,
+	factoryConfig FactoryConfig, targetSupernode lumera.Supernode, lumeraClient lumera.Client,
 	clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
 	// Register ALTS protocols, just like in the test
@@ -44,16 +44,20 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	if keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if localCosmosAddress == "" {
+	if factoryConfig.LocalCosmosAddress == "" {
 		return nil, fmt.Errorf("local cosmos address cannot be empty")
+	}
+
+	if factoryConfig.PeerType == 0 {
+		factoryConfig.PeerType = securekeyx.Simplenode
 	}
 
 	// Create client credentials
 	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
 		CommonOptions: ltc.CommonOptions{
 			Keyring:       keyring,
-			LocalIdentity: localCosmosAddress,
-			PeerType:      securekeyx.Supernode,
+			LocalIdentity: factoryConfig.LocalCosmosAddress,
+			PeerType:      factoryConfig.PeerType,
 			Validator:     lumeraClient,
 		},
 	})
@@ -67,10 +71,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		targetSupernode.GrpcEndpoint,
 	)
 
-	logger.Debug(ctx, "Connecting to supernode securely",
-		"endpoint", targetSupernode.GrpcEndpoint,
-		"target_id", targetSupernode.CosmosAddress,
-		"local_id", localCosmosAddress)
+	logger.Info(ctx, "Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions
@@ -87,9 +88,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			targetSupernode.CosmosAddress, err)
 	}
 
-	logger.Info(ctx, "Connected to supernode securely",
-		"address", targetSupernode.CosmosAddress,
-		"endpoint", targetSupernode.GrpcEndpoint)
+	logger.Info(ctx, "Connected to supernode securely", "address", targetSupernode.CosmosAddress, "endpoint", targetSupernode.GrpcEndpoint)
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(

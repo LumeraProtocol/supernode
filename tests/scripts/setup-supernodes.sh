@@ -189,9 +189,9 @@ usage() {
     echo "      - Sets up both primary and secondary nodes in one command"
     echo ""
     echo "Examples:"
-    echo "  $0 primary supernode/main.go tests/system/supernode-data tests/system/config.test-1.yml"
-    echo "  $0 secondary tests/system/supernode-data tests/system/supernode-data2 tests/system/config.test-2.yml tests/system/supernode-data3 tests/system/config.test-3.yml"
-    echo "  $0 all supernode/main.go tests/system/supernode-data tests/system/config.test-1.yml tests/system/supernode-data2 tests/system/config.test-2.yml tests/system/supernode-data3 tests/system/config.test-3.yml"
+    echo "  $0 primary supernode/main.go tests/system/supernode-data1 tests/system/config.test-1.yml"
+    echo "  $0 secondary tests/system/supernode-data1 tests/system/supernode-data2 tests/system/config.test-2.yml tests/system/supernode-data3 tests/system/config.test-3.yml"
+    echo "  $0 all supernode/main.go tests/system/supernode-data1 tests/system/config.test-1.yml tests/system/supernode-data2 tests/system/config.test-2.yml tests/system/supernode-data3 tests/system/config.test-3.yml"
     exit 1
 }
 

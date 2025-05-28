@@ -23,7 +23,7 @@ gen-cascade:
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
-DATA_DIR=tests/system/supernode-data
+DATA_DIR=tests/system/supernode-data1
 DATA_DIR2=tests/system/supernode-data2
 DATA_DIR3=tests/system/supernode-data3
 CONFIG_FILE=tests/system/config.test-1.yml
@@ -37,7 +37,7 @@ SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 install-lumera:
 	@echo "Installing Lumera..."
 	@chmod +x tests/scripts/install-lumera.sh
-	@sudo tests/scripts/install-lumera.sh
+	@sudo tests/scripts/install-lumera.sh latest-tag
 
 # Setup supernode environments
 setup-supernodes:
@@ -51,6 +51,6 @@ system-test-setup: install-lumera setup-supernodes
 	@if [ -f claims.csv ]; then cp claims.csv ~/; echo "Copied claims.csv to home directory."; fi
 
 # Run system tests with complete setup
-test-system-full: system-test-setup
+test-system-full:
 	@echo "Running system tests..."
 	@cd tests/system && go test -tags=system_test -v .

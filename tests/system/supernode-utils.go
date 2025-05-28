@@ -17,7 +17,7 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 
 	// Data directories for all three supernodes
 	dataDirs := []string{
-		filepath.Join(wd, "supernode-data"),
+		filepath.Join(wd, "supernode-data1"),
 		filepath.Join(wd, "supernode-data2"),
 		filepath.Join(wd, "supernode-data3"),
 	}

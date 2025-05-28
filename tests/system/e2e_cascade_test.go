@@ -58,11 +58,11 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Network and service configuration constants
 	const (
-		raptorQHost     = "localhost"                           // RaptorQ service host
-		raptorQPort     = 50051                                 // RaptorQ service port
-		raptorQFilesDir = "./supernode-data/raptorq_files_test" // Directory for RaptorQ files
-		lumeraGRPCAddr  = "localhost:9090"                      // Lumera blockchain GRPC address
-		lumeraChainID   = "testing"                             // Lumera chain ID for testing
+		raptorQHost     = "localhost"                            // RaptorQ service host
+		raptorQPort     = 50051                                  // RaptorQ service port
+		raptorQFilesDir = "./supernode-data1/raptorq_files_test" // Directory for RaptorQ files
+		lumeraGRPCAddr  = "localhost:9090"                       // Lumera blockchain GRPC address
+		lumeraChainID   = "testing"                              // Lumera chain ID for testing
 	)
 
 	// Action request parameters
