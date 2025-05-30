@@ -122,8 +122,18 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsRes
 // MockActionMsgModule implements the action_msg.Module interface for testing
 type MockActionMsgModule struct{}
 
-// Add methods as needed based on the actual action_msg.Module interface
-// For now, this is a placeholder implementation
+// RequestAction mocks the behavior of requesting an action.
+// Adjust the signature and return values as needed to match the actual interface.
+func (m *MockActionMsgModule) RequestAction(ctx context.Context, req *types.MsgRequestAction) (*sdktx.BroadcastTxResponse, error) {
+	// Mock implementation returns success with empty result
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+// RequesAction is a stub to satisfy the action_msg.Module interface in case of typo in interface definition.
+func (m *MockActionMsgModule) RequesAction(ctx context.Context, arg1, arg2, arg3, arg4 string) (*sdktx.BroadcastTxResponse, error) {
+	// Mock implementation returns success with empty result
+	return &sdktx.BroadcastTxResponse{}, nil
+}
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface
 func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.BroadcastTxResponse, error) {

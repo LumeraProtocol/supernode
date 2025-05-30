@@ -13,6 +13,7 @@ import (
 
 type Module interface {
 	// FinalizeCascadeAction finalizes a CASCADE action with the given parameters
+	RequesAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error)
 	FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.BroadcastTxResponse, error)
 }
 
