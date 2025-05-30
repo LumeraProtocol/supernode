@@ -8,16 +8,14 @@ import (
 	actionapi "github.com/LumeraProtocol/lumera/api/lumera/action"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	lumeracodec "github.com/LumeraProtocol/supernode/pkg/lumera/codec"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -139,7 +137,7 @@ func (m *module) FinalizeCascadeAction(
 	}
 
 	// Create encoding config
-	encCfg := makeEncodingConfig()
+	encCfg := lumeracodec.GetEncodingConfig()
 
 	// Get account info for signing
 	accInfo, err := m.getAccountInfo(ctx, creator)
@@ -346,7 +344,7 @@ func (m *module) getAccountInfo(ctx context.Context, address string) (*AccountIn
 
 	// Unmarshal account
 	var account authtypes.AccountI
-	err = m.getEncodingConfig().InterfaceRegistry.UnpackAny(resp.Account, &account)
+	err = lumeracodec.GetEncodingConfig().InterfaceRegistry.UnpackAny(resp.Account, &account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unpack account: %w", err)
 	}
@@ -361,31 +359,6 @@ func (m *module) getAccountInfo(ctx context.Context, address string) (*AccountIn
 		AccountNumber: baseAcc.AccountNumber,
 		Sequence:      baseAcc.Sequence,
 	}, nil
-}
-
-// makeEncodingConfig creates an EncodingConfig for transaction handling
-func makeEncodingConfig() EncodingConfig {
-	amino := codec.NewLegacyAmino()
-
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(interfaceRegistry)
-	authtypes.RegisterInterfaces(interfaceRegistry)
-	actiontypes.RegisterInterfaces(interfaceRegistry)
-
-	marshaler := codec.NewProtoCodec(interfaceRegistry)
-	txConfig := authtx.NewTxConfig(marshaler, authtx.DefaultSignModes)
-
-	return EncodingConfig{
-		InterfaceRegistry: interfaceRegistry,
-		Codec:             marshaler,
-		TxConfig:          txConfig,
-		Amino:             amino,
-	}
-}
-
-// getEncodingConfig returns the module's encoding config
-func (m *module) getEncodingConfig() EncodingConfig {
-	return makeEncodingConfig()
 }
 
 // EncodingConfig specifies the concrete encoding types to use
