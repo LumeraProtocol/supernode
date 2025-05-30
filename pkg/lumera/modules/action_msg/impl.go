@@ -9,14 +9,12 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/pkg/lumera/codec"
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -32,6 +30,7 @@ const (
 
 // module implements the Module interface
 type module struct {
+	authmod       auth.Module
 	conn          *grpc.ClientConn
 	client        actiontypes.MsgClient
 	kr            keyring.Keyring
@@ -45,7 +44,7 @@ type module struct {
 }
 
 // newModule creates a new ActionMsg module client
-func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
+func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainID string, authmodule auth.Module) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
 	}
@@ -63,11 +62,13 @@ func newModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainI
 	}
 
 	return &module{
-		conn:          conn,
-		client:        actiontypes.NewMsgClient(conn),
-		kr:            kr,
-		keyName:       keyName,
-		chainID:       chainID,
+		conn:    conn,
+		client:  actiontypes.NewMsgClient(conn),
+		kr:      kr,
+		keyName: keyName,
+		chainID: chainID,
+		authmod: authmodule,
+		// Defaults
 		gasLimit:      defaultGasLimit,
 		gasAdjustment: defaultGasAdjustment,
 		gasPadding:    defaultGasPadding,
@@ -140,11 +141,12 @@ func (m *module) FinalizeCascadeAction(
 	encCfg := lumeracodec.GetEncodingConfig()
 
 	// Get account info for signing
-	accInfo, err := m.getAccountInfo(ctx, creator)
+	accInfoRes, err := m.authmod.AccountInfoByAddress(ctx, creator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get account info: %w", err)
 	}
 
+	accInfo := accInfoRes.Info
 	logtrace.Info(ctx, "account info retrieved", logtrace.Fields{"accountNumber": accInfo.AccountNumber})
 
 	// Create client context with keyring
@@ -325,54 +327,6 @@ func (m *module) broadcastTx(ctx context.Context, txBytes []byte) (*TxResponse, 
 		Code:   resp.TxResponse.Code,
 		RawLog: resp.TxResponse.RawLog,
 	}, nil
-}
-
-// Helper function to get account info
-func (m *module) getAccountInfo(ctx context.Context, address string) (*AccountInfo, error) {
-	// Create gRPC client for auth service
-	authClient := authtypes.NewQueryClient(m.conn)
-
-	// Query account info
-	req := &authtypes.QueryAccountRequest{
-		Address: address,
-	}
-
-	resp, err := authClient.Account(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get account info: %w", err)
-	}
-
-	// Unmarshal account
-	var account authtypes.AccountI
-	err = lumeracodec.GetEncodingConfig().InterfaceRegistry.UnpackAny(resp.Account, &account)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unpack account: %w", err)
-	}
-
-	// Convert to BaseAccount
-	baseAcc, ok := account.(*authtypes.BaseAccount)
-	if !ok {
-		return nil, fmt.Errorf("received account is not a BaseAccount")
-	}
-
-	return &AccountInfo{
-		AccountNumber: baseAcc.AccountNumber,
-		Sequence:      baseAcc.Sequence,
-	}, nil
-}
-
-// EncodingConfig specifies the concrete encoding types to use
-type EncodingConfig struct {
-	InterfaceRegistry types.InterfaceRegistry
-	Codec             codec.Codec
-	TxConfig          client.TxConfig
-	Amino             *codec.LegacyAmino
-}
-
-// AccountInfo holds account information for transaction signing
-type AccountInfo struct {
-	AccountNumber uint64
-	Sequence      uint64
 }
 
 // TxResponse holds transaction response information

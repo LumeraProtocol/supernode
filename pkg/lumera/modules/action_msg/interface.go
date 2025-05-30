@@ -4,6 +4,7 @@ package action_msg
 import (
 	"context"
 
+	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
 )
@@ -22,6 +23,6 @@ type Module interface {
 }
 
 // NewModule creates a new ActionMsg module client
-func NewModule(conn *grpc.ClientConn, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
-	return newModule(conn, kr, keyName, chainID)
+func NewModule(conn *grpc.ClientConn, authmod auth.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
+	return newModule(conn, kr, keyName, chainID, authmod)
 }

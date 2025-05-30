@@ -47,6 +47,7 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 
 	actionMsgModule, err := action_msg.NewModule(
 		conn.GetConn(),
+		authModule,
 		cfg.keyring,
 		cfg.KeyName,
 		cfg.ChainID,
