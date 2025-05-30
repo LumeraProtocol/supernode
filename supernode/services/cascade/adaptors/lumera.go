@@ -6,7 +6,7 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
+	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
 
 //go:generate mockgen -destination=mocks/lumera_mock.go -package=cascadeadaptormocks -source=lumera.go
@@ -18,7 +18,7 @@ type LumeraClient interface {
 
 	// Action Module
 	GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error)
-	FinalizeAction(ctx context.Context, actionID string, rqids []string) (*action_msg.FinalizeActionResult, error)
+	FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error)
 	GetActionFee(ctx context.Context, dataSize string) (*actiontypes.QueryGetActionFeeResponse, error)
 	// Auth
 	Verify(ctx context.Context, creator string, file []byte, sigBytes []byte) error
@@ -43,7 +43,7 @@ func (c *Client) GetActionFee(ctx context.Context, dataSize string) (*actiontype
 	return c.lc.Action().GetActionFee(ctx, dataSize)
 }
 
-func (c *Client) FinalizeAction(ctx context.Context, actionID string, rqids []string) (*action_msg.FinalizeActionResult, error) {
+func (c *Client) FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error) {
 	return c.lc.ActionMsg().FinalizeCascadeAction(ctx, actionID, rqids)
 }
 

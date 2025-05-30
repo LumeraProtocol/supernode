@@ -2,25 +2,26 @@ package cascade_test
 
 import (
 	"context"
-	sdkmath "cosmossdk.io/math"
 	"encoding/base64"
 	"encoding/hex"
+	"os"
+	"testing"
+
+	sdkmath "cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	codecpkg "github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors"
 	cascadeadaptormocks "github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors/mocks"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/gogoproto/proto"
 	"lukechampine.com/blake3"
-	"os"
-	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func TestCascadeRegistrationTask_Register(t *testing.T) {
@@ -82,7 +83,7 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 				// 4. Finalize
 				lc.EXPECT().
 					FinalizeAction(gomock.Any(), "action123", gomock.Any()).
-					Return(&action_msg.FinalizeActionResult{TxHash: "tx123"}, nil)
+					Return(&sdktx.BroadcastTxResponse{TxResponse: &sdk.TxResponse{TxHash: "tx123"}}, nil)
 
 				// 5. Params (if used in fee check)
 				lc.EXPECT().GetActionFee(gomock.Any(), "10").Return(&actiontypes.QueryGetActionFeeResponse{Amount: "1000"}, nil)

@@ -15,6 +15,7 @@ import (
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
@@ -125,9 +126,9 @@ type MockActionMsgModule struct{}
 // For now, this is a placeholder implementation
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface
-func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*action_msg.FinalizeActionResult, error) {
+func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.BroadcastTxResponse, error) {
 	// Mock implementation returns success with empty result
-	return &action_msg.FinalizeActionResult{}, nil
+	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // MockSupernodeModule implements the supernode.Module interface for testing
@@ -156,16 +157,34 @@ func (m *MockSupernodeModule) GetParams(ctx context.Context) (*supernodeTypes.Qu
 // MockTxModule implements the tx.Module interface for testing
 type MockTxModule struct{}
 
-func (m *MockTxModule) BroadcastTx(ctx context.Context, txBytes []byte, mode sdktx.BroadcastMode) (*sdktx.BroadcastTxResponse, error) {
-	return &sdktx.BroadcastTxResponse{}, nil
-}
-
-func (m *MockTxModule) SimulateTx(ctx context.Context, txBytes []byte) (*sdktx.SimulateResponse, error) {
+// SimulateTransaction simulates a transaction with given messages and returns gas used
+func (m *MockTxModule) SimulateTransaction(ctx context.Context, msgs []sdktypes.Msg, accountInfo *authtypes.BaseAccount, config *tx.TxConfig) (*sdktx.SimulateResponse, error) {
+	// Mock implementation returns empty simulation response
 	return &sdktx.SimulateResponse{}, nil
 }
 
-func (m *MockTxModule) GetTx(ctx context.Context, hash string) (*sdktx.GetTxResponse, error) {
-	return &sdktx.GetTxResponse{}, nil
+// BuildAndSignTransaction builds and signs a transaction with the given parameters
+func (m *MockTxModule) BuildAndSignTransaction(ctx context.Context, msgs []sdktypes.Msg, accountInfo *authtypes.BaseAccount, gasLimit uint64, fee string, config *tx.TxConfig) ([]byte, error) {
+	// Mock implementation returns empty tx bytes
+	return []byte{}, nil
+}
+
+// BroadcastTransaction mocks the behavior of broadcasting a transaction
+func (m *MockTxModule) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdktx.BroadcastTxResponse, error) {
+	// Mock implementation returns an empty response for testing
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+// CalculateFee calculates the transaction fee based on gas usage and config
+func (m *MockTxModule) CalculateFee(gasAmount uint64, config *tx.TxConfig) string {
+	// Mock implementation returns empty fee string
+	return ""
+}
+
+// ProcessTransaction handles the complete flow: simulate, build, sign, and broadcast
+func (m *MockTxModule) ProcessTransaction(ctx context.Context, msgs []sdktypes.Msg, accountInfo *authtypes.BaseAccount, config *tx.TxConfig) (*sdktx.BroadcastTxResponse, error) {
+	// Mock implementation returns empty broadcast response
+	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // MockNodeModule implements the node.Module interface for testing

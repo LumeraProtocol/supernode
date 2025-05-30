@@ -3,16 +3,16 @@ package server
 import (
 	"context"
 	"fmt"
-	"os"
 	"net"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -53,22 +53,22 @@ func TestRegisterService(t *testing.T) {
 func TestDefaultServerOptions(t *testing.T) {
 	opts := DefaultServerOptions()
 	assert.NotNil(t, opts, "Server options should be initialized")
-	assert.Equal(t, 100 * MB, opts.MaxRecvMsgSize, "MaxRecvMsgSize should be 100 MB")
-	assert.Equal(t, 100 * MB, opts.MaxSendMsgSize, "MaxSendMsgSize should be 100 MB")
-	assert.Equal(t, int32(1 * MB), opts.InitialWindowSize, "InitialWindowSize should be 1 MB")
-	assert.Equal(t, int32(1 * MB), opts.InitialConnWindowSize, "InitialConnWindowSize should be 1 MB")
+	assert.Equal(t, 100*MB, opts.MaxRecvMsgSize, "MaxRecvMsgSize should be 100 MB")
+	assert.Equal(t, 100*MB, opts.MaxSendMsgSize, "MaxSendMsgSize should be 100 MB")
+	assert.Equal(t, int32(1*MB), opts.InitialWindowSize, "InitialWindowSize should be 1 MB")
+	assert.Equal(t, int32(1*MB), opts.InitialConnWindowSize, "InitialConnWindowSize should be 1 MB")
 	assert.Equal(t, uint32(1000), opts.MaxConcurrentStreams, "MaxConcurrentStreams should be 1000")
-	assert.Equal(t, defaultGracefulShutdownTimeout, opts.GracefulShutdownTime, 
+	assert.Equal(t, defaultGracefulShutdownTimeout, opts.GracefulShutdownTime,
 		fmt.Sprintf("GracefulShutdownTimeout should be %v", defaultGracefulShutdownTimeout))
 	assert.Equal(t, uint32(0), opts.NumServerWorkers, "NumServerWorkers should be 0")
-	assert.Equal(t, 32 * KB, opts.WriteBufferSize, "WriteBufferSize should be 32 KB")
-	assert.Equal(t, 32 * KB, opts.ReadBufferSize, "ReadBufferSize should be 32 KB")
-	assert.Equal(t, 2 * time.Hour, opts.MaxConnectionIdle, "MaxConnectionIdle should be 2 hours")
-	assert.Equal(t, 2 * time.Hour, opts.MaxConnectionAge, "MaxConnectionAge should be 2 hours")
-	assert.Equal(t, 1 * time.Hour, opts.MaxConnectionAgeGrace, "MaxConnectionAgeGrace should be 1 hour")
-	assert.Equal(t, 1 * time.Hour, opts.Time, "Time should be 1 hour")
-	assert.Equal(t, 30 * time.Minute, opts.Timeout, "Timeout should be 30 minutes")
-	assert.Equal(t, 5 * time.Minute, opts.MinTime, "MinTime should be 5 minutes")
+	assert.Equal(t, 32*KB, opts.WriteBufferSize, "WriteBufferSize should be 32 KB")
+	assert.Equal(t, 32*KB, opts.ReadBufferSize, "ReadBufferSize should be 32 KB")
+	assert.Equal(t, 2*time.Hour, opts.MaxConnectionIdle, "MaxConnectionIdle should be 2 hours")
+	assert.Equal(t, 2*time.Hour, opts.MaxConnectionAge, "MaxConnectionAge should be 2 hours")
+	assert.Equal(t, 1*time.Hour, opts.MaxConnectionAgeGrace, "MaxConnectionAgeGrace should be 1 hour")
+	assert.Equal(t, 1*time.Hour, opts.Time, "Time should be 1 hour")
+	assert.Equal(t, 30*time.Minute, opts.Timeout, "Timeout should be 30 minutes")
+	assert.Equal(t, 5*time.Minute, opts.MinTime, "MinTime should be 5 minutes")
 	assert.True(t, opts.PermitWithoutStream, "PermitWithoutStream should be true")
 }
 
@@ -153,7 +153,7 @@ func TestBuildServerOptionsWithWorkers(t *testing.T) {
 
 	serverOpts := server.buildServerOptions(opts)
 	assert.NotNil(t, serverOpts, "Server options should be built")
-	
+
 	// Check function signature rather than value comparison
 	found := false
 	for _, opt := range serverOpts {
@@ -222,7 +222,7 @@ type TestServiceInterface interface {
 }
 
 type TestService struct{}
-	
+
 func (TestService) TestMethod(ctx context.Context, req interface{}) (interface{}, error) {
 	return nil, nil
 }
