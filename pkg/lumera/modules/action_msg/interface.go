@@ -11,14 +11,11 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Module defines the interface for action messages operations
 type Module interface {
 	// FinalizeCascadeAction finalizes a CASCADE action with the given parameters
-	// This method now focuses only on message creation and delegates tx operations to tx module
 	FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.BroadcastTxResponse, error)
 }
 
-// NewModule creates a new ActionMsg module client
 func NewModule(conn *grpc.ClientConn, authmod auth.Module, txmodule tx.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
 	return newModule(conn, authmod, txmodule, kr, keyName, chainID)
 }

@@ -54,7 +54,6 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 }
 
 // FinalizeCascadeAction finalizes a CASCADE action with the given parameters
-// This method is now much simpler thanks to TxHelper
 func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.BroadcastTxResponse, error) {
 	// Step 1: Validate input parameters
 	if actionId == "" {
@@ -65,7 +64,6 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 	}
 
 	// Step 2: Use TxHelper to execute the transaction
-	// The helper handles all the complexity of getting account info, signing, and broadcasting
 	txResp, err := m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
 		return m.createFinalizeActionMessage(actionId, rqIdsIds, creator)
 	})
@@ -79,7 +77,6 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 }
 
 // createFinalizeActionMessage creates a MsgFinalizeAction message
-// This is the core business logic of this module - creating the specific message type
 func (m *module) createFinalizeActionMessage(actionId string, rqIdsIds []string, creator string) (*actiontypes.MsgFinalizeAction, error) {
 	// Create CASCADE metadata
 	cascadeMeta := actionapi.CascadeMetadata{
