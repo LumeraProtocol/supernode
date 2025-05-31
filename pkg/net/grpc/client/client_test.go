@@ -2,18 +2,18 @@ package client
 
 import (
 	"context"
-	"os"
 	"net"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -84,10 +84,10 @@ func TestNewClient(t *testing.T) {
 func TestDefaultClientOptions(t *testing.T) {
 	opts := DefaultClientOptions()
 	assert.NotNil(t, opts, "ClientOptions should be initialized")
-	assert.Equal(t, 100 * MB, opts.MaxRecvMsgSize, "MaxRecvMsgSize should be 100 MB")
-	assert.Equal(t, 100 * MB, opts.MaxSendMsgSize, "MaxSendMsgSize should be 100 MB")
-	assert.Equal(t, int32(1 * MB), opts.InitialWindowSize, "InitialWindowSize should be 1 MB")
-	assert.Equal(t, int32(1 * MB), opts.InitialConnWindowSize, "InitialConnWindowSize should be 1 MB")
+	assert.Equal(t, 100*MB, opts.MaxRecvMsgSize, "MaxRecvMsgSize should be 100 MB")
+	assert.Equal(t, 100*MB, opts.MaxSendMsgSize, "MaxSendMsgSize should be 100 MB")
+	assert.Equal(t, int32(1*MB), opts.InitialWindowSize, "InitialWindowSize should be 1 MB")
+	assert.Equal(t, int32(1*MB), opts.InitialConnWindowSize, "InitialConnWindowSize should be 1 MB")
 	assert.Equal(t, defaultConnWaitTime, opts.ConnWaitTime, "ConnWaitTime should be 10 seconds")
 	assert.True(t, opts.EnableRetries, "EnableRetries should be true")
 	assert.Equal(t, maxRetries, opts.MaxRetries, "MaxRetries should be 5")
@@ -114,8 +114,8 @@ func TestBuildDialOptions(t *testing.T) {
 		{
 			name: "with user agent and authority",
 			opts: &ClientOptions{
-				UserAgent:     "test-agent",
-				Authority:     "test-authority",
+				UserAgent:      "test-agent",
+				Authority:      "test-authority",
 				MaxRecvMsgSize: 1024,
 				MaxSendMsgSize: 1024,
 			},
@@ -211,27 +211,27 @@ func TestWaitForConnection(t *testing.T) {
 			expectError:  false,
 		},
 		{
-			name:         "connection shutdown",
-			initialState: connectivity.Connecting,
-			finalState:   connectivity.Shutdown,
-			timeout:      2 * time.Second,
-			expectError:  true,
+			name:          "connection shutdown",
+			initialState:  connectivity.Connecting,
+			finalState:    connectivity.Shutdown,
+			timeout:       2 * time.Second,
+			expectError:   true,
 			expectedError: "grpc connection is shutdown",
 		},
 		{
-			name:         "transient failure",
-			initialState: connectivity.Connecting,
-			finalState:   connectivity.TransientFailure,
-			timeout:      2 * time.Second,
-			expectError:  true,
+			name:          "transient failure",
+			initialState:  connectivity.Connecting,
+			finalState:    connectivity.TransientFailure,
+			timeout:       2 * time.Second,
+			expectError:   true,
 			expectedError: "grpc connection is in transient failure",
 		},
 		{
-			name:         "timeout waiting for connection",
-			initialState: connectivity.Connecting,
-			finalState:   connectivity.Connecting, // Never changes
-			timeout:      500 * time.Millisecond,
-			expectError:  true,
+			name:          "timeout waiting for connection",
+			initialState:  connectivity.Connecting,
+			finalState:    connectivity.Connecting, // Never changes
+			timeout:       500 * time.Millisecond,
+			expectError:   true,
 			expectedError: "timeout waiting for grpc connection state change",
 		},
 	}

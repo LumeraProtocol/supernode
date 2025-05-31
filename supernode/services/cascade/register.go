@@ -135,9 +135,10 @@ func (task *CascadeRegistrationTask) Register(
 		logtrace.Info(ctx, "Finalize Action Error", fields)
 		return task.wrapErr(ctx, "failed to finalize action", err, fields)
 	}
-	fields[logtrace.FieldTxHash] = resp.TxHash
+	txHash := resp.TxResponse.TxHash
+	fields[logtrace.FieldTxHash] = txHash
 	logtrace.Info(ctx, "action has been finalized", fields)
-	task.streamEvent(SupernodeEventTypeActionFinalized, "action has been finalized", resp.TxHash, send)
+	task.streamEvent(SupernodeEventTypeActionFinalized, "action has been finalized", txHash, send)
 
 	err = os.RemoveAll(req.FilePath)
 	if err != nil {

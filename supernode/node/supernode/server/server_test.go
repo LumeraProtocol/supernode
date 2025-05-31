@@ -1,12 +1,14 @@
 package server
 
 import (
-	"github.com/golang/mock/gomock"
+	"testing"
+
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/stretchr/testify/assert"
+	gomock "go.uber.org/mock/gomock"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"testing"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
 )
 
 // --- Mock service implementing server.service ---
@@ -49,7 +51,7 @@ func TestNewServer_WithNilConfig(t *testing.T) {
 func TestSetServiceStatusAndClose(t *testing.T) {
 	ctl := gomock.NewController(t)
 	defer ctl.Finish()
-	
+
 	mockKeyring := NewMockKeyring(ctl)
 	mockLumeraClient := lumera.NewMockClient(ctl)
 

@@ -26,6 +26,4 @@ go.work.sum
 .env
 /data
 /tests/system/data
-tests/system/supernode-data1
-tests/system/supernode-data2
-tests/system/supernode-data3
+tests/system/**/supernode-data*

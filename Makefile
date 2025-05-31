@@ -51,6 +51,6 @@ system-test-setup: install-lumera setup-supernodes
 	@if [ -f claims.csv ]; then cp claims.csv ~/; echo "Copied claims.csv to home directory."; fi
 
 # Run system tests with complete setup
-test-system-full:
+test-e2e:
 	@echo "Running system tests..."
 	@cd tests/system && go test -tags=system_test -v .

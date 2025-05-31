@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	lumeracodec "github.com/LumeraProtocol/supernode/pkg/lumera/codec"
 	"github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"google.golang.org/grpc"
@@ -60,7 +58,7 @@ func (m *module) Verify(ctx context.Context, accAddress string, data, signature 
 
 	// Unpack the account from Any type
 	var account types.AccountI
-	if err := m.getEncodingConfig().InterfaceRegistry.UnpackAny(accResp.Account, &account); err != nil {
+	if err := lumeracodec.GetEncodingConfig().InterfaceRegistry.UnpackAny(accResp.Account, &account); err != nil {
 		return fmt.Errorf("failed to unpack account: %w", err)
 	}
 
@@ -74,28 +72,4 @@ func (m *module) Verify(ctx context.Context, accAddress string, data, signature 
 	}
 
 	return nil
-}
-
-// getEncodingConfig returns the module's encoding config
-func (m *module) getEncodingConfig() EncodingConfig {
-	amino := codec.NewLegacyAmino()
-
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(interfaceRegistry)
-	authtypes.RegisterInterfaces(interfaceRegistry)
-
-	marshaler := codec.NewProtoCodec(interfaceRegistry)
-
-	return EncodingConfig{
-		InterfaceRegistry: interfaceRegistry,
-		Codec:             marshaler,
-		Amino:             amino,
-	}
-}
-
-// EncodingConfig specifies the concrete encoding types to use
-type EncodingConfig struct {
-	InterfaceRegistry codectypes.InterfaceRegistry
-	Codec             codec.Codec
-	Amino             *codec.LegacyAmino
 }

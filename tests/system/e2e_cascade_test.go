@@ -16,6 +16,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
@@ -229,7 +230,17 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Initialize Lumera blockchain client for interactions
 
-	//
+	ctx := context.Background()
+
+	lumeraCfg, err := lumera.NewConfig(
+		lumeraGRPCAddr,
+		lumeraChainID,
+		userKeyName,
+		keplrKeyring,
+	)
+	require.NoError(t, err, "Failed to create Lumera client configuration")
+
+	lumeraClinet, err := lumera.NewClient(ctx, lumeraCfg)
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
 	// ---------------------------------------
@@ -260,7 +271,6 @@ func TestCascadeE2E(t *testing.T) {
 
 	rqCodec := codec.NewRaptorQCodec(raptorQFilesDir)
 
-	ctx := context.Background()
 	encodeRes, err := rqCodec.Encode(ctx, codec.EncodeRequest{
 		Path:     testFileFullpath,
 		DataSize: int(fileInfo.Size()),
@@ -332,20 +342,23 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Submit the action request transaction to the blockchain using user key
 	// This registers the request with metadata for supernodes to process
-	actionRequestResp := cli.CustomCommand(
-		"tx", "action", "request-action",
-		actionType,            // CASCADE action type
-		metadata,              // JSON metadata with all required fields
-		price,                 // Price in ulume tokens
-		expirationTime,        // Unix timestamp for expiration
-		"--from", userKeyName, // Use user key for transaction submission
-		"--gas", "auto",
-		"--gas-adjustment", "1.5",
-	)
+	// actionRequestResp := cli.CustomCommand(
+	// 	"tx", "action", "request-action",
+	// 	actionType,            // CASCADE action type
+	// 	metadata,              // JSON metadata with all required fields
+	// 	price,                 // Price in ulume tokens
+	// 	expirationTime,        // Unix timestamp for expiration
+	// 	"--from", userKeyName, // Use user key for transaction submission
+	// 	"--gas", "auto",
+	// 	"--gas-adjustment", "1.5",
+	// )
+
+	response, err := lumeraClinet.ActionMsg().RequesAction(ctx, actionType, metadata, price, expirationTime)
+
+	txresp := response.TxResponse
 
 	// Verify the transaction was successful
-	RequireTxSuccess(t, actionRequestResp)
-	t.Logf("Action request successful: %s", actionRequestResp)
+	require.Zero(t, txresp.Code, "Transaction should have success code 0")
 
 	// Wait for transaction to be included in a block
 	sut.AwaitNextBlock(t)
@@ -355,7 +368,7 @@ func TestCascadeE2E(t *testing.T) {
 	require.Contains(t, accountResp, "public_key", "User account public key should be available")
 
 	// Extract transaction hash from response for verification
-	txHash := gjson.Get(actionRequestResp, "txhash").String()
+	txHash := txresp.TxHash
 	require.NotEmpty(t, txHash, "Transaction hash should not be empty")
 	t.Logf("Transaction hash: %s", txHash)
 
