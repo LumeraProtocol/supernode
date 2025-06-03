@@ -23,7 +23,10 @@ const (
 	DefaultGasAdjustment = float64(1.5)
 	DefaultGasPadding    = uint64(50000)
 	DefaultFeeDenom      = "ulume"
-	DefaultGasPrice      = "0.000001" // Price per unit of gas
+	DefaultGasPrice      = "0.000001"
+
+	// Gas costs from chain parameters
+	TxSizeCostPerByte = uint64(10) // tx_size_cost_per_byte: "10"
 )
 
 // module implements the Module interface
@@ -40,6 +43,11 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 	return &module{
 		client: sdktx.NewServiceClient(conn),
 	}, nil
+}
+
+// calculateGasForTxSize calculates gas needed for transaction size
+func (m *module) calculateGasForTxSize(txSizeBytes int) uint64 {
+	return uint64(txSizeBytes) * TxSizeCostPerByte
 }
 
 // SimulateTransaction simulates a transaction with given messages and returns gas used
@@ -65,61 +73,78 @@ func (m *module) SimulateTransaction(ctx context.Context, msgs []types.Msg, acco
 		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
-	// Use a minimal fee for simulation, just to avoid errors related to fees
 	minFee := fmt.Sprintf("1%s", config.FeeDenom)
 
-	// Build unsigned transaction for simulation
+	// Build transaction with minimal gas to get size
 	txBuilder, err := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
 		WithKeybase(config.Keyring).
 		WithAccountNumber(accountInfo.AccountNumber).
 		WithSequence(accountInfo.Sequence).
 		WithChainID(config.ChainID).
-		WithGas(config.GasLimit).
+		WithGas(10000).
 		WithGasAdjustment(config.GasAdjustment).
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
 		WithFees(minFee).
 		BuildUnsignedTx(msgs...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build unsigned tx for simulation: %w", err)
+		return nil, fmt.Errorf("failed to build unsigned tx: %w", err)
 	}
 
-	// Set empty signature for simulation
+	// Set empty signature
 	txBuilder.SetSignatures(signingtypes.SignatureV2{
 		PubKey:   pubKey,
 		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
 		Sequence: accountInfo.Sequence,
 	})
 
-	// Encode transaction for simulation
+	// Get transaction size
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode transaction for simulation: %w", err)
+		return nil, fmt.Errorf("failed to encode transaction: %w", err)
 	}
 
-	logtrace.Info(ctx, "transaction encoded for simulation", logtrace.Fields{
-		"bytesLength": len(txBytes),
+	// Calculate required gas and rebuild
+	gasLimit := m.calculateGasForTxSize(len(txBytes))
+
+	txBuilder, err = tx.Factory{}.
+		WithTxConfig(clientCtx.TxConfig).
+		WithKeybase(config.Keyring).
+		WithAccountNumber(accountInfo.AccountNumber).
+		WithSequence(accountInfo.Sequence).
+		WithChainID(config.ChainID).
+		WithGas(gasLimit).
+		WithGasAdjustment(config.GasAdjustment).
+		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
+		WithFees(minFee).
+		BuildUnsignedTx(msgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rebuild tx: %w", err)
+	}
+
+	// Reset signature
+	txBuilder.SetSignatures(signingtypes.SignatureV2{
+		PubKey:   pubKey,
+		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
+		Sequence: accountInfo.Sequence,
 	})
 
-	// Simulate transaction
-	simReq := &sdktx.SimulateRequest{
-		TxBytes: txBytes,
+	// Encode final transaction
+	txBytes, err = clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode transaction: %w", err)
 	}
 
-	simRes, err := m.client.Simulate(ctx, simReq)
+	logtrace.Info(ctx, fmt.Sprintf("simulating transaction | txSize=%d gasLimit=%d", len(txBytes), gasLimit), nil)
+
+	// Simulate transaction
+	simRes, err := m.client.Simulate(ctx, &sdktx.SimulateRequest{TxBytes: txBytes})
 	if err != nil {
-		logtrace.Error(ctx, "simulation error details", logtrace.Fields{
-			"error":        err.Error(),
-			"errorType":    fmt.Sprintf("%T", err),
-			"requestBytes": len(simReq.TxBytes),
-		})
+		logtrace.Error(ctx, fmt.Sprintf("simulation failed | error=%s txSize=%d gasLimit=%d", err.Error(), len(txBytes), gasLimit), nil)
 		return nil, fmt.Errorf("simulation error: %w", err)
 	}
 
-	logtrace.Info(ctx, "simulation response", logtrace.Fields{
-		"gasUsed":   simRes.GasInfo.GasUsed,
-		"gasWanted": simRes.GasInfo.GasWanted,
-	})
+	logtrace.Info(ctx, fmt.Sprintf("simulation complete | gasUsed=%d gasWanted=%d", simRes.GasInfo.GasUsed, simRes.GasInfo.GasWanted), nil)
 
 	return simRes, nil
 }
@@ -160,7 +185,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	logtrace.Info(ctx, "transaction signed successfully", nil)
+	logtrace.Info(ctx, fmt.Sprintf("transaction signed successfully"), nil)
 
 	// Encode signed transaction
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
@@ -182,9 +207,7 @@ func (m *module) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdk
 	resp, err := m.client.BroadcastTx(ctx, req)
 
 	if err != nil {
-		logtrace.Error(ctx, "broadcast transaction error", logtrace.Fields{
-			"error": err.Error(),
-		})
+		logtrace.Error(ctx, fmt.Sprintf("broadcast transaction error | error=%s", err.Error()), nil)
 		return nil, fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
@@ -220,11 +243,7 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	// Step 3: Calculate fee based on adjusted gas
 	fee := m.CalculateFee(gasToUse, config)
 
-	logtrace.Info(ctx, "using simulated gas and calculated fee", logtrace.Fields{
-		"simulatedGas": simulatedGasUsed,
-		"adjustedGas":  gasToUse,
-		"fee":          fee,
-	})
+	logtrace.Info(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d adjustedGas=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
 
 	// Step 4: Build and sign transaction
 	txBytes, err := m.BuildAndSignTransaction(ctx, msgs, accountInfo, gasToUse, fee, config)

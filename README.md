@@ -6,9 +6,7 @@ Lumera Supernode is a companion application for Lumera validators who want to pr
 
 ### 1. Install the Supernode
 
-```bash
-# Download and install instructions would go here
-```
+Download the latest relase from github
 
 ### 2. Configure Your Supernode
 
@@ -18,7 +16,7 @@ Create a `config.yml` file in the same directory as your binary:
 # Supernode Configuration
 supernode:
   key_name: "mykey"  # The name you'll use when creating your key
-  identity: "" The address you get back after getting the key
+  identity: ""       # The address you get back after getting the key
   ip_address: "0.0.0.0"
   port: 4444
 
