@@ -87,49 +87,52 @@ func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, path strin
 	return &resp, nil
 }
 
-func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.Context, encoded string, creator string,
-	encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
+func (task *CascadeRegistrationTask) verifySignatures(ctx context.Context, signaturePayload string, layout codec.Layout, creator string, f logtrace.Fields) error {
 
-	file, sig, err := extractSignatureAndFirstPart(encoded)
+	data, signature, err := extractSignatureAndFirstPart(signaturePayload)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract signature and first part", err, f)
-	}
-	logtrace.Info(ctx, "signature and first part have been extracted", f)
-
-	// Decode the base64-encoded signature
-	sigBytes, err := base64.StdEncoding.DecodeString(sig)
-	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode signature from base64", err, f)
+		return task.wrapErr(ctx, "failed to extract signature and first part", err, f)
 	}
 
-	// Log the verification attempt for the node creator
-	logtrace.Info(ctx, "verifying signature from node creator", logtrace.Fields{
-		"creator": creator,
-		"taskID":  task.ID(),
-	})
+	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
 
-	// Pass the decoded signature bytes for verification
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(file), sigBytes); err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify node creator signature", err, f)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to decode base64 signature", err, f)
+	}
+
+	// Calculate the hash of the layout we created and verify it against the provided hash
+	layoutJson, err := json.Marshal(layout)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to marshal layout", err, f)
+	}
+
+	layoutHash, err := utils.Blake3Hash(layoutJson)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to calculate layout hash", err, f)
+	}
+	b64LayoutHash := base64.StdEncoding.EncodeToString(layoutHash)
+
+	// First Check
+	if b64LayoutHash != data {
+		return task.wrapErr(ctx, "layout hash mismatch", errors.Errorf("expected %s, got %s", b64LayoutHash, data), f)
+	}
+
+	// Second Check
+	if err := task.LumeraClient.Verify(ctx, creator, layoutHash, signatureBytes); err != nil {
+		return task.wrapErr(ctx, "failed to verify node creator signature", err, f)
 	}
 
 	logtrace.Info(ctx, "node creator signature successfully verified", f)
 
-	layout, err := decodeMetadataFile(file)
-	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode metadata file", err, f)
-	}
-
-	return layout, sig, nil
+	return nil
 }
 
-func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata,
-	sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (GenRQIdentifiersFilesResponse, error) {
+func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, creator string, encodedMeta codec.Layout, f logtrace.Fields) (GenRQIdentifiersFilesResponse, error) {
 	res, err := GenRQIdentifiersFiles(ctx, GenRQIdentifiersFilesRequest{
 		Metadata:         encodedMeta,
 		CreatorSNAddress: creator,
 		RqMax:            uint32(meta.RqIdsMax),
-		Signature:        sig,
+		Signature:        meta.Signatures, // Since these are already verified, we can use them directly
 		IC:               uint32(meta.RqIdsIc),
 	})
 	if err != nil {
@@ -139,7 +142,6 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 	logtrace.Info(ctx, "rq symbols, rq-ids and rqid-files have been generated", f)
 	return res, nil
 }
-
 func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) error {
 	return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
 		IDFiles:    idFiles,
@@ -159,14 +161,12 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data
-// data is expected to be in format: b64(JSON(Layout)).Signature
 func extractSignatureAndFirstPart(data string) (encodedMetadata string, signature string, err error) {
 	parts := strings.Split(data, ".")
 	if len(parts) < 2 {
 		return "", "", errors.New("invalid data format")
 	}
 
-	// The first part is the base64 encoded data
 	return parts[0], parts[1], nil
 }
 
@@ -183,20 +183,6 @@ func decodeMetadataFile(data string) (layout codec.Layout, err error) {
 	}
 
 	return layout, nil
-}
-
-func verifyIDs(ticketMetadata, metadata codec.Layout) error {
-	// Verify that the symbol identifiers match between versions
-	if err := utils.EqualStrList(ticketMetadata.Blocks[0].Symbols, metadata.Blocks[0].Symbols); err != nil {
-		return errors.Errorf("symbol identifiers don't match: %w", err)
-	}
-
-	// Verify that the block hashes match
-	if ticketMetadata.Blocks[0].Hash != metadata.Blocks[0].Hash {
-		return errors.New("block hashes don't match")
-	}
-
-	return nil
 }
 
 // verifyActionFee checks if the action fee is sufficient for the given data size

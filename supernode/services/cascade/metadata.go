@@ -11,7 +11,6 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
-	json "github.com/json-iterator/go"
 )
 
 const (
@@ -33,21 +32,10 @@ type GenRQIdentifiersFilesResponse struct {
 	RedundantMetadataFiles [][]byte
 }
 
-// GenRQIdentifiersFiles generates Redundant Metadata Files and IDs
 func GenRQIdentifiersFiles(ctx context.Context, req GenRQIdentifiersFilesRequest) (resp GenRQIdentifiersFilesResponse, err error) {
-	metadataFile, err := json.Marshal(req.Metadata)
-	if err != nil {
-		return resp, errors.Errorf("marshal rqID file: %w", err)
-	}
-	b64EncodedMetadataFile := utils.B64Encode(metadataFile)
+	// Since verifySignatures confirms that the signature is valid, we can use the signature from ticket directly
 
-	// Create the RQID file by combining the encoded file with the signature
-	var buffer bytes.Buffer
-	buffer.Write(b64EncodedMetadataFile)
-	buffer.WriteByte(SeparatorByte)
-	buffer.Write([]byte(req.Signature))
-	encMetadataFileWithSignature := buffer.Bytes()
-
+	encMetadataFileWithSignature := []byte(req.Signature)
 	// Generate the specified number of variant IDs
 	rqIdIds, rqIDsFiles, err := GetIDFiles(ctx, encMetadataFileWithSignature, req.IC, req.RqMax)
 	if err != nil {

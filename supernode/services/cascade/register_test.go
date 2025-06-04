@@ -3,7 +3,6 @@ package cascade_test
 import (
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"os"
 	"testing"
 
@@ -229,7 +228,7 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 			req := &cascade.RegisterRequest{
 				TaskID:   "task1",
 				ActionID: "action123",
-				DataHash: rawHash,
+				DataHash: base64.StdEncoding.EncodeToString(rawHash),
 				DataSize: 10240,
 				FilePath: tmpFile.Name(),
 			}
@@ -286,12 +285,4 @@ func blake3HashRawAndBase64(t *testing.T, path string) ([]byte, string) {
 	raw := hash[:]
 	b64 := base64.StdEncoding.EncodeToString(raw)
 	return raw, b64
-}
-
-func decodeHexOrDie(hexStr string) []byte {
-	bz, err := hex.DecodeString(hexStr)
-	if err != nil {
-		panic(err)
-	}
-	return bz
 }

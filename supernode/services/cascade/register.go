@@ -11,7 +11,7 @@ import (
 type RegisterRequest struct {
 	TaskID   string
 	ActionID string
-	DataHash []byte
+	DataHash string // base64 encoded blake3 hash of the data
 	DataSize int
 	FilePath string
 }
@@ -83,8 +83,11 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeMetadataDecoded, "cascade metadata has been decoded", "", send)
 
 	/* 5. Verify data hash --------------------------------------------------------- */
-	if err := task.verifyDataHash(ctx, req.DataHash, cascadeMeta.DataHash, fields); err != nil {
-		return err
+	if req.DataHash != cascadeMeta.DataHash {
+		return task.wrapErr(ctx, "data hash mismatch", nil, logtrace.Fields{
+			logtrace.FieldExpected: req.DataHash,
+			logtrace.FieldActual:   cascadeMeta.DataHash,
+		})
 	}
 	logtrace.Info(ctx, "data-hash has been verified", fields)
 	task.streamEvent(SupernodeEventTypeDataHashVerified, "data-hash has been verified", "", send)
@@ -97,10 +100,8 @@ func (task *CascadeRegistrationTask) Register(
 	logtrace.Info(ctx, "input-data has been encoded", fields)
 	task.streamEvent(SupernodeEventTypeInputEncoded, "input data has been encoded", "", send)
 
-	/* 7. Signature verification + layout decode ---------------------------------- */
-	layout, signature, err := task.verifySignatureAndDecodeLayout(
-		ctx, cascadeMeta.Signatures, action.Creator, encResp.Metadata, fields,
-	)
+	/* 7. Signature verification */
+	err = task.verifySignatures(ctx, cascadeMeta.Signatures, encResp.Metadata, action.Creator, fields)
 	if err != nil {
 		return err
 	}
@@ -108,17 +109,13 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeSignatureVerified, "signature has been verified", "", send)
 
 	/* 8. Generate RQ-ID files ----------------------------------------------------- */
-	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, signature, action.Creator, encResp.Metadata, fields)
+	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, action.Creator, encResp.Metadata, fields)
 	if err != nil {
 		return err
 	}
 	logtrace.Info(ctx, "rq-id files have been generated", fields)
 	task.streamEvent(SupernodeEventTypeRQIDsGenerated, "rq-id files have been generated", "", send)
 
-	/* 9. Consistency checks ------------------------------------------------------- */
-	if err := verifyIDs(layout, encResp.Metadata); err != nil {
-		return task.wrapErr(ctx, "failed to verify IDs", err, fields)
-	}
 	logtrace.Info(ctx, "rq-ids have been verified", fields)
 	task.streamEvent(SupernodeEventTypeRqIDsVerified, "rq-ids have been verified", "", send)
 

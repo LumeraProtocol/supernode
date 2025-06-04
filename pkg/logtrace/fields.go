@@ -19,4 +19,6 @@ const (
 	FieldTaskID         = "task_id"
 	FieldActionID       = "action_id"
 	FieldHashHex        = "hash_hex"
+	FieldExpected       = "expected"
+	FieldActual         = "actual"
 )

@@ -1,12 +1,14 @@
 package cascade
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_extractSignatureAndFirstPart(t *testing.T) {
@@ -66,49 +68,78 @@ func Test_decodeMetadataFile(t *testing.T) {
 	}
 }
 
-func Test_verifyIDs(t *testing.T) {
+func Test_verifyLayoutHash(t *testing.T) {
+	// Create a sample layout
+	layout := codec.Layout{
+		Blocks: []codec.Block{
+			{
+				BlockID: 1,
+				Hash:    "sample_hash",
+				Symbols: []string{"symbol1", "symbol2"},
+			},
+		},
+	}
+
+	// Marshal to JSON and calculate the Blake3 hash
+	jsonBytes, err := json.Marshal(layout)
+	require.NoError(t, err)
+
+	blake3Hash, err := utils.Blake3Hash(jsonBytes)
+	require.NoError(t, err)
+
+	validB64Hash := base64.StdEncoding.EncodeToString(blake3Hash)
+
 	tests := []struct {
-		name      string
-		ticket    codec.Layout
-		metadata  codec.Layout
-		expectErr string
+		name              string
+		b64EncodedHash    string
+		metadata          codec.Layout
+		expectErr         bool
+		expectedErrSubstr string
 	}{
 		{
-			name: "success match",
-			ticket: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"A"}, Hash: "abc"},
-			}},
-			metadata: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"A"}, Hash: "abc"},
-			}},
+			name:           "valid hash match",
+			b64EncodedHash: validB64Hash,
+			metadata:       layout,
+			expectErr:      false,
 		},
 		{
-			name: "symbol mismatch",
-			ticket: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"A"}},
-			}},
-			metadata: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"B"}},
-			}},
-			expectErr: "symbol identifiers don't match",
+			name:              "hash mismatch",
+			b64EncodedHash:    "invalid_hash_that_wont_match",
+			metadata:          layout,
+			expectErr:         true,
+			expectedErrSubstr: "layout hash mismatch",
 		},
 		{
-			name: "hash mismatch",
-			ticket: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"A"}, Hash: "a"},
-			}},
-			metadata: codec.Layout{Blocks: []codec.Block{
-				{Symbols: []string{"A"}, Hash: "b"},
-			}},
-			expectErr: "block hashes don't match",
+			name:           "different metadata",
+			b64EncodedHash: validB64Hash,
+			metadata: codec.Layout{
+				Blocks: []codec.Block{
+					{
+						BlockID: 2,
+						Hash:    "different_hash",
+						Symbols: []string{"different_symbol"},
+					},
+				},
+			},
+			expectErr:         true,
+			expectedErrSubstr: "layout hash mismatch",
+		},
+		{
+			name:              "empty hash",
+			b64EncodedHash:    "",
+			metadata:          layout,
+			expectErr:         true,
+			expectedErrSubstr: "layout hash mismatch",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := verifyIDs(tt.ticket, tt.metadata)
-			if tt.expectErr != "" {
-				assert.ErrorContains(t, err, tt.expectErr)
+			if tt.expectErr {
+				assert.Error(t, err)
+				if tt.expectedErrSubstr != "" {
+					assert.Contains(t, err.Error(), tt.expectedErrSubstr)
+				}
 			} else {
 				assert.NoError(t, err)
 			}

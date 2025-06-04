@@ -1,14 +1,15 @@
 package cascade
 
 import (
-	"encoding/hex"
+	"encoding/base64"
 	"fmt"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"google.golang.org/grpc"
 	"io"
-	"lukechampine.com/blake3"
 	"os"
 	"path/filepath"
+
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"google.golang.org/grpc"
+	"lukechampine.com/blake3"
 
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -117,8 +118,8 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	logtrace.Info(ctx, "metadata received from action-sdk", fields)
 
 	hash := hasher.Sum(nil)
-	hashHex := hex.EncodeToString(hash)
-	fields[logtrace.FieldHashHex] = hashHex
+
+	b64Hash := base64.StdEncoding.EncodeToString(hash)
 	logtrace.Info(ctx, "final BLAKE3 hash generated", fields)
 
 	targetPath, err := replaceTempDirWithTaskDir(metadata.GetTaskId(), tempFilePath, tempFile)
@@ -133,7 +134,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	err = task.Register(ctx, &cascadeService.RegisterRequest{
 		TaskID:   metadata.TaskId,
 		ActionID: metadata.ActionId,
-		DataHash: hash,
+		DataHash: b64Hash,
 		DataSize: totalSize,
 		FilePath: targetPath,
 	}, func(resp *cascadeService.RegisterResponse) error {
