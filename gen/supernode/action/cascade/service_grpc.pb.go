@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	CascadeService_Register_FullMethodName = "/cascade.CascadeService/Register"
+	CascadeService_Download_FullMethodName = "/cascade.CascadeService/Download"
 )
 
 // CascadeServiceClient is the client API for CascadeService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CascadeServiceClient interface {
 	Register(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RegisterRequest, RegisterResponse], error)
+	Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadResponse], error)
 }
 
 type cascadeServiceClient struct {
@@ -50,11 +52,31 @@ func (c *cascadeServiceClient) Register(ctx context.Context, opts ...grpc.CallOp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CascadeService_RegisterClient = grpc.BidiStreamingClient[RegisterRequest, RegisterResponse]
 
+func (c *cascadeServiceClient) Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &CascadeService_ServiceDesc.Streams[1], CascadeService_Download_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadRequest, DownloadResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CascadeService_DownloadClient = grpc.ServerStreamingClient[DownloadResponse]
+
 // CascadeServiceServer is the server API for CascadeService service.
 // All implementations must embed UnimplementedCascadeServiceServer
 // for forward compatibility.
 type CascadeServiceServer interface {
 	Register(grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]) error
+	Download(*DownloadRequest, grpc.ServerStreamingServer[DownloadResponse]) error
 	mustEmbedUnimplementedCascadeServiceServer()
 }
 
@@ -67,6 +89,9 @@ type UnimplementedCascadeServiceServer struct{}
 
 func (UnimplementedCascadeServiceServer) Register(grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Register not implemented")
+}
+func (UnimplementedCascadeServiceServer) Download(*DownloadRequest, grpc.ServerStreamingServer[DownloadResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Download not implemented")
 }
 func (UnimplementedCascadeServiceServer) mustEmbedUnimplementedCascadeServiceServer() {}
 func (UnimplementedCascadeServiceServer) testEmbeddedByValue()                        {}
@@ -96,6 +121,17 @@ func _CascadeService_Register_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CascadeService_RegisterServer = grpc.BidiStreamingServer[RegisterRequest, RegisterResponse]
 
+func _CascadeService_Download_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CascadeServiceServer).Download(m, &grpc.GenericServerStream[DownloadRequest, DownloadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CascadeService_DownloadServer = grpc.ServerStreamingServer[DownloadResponse]
+
 // CascadeService_ServiceDesc is the grpc.ServiceDesc for CascadeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -109,6 +145,11 @@ var CascadeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _CascadeService_Register_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "Download",
+			Handler:       _CascadeService_Download_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "supernode/action/cascade/service.proto",

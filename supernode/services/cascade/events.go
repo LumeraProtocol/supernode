@@ -15,4 +15,5 @@ const (
 	SupernodeEventTypeRqIDsVerified           SupernodeEventType = 9
 	SupernodeEventTypeArtefactsStored         SupernodeEventType = 10
 	SupernodeEventTypeActionFinalized         SupernodeEventType = 11
+	SupernodeEventTypeArtefactsDownloaded     SupernodeEventType = 12
 )

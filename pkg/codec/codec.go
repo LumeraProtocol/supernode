@@ -37,4 +37,5 @@ type EncodeRequest struct {
 type Codec interface {
 	// Encode a file
 	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
+	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
 }

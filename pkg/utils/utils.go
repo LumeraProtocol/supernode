@@ -429,6 +429,21 @@ func ZstdCompress(data []byte) ([]byte, error) {
 	return encoder.EncodeAll(data, nil), nil
 }
 
+func ZstdDecompress(data []byte) ([]byte, error) {
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd decoder: %v", err)
+	}
+	defer decoder.Close()
+
+	decoded, err := decoder.DecodeAll(data, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress zstd data: %v", err)
+	}
+
+	return decoded, nil
+}
+
 // HighCompress compresses the data
 func HighCompress(cctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(cctx, highCompressTimeout)

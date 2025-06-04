@@ -1,16 +1,17 @@
 package cascade
 
 import (
-	"encoding/hex"
 	"fmt"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"google.golang.org/grpc"
 	"io"
-	"lukechampine.com/blake3"
 	"os"
+
+	"encoding/hex"
+	"google.golang.org/grpc"
+	"lukechampine.com/blake3"
 	"path/filepath"
 
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
 )
@@ -189,4 +190,78 @@ func replaceTempDirWithTaskDir(taskID, tempFilePath string, tempFile *os.File) (
 	}
 
 	return targetPath, nil
+}
+
+func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeService_DownloadServer) error {
+	fields := logtrace.Fields{
+		logtrace.FieldMethod:   "Download",
+		logtrace.FieldModule:   "CascadeActionServer",
+		logtrace.FieldActionID: req.GetActionId(),
+	}
+
+	ctx := stream.Context()
+	logtrace.Info(ctx, "download request received from client", fields)
+
+	task := server.factory.NewCascadeRegistrationTask()
+
+	var restoredFile []byte
+
+	err := task.Download(ctx, &cascadeService.DownloadRequest{
+		ActionID: req.GetActionId(),
+	}, func(resp *cascadeService.DownloadResponse) error {
+		grpcResp := &pb.DownloadResponse{
+			ResponseType: &pb.DownloadResponse_Event{
+				Event: &pb.DownloadEvent{
+					EventType: pb.SupernodeEventType(resp.EventType),
+					Message:   resp.Message,
+				},
+			},
+		}
+
+		if len(resp.Artefacts) > 0 {
+			restoredFile = resp.Artefacts
+		}
+
+		return stream.Send(grpcResp)
+	})
+
+	if err != nil {
+		logtrace.Error(ctx, "error occurred during download process", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		})
+		return err
+	}
+
+	if len(restoredFile) == 0 {
+		logtrace.Error(ctx, "no artefact file retrieved", fields)
+		return fmt.Errorf("no artefact to stream")
+	}
+	logtrace.Info(ctx, "streaming artefact file in chunks", fields)
+
+	// Split and stream the file in 1024 byte chunks
+	const chunkSize = 1024
+	for i := 0; i < len(restoredFile); i += chunkSize {
+		end := i + chunkSize
+		if end > len(restoredFile) {
+			end = len(restoredFile)
+		}
+
+		err := stream.Send(&pb.DownloadResponse{
+			ResponseType: &pb.DownloadResponse_Chunk{
+				Chunk: &pb.DataChunk{
+					Data: restoredFile[i:end],
+				},
+			},
+		})
+
+		if err != nil {
+			logtrace.Error(ctx, "failed to stream chunk", logtrace.Fields{
+				logtrace.FieldError: err.Error(),
+			})
+			return err
+		}
+	}
+
+	logtrace.Info(ctx, "completed streaming all chunks", fields)
+	return nil
 }
