@@ -284,25 +284,19 @@ func TestCascadeE2E(t *testing.T) {
 	// Marshal metadata to JSON and convert to bytes
 	me, err := json.Marshal(metadataFile)
 	require.NoError(t, err, "Failed to marshal metadata to JSON")
+	// Convert metadata to a base64-encoded string
+	base64EncodedLaoutHash := base64.StdEncoding.EncodeToString(me)
+	layoutHash, err := Blake3Hash(me)
+	require.NoError(t, err, "Failed to compute Blake3 hash of metadata")
 
-	// Step 1: Encode the metadata JSON as base64 string
-	// This becomes the first part of our signature format
-	regularbase64EncodedData := base64.StdEncoding.EncodeToString(me)
-	t.Logf("Base64 encoded RQ IDs file length: %d", len(regularbase64EncodedData))
-
-	// Step 2: Sign the base64-encoded string with user key instead of testkey1
-	signedMetaData, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(regularbase64EncodedData))
+	// Step 2: Sign the base64-encoded string with user key
+	signedLayoutHash, err := keyring.SignBytes(keplrKeyring, userKeyName, layoutHash)
 	require.NoError(t, err, "Failed to sign metadata")
 
 	// Step 3: Encode the resulting signature as base64
-	signedbase64EncodedData := base64.StdEncoding.EncodeToString(signedMetaData)
-	t.Logf("Base64 signed RQ IDs file length: %d", len(signedbase64EncodedData))
+	signedbase64EncodedHash := base64.StdEncoding.EncodeToString(signedLayoutHash)
 
-	// Step 4: Format according to the expected verification pattern: Base64(rq_ids).signature
-	// This format is expected by VerifySignature in the CascadeActionHandler.RegisterAction method
-	// - regularbase64EncodedData: The base64-encoded metadata
-	// - signedbase64EncodedData: The base64-encoded signature of the above
-	signatureFormat := fmt.Sprintf("%s.%s", regularbase64EncodedData, signedbase64EncodedData)
+	signatureFormat := fmt.Sprintf("%s.%s", base64EncodedLaoutHash, signedbase64EncodedHash)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
 
 	// Data hash with blake3

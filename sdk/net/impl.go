@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
@@ -32,7 +33,7 @@ var _ SupernodeClient = (*supernodeClient)(nil)
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
 	factoryConfig FactoryConfig, targetSupernode lumera.Supernode, lumeraClient lumera.Client,
-	clientOptions *client.ClientOptions,
+
 ) (SupernodeClient, error) {
 	// Register ALTS protocols, just like in the test
 	conn.RegisterALTSRecordProtocols()
@@ -74,10 +75,25 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	logger.Info(ctx, "Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
-	options := clientOptions
-	if options == nil {
-		options = client.DefaultClientOptions()
-	}
+
+	options := client.DefaultClientOptions()
+
+	options.MaxRecvMsgSize = 500 * 1024 * 1024
+	options.MaxSendMsgSize = 500 * 1024 * 1024
+
+	options.InitialWindowSize = (int32)(16 * 1024 * 1024)
+	options.InitialConnWindowSize = (int32)(16 * 1024 * 1024)
+
+	options.ConnWaitTime = 15 * time.Second
+
+	options.KeepAliveTime = 3 * time.Minute     // Ping every 3 minutes
+	options.KeepAliveTimeout = 90 * time.Second // 90 second timeout
+	options.AllowWithoutStream = true
+	options.MaxRetries = 3
+
+	options.RetryWaitTime = 2 * time.Second
+	options.EnableRetries = true
+	options.MinConnectTimeout = 30 * time.Second
 
 	// Connect to server with secure credentials
 	grpcClient := client.NewClient(clientCreds)

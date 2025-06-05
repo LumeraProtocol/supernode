@@ -32,6 +32,22 @@ func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient,
 	}
 }
 
+// getOptimalChunkSize returns the optimal chunk size based on file size
+func getOptimalChunkSize(fileSize int64) int {
+	switch {
+	case fileSize <= 16*1024: // Files ≤ 16KB
+		return int(fileSize) // Send as single chunk
+	case fileSize <= 1024*1024: // Files ≤ 1MB
+		return 16 * 1024 // 16KB chunks
+	case fileSize <= 10*1024*1024: // Files ≤ 10MB
+		return 64 * 1024 // 64KB chunks
+	case fileSize <= 100*1024*1024: // Files ≤ 100MB
+		return 256 * 1024 // 256KB chunks
+	default: // Files > 100MB
+		return 1024 * 1024 // 1MB chunks
+	}
+}
+
 func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
 	// Create the client stream
 	ctx = net.AddCorrelationID(ctx)
@@ -59,8 +75,8 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}
 	totalBytes := fileInfo.Size()
 
-	// Define chunk size
-	const chunkSize = 1024 // 1 KB
+	// Calculate optimal chunk size based on file size
+	chunkSize := getOptimalChunkSize(totalBytes)
 
 	// Keep track of how much data we've processed
 	bytesRead := int64(0)
@@ -96,7 +112,16 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		bytesRead += int64(n)
 		progress := float64(bytesRead) / float64(totalBytes) * 100
 
-		a.logger.Debug(ctx, "Sent data chunk", "chunkIndex", chunkIndex, "chunkSize", n, "progress", fmt.Sprintf("%.1f%%", progress))
+		// Log progress less frequently for large files to reduce log spam
+		logProgress := chunkIndex%10 == 0 || totalBytes < 1024*1024 // Every 10th chunk for large files, every chunk for small files
+		if logProgress {
+			a.logger.Debug(ctx, "Sent data chunk",
+				"chunkIndex", chunkIndex,
+				"chunkSize", n,
+				"progress", fmt.Sprintf("%.1f%%", progress),
+				"bytesRead", bytesRead,
+				"totalBytes", totalBytes)
+		}
 
 		chunkIndex++
 	}

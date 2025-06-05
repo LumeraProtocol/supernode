@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/log"
 
@@ -20,11 +19,10 @@ type FactoryConfig struct {
 
 // ClientFactory creates and manages supernode clients
 type ClientFactory struct {
-	logger        log.Logger
-	keyring       keyring.Keyring
-	clientOptions *client.ClientOptions
-	config        FactoryConfig
-	lumeraClient  lumera.Client
+	logger       log.Logger
+	keyring      keyring.Keyring
+	config       FactoryConfig
+	lumeraClient lumera.Client
 }
 
 // NewClientFactory creates a new client factory with the provided dependencies
@@ -37,11 +35,10 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 		"localAddress", config.LocalCosmosAddress)
 
 	return &ClientFactory{
-		logger:        logger,
-		keyring:       keyring,
-		clientOptions: client.DefaultClientOptions(),
-		config:        config,
-		lumeraClient:  lumeraClient,
+		logger:       logger,
+		keyring:      keyring,
+		config:       config,
+		lumeraClient: lumeraClient,
 	}
 }
 
@@ -56,8 +53,7 @@ func (f *ClientFactory) CreateClient(ctx context.Context, supernode lumera.Super
 		"endpoint", supernode.GrpcEndpoint)
 
 	// Create client with dependencies
-	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config, supernode, f.lumeraClient,
-		f.clientOptions)
+	client, err := NewSupernodeClient(ctx, f.logger, f.keyring, f.config, supernode, f.lumeraClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create supernode client for %s: %w", supernode.CosmosAddress, err)
 	}

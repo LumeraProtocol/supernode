@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	registrationTimeout = 120 * time.Second // Timeout for registration requests
-	connectionTimeout   = 10 * time.Second  // Timeout for connection requests
+	registrationTimeout = 60 * 60 * time.Second // Timeout for registration requests
+	connectionTimeout   = 10 * time.Second      // Timeout for connection requests
 )
 
 type CascadeTask struct {
