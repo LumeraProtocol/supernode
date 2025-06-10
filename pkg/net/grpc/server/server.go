@@ -13,15 +13,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/reflection"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/log"
 )
 
 const (
-	_        = iota
+	_      = iota
 	KB int = 1 << (10 * iota) // 1024
 	MB                        // 1048576
 	GB                        // 1073741824
@@ -53,7 +54,7 @@ type Server struct {
 	listeners []net.Listener
 	mu        sync.RWMutex
 	done      chan struct{}
-	builder  ServerOptionBuilder
+	builder   ServerOptionBuilder
 }
 
 // ServiceDesc wraps a gRPC service description and its implementation
@@ -65,28 +66,28 @@ type ServiceDesc struct {
 // ServerOptions contains options for creating a new server
 type ServerOptions struct {
 	// Connection parameters
-	MaxRecvMsgSize         int           // Maximum message size the server can receive (in bytes)
-	MaxSendMsgSize         int           // Maximum message size the server can send (in bytes)
-	InitialWindowSize      int32         // Initial window size for stream flow control
-	InitialConnWindowSize  int32         // Initial window size for connection flow control
-	
+	MaxRecvMsgSize        int   // Maximum message size the server can receive (in bytes)
+	MaxSendMsgSize        int   // Maximum message size the server can send (in bytes)
+	InitialWindowSize     int32 // Initial window size for stream flow control
+	InitialConnWindowSize int32 // Initial window size for connection flow control
+
 	// Server parameters
-	MaxConcurrentStreams   uint32        // Maximum number of concurrent streams per connection
-	GracefulShutdownTime  time.Duration // Time to wait for graceful shutdown
+	MaxConcurrentStreams uint32        // Maximum number of concurrent streams per connection
+	GracefulShutdownTime time.Duration // Time to wait for graceful shutdown
 
 	// Keepalive parameters
-	MaxConnectionIdle      time.Duration // Maximum time a connection can be idle
-	MaxConnectionAge       time.Duration // Maximum time a connection can exist
-	MaxConnectionAgeGrace  time.Duration // Additional time to wait before forcefully closing
-	Time                   time.Duration // Time after which server pings client if there's no activity
+	MaxConnectionIdle     time.Duration // Maximum time a connection can be idle
+	MaxConnectionAge      time.Duration // Maximum time a connection can exist
+	MaxConnectionAgeGrace time.Duration // Additional time to wait before forcefully closing
+	Time                  time.Duration // Time after which server pings client if there's no activity
 	Timeout               time.Duration // Time to wait for ping ack before considering the connection dead
 	MinTime               time.Duration // Minimum time client should wait before sending pings
-	PermitWithoutStream   bool         // Allow pings even when there are no active streams
+	PermitWithoutStream   bool          // Allow pings even when there are no active streams
 
 	// Additional options
-	NumServerWorkers      uint32        // Number of server workers (0 means default)
-	WriteBufferSize       int           // Size of write buffer
-	ReadBufferSize        int           // Size of read buffer
+	NumServerWorkers uint32 // Number of server workers (0 means default)
+	WriteBufferSize  int    // Size of write buffer
+	ReadBufferSize   int    // Size of read buffer
 }
 
 // DefaultServerOptions returns default server options
@@ -103,12 +104,12 @@ func DefaultServerOptions() *ServerOptions {
 		MaxConnectionAge:      2 * time.Hour,
 		MaxConnectionAgeGrace: 1 * time.Hour,
 		Time:                  1 * time.Hour,
-		Timeout:              30 * time.Minute,
-		MinTime:              5 * time.Minute,
-		PermitWithoutStream:  true,
+		Timeout:               30 * time.Minute,
+		MinTime:               5 * time.Minute,
+		PermitWithoutStream:   true,
 
-		WriteBufferSize:      32 * KB,
-		ReadBufferSize:       32 * KB,
+		WriteBufferSize: 32 * KB,
+		ReadBufferSize:  32 * KB,
 	}
 }
 
@@ -122,7 +123,7 @@ func (b *defaultServerOptionBuilder) buildKeepAliveParams(opts *ServerOptions) k
 		MaxConnectionAge:      opts.MaxConnectionAge,
 		MaxConnectionAgeGrace: opts.MaxConnectionAgeGrace,
 		Time:                  opts.Time,
-		Timeout:              opts.Timeout,
+		Timeout:               opts.Timeout,
 	}
 }
 
@@ -142,7 +143,7 @@ func NewServer(name string, creds credentials.TransportCredentials) *Server {
 		services:  make([]ServiceDesc, 0),
 		listeners: make([]net.Listener, 0),
 		done:      make(chan struct{}),
-		builder:  &defaultServerOptionBuilder{},
+		builder:   &defaultServerOptionBuilder{},
 	}
 }
 
@@ -154,7 +155,7 @@ func NewServerWithBuilder(name string, creds credentials.TransportCredentials, b
 		services:  make([]ServiceDesc, 0),
 		listeners: make([]net.Listener, 0),
 		done:      make(chan struct{}),
-		builder:  builder,
+		builder:   builder,
 	}
 }
 
@@ -230,6 +231,9 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 		s.server.RegisterService(service.Desc, service.Service)
 	}
 	s.mu.RUnlock()
+
+	// Enable reflection
+	reflection.Register(s.server)
 
 	// Create listener
 	lis, err := s.createListener(ctx, address)

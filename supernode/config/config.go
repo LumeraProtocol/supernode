@@ -18,9 +18,8 @@ type SupernodeConfig struct {
 }
 
 type KeyringConfig struct {
-	Backend  string `yaml:"backend"`
-	Dir      string `yaml:"dir"`
-	Password string `yaml:"password"`
+	Backend string `yaml:"backend"`
+	Dir     string `yaml:"dir"`
 }
 
 type P2PConfig struct {
@@ -34,7 +33,6 @@ type P2PConfig struct {
 type LumeraClientConfig struct {
 	GRPCAddr string `yaml:"grpc_addr"`
 	ChainID  string `yaml:"chain_id"`
-	Timeout  int    `yaml:"timeout"`
 }
 
 type RaptorQConfig struct {
@@ -53,9 +51,13 @@ type Config struct {
 }
 
 // GetFullPath returns the absolute path by combining base directory with relative path
+// If the path is already absolute, it returns the path as-is
 func (c *Config) GetFullPath(relativePath string) string {
 	if relativePath == "" {
 		return c.BaseDir
+	}
+	if filepath.IsAbs(relativePath) {
+		return relativePath
 	}
 	return filepath.Join(c.BaseDir, relativePath)
 }
