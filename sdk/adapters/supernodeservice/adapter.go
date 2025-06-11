@@ -164,6 +164,98 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}, nil
 }
 
+// CascadeSupernodeDownload downloads a file from a supernode gRPC stream
+func (a *cascadeAdapter) CascadeSupernodeDownload(
+	ctx context.Context,
+	in *CascadeSupernodeDownloadRequest,
+	opts ...grpc.CallOption,
+) (*CascadeSupernodeDownloadResponse, error) {
+
+	ctx = net.AddCorrelationID(ctx)
+
+	// 1. Open gRPC stream (server-stream)
+	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
+		ActionId: in.ActionID,
+	}, opts...)
+	if err != nil {
+		a.logger.Error(ctx, "failed to create download stream",
+			"action_id", in.ActionID, "error", err)
+		return nil, err
+	}
+
+	// 2. Prepare destination file
+	outFile, err := os.Create(in.OutputPath)
+	if err != nil {
+		a.logger.Error(ctx, "failed to create output file",
+			"path", in.OutputPath, "error", err)
+		return nil, fmt.Errorf("create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	var (
+		bytesWritten int64
+		chunkIndex   int
+	)
+
+	// 3. Receive streamed responses
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stream recv: %w", err)
+		}
+
+		switch x := resp.ResponseType.(type) {
+
+		// 3a. Progress / event message
+		case *cascade.DownloadResponse_Event:
+			a.logger.Info(ctx, "supernode event",
+				"event_type", x.Event.EventType,
+				"message", x.Event.Message,
+				"action_id", in.ActionID)
+
+			if in.EventLogger != nil {
+				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
+					event.KeyActionID:  in.ActionID,
+					event.KeyEventType: x.Event.EventType,
+					event.KeyMessage:   x.Event.Message,
+				})
+			}
+
+		// 3b. Actual data chunk
+		case *cascade.DownloadResponse_Chunk:
+			data := x.Chunk.Data
+			if len(data) == 0 {
+				continue
+			}
+			if _, err := outFile.Write(data); err != nil {
+				return nil, fmt.Errorf("write chunk: %w", err)
+			}
+
+			bytesWritten += int64(len(data))
+			chunkIndex++
+
+			a.logger.Debug(ctx, "received chunk",
+				"chunk_index", chunkIndex,
+				"chunk_size", len(data),
+				"bytes_written", bytesWritten)
+		}
+	}
+
+	a.logger.Info(ctx, "download complete",
+		"bytes_written", bytesWritten,
+		"path", in.OutputPath,
+		"action_id", in.ActionID)
+
+	return &CascadeSupernodeDownloadResponse{
+		Success:    true,
+		Message:    "artefact downloaded",
+		OutputPath: in.OutputPath,
+	}, nil
+}
+
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 	switch e {
@@ -189,6 +281,8 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeArtefactsStored
 	case cascade.SupernodeEventType_ACTION_FINALIZED:
 		return event.SupernodeActionFinalized
+	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
+		return event.SupernodeArtefactsDownloaded
 	default:
 		return event.SupernodeUnknown
 	}

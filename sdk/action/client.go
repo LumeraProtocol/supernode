@@ -25,6 +25,7 @@ type Client interface {
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
+	DownloadCascade(ctx context.Context, actionID, outputPath string) (string, error)
 }
 
 // ClientImpl implements the Client interface
@@ -127,4 +128,26 @@ func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Han
 	c.taskManager.SubscribeToAllEvents(ctx, handler)
 
 	return nil
+}
+
+func (c *ClientImpl) DownloadCascade(
+	ctx context.Context,
+	actionID, outputPath string,
+) (string, error) {
+
+	if actionID == "" {
+		return "", fmt.Errorf("actionID is empty")
+	}
+
+	taskID, err := c.taskManager.CreateDownloadTask(ctx, actionID, outputPath)
+	if err != nil {
+		return "", fmt.Errorf("create download task: %w", err)
+	}
+
+	c.logger.Info(ctx, "cascade download task created",
+		"task_id", taskID,
+		"action_id", actionID,
+	)
+
+	return taskID, nil
 }
