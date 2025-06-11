@@ -10,6 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultKeyringDir = "keys"
+	DefaultP2PDataDir = "p2p"
+	DefaultRaptorQDir = "raptorq"
+)
+
 type SupernodeConfig struct {
 	KeyName   string `yaml:"key_name"`
 	Identity  string `yaml:"identity"`
@@ -50,6 +56,19 @@ type Config struct {
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`
+}
+
+// applyDefaults sets default values for empty directory fields
+func (c *Config) applyDefaults() {
+	if c.KeyringConfig.Dir == "" {
+		c.KeyringConfig.Dir = DefaultKeyringDir
+	}
+	if c.P2PConfig.DataDir == "" {
+		c.P2PConfig.DataDir = DefaultP2PDataDir
+	}
+	if c.RaptorQConfig.FilesDir == "" {
+		c.RaptorQConfig.FilesDir = DefaultRaptorQDir
+	}
 }
 
 // GetFullPath returns the absolute path by combining base directory with relative path
@@ -127,6 +146,9 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 
 	// Set the base directory
 	config.BaseDir = baseDir
+
+	// Apply default values for empty directory fields
+	config.applyDefaults()
 
 	// Create directories
 	if err := config.EnsureDirs(); err != nil {

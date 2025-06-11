@@ -15,6 +15,11 @@ var (
 	appConfig *config.Config
 )
 
+const (
+	DefaultConfigFile = "config.yaml"
+	DefaultBaseDir    = ".supernode"
+)
+
 // fileExists checks if a file exists at the given path
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
@@ -28,39 +33,36 @@ func findConfigFile() string {
 		return cfgFile
 	}
 
-	// Try current working directory first (for go run)
-	workingDir, err := os.Getwd()
-	if err == nil {
-		yamlPath := filepath.Join(workingDir, "config.yaml")
-		ymlPath := filepath.Join(workingDir, "config.yml")
+	searchPaths := []string{}
 
-		if fileExists(yamlPath) {
-			return yamlPath
-		}
-		if fileExists(ymlPath) {
-			return ymlPath
-		}
+	// Try current working directory first (for go run)
+	if workingDir, err := os.Getwd(); err == nil {
+		searchPaths = append(searchPaths,
+			filepath.Join(workingDir, DefaultConfigFile),
+			filepath.Join(workingDir, "config.yml"),
+		)
 	}
 
 	// Then try executable directory (for binary)
-	execPath, err := os.Executable()
-	if err == nil {
+	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
-		yamlPath := filepath.Join(execDir, "config.yaml")
-		ymlPath := filepath.Join(execDir, "config.yml")
+		searchPaths = append(searchPaths,
+			filepath.Join(execDir, DefaultConfigFile),
+			filepath.Join(execDir, "config.yml"),
+		)
+	}
 
-		if fileExists(yamlPath) {
-			return yamlPath
-		}
-		if fileExists(ymlPath) {
-			return ymlPath
+	// Return first existing config file
+	for _, path := range searchPaths {
+		if fileExists(path) {
+			return path
 		}
 	}
 
 	return ""
 }
 
-// setupBaseDir configures the base directory if not specified
+// setupBaseDir configures the base directory, using default if not specified
 func setupBaseDir() (string, error) {
 	if baseDir != "" {
 		return baseDir, nil
@@ -71,20 +73,18 @@ func setupBaseDir() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	return filepath.Join(homeDir, ".supernode"), nil
+	return filepath.Join(homeDir, DefaultBaseDir), nil
 }
 
 // logConfig logs information about config and base directory
 func logConfig(configPath, baseDirPath string) {
 	// For config file
-	absPath, err := filepath.Abs(configPath)
-	if err == nil {
+	if absPath, err := filepath.Abs(configPath); err == nil {
 		fmt.Printf("Using config file: %s\n", absPath)
 	} else {
 		fmt.Printf("Using config file: %s\n", configPath)
 	}
 
-	// For base directory
 	fmt.Printf("Using base directory: %s\n", baseDirPath)
 }
 
@@ -100,11 +100,11 @@ This application allows you to create and recover keys using mnemonics.`,
 		}
 
 		// Setup base directory
-		setupDir, err := setupBaseDir()
+		var err error
+		baseDir, err = setupBaseDir()
 		if err != nil {
 			return err
 		}
-		baseDir = setupDir
 
 		// Find config file
 		cfgFile = findConfigFile()
@@ -134,7 +134,9 @@ func Execute() {
 }
 
 func init() {
-	// Allow user to override config file location with --config flag
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "Config file path (default is ./config.yaml or ./config.yml)")
-	rootCmd.PersistentFlags().StringVarP(&baseDir, "basedir", "d", "", "Base directory for all data (default is ~/.supernode)")
+	// Use default values in flag descriptions
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "",
+		fmt.Sprintf("Config file path (default is ./%s or ./config.yml)", DefaultConfigFile))
+	rootCmd.PersistentFlags().StringVarP(&baseDir, "basedir", "d", "",
+		fmt.Sprintf("Base directory for all data (default is ~/%s)", DefaultBaseDir))
 }
