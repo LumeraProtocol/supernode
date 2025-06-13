@@ -243,7 +243,7 @@ func (m *ManagerImpl) CreateDownloadTask(
 
 	taskID := uuid.New().String()[:8]
 
-	m.logger.Debug(ctx, "Generated task ID", "task_id", taskID)
+	m.logger.Debug(ctx, "Generated download task ID", "task_id", taskID)
 
 	baseTask := BaseTask{
 		TaskID:   taskID,
@@ -257,8 +257,7 @@ func (m *ManagerImpl) CreateDownloadTask(
 		logger:   m.logger,
 	}
 
-	// Create cascade-specific task
-	task := NewCascadeDownloadTask(NewCascadeTask(baseTask, outputPath, actionID))
+	task := NewCascadeDownloadTask(baseTask, actionID, outputPath)
 
 	// Store task in cache
 	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)

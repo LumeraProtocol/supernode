@@ -73,14 +73,24 @@ func (task *CascadeRegistrationTask) Download(
 }
 
 func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) ([]byte, error) {
+
+	logtrace.Info(ctx, "downloading artifacts", fields)
 	var layout codec.Layout
 	for _, rqID := range metadata.RqIdsIds {
 		rqIDFile, err := task.P2PClient.Retrieve(ctx, rqID)
+		logtrace.Info(ctx, "RQIs", logtrace.Fields{
+			"rqID":     rqID,
+			"rqIDFile": rqIDFile,
+		})
 		if err != nil || len(rqIDFile) == 0 {
 			continue
 		}
 
 		layout, _, _, err = parseRQMetadataFile(rqIDFile)
+
+		logtrace.Info(ctx, "layout parsed", logtrace.Fields{
+			"rqID":   rqID,
+			"layout": layout})
 
 		if len(layout.Blocks) == 0 {
 			logtrace.Info(ctx, "no symbols found in RQ metadata", fields)

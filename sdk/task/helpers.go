@@ -92,9 +92,8 @@ func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID strin
 		return lumera.Action{}, fmt.Errorf("no action found with the specified ID")
 	}
 
-	// Check action state
 	if action.State != lumera.ACTION_STATE_DONE {
-		return lumera.Action{}, fmt.Errorf("action is in %s state, expected PENDING", action.State)
+		return lumera.Action{}, fmt.Errorf("action is in %s state, expected DONE", action.State)
 	}
 
 	return action, nil

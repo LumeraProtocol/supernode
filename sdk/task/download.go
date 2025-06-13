@@ -1,4 +1,3 @@
-// task/download.go  (NEW FILE)
 package task
 
 import (
@@ -18,12 +17,17 @@ const (
 )
 
 type CascadeDownloadTask struct {
-	CascadeTask
+	BaseTask
+	actionId   string
+	outputPath string
 }
 
-// NewCascadeDownloadTask creates a new cascade download task
-func NewCascadeDownloadTask(cascadeTask *CascadeTask) *CascadeDownloadTask {
-	return &CascadeDownloadTask{CascadeTask: *cascadeTask}
+func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string) *CascadeDownloadTask {
+	return &CascadeDownloadTask{
+		BaseTask:   base,
+		actionId:   actionId,
+		outputPath: outputPath,
+	}
 }
 
 func (t *CascadeDownloadTask) Run(ctx context.Context) error {
@@ -56,7 +60,9 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
 
 	req := &supernodeservice.CascadeSupernodeDownloadRequest{
-		ActionID: t.actionId,
+		ActionID:   t.actionId,
+		TaskID:     t.TaskID,
+		OutputPath: t.outputPath,
 	}
 
 	var lastErr error
