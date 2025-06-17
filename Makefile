@@ -1,4 +1,31 @@
-.PHONY: test-unit test-integration test-system install-lumera setup-supernodes system-test-setup
+.PHONY: test-unit test-integration test-system install-lumera setup-supernodes system-test-setup build build-release
+
+# Build variables
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+
+# Linker flags for version information
+LDFLAGS = -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=$(VERSION) \
+          -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=$(GIT_COMMIT) \
+          -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=$(BUILD_TIME)
+
+# Development build
+build:
+	go build -ldflags "$(LDFLAGS)" -o supernode ./supernode
+
+# Release build (matches GitHub workflow)
+build-release:
+	@mkdir -p release
+	CGO_ENABLED=1 \
+	GOOS=linux \
+	GOARCH=amd64 \
+	go build \
+		-trimpath \
+		-ldflags="-s -w $(LDFLAGS)" \
+		-o release/supernode-linux-amd64 \
+		./supernode
+	@chmod +x release/supernode-linux-amd64
 
 # Run unit tests (regular tests with code)
 test-unit:

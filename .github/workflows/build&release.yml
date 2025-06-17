@@ -36,17 +36,15 @@ jobs:
       - name: Prepare Build Variables
         id: vars
         run: |
-          repo_name=${GITHUB_REPOSITORY##*/}
+          # Prepare version information
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           
-          # For non-tag builds, use commit SHA as identifier
-          build_id=${GITHUB_SHA::7}
-          echo "build_id=$build_id" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
-          
-          # Debug output
-          echo "Output variables:"
-          echo "- build_id: $build_id"
-          echo "- binary_name: supernode-linux-amd64"
 
       - name: Build binary
         run: |
@@ -57,17 +55,15 @@ jobs:
           GOARCH=amd64 \
           go build \
           -trimpath \
-          -ldflags="-s -w" \
+          -ldflags="-s -w \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }}" \
           -o release/${{ steps.vars.outputs.binary_name }} \
-          ./supernode/main.go
+          ./supernode
           
-          # Make binary executable
           chmod +x release/${{ steps.vars.outputs.binary_name }}
-          
-          # Show build results
-          ls -la release/
 
-      # Fix permissions
       - name: Fix Release Directory Permissions
         run: |
           sudo chown -R $USER:$USER release/
@@ -88,25 +84,17 @@ jobs:
       - name: Get tag information
         id: tag_info
         run: |
-          # Get the tag name
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           
-          # Get the tag message
           TAG_MESSAGE=$(git tag -l --format='%(contents)' $TAG_NAME)
-          # If tag message is empty, use the tag name as message
           if [ -z "$TAG_MESSAGE" ]; then
             TAG_MESSAGE="Release $TAG_NAME"
           fi
-          # Handle multiline tag messages
           TAG_MESSAGE="${TAG_MESSAGE//'%'/'%25'}"
           TAG_MESSAGE="${TAG_MESSAGE//$'\n'/'%0A'}"
           TAG_MESSAGE="${TAG_MESSAGE//$'\r'/'%0D'}"
           echo "tag_message=$TAG_MESSAGE" >> $GITHUB_OUTPUT
-          
-          # Get the annotated tag commit
-          TAG_COMMIT=$(git rev-list -n 1 $TAG_NAME)
-          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
 
       - name: Configure Git Safe Directory
         run: git config --global --add safe.directory $GITHUB_WORKSPACE
@@ -117,7 +105,13 @@ jobs:
       - name: Prepare Release Variables
         id: vars
         run: |
-          repo_name=${GITHUB_REPOSITORY##*/}
+          VERSION=${{ steps.tag_info.outputs.tag_name }}
+          GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
 
       - name: Build Release Version
@@ -129,17 +123,15 @@ jobs:
           GOARCH=amd64 \
           go build \
           -trimpath \
-          -ldflags="-s -w" \
+          -ldflags="-s -w \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
+                    -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }}" \
           -o release/${{ steps.vars.outputs.binary_name }} \
-          ./supernode/main.go
+          ./supernode
           
-          # Make binary executable
           chmod +x release/${{ steps.vars.outputs.binary_name }}
-          
-          # Show build results
-          ls -la release/
 
-      # Fix permissions
       - name: Fix Release Directory Permissions
         run: |
           sudo chown -R $USER:$USER release/
@@ -155,11 +147,12 @@ jobs:
           body: |
             ${{ steps.tag_info.outputs.tag_message }}
             
-            Tag: ${{ steps.tag_info.outputs.tag_name }}
-            Commit: ${{ steps.tag_info.outputs.tag_commit }}
+            Version: ${{ steps.vars.outputs.version }}
+            Git Commit: ${{ steps.vars.outputs.git_commit }}
+            Build Time: ${{ steps.vars.outputs.build_time }}
             
             Installation:
-            1. Download the binary
-            2. Make it executable: `chmod +x supernode-linux-amd64`
-            3. Run the binary: `./supernode-linux-amd64`
+            1. Download: `supernode-linux-amd64`
+            2. Make executable: `chmod +x supernode-linux-amd64`
+            3. Run: `./supernode-linux-amd64`
           token: ${{ secrets.GITHUB_TOKEN }}
