@@ -2,15 +2,43 @@
 
 Lumera Supernode is a companion application for Lumera validators who want to provide cascade, sense, and other services to earn rewards.
 
-## Quick Start
+## Prerequisites
 
-### 1. Install the Supernode
+Before installing and running the Lumera Supernode, ensure you have the following prerequisites installed:
 
-Download the latest relase from github
+### Install Build Essentials
 
-### 2. Configure Your Supernode
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install build-essential
+```
 
-Create a `config.yml` file in the same directory as your binary:
+### Enable CGO
+
+CGO must be enabled for the supernode to compile and run properly. Set the environment variable:
+
+```bash
+export CGO_ENABLED=1
+```
+
+To make this permanent, add it to your shell profile:
+
+```bash
+echo 'export CGO_ENABLED=1' >> ~/.bashrc
+source ~/.bashrc
+```
+
+## Installation
+
+### 1. Download the Binary
+
+Download the latest release from GitHub:
+
+
+### 2. Create Configuration File
+
+Create a `config.yml` file in the same directory as your binary 
 
 ```yaml
 # Supernode Configuration
@@ -24,7 +52,6 @@ supernode:
 keyring:
   backend: "test"  # Options: test, file, os
   dir: "keys"
-  
 
 # P2P Network Configuration
 p2p:
@@ -44,60 +71,121 @@ raptorq:
   files_dir: "raptorq_files"
 ```
 
-### 3. Create or Recover a Key
+## Key Management
 
-Create a new key (use the same name you will add in your config):
+### Create a New Key
+
+Create a new key (use the same name you specified in your config):
+
 ```bash
 supernode keys add mykey
 ```
 
-Or recover an existing key:
-```bash
-supernode keys recover mykey
+This will output an address like:
+```
+lumera15t2e8gjgmuqtj4jzjqfkf3tf5l8vqw69hmrzmr
 ```
 
-After running either command, you'll receive an address like `lumera15t2e8gjgmuqtj4jzjqfkf3tf5l8vqw69hmrzmr`.
+### Recover an Existing Key
 
-⚠️ **IMPORTANT:** After generating or recovering a key, you MUST update your `config.yml` with the address:
+If you have an existing mnemonic phrase:
+
+```bash
+supernode keys recover mykey <MNEMONIC>  # Use quotes if the mnemonic contains spaces, e.g., "word1 word2 word3"
+```
+
+### List Keys
+
+```bash
+supernode keys list
+```
+
+### Update Configuration with Your Address
+
+⚠️ **IMPORTANT:** After generating or recovering a key, you MUST update your `config.yml` with the generated address:
 
 ```yaml
 supernode:
   key_name: "mykey"
-  identity: "lumera15t2e8gjgmuqtj4jzjqfkf3tf5l8vqw69hmrzmr"  # Update with your generated address
-  # ... rest of config
+  identity: "lumera15t2e8gjgmuqtj4jzjqfkf3tf5l8vqw69hmrzmr"  # Your actual address
+  ip_address: "0.0.0.0"
+  port: 4444
+# ... rest of config
 ```
 
-### 4. Start Your Supernode
+## Running the Supernode
+
+### Start the Supernode
 
 ```bash
 supernode start
 ```
 
-## Key Management Commands
-
-List all keys:
-```bash
-supernode keys list
-```
-
-## Configuration Guide
-
-- **key_name**: Must match the name you used when creating your key
-- **identity**: Must match the address generated for your key
-- **backend**: Use "test" for development, "file" or "os" for production
-- **p2p.port**: Default is 4445 - don't change this value
-- ⚠️ **IMPORTANT:** Make sure you have sufficient balance in the account to broadcast transactions to the Lumera chain
-
-## Data Storage
-
-All data is stored in `~/.supernode` by default.
-
-## Common Flags
+### Using Custom Configuration
 
 ```bash
-# Custom config file
--c, --config FILE     Use specific config file
+# Use specific config file
+supernode start -c /path/to/config.yml
 
-# Custom data directory
--d, --basedir DIR     Use custom base directory instead of ~/.supernode
+# Use custom base directory
+supernode start -d /path/to/basedir
 ```
+
+## Configuration Parameters
+
+| Parameter | Description | Required | Default | Example | Notes |
+|-----------|-------------|----------|---------|---------|--------|
+| `supernode.key_name` | Name of the key for signing transactions | **Yes** | - | `"mykey"` | Must match the name used with `supernode keys add` |
+| `supernode.identity` | Lumera address for this supernode | **Yes** | - | `"lumera15t2e8gjgmuqtj4jzjqfkf3tf5l8vqw69hmrzmr"` | Obtained after creating/recovering a key |
+| `supernode.ip_address` | IP address to bind the supernode service | **Yes** | - | `"0.0.0.0"` | Use `"0.0.0.0"` to listen on all interfaces |
+| `supernode.port` | Port for the supernode service | **Yes** | - | `4444` | Choose an available port |
+| `keyring.backend` | Key storage backend type | **Yes** | - | `"test"` | `"test"` for development, `"file"` for encrypted storage, `"os"` for OS keyring |
+| `keyring.dir` | Directory to store keyring files | No | `"keys"` | `"keys"` | Relative paths are appended to basedir, absolute paths used as-is |
+| `p2p.listen_address` | IP address for P2P networking | **Yes** | - | `"0.0.0.0"` | Use `"0.0.0.0"` to listen on all interfaces |
+| `p2p.port` | P2P communication port | **Yes** | - | `4445` | **Do not change this default value** |
+| `p2p.data_dir` | Directory for P2P data storage | No | `"data/p2p"` | `"data/p2p"` | Relative paths are appended to basedir, absolute paths used as-is |
+| `p2p.bootstrap_nodes` | Initial peer nodes for network discovery | No | `""` | `""` | Comma-separated list of peer addresses, leave empty for auto-discovery |
+| `p2p.external_ip` | Your public IP address | No | `""` | `""` | Leave empty for auto-detection, or specify your public IP |
+| `lumera.grpc_addr` | gRPC endpoint of Lumera validator node | **Yes** | - | `"localhost:9090"` | Must be accessible from supernode |
+| `lumera.chain_id` | Lumera blockchain chain identifier | **Yes** | - | `"lumera"` | Must match the actual chain ID |
+| `raptorq.files_dir` | Directory to store RaptorQ files | No | `"raptorq_files"` | `"raptorq_files"` | Relative paths are appended to basedir, absolute paths used as-is |
+
+## Command Line Flags
+
+The supernode binary supports the following command-line flags:
+
+| Flag | Short | Description | Value Type | Example | Default |
+|------|-------|-------------|------------|---------|---------|
+| `--config` | `-c` | Path to configuration file | String | `-c /path/to/config.yml` | `config.yml` in current directory |
+| `--basedir` | `-d` | Base directory for data storage | String | `-d /custom/path` | `~/.supernode` |
+
+### Usage Examples
+
+```bash
+# Use default config.yml in current directory, with ~/.supernode as basedir
+supernode start
+
+# Use custom config file
+supernode start -c /etc/supernode/config.yml
+supernode start --config /etc/supernode/config.yml
+
+# Use custom base directory
+supernode start -d /opt/supernode
+supernode start --basedir /opt/supernode
+
+# Combine flags
+supernode start -c /etc/supernode/config.yml -d /opt/supernode
+```
+
+⚠️ **CRITICAL: Consistent Flag Usage Across Commands**
+
+If you use custom flags (`--config` or `--basedir`) for key management operations, you **MUST** use the same flags for ALL subsequent commands, including the `start` command. Otherwise, your configuration will break and keys will not be found.
+
+
+### Additional Important Notes:
+
+- Make sure you have sufficient balance in your Lumera account to broadcast transactions
+- The P2P port (4445) should not be changed from the default
+- Your `key_name` in the config must match the name you used when creating the key
+- Your `identity` in the config must match the address generated for your key
+- Ensure your Lumera validator node is running and accessible at the configured gRPC address
