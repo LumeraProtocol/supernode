@@ -13,7 +13,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
@@ -67,12 +67,13 @@ func (h *StorageHandler) StoreBytesIntoP2P(ctx context.Context, data []byte, typ
 
 // StoreBatch stores into P2P array of bytes arrays
 func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int) error {
-	val := ctx.Value(log.TaskIDKey)
+	val := ctx.Value(logtrace.CorrelationIDKey)
 	taskID := ""
 	if val != nil {
 		taskID = fmt.Sprintf("%v", val)
 	}
-	log.WithContext(ctx).WithField("task_id", taskID).Info("task_id in storeList")
+
+	logtrace.Info(ctx, "task_id in storeList", logtrace.Fields{logtrace.FieldTaskID: taskID})
 
 	return h.P2PClient.StoreBatch(ctx, list, typ, taskID)
 }
@@ -94,7 +95,7 @@ func (h *StorageHandler) StoreRaptorQSymbolsIntoP2P(ctx context.Context, taskID,
 		return err
 	}
 
-	/* down-sample if we exceed the “big directory” threshold ------------- */
+	/* down-sample if we exceed the "big directory" threshold ------------- */
 	if len(keys) > loadSymbolsBatchSize {
 		want := int(math.Ceil(float64(len(keys)) * storeSymbolsPercent / 100))
 		if want < len(keys) {
@@ -104,7 +105,7 @@ func (h *StorageHandler) StoreRaptorQSymbolsIntoP2P(ctx context.Context, taskID,
 		sort.Strings(keys) // deterministic order inside the sample
 	}
 
-	log.WithContext(ctx).WithField("count", len(keys)).Info("storing RaptorQ symbols")
+	logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
 
 	/* stream in fixed-size batches -------------------------------------- */
 	for start := 0; start < len(keys); {
@@ -121,8 +122,8 @@ func (h *StorageHandler) StoreRaptorQSymbolsIntoP2P(ctx context.Context, taskID,
 	if err := h.store.UpdateIsFirstBatchStored(h.TxID); err != nil {
 		return fmt.Errorf("update first-batch flag: %w", err)
 	}
-	log.WithContext(ctx).WithField("curr-time", time.Now().UTC()).WithField("count", len(keys)).
-		Info("finished storing RaptorQ symbols")
+
+	logtrace.Info(ctx, "finished storing RaptorQ symbols", logtrace.Fields{"curr-time": time.Now().UTC(), "count": len(keys)})
 
 	return nil
 }
@@ -154,7 +155,7 @@ func walkSymbolTree(root string) ([]string, error) {
 }
 
 func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) error {
-	log.WithContext(ctx).WithField("count", len(fileKeys)).Info("loading batch symbols")
+	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
 	symbols, err := utils.LoadSymbols(root, fileKeys)
 	if err != nil {
@@ -164,12 +165,14 @@ func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root str
 	if err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(symbols)).Info("stored batch symbols")
+
+	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
 		return fmt.Errorf("delete symbols: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(symbols)).Info("deleted batch symbols")
+
+	logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	return nil
 }

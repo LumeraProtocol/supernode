@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
@@ -97,7 +96,7 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 		sort.Strings(keys) // deterministic order inside the sample
 	}
 
-	log.WithContext(ctx).WithField("count", len(keys)).Info("storing RaptorQ symbols")
+	logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
 
 	/* stream in fixed-size batches -------------------------------------- */
 	for start := 0; start < len(keys); {
@@ -114,8 +113,10 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
 		return fmt.Errorf("update first-batch flag: %w", err)
 	}
-	log.WithContext(ctx).WithField("curr-time", time.Now().UTC()).WithField("count", len(keys)).
-		Info("finished storing RaptorQ symbols")
+	logtrace.Info(ctx, "finished storing RaptorQ symbols", logtrace.Fields{
+		"curr-time": time.Now().UTC(),
+		"count":     len(keys),
+	})
 
 	return nil
 }
@@ -147,7 +148,7 @@ func walkSymbolTree(root string) ([]string, error) {
 }
 
 func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) error {
-	log.WithContext(ctx).WithField("count", len(fileKeys)).Info("loading batch symbols")
+	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
 	symbols, err := utils.LoadSymbols(root, fileKeys)
 	if err != nil {
@@ -157,12 +158,12 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	if err := c.p2p.StoreBatch(ctx, symbols, common.P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(symbols)).Info("stored batch symbols")
+	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
 		return fmt.Errorf("delete symbols: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(symbols)).Info("deleted batch symbols")
+	logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	return nil
 }

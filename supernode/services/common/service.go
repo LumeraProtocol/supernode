@@ -8,7 +8,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/common/task"
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 // SuperNodeServiceInterface common interface for Services
@@ -26,7 +26,7 @@ type SuperNodeService struct {
 
 // run starts task
 func (service *SuperNodeService) run(ctx context.Context, nodeID string, prefix string) error {
-	ctx = log.ContextWithPrefix(ctx, prefix)
+	ctx = logtrace.CtxWithCorrelationID(ctx, prefix)
 
 	if nodeID == "" {
 		return errors.New("PastelID is not specified in the config file")
@@ -45,14 +45,14 @@ func (service *SuperNodeService) RunHelper(ctx context.Context, nodeID string, p
 	for {
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).Error("context done - closing sn services")
+			logtrace.Error(ctx, "context done - closing sn services", logtrace.Fields{logtrace.FieldModule: "supernode"})
 			return nil
 		case <-time.After(5 * time.Second):
 			if err := service.run(ctx, nodeID, prefix); err != nil {
 				service.Worker = task.NewWorker()
-				log.WithContext(ctx).WithError(err).Error("Service run failed, retrying")
+				logtrace.Error(ctx, "Service run failed, retrying", logtrace.Fields{logtrace.FieldModule: "supernode", logtrace.FieldError: err.Error()})
 			} else {
-				log.WithContext(ctx).Info("Service run completed successfully - closing sn services")
+				logtrace.Info(ctx, "Service run completed successfully - closing sn services", logtrace.Fields{logtrace.FieldModule: "supernode"})
 				return nil
 			}
 		}

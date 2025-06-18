@@ -6,7 +6,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/pkg/common/task"
 	"github.com/LumeraProtocol/supernode/pkg/common/task/state"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
 )
 
@@ -23,12 +23,12 @@ type SuperNodeTask struct {
 // RunHelper common code for Task runner
 func (task *SuperNodeTask) RunHelper(ctx context.Context, clean TaskCleanerFunc) error {
 	ctx = task.context(ctx)
-	log.WithContext(ctx).Debug("Start task")
-	defer log.WithContext(ctx).Info("Task canceled")
+	logtrace.Debug(ctx, "Start task", logtrace.Fields{})
+	defer logtrace.Info(ctx, "Task canceled", logtrace.Fields{})
 	defer task.Cancel()
 
 	task.SetStatusNotifyFunc(func(status *state.Status) {
-		log.WithContext(ctx).WithField("status", status.String()).Debug("States updated")
+		logtrace.Debug(ctx, "States updated", logtrace.Fields{"status": status.String()})
 	})
 
 	defer clean()
@@ -37,15 +37,15 @@ func (task *SuperNodeTask) RunHelper(ctx context.Context, clean TaskCleanerFunc)
 }
 
 func (task *SuperNodeTask) context(ctx context.Context) context.Context {
-	return log.ContextWithPrefix(ctx, fmt.Sprintf("%s-%s", task.LogPrefix, task.ID()))
+	return logtrace.CtxWithCorrelationID(ctx, fmt.Sprintf("%s-%s", task.LogPrefix, task.ID()))
 }
 
 // RemoveFile removes file from FS (TODO: move to gonode.common)
 func (task *SuperNodeTask) RemoveFile(file *files.File) {
 	if file != nil {
-		log.Debugf("remove file: %s", file.Name())
+		logtrace.Debug(context.Background(), "remove file", logtrace.Fields{"filename": file.Name()})
 		if err := file.Remove(); err != nil {
-			log.Debugf("remove file failed: %s", err.Error())
+			logtrace.Debug(context.Background(), "remove file failed", logtrace.Fields{logtrace.FieldError: err.Error()})
 		}
 	}
 }
