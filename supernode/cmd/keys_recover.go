@@ -17,6 +17,7 @@ var keysRecoverCmd = &cobra.Command{
 	Short: "Recover a key using a mnemonic",
 	Long: `Recover a key using a BIP39 mnemonic.
 This command will derive a key pair from the provided mnemonic and store it in the keyring.
+Supports standard BIP39 mnemonic lengths: 12, 15, 18, 21, or 24 words.
 
 Example:
   supernode keys recover mykey
@@ -67,12 +68,12 @@ Example:
 		mnemonic = strings.Join(strings.Fields(mnemonic), " ")
 
 		// Add debug output to see what's being processed
-		fmt.Printf("Processing mnemonic with %d words\n", len(strings.Fields(mnemonic)))
-
-		// Check expected word count (BIP39 mnemonics are typically 12 or 24 words)
 		wordCount := len(strings.Fields(mnemonic))
-		if wordCount != 24 {
-			return fmt.Errorf("mnemonic should have 24 words exactly, found %d words", wordCount)
+		fmt.Printf("Processing mnemonic with %d words\n", wordCount)
+
+		// Validate BIP39 mnemonic word count
+		if !isValidBIP39WordCount(wordCount) {
+			return fmt.Errorf("invalid mnemonic word count: %d. Valid BIP39 mnemonic lengths are 12, 15, 18, 21, or 24 words", wordCount)
 		}
 
 		// Recover account from mnemonic
@@ -92,13 +93,25 @@ Example:
 		fmt.Println("Key recovered successfully!")
 		fmt.Printf("- Name: %s\n", info.Name)
 		fmt.Printf("- Address: %s\n", address.String())
+		fmt.Printf("- Mnemonic length: %d words\n", wordCount)
 
 		return nil
 	},
 }
 
+// isValidBIP39WordCount checks if the word count is valid for BIP39 mnemonics
+func isValidBIP39WordCount(wordCount int) bool {
+	validCounts := []int{12, 15, 18, 21, 24}
+	for _, count := range validCounts {
+		if wordCount == count {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	keysCmd.AddCommand(keysRecoverCmd)
 	// Add flag for mnemonic
-	keysRecoverCmd.Flags().String("mnemonic", "", "BIP39 mnemonic for key recovery")
+	keysRecoverCmd.Flags().String("mnemonic", "", "BIP39 mnemonic for key recovery (12, 15, 18, 21, or 24 words)")
 }
