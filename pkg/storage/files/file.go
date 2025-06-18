@@ -2,6 +2,7 @@ package files
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/gif"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage"
 
 	"github.com/disintegration/imaging"
@@ -329,7 +330,9 @@ func (file *File) UpdateFormat() error {
 
 	err = file.SetFormatFromExtension(format)
 	if err != nil {
-		log.WithError(err).Error(fmt.Sprintf("not able to set extension:%s", err.Error()))
+		logtrace.Error(context.Background(), "not able to set extension", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		})
 		return errors.Errorf("set file format(%s): %w", file.Name(), err)
 	}
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 
 	"database/sql"
 
@@ -67,7 +67,7 @@ func NewStore(ctx context.Context, dataDir string) (*Store, error) {
 		quit:     make(chan bool),
 	}
 
-	log.P2P().WithContext(ctx).Infof("p2p data dir: %v", dataDir)
+	logtrace.Info(ctx, fmt.Sprintf("p2p data dir: %v", dataDir), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dataDir, 0750); err != nil {
 			return nil, fmt.Errorf("mkdir %q: %w", dataDir, err)
@@ -97,7 +97,7 @@ func NewStore(ctx context.Context, dataDir string) (*Store, error) {
 	}
 
 	if err := s.migrateToDelKeys(); err != nil {
-		log.P2P().WithContext(ctx).Errorf("cannot create to-del-keys table in sqlite database: %s", err.Error())
+		logtrace.Error(ctx, fmt.Sprintf("cannot create to-del-keys table in sqlite database: %s", err.Error()), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	pragmas := []string{
@@ -174,7 +174,7 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 			}
 			return err
 		}, b, func(err error, duration time.Duration) {
-			log.WithContext(ctx).WithField("duration", duration).Error("Failed to perform checkpoint, retrying...")
+			logtrace.Error(ctx, "Failed to perform checkpoint, retrying...", logtrace.Fields{"duration": duration})
 		})
 
 		if err == nil {
@@ -185,10 +185,10 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).Info("Stopping checkpoint worker because of context cancel")
+			logtrace.Info(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
 			return
 		case <-s.worker.quit:
-			log.WithContext(ctx).Info("Stopping checkpoint worker because of quit signal")
+			logtrace.Info(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
 			return
 		default:
 		}
@@ -201,13 +201,13 @@ func (s *Store) start(ctx context.Context) {
 		select {
 		case job := <-s.worker.JobQueue:
 			if err := s.performJob(job); err != nil {
-				log.WithError(err).Error("Failed to perform job")
+				logtrace.Error(ctx, "Failed to perform job", logtrace.Fields{logtrace.FieldError: err})
 			}
 		case <-s.worker.quit:
-			log.Info("exit sqlite meta db worker - quit signal received")
+			logtrace.Info(ctx, "exit sqlite meta db worker - quit signal received", logtrace.Fields{})
 			return
 		case <-ctx.Done():
-			log.Info("exit sqlite meta db worker- ctx done signal received")
+			logtrace.Info(ctx, "exit sqlite meta db worker- ctx done signal received", logtrace.Fields{})
 			return
 		}
 	}
@@ -227,7 +227,7 @@ func (s *Store) Store(ctx context.Context, key []byte) error {
 		Key:     key,
 	}
 
-	if val := ctx.Value(log.TaskIDKey); val != nil {
+	if val := ctx.Value(logtrace.CorrelationIDKey); val != nil {
 		switch val := val.(type) {
 		case string:
 			job.TaskID = val
@@ -249,7 +249,7 @@ func (s *Store) performJob(j Job) error {
 	case "Insert":
 		err := s.storeDisabledKey(j.Key)
 		if err != nil {
-			log.WithError(err).WithField("taskID", j.TaskID).WithField("id", j.ReqID).Error("failed to store disable key record")
+			logtrace.Error(context.Background(), "failed to store disable key record", logtrace.Fields{logtrace.FieldError: err, logtrace.FieldTaskID: j.TaskID, "id": j.ReqID})
 			return fmt.Errorf("failed to store disable key record: %w", err)
 		}
 	case "Delete":
@@ -274,7 +274,7 @@ func (s *Store) Close(ctx context.Context) {
 
 	if s.db != nil {
 		if err := s.db.Close(); err != nil {
-			log.P2P().WithContext(ctx).Errorf("Failed to close database: %s", err)
+			logtrace.Error(ctx, fmt.Sprintf("Failed to close database: %s", err), logtrace.Fields{logtrace.FieldModule: "p2p"})
 		}
 	}
 }
@@ -310,13 +310,13 @@ func (s *Store) deleteRecord(key []byte) {
 
 	res, err := s.db.Exec("DELETE FROM disabled_keys WHERE key = ?", hkey)
 	if err != nil {
-		log.P2P().Debugf("cannot delete disabled keys record by key %s: %v", hkey, err)
+		logtrace.Debug(context.Background(), fmt.Sprintf("cannot delete disabled keys record by key %s: %v", hkey, err), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	if rowsAffected, err := res.RowsAffected(); err != nil {
-		log.P2P().Debugf("failed to delete disabled key record by key %s: %v", hkey, err)
+		logtrace.Debug(context.Background(), fmt.Sprintf("failed to delete disabled key record by key %s: %v", hkey, err), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	} else if rowsAffected == 0 {
-		log.P2P().Debugf("failed to delete disabled key record by key %s", hkey)
+		logtrace.Debug(context.Background(), fmt.Sprintf("failed to delete disabled key record by key %s", hkey), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 }
 

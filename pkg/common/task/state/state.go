@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/pkg/types"
 )
@@ -94,18 +94,18 @@ func (state *state) UpdateStatus(subStatus SubStatus) {
 
 	if state.historyDBStore != nil {
 		if _, err := state.historyDBStore.InsertTaskHistory(history); err != nil {
-			log.WithError(err).Error("unable to store task status")
+			logtrace.Error(context.Background(), "unable to store task status", logtrace.Fields{logtrace.FieldError: err.Error()})
 		}
 	} else {
 		store, err := queries.OpenHistoryDB()
 		if err != nil {
-			log.WithError(err).Debug("error opening history db")
+			logtrace.Error(context.Background(), "error opening history db", logtrace.Fields{logtrace.FieldError: err.Error()})
 		}
 
 		if store != nil {
 			defer store.CloseHistoryDB(context.Background())
 			if _, err := store.InsertTaskHistory(history); err != nil {
-				log.WithError(err).Debug("unable to store task status")
+				logtrace.Error(context.Background(), "unable to store task status", logtrace.Fields{logtrace.FieldError: err.Error()})
 			}
 		}
 	}
@@ -155,7 +155,7 @@ func (state *state) InitialiseHistoryDB(storeInterface queries.LocalStoreInterfa
 func New(subStatus SubStatus, taskID string) State {
 	store, err := queries.OpenHistoryDB()
 	if err != nil {
-		log.WithError(err).Error("error opening history db")
+		logtrace.Error(context.Background(), "error opening history db", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
 	if store != nil {
@@ -163,7 +163,7 @@ func New(subStatus SubStatus, taskID string) State {
 
 		if _, err := store.InsertTaskHistory(types.TaskHistory{CreatedAt: time.Now().UTC(), TaskID: taskID,
 			Status: subStatus.String()}); err != nil {
-			log.WithError(err).Error("unable to store task status")
+			logtrace.Error(context.Background(), "unable to store task status", logtrace.Fields{logtrace.FieldError: err.Error()})
 		}
 	}
 

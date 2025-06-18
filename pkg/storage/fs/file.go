@@ -1,11 +1,12 @@
 package fs
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage"
 )
 
@@ -38,9 +39,9 @@ func (fs *FS) Create(filename string) (storage.FileInterface, error) {
 	filename = filepath.Join(fs.dir, filename)
 
 	if _, err := os.Stat(filename); !os.IsNotExist(err) {
-		log.WithPrefix(logPrefix).Debugf("Rewrite file %q", filename)
+		logtrace.Debug(context.Background(), "Rewrite file", logtrace.Fields{logtrace.FieldModule: logPrefix, "filename": filename})
 	} else {
-		log.WithPrefix(logPrefix).Debugf("Create file %q", filename)
+		logtrace.Debug(context.Background(), "Create file", logtrace.Fields{logtrace.FieldModule: logPrefix, "filename": filename})
 	}
 
 	file, err := os.Create(filename)
@@ -54,7 +55,7 @@ func (fs *FS) Create(filename string) (storage.FileInterface, error) {
 func (fs *FS) Remove(filename string) error {
 	filename = filepath.Join(fs.dir, filename)
 
-	log.WithPrefix(logPrefix).Debugf("Remove file %q", filename)
+	logtrace.Debug(context.Background(), "Remove file", logtrace.Fields{logtrace.FieldModule: logPrefix, "filename": filename})
 
 	if err := os.Remove(filename); err != nil {
 		return errors.Errorf("remove file %q: %w", filename, err)
@@ -71,7 +72,7 @@ func (fs *FS) Rename(oldname, newname string) error {
 	oldname = filepath.Join(fs.dir, oldname)
 	newname = filepath.Join(fs.dir, newname)
 
-	log.WithPrefix(logPrefix).Debugf("Rename file %q to %q", oldname, newname)
+	logtrace.Debug(context.Background(), "Rename file", logtrace.Fields{logtrace.FieldModule: logPrefix, "old_filename": oldname, "new_filename": newname})
 
 	if err := os.Rename(oldname, newname); err != nil {
 		return errors.Errorf("rename file %q to %q: %w", oldname, newname, err)

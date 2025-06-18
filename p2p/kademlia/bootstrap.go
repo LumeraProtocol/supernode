@@ -12,7 +12,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/errors"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 )
 
@@ -65,9 +65,11 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 			// For system testing, use port+1 if SYSTEM_TEST=true
 			if os.Getenv("SYSTEM_TEST") == "true" {
 				port = uint16(portNum) + 1
-				log.P2P().WithField("original_port", portNum).
-					WithField("adjusted_port", port).
-					Info("Using port+1 for system testing")
+				logtrace.Info(context.Background(), "Using port+1 for system testing", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"original_port":      portNum,
+					"adjusted_port":      port,
+				})
 			} else {
 				// For normal P2P operation, always use the default port
 				port = defaultNetworkPort
@@ -108,7 +110,10 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 		})
 	}
 	s.options.BootstrapNodes = nodes
-	log.P2P().WithContext(ctx).WithField("bootstrap_nodes", nodes).Info("Bootstrap nodes set from config var")
+	logtrace.Info(ctx, "Bootstrap nodes set from config var", logtrace.Fields{
+		logtrace.FieldModule: "p2p",
+		"bootstrap_nodes":    nodes,
+	})
 
 	return nil
 }
@@ -158,15 +163,22 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 			}
 
 			if latestIP == "" {
-				log.P2P().WithContext(ctx).WithField("supernode", supernode.SupernodeAccount).Warn("No valid IP address found for supernode")
+				logtrace.Warn(ctx, "No valid IP address found for supernode", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"supernode":          supernode.SupernodeAccount,
+				})
 				continue
 			}
 
 			// Parse the node from the IP address
 			node, err := s.parseNode(latestIP, selfAddress)
 			if err != nil {
-				log.P2P().WithContext(ctx).WithError(err).WithField("address", latestIP).WithField("supernode", supernode.SupernodeAccount).
-					Warn("Skip Bad Bootstrap Address")
+				logtrace.Warn(ctx, "Skip Bad Bootstrap Address", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+					"address":            latestIP,
+					"supernode":          supernode.SupernodeAccount,
+				})
 				continue
 			}
 
@@ -185,13 +197,19 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 	}
 
 	if len(boostrapNodes) == 0 {
-		log.WithContext(ctx).Error("unable to fetch bootstrap IP addresses. No valid supernodes found.")
+		logtrace.Error(ctx, "unable to fetch bootstrap IP addresses. No valid supernodes found.", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+		})
 		return nil
 	}
 
 	for _, node := range boostrapNodes {
-		log.WithContext(ctx).WithFields(log.Fields{"bootstap_ip": node.IP, "bootstrap_port": node.Port, "node_id": string(node.ID)}).
-			Info("adding p2p bootstrap node")
+		logtrace.Info(ctx, "adding p2p bootstrap node", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"bootstap_ip":        node.IP,
+			"bootstrap_port":     node.Port,
+			"node_id":            string(node.ID),
+		})
 	}
 
 	s.options.BootstrapNodes = append(s.options.BootstrapNodes, boostrapNodes...)
@@ -221,7 +239,10 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 
 		addr := fmt.Sprintf("%s:%v", node.IP, node.Port)
 		if _, err := s.cache.Get(addr); err == nil {
-			log.P2P().WithContext(ctx).WithField("addr", addr).Info("skip bad p2p boostrap addr")
+			logtrace.Info(ctx, "skip bad p2p boostrap addr", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"addr":               addr,
+			})
 			continue
 		}
 
@@ -245,20 +266,32 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 					// So if bootstrap failed, should try to connect to node again for next bootstrap retry
 					// s.cache.SetWithExpiry(addr, []byte("true"), badAddrExpiryHours*time.Hour)
 
-					log.P2P().WithContext(ctx).WithError(err).Error("network call failed, sleeping 3 seconds")
+					logtrace.Error(ctx, "network call failed, sleeping 3 seconds", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
 					time.Sleep(5 * time.Second)
 					continue
 				}
-				log.P2P().WithContext(ctx).Debugf("ping response: %v", response.String())
+				logtrace.Debug(ctx, "ping response", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"response":           response.String(),
+				})
 
 				// add the node to the route table
-				log.P2P().WithContext(ctx).WithField("sender-id", string(response.Sender.ID)).
-					WithField("sender-ip", string(response.Sender.IP)).
-					WithField("sender-port", response.Sender.Port).Debug("add-node params")
+				logtrace.Debug(ctx, "add-node params", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"sender-id":          string(response.Sender.ID),
+					"sender-ip":          string(response.Sender.IP),
+					"sender-port":        response.Sender.Port,
+				})
 
 				if len(response.Sender.ID) != len(s.ht.self.ID) {
-					log.P2P().WithContext(ctx).WithField("sender-id", string(response.Sender.ID)).
-						WithField("self-id", string(s.ht.self.ID)).Error("self ID && sender ID len don't match")
+					logtrace.Error(ctx, "self ID && sender ID len don't match", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						"sender-id":          string(response.Sender.ID),
+						"self-id":            string(s.ht.self.ID),
+					})
 
 					continue
 				}
@@ -277,7 +310,10 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 	if s.ht.totalCount() > 0 {
 		// iterative find node from the nodes
 		if _, err := s.iterate(ctx, IterateFindNode, s.ht.self.ID, nil, 0); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("iterative find node failed")
+			logtrace.Error(ctx, "iterative find node failed", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+			})
 			return err
 		}
 	} else {
@@ -291,12 +327,18 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 
 func (s *DHT) retryBootstrap(ctx context.Context, bootstrapNodes string) {
 	if err := s.ConfigureBootstrapNodes(ctx, bootstrapNodes); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Error("retry failed to get bootstap ip")
+		logtrace.Error(ctx, "retry failed to get bootstap ip", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
 		return
 	}
 
 	// join the kademlia network if bootstrap nodes is set
 	if err := s.Bootstrap(ctx, bootstrapNodes); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Error("retry failed - bootstrap the node.")
+		logtrace.Error(ctx, "retry failed - bootstrap the node.", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
 	}
 }

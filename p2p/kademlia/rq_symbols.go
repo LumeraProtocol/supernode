@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
@@ -16,16 +16,16 @@ const (
 )
 
 func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
-	log.P2P().WithContext(ctx).Info("start delete data worker")
+	logtrace.Info(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultSoreSymbolsInterval):
 			if err := s.storeSymbols(ctx); err != nil {
-				log.P2P().WithContext(ctx).WithError(err).Error("store symbols")
+				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			}
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing store symbols worker")
+			logtrace.Error(ctx, "closing store symbols worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}
@@ -38,12 +38,12 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 	}
 
 	for _, dir := range dirs {
-		log.WithContext(ctx).WithField("dir", dir).WithField("txid", dir.TXID).Info("rq_symbols worker: start scanning dir & storing raptorQ symbols")
+		logtrace.Info(ctx, "rq_symbols worker: start scanning dir & storing raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
 		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("scan and store symbols")
+			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		}
 
-		log.WithContext(ctx).WithField("dir", dir).WithField("txid", dir.TXID).Info("rq_symbols worker: scanned dir & stored raptorQ symbols")
+		logtrace.Info(ctx, "rq_symbols worker: scanned dir & stored raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
 	}
 
 	return nil
@@ -66,11 +66,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 	}
 	sort.Strings(keys)
 
-	log.WithContext(ctx).
-		WithField("txid", txid).
-		WithField("dir", dir).
-		WithField("total", len(keys)).
-		Info("p2p-worker: storing ALL RaptorQ symbols")
+	logtrace.Info(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
 
 	// Batch-flush at loadSymbolsBatchSize
 	for start := 0; start < len(keys); {

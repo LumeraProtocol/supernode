@@ -8,9 +8,9 @@ import (
 
 	"encoding/hex"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/cenkalti/backoff/v4"
 )
 
@@ -34,7 +34,7 @@ var (
 
 // StartReplicationWorker starts replication
 func (s *DHT) StartReplicationWorker(ctx context.Context) error {
-	log.P2P().WithContext(ctx).Info("replication worker started")
+	logtrace.Info(ctx, "replication worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	go s.checkNodeActivity(ctx)
 	go s.StartBatchFetchAndStoreWorker(ctx)
@@ -46,7 +46,7 @@ func (s *DHT) StartReplicationWorker(ctx context.Context) error {
 			//log.WithContext(ctx).Info("replication worker disabled")
 			s.Replicate(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing replication worker")
+			logtrace.Error(ctx, "closing replication worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -54,14 +54,14 @@ func (s *DHT) StartReplicationWorker(ctx context.Context) error {
 
 // StartBatchFetchAndStoreWorker starts replication
 func (s *DHT) StartBatchFetchAndStoreWorker(ctx context.Context) error {
-	log.P2P().WithContext(ctx).Info("batch fetch and store worker started")
+	logtrace.Info(ctx, "batch fetch and store worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultBatchFetchAndStoreInterval):
 			s.BatchFetchAndStore(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing batch fetch & store worker")
+			logtrace.Error(ctx, "closing batch fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -69,14 +69,14 @@ func (s *DHT) StartBatchFetchAndStoreWorker(ctx context.Context) error {
 
 // StartFailedFetchAndStoreWorker starts replication
 func (s *DHT) StartFailedFetchAndStoreWorker(ctx context.Context) error {
-	log.P2P().WithContext(ctx).Info("fetch and store worker started")
+	logtrace.Info(ctx, "fetch and store worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultFetchAndStoreInterval):
 			s.BatchFetchAndStoreFailedKeys(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing fetch & store worker")
+			logtrace.Error(ctx, "closing fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -101,12 +101,12 @@ func (s *DHT) updateReplicationNode(ctx context.Context, nodeID []byte, ip strin
 
 	if ok {
 		if err := s.store.UpdateReplicationInfo(ctx, info); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).WithField("node_id", string(nodeID)).WithField("ip", ip).Error("failed to update replication info")
+			logtrace.Error(ctx, "failed to update replication info", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node_id": string(nodeID), "ip": ip})
 			return err
 		}
 	} else {
 		if err := s.store.AddReplicationInfo(ctx, info); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).WithField("node_id", string(nodeID)).WithField("ip", ip).Error("failed to add replication info")
+			logtrace.Error(ctx, "failed to add replication info", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node_id": string(nodeID), "ip": ip})
 			return err
 		}
 	}
@@ -116,7 +116,7 @@ func (s *DHT) updateReplicationNode(ctx context.Context, nodeID []byte, ip strin
 
 func (s *DHT) updateLastReplicated(ctx context.Context, nodeID []byte, timestamp time.Time) error {
 	if err := s.store.UpdateLastReplicated(ctx, string(nodeID), timestamp); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).WithField("node_id", string(nodeID)).Error("failed to update replication info last replicated")
+		logtrace.Error(ctx, "failed to update replication info last replicated", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node_id": string(nodeID)})
 	}
 
 	return nil
@@ -127,30 +127,30 @@ func (s *DHT) updateLastReplicated(ctx context.Context, nodeID []byte, timestamp
 func (s *DHT) Replicate(ctx context.Context) {
 	historicStart, err := s.store.GetOwnCreatedAt(ctx)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("unable to get own createdAt")
+		logtrace.Error(ctx, "unable to get own createdAt", logtrace.Fields{logtrace.FieldError: err.Error()})
 		historicStart = time.Now().UTC().Add(-24 * time.Hour * 180)
 	}
 
-	log.P2P().WithContext(ctx).WithField("historic-start", historicStart).Info("replicating data")
+	logtrace.Info(ctx, "replicating data", logtrace.Fields{logtrace.FieldModule: "p2p", "historic-start": historicStart})
 
 	for i := 0; i < B; i++ {
 		if time.Since(s.ht.refreshTime(i)) > defaultRefreshTime {
 			// refresh the bucket by iterative find node
 			id := s.ht.randomIDFromBucket(K)
 			if _, err := s.iterate(ctx, IterateFindNode, id, nil, 0); err != nil {
-				log.P2P().WithContext(ctx).WithError(err).Error("replicate iterate find node failed")
+				logtrace.Error(ctx, "replicate iterate find node failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			}
 		}
 	}
 
 	repInfo, err := s.store.GetAllReplicationInfo(ctx)
 	if err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Errorf("get all replicationInfo failed")
+		logtrace.Error(ctx, "get all replicationInfo failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 		return
 	}
 
 	if len(repInfo) == 0 {
-		log.P2P().WithContext(ctx).Info("no replication info found")
+		logtrace.Info(ctx, "no replication info found", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		return
 	}
 
@@ -159,7 +159,7 @@ func (s *DHT) Replicate(ctx context.Context) {
 		from = *repInfo[0].LastReplicatedAt
 	}
 
-	log.P2P().WithContext(ctx).WithField("from", from).Info("getting all possible replication keys")
+	logtrace.Info(ctx, "getting all possible replication keys", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
 	to := time.Now().UTC()
 	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
 
@@ -180,8 +180,6 @@ func (s *DHT) Replicate(ctx context.Context) {
 			continue
 		}
 
-		logEntry := log.P2P().WithContext(ctx).WithField("rep-ip", info.IP).WithField("rep-id", string(info.ID))
-
 		start := historicStart
 		if info.LastReplicatedAt != nil {
 			start = *info.LastReplicatedAt
@@ -191,15 +189,15 @@ func (s *DHT) Replicate(ctx context.Context) {
 		if idx == -1 {
 			// Now closestContactKeys contains all the keys that are in the closest contacts.
 			if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
-				logEntry.Error("replicate update lastReplicated failed")
+				logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 			} else {
-				logEntry.WithField("node", info.IP).WithField("to", to.String()).WithField("fetch-keys", 0).Debug("no replication keys - replicate update lastReplicated success")
+				logtrace.Debug(ctx, "no replication keys - replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "fetch-keys": 0})
 			}
 
 			continue
 		}
 		countToSendKeys := len(replicationKeys) - idx
-		logEntry.WithField("len-rep-keys", countToSendKeys).Info("count of replication keys to be checked")
+		logtrace.Info(ctx, "count of replication keys to be checked", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": countToSendKeys})
 		// Preallocate a slice with a capacity equal to the number of keys.
 		closestContactKeys := make([]string, 0, countToSendKeys)
 
@@ -212,13 +210,13 @@ func (s *DHT) Replicate(ctx context.Context) {
 			}
 		}
 
-		logEntry.WithField("len-rep-keys", len(closestContactKeys)).Info("closest contact keys count")
+		logtrace.Info(ctx, "closest contact keys count", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": len(closestContactKeys)})
 
 		if len(closestContactKeys) == 0 {
 			if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
-				logEntry.Error("replicate update lastReplicated failed")
+				logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 			} else {
-				logEntry.WithField("node", info.IP).WithField("to", to.String()).WithField("closest-contact-keys", 0).Info("no closest keys found - replicate update lastReplicated success")
+				logtrace.Info(ctx, "no closest keys found - replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "closest-contact-keys": 0})
 			}
 
 			continue
@@ -246,31 +244,29 @@ func (s *DHT) Replicate(ctx context.Context) {
 
 			return nil
 		}, b, func(err error, duration time.Duration) {
-			logEntry.WithError(err).WithField("duration", duration).Error("retrying send replicate data")
+			logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID), "duration": duration})
 		})
 
 		if err != nil {
-			logEntry.WithError(err).Error("send replicate data failed after retries")
+			logtrace.Error(ctx, "send replicate data failed after retries", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID)})
 			continue
 		}
 
 		// Now closestContactKeys contains all the keys that are in the closest contacts.
 		if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
-			logEntry.Error("replicate update lastReplicated failed")
+			logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 		} else {
-			logEntry.WithField("node", info.IP).WithField("to", to.String()).WithField("expected-rep-keys", len(closestContactKeys)).Info("replicate update lastReplicated success")
+			logtrace.Info(ctx, "replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "expected-rep-keys": len(closestContactKeys)})
 		}
 	}
 
-	log.P2P().WithContext(ctx).Info("Replication done")
+	logtrace.Info(ctx, "Replication done", logtrace.Fields{logtrace.FieldModule: "p2p"})
 }
 
 func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.NodeReplicationInfo) error {
 	replicationKeys := s.store.GetKeysForReplication(ctx, from, time.Now().UTC())
-	logEntry := log.P2P().WithContext(ctx).WithField("offline-node-ip", info.IP).WithField("offline-node-id", string(info.ID)).
-		WithField("total-rep-keys", len(replicationKeys))
 
-	logEntry.WithField("from", from.String()).Info("begin adjusting node keys process for offline node")
+	logtrace.Info(ctx, "begin adjusting node keys process for offline node", logtrace.Fields{logtrace.FieldModule: "p2p", "offline-node-ip": info.IP, "offline-node-id": string(info.ID), "total-rep-keys": len(replicationKeys), "from": from.String()})
 
 	// prepare ignored nodes list but remove the node we are adjusting
 	// because we want to find if this node was supposed to hold this key
@@ -317,11 +313,11 @@ func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.No
 	failureCount := 0
 
 	for nodeInfoKey, keys := range nodeKeysMap {
-		logEntry.WithField("adjust-to-node", nodeInfoKey).WithField("to-adjust-keys-len", len(keys)).Info("sending adjusted replication keys to node")
+		logtrace.Info(ctx, "sending adjusted replication keys to node", logtrace.Fields{logtrace.FieldModule: "p2p", "offline-node-ip": info.IP, "offline-node-id": string(info.ID), "adjust-to-node": nodeInfoKey, "to-adjust-keys-len": len(keys)})
 		// Retrieve the node object from the key
 		node, err := getNodeFromKey(nodeInfoKey)
 		if err != nil {
-			logEntry.WithError(err).Error("Failed to parse node info from key")
+			logtrace.Error(ctx, "Failed to parse node info from key", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "offline-node-ip": info.IP, "offline-node-id": string(info.ID)})
 			return fmt.Errorf("failed to parse node info from key: %w", err)
 		}
 
@@ -346,11 +342,11 @@ func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.No
 			successCount++
 			return nil
 		}, b, func(err error, duration time.Duration) {
-			logEntry.WithError(err).WithField("duration", duration).Error("retrying send replicate data")
+			logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "offline-node-ip": info.IP, "offline-node-id": string(info.ID), "duration": duration})
 		})
 
 		if err != nil {
-			logEntry.WithError(err).Error("send replicate data failed after retries")
+			logtrace.Error(ctx, "send replicate data failed after retries", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "offline-node-ip": info.IP, "offline-node-id": string(info.ID)})
 			failureCount++
 		}
 	}
@@ -372,14 +368,14 @@ func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.No
 		return fmt.Errorf("replicate update isAdjusted failed: %v", err)
 	}
 
-	logEntry.Info("offline node was successfully adjusted")
+	logtrace.Info(ctx, "offline node was successfully adjusted", logtrace.Fields{logtrace.FieldModule: "p2p", "offline-node-ip": info.IP, "offline-node-id": string(info.ID)})
 
 	return nil
 }
 
 func isNodeGoneAndShouldBeAdjusted(lastSeen *time.Time, isAlreadyAdjusted bool) bool {
 	if lastSeen == nil {
-		log.Info("lastSeen is nil - aborting node adjustment")
+		logtrace.Info(context.Background(), "lastSeen is nil - aborting node adjustment", logtrace.Fields{})
 		return false
 	}
 
@@ -387,22 +383,21 @@ func isNodeGoneAndShouldBeAdjusted(lastSeen *time.Time, isAlreadyAdjusted bool) 
 }
 
 func (s *DHT) checkAndAdjustNode(ctx context.Context, info domain.NodeReplicationInfo, start time.Time) {
-	logEntry := log.P2P().WithContext(ctx).WithField("rep-ip", info.IP).WithField("rep-id", string(info.ID))
 	adjustNodeKeys := isNodeGoneAndShouldBeAdjusted(info.LastSeen, info.IsAdjusted)
 	if adjustNodeKeys {
 		if err := s.adjustNodeKeys(ctx, start, info); err != nil {
-			logEntry.WithError(err).Error("failed to adjust node keys")
+			logtrace.Error(ctx, "failed to adjust node keys", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID)})
 		} else {
 			info.IsAdjusted = true
 			info.UpdatedAt = time.Now().UTC()
 
 			if err := s.store.UpdateIsAdjusted(ctx, string(info.ID), true); err != nil {
-				logEntry.WithError(err).Error("failed to update replication info, set isAdjusted to true")
+				logtrace.Error(ctx, "failed to update replication info, set isAdjusted to true", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID)})
 			} else {
-				logEntry.Info("set isAdjusted to true")
+				logtrace.Info(ctx, "set isAdjusted to true", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 			}
 		}
 	}
 
-	logEntry.Info("replication node not active, skipping over it.")
+	logtrace.Info(ctx, "replication node not active, skipping over it.", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 }

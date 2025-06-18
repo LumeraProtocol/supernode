@@ -10,7 +10,7 @@ import (
 	json "github.com/json-iterator/go"
 
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/cenkalti/backoff/v4"
 )
@@ -26,12 +26,12 @@ const (
 
 // FetchAndStore fetches all keys from the queries TODO replicate list, fetches value from respective nodes and stores them in the queries store
 func (s *DHT) FetchAndStore(ctx context.Context) error {
-	log.WithContext(ctx).Info("Getting fetch and store keys")
+	logtrace.Info(ctx, "Getting fetch and store keys", logtrace.Fields{})
 	keys, err := s.store.GetAllToDoRepKeys(failedKeysClosestContactsLookupCount+maxBatchAttempts+1, totalMaxAttempts)
 	if err != nil {
 		return fmt.Errorf("get all keys error: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(keys)).Info("got keys from queries store")
+	logtrace.Info(ctx, "got keys from queries store", logtrace.Fields{"count": len(keys)})
 
 	if len(keys) == 0 {
 		return nil
@@ -51,7 +51,7 @@ func (s *DHT) FetchAndStore(ctx context.Context) error {
 
 			sKey, err := hex.DecodeString(info.Key)
 			if err != nil {
-				log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("hex decode key failed")
+				logtrace.Error(cctx, "hex decode key failed", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 				return
 			}
 
@@ -69,32 +69,32 @@ func (s *DHT) FetchAndStore(ctx context.Context) error {
 			}, b)
 
 			if err != nil {
-				log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("fetch & store key failed")
+				logtrace.Error(cctx, "fetch & store key failed", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 				value, err = s.iterateFindValue(cctx, IterateFindValue, sKey)
 				if err != nil {
-					log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("iterate fetch for replication failed")
+					logtrace.Error(cctx, "iterate fetch for replication failed", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 					return
 				} else if len(value) == 0 {
-					log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("iterate fetch for replication failed 0 val")
+					logtrace.Error(cctx, "iterate fetch for replication failed 0 val", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 					return
 				}
 
-				log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).Info("iterate fetch for replication success")
+				logtrace.Info(cctx, "iterate fetch for replication success", logtrace.Fields{"key": info.Key, "ip": info.IP})
 			}
 
 			if err := s.store.Store(cctx, sKey, value, 0, false); err != nil {
-				log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("fetch & queries store key failed")
+				logtrace.Error(cctx, "fetch & queries store key failed", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 				return
 			}
 
 			if err := s.store.DeleteRepKey(info.Key); err != nil {
-				log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).WithError(err).Error("delete key from todo list failed")
+				logtrace.Error(cctx, "delete key from todo list failed", logtrace.Fields{"key": info.Key, "ip": info.IP, logtrace.FieldError: err})
 				return
 			}
 
 			atomic.AddInt32(&successCounter, 1) // Increment the counter atomically
 
-			log.WithContext(cctx).WithField("key", info.Key).WithField("ip", info.IP).Info("fetch & store key success")
+			logtrace.Info(cctx, "fetch & store key success", logtrace.Fields{"key": info.Key, "ip": info.IP})
 		}(key)
 
 		time.Sleep(100 * time.Millisecond)
@@ -102,19 +102,19 @@ func (s *DHT) FetchAndStore(ctx context.Context) error {
 
 	//wg.Wait()
 
-	log.WithContext(ctx).WithField("todo-keys", len(keys)).WithField("successfully-added-keys", atomic.LoadInt32(&successCounter)).Infof("Successfully fetched & stored keys") // Log the final count
+	logtrace.Info(ctx, "Successfully fetched & stored keys", logtrace.Fields{"todo-keys": len(keys), "successfully-added-keys": atomic.LoadInt32(&successCounter)}) // Log the final count
 
 	return nil
 }
 
 // BatchFetchAndStoreFailedKeys fetches all failed keys from the queries TODO replicate list, fetches value from respective nodes and stores them in the queries store
 func (s *DHT) BatchFetchAndStoreFailedKeys(ctx context.Context) error {
-	log.WithContext(ctx).Debug("Getting failed batch fetch and store keys")
+	logtrace.Debug(ctx, "Getting failed batch fetch and store keys", logtrace.Fields{})
 	keys, err := s.store.GetAllToDoRepKeys(maxBatchAttempts+1, failedKeysClosestContactsLookupCount+maxBatchAttempts+1) // 2 - 14
 	if err != nil {
 		return fmt.Errorf("get all keys error: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(keys)).Info("read failed keys from store")
+	logtrace.Info(ctx, "read failed keys from store", logtrace.Fields{"count": len(keys)})
 
 	if len(keys) == 0 {
 		return nil
@@ -125,7 +125,7 @@ func (s *DHT) BatchFetchAndStoreFailedKeys(ctx context.Context) error {
 		igList := s.ignorelist.ToNodeList()
 		sKey, err := hex.DecodeString(keys[i].Key)
 		if err != nil {
-			log.WithContext(ctx).WithField("key", keys[i].Key).WithField("ip", keys[i].IP).WithError(err).Error("hex decode key failed")
+			logtrace.Error(ctx, "hex decode key failed", logtrace.Fields{"key": keys[i].Key, "ip": keys[i].IP, logtrace.FieldError: err})
 			continue
 		}
 
@@ -143,10 +143,10 @@ func (s *DHT) BatchFetchAndStoreFailedKeys(ctx context.Context) error {
 			repKeys = append(repKeys, repKey)
 		}
 	}
-	log.WithField("count", len(repKeys)).Info("got 2nd tier replication keys from queries store")
+	logtrace.Info(ctx, "got 2nd tier replication keys from queries store", logtrace.Fields{"count": len(repKeys)})
 
 	if err := s.GroupAndBatchFetch(ctx, repKeys, 0, false); err != nil {
-		log.WithContext(ctx).WithError(err).Error("group and batch fetch failed-keys error")
+		logtrace.Error(ctx, "group and batch fetch failed-keys error", logtrace.Fields{logtrace.FieldError: err})
 		return fmt.Errorf("group and batch fetch failed keys error: %w", err)
 	}
 
@@ -155,19 +155,19 @@ func (s *DHT) BatchFetchAndStoreFailedKeys(ctx context.Context) error {
 
 // BatchFetchAndStore fetches all keys from the queries TODO replicate list, fetches value from respective nodes and stores them in the queries store
 func (s *DHT) BatchFetchAndStore(ctx context.Context) error {
-	log.WithContext(ctx).Debug("Getting batch fetch and store keys")
+	logtrace.Debug(ctx, "Getting batch fetch and store keys", logtrace.Fields{})
 	keys, err := s.store.GetAllToDoRepKeys(0, maxBatchAttempts)
 	if err != nil {
 		return fmt.Errorf("get all keys error: %w", err)
 	}
-	log.WithContext(ctx).WithField("count", len(keys)).Info("got batch todo rep-keys from queries store")
+	logtrace.Info(ctx, "got batch todo rep-keys from queries store", logtrace.Fields{"count": len(keys)})
 
 	if len(keys) == 0 {
 		return nil
 	}
 
 	if err := s.GroupAndBatchFetch(ctx, keys, 0, false); err != nil {
-		log.WithContext(ctx).WithError(err).Error("group and batch fetch error")
+		logtrace.Error(ctx, "group and batch fetch error", logtrace.Fields{logtrace.FieldError: err})
 		return fmt.Errorf("group and batch fetch error: %w", err)
 	}
 
@@ -213,13 +213,12 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 			totalKeysFound := 0
 			for len(stringKeys) > 0 && iterations < maxSingleBatchIterations {
 				iterations++
-				log.WithContext(ctx).WithField("node-ip", node.IP).WithField("count", len(stringKeys)).WithField("keys[0]", stringKeys[0]).
-					WithField("keys[len()]", stringKeys[len(stringKeys)-1]).Info("fetching batch values from node")
+				logtrace.Info(ctx, "fetching batch values from node", logtrace.Fields{"node-ip": node.IP, "count": len(stringKeys), "keys[0]": stringKeys[0], "keys[len()]": stringKeys[len(stringKeys)-1]})
 
 				isDone, retMap, failedKeys, err := s.GetBatchValuesFromNode(ctx, stringKeys, node)
 				if err != nil {
 					// Log the error but don't stop the process, continue to the next node
-					log.WithContext(ctx).WithField("node-ip", node.IP).WithError(err).Info("failed to get batch values")
+					logtrace.Info(ctx, "failed to get batch values", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
 					continue
 				}
 
@@ -239,7 +238,7 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 					err = s.store.StoreBatch(ctx, response, datatype, isOriginal)
 					if err != nil {
 						// Log the error but don't stop the process, continue to the next node
-						log.WithContext(ctx).WithField("node-ip", node.IP).WithError(err).Info("failed to store batch values")
+						logtrace.Info(ctx, "failed to store batch values", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
 						continue
 					}
 
@@ -247,16 +246,16 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 					err = s.store.BatchDeleteRepKeys(stringDelKeys)
 					if err != nil {
 						// Log the error but don't stop the process, continue to the next node
-						log.WithContext(ctx).WithField("node-ip", node.IP).WithError(err).Info("failed to delete rep keys")
+						logtrace.Info(ctx, "failed to delete rep keys", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
 						continue
 					}
 				} else {
-					log.WithContext(ctx).WithField("node-ip", node.IP).Warn("no values found in batch fetch")
+					logtrace.Warn(ctx, "no values found in batch fetch", logtrace.Fields{"node-ip": node.IP})
 				}
 
 				if isDone && len(failedKeys) > 0 {
 					if err := s.store.IncrementAttempts(failedKeys); err != nil {
-						log.WithContext(ctx).WithField("node-ip", node.IP).WithError(err).Info("failed to increment attempts")
+						logtrace.Info(ctx, "failed to increment attempts", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
 						// not adding 'continue' here because we want to delete the keys from the todo list
 					}
 				} else if isDone {
@@ -266,7 +265,7 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 				}
 			}
 
-			log.WithContext(ctx).WithField("node-ip", node.IP).WithField("count", totalKeysFound).WithField("iterations", iterations).Info("fetch batch values from node successfully")
+			logtrace.Info(ctx, "fetch batch values from node successfully", logtrace.Fields{"node-ip": node.IP, "count": totalKeysFound, "iterations": iterations})
 		}
 	}
 
@@ -275,7 +274,7 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 
 // GetBatchValuesFromNode get values from node in bateches
 func (s *DHT) GetBatchValuesFromNode(ctx context.Context, keys []string, n *Node) (bool, map[string][]byte, []string, error) {
-	log.WithContext(ctx).WithField("node-ip", n.IP).WithField("keys", len(keys)).Info("sending batch fetch request")
+	logtrace.Info(ctx, "sending batch fetch request", logtrace.Fields{"node-ip": n.IP, "keys": len(keys)})
 
 	messageType := BatchFindValues
 
@@ -324,7 +323,7 @@ func (s *DHT) GetBatchValuesFromNode(ctx context.Context, keys []string, n *Node
 	bo.Multiplier = 1
 
 	if err := backoff.Retry(operation, bo); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Debugf("network call request %s failed", request.String())
+		logtrace.Debug(ctx, fmt.Sprintf("network call request %s failed", request.String()), logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		return false, nil, nil, fmt.Errorf("network call request %s failed: %w", request.String(), err)
 	}
 
@@ -348,8 +347,7 @@ func (s *DHT) GetBatchValuesFromNode(ctx context.Context, keys []string, n *Node
 		if err != nil {
 			return isDone, nil, nil, fmt.Errorf("failed to verify and filter data: %w", err)
 		}
-		log.WithContext(ctx).WithField("node-ip", n.IP).WithField("received-keys", len(decompressedMap)).
-			WithField("verified-keys", len(retMap)).WithField("failed-keys", len(failedKeys)).Info("batch fetch response rcvd and keys verified")
+		logtrace.Info(ctx, "batch fetch response rcvd and keys verified", logtrace.Fields{"node-ip": n.IP, "received-keys": len(decompressedMap), "verified-keys": len(retMap), "failed-keys": len(failedKeys)})
 
 		return v.Done, retMap, failedKeys, nil
 	}
@@ -372,7 +370,7 @@ func VerifyAndFilter(decompressedMap map[string][]byte) (map[string][]byte, []st
 		hash, err := utils.Blake3Hash(value)
 		if err != nil {
 			failedKeys = append(failedKeys, key)
-			log.WithError(err).Error("failed to compute hash")
+			logtrace.Error(context.Background(), "failed to compute hash", logtrace.Fields{logtrace.FieldError: err})
 			continue
 		}
 
@@ -383,7 +381,7 @@ func VerifyAndFilter(decompressedMap map[string][]byte) (map[string][]byte, []st
 		if hashHex == key {
 			retMap[key] = value
 		} else {
-			log.WithField("key", key).WithField("hash", hashHex).Error("hash mismatch")
+			logtrace.Error(context.Background(), "hash mismatch", logtrace.Fields{"key": key, "hash": hashHex})
 			failedKeys = append(failedKeys, key)
 		}
 	}

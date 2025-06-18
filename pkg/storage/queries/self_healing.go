@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/types"
 	"github.com/LumeraProtocol/supernode/pkg/utils/metrics"
 	json "github.com/json-iterator/go"
@@ -257,7 +257,7 @@ func (s *SQLiteStore) GetSHExecutionMetrics(ctx context.Context, from time.Time)
 	if err != nil {
 		return m, err
 	}
-	log.WithContext(ctx).WithField("rows", len(rows)).Info("self-healing execution metrics row count")
+	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	challenges := make(map[string]SHChallengeMetric)
 	for _, row := range rows {
@@ -361,12 +361,16 @@ func (s *SQLiteStore) GetSHExecutionMetrics(ctx context.Context, from time.Time)
 		}
 	}
 
-	log.WithContext(ctx).WithField("challenges", len(challenges)).Info("self-healing execution metrics challenges count")
+	logtrace.Info(ctx, "self-healing execution metrics challenges count", logtrace.Fields{"challenges": len(challenges)})
 
 	for _, challenge := range challenges {
-		log.WithContext(ctx).WithField("challenge-id", challenge.ChallengeID).WithField("is-accepted", challenge.IsAccepted).
-			WithField("is-verified", challenge.IsVerified).WithField("is-healed", challenge.IsHealed).
-			Info("self-healing challenge metric")
+
+		logtrace.Info(ctx, "self-healing challenge metric", logtrace.Fields{
+			"challenge-id": challenge.ChallengeID,
+			"is-accepted":  challenge.IsAccepted,
+			"is-verified":  challenge.IsVerified,
+			"is-healed":    challenge.IsHealed,
+		})
 
 		if challenge.IsAck {
 			m.TotalChallengesAcknowledged++
@@ -471,7 +475,7 @@ func (s *SQLiteStore) GetLastNSHChallenges(ctx context.Context, n int) (types.Se
 	if err != nil {
 		return challenges, err
 	}
-	log.WithContext(ctx).WithField("rows", len(rows)).Info("self-healing execution metrics row count")
+	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	challengesInserted := 0
 	for _, row := range rows {
@@ -503,7 +507,7 @@ func (s *SQLiteStore) GetSHChallengeReport(ctx context.Context, challengeID stri
 	if err != nil {
 		return challenges, err
 	}
-	log.WithContext(ctx).WithField("rows", len(rows)).Info("self-healing execution metrics row count")
+	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	for _, row := range rows {
 		if row.ChallengeID == challengeID {

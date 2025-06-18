@@ -9,7 +9,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/common/task/state"
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/random"
 )
 
@@ -71,7 +71,7 @@ func (task *task) Cancel() {
 
 	select {
 	case <-task.Done():
-		log.Debugf("task %s cancelled", task.ID())
+		logtrace.Debug(context.Background(), "task cancelled", logtrace.Fields{"task_id": task.ID()})
 		return
 	default:
 		close(task.doneCh)
@@ -92,13 +92,13 @@ func (task *task) RunAction(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).WithField("task", task.ID()).Info("context done")
+			logtrace.Info(ctx, "context done", logtrace.Fields{"task_id": task.ID()})
 		case <-task.Done():
-			log.WithContext(ctx).Infof("task %s done", task.ID())
+			logtrace.Info(ctx, "task done", logtrace.Fields{"task_id": task.ID()})
 			cancel()
 		case action, ok := <-task.actionCh:
 			if !ok {
-				log.WithContext(ctx).Info("action channel closed")
+				logtrace.Info(ctx, "action channel closed", logtrace.Fields{"task_id": task.ID()})
 				return group.Wait()
 			}
 

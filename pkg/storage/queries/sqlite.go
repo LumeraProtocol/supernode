@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/pkg/configurer"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" //go-sqlite3
 )
@@ -291,7 +291,8 @@ type SQLiteStore struct {
 // CloseHistoryDB closes history database
 func (s *SQLiteStore) CloseHistoryDB(ctx context.Context) {
 	if err := s.db.Close(); err != nil {
-		log.WithContext(ctx).WithError(err).Error("error closing history db")
+		logtrace.Error(ctx, "error closing history db", logtrace.Fields{
+			logtrace.FieldError: err.Error()})
 	}
 }
 
@@ -391,7 +392,8 @@ func OpenHistoryDB() (LocalStoreInterface, error) {
 
 	_, err = db.Exec(createPingHistoryWithoutUniqueIPAddress)
 	if err != nil {
-		log.WithError(err).Error("error executing ping-history w/o unique ip-address constraint migration")
+		logtrace.Error(context.Background(), "error executing ping-history w/o unique ip-address constraint migration", logtrace.Fields{
+			logtrace.FieldError: err.Error()})
 	}
 
 	pragmas := []string{

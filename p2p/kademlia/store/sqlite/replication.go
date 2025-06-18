@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jmoiron/sqlx"
 )
@@ -244,7 +244,9 @@ func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to ti
 	var results []domain.KeyWithTimestamp
 	query := `SELECT key, createdAt FROM data WHERE createdAt > ? AND createdAt < ? ORDER BY createdAt ASC`
 	if err := s.db.Select(&results, query, from, to); err != nil {
-		log.P2P().WithError(err).WithContext(ctx).Errorf("failed to get records for replication between %s and %s", from, to)
+		logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error()})
 		return nil
 	}
 
@@ -478,7 +480,11 @@ func retrieveBatchValues(ctx context.Context, db *sqlx.DB, keys []string, getFro
 		// Fetch from cloud
 		cloudValues, err := s.cloud.FetchBatch(cloudKeys)
 		if err != nil {
-			log.WithContext(ctx).WithError(err).Error("failed to fetch from cloud")
+			// log.WithContext(ctx).WithError(err).Error("failed to fetch from cloud")
+			logtrace.Error(ctx, "failed to fetch from cloud", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+			})
 		}
 
 		for key, value := range cloudValues {
@@ -496,7 +502,11 @@ func retrieveBatchValues(ctx context.Context, db *sqlx.DB, keys []string, getFro
 
 			// Store the fetched data in the local store
 			if err := s.StoreBatch(ctx, datList, 0, false); err != nil {
-				log.WithError(err).Error("failed to store fetched data in local store")
+				// log.WithError(err).Error("failed to store fetched data in local store")
+				logtrace.Error(ctx, "failed to store fetched data in local store", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
 			}
 		}()
 	}

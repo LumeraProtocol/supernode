@@ -11,7 +11,7 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/meta"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
@@ -62,9 +62,9 @@ func (s *p2p) Run(ctx context.Context) error {
 					return err
 				}
 
-				log.P2P().WithContext(ctx).WithError(err).Error("failed to run kadmelia, retrying.")
+				logtrace.Error(ctx, "failed to run kadmelia, retrying.", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			} else {
-				log.P2P().WithContext(ctx).Info("kadmelia started successfully")
+				logtrace.Info(ctx, "kadmelia started successfully", logtrace.Fields{logtrace.FieldModule: "p2p"})
 				return nil
 			}
 		}
@@ -74,8 +74,7 @@ func (s *p2p) Run(ctx context.Context) error {
 // run the kademlia network
 func (s *p2p) run(ctx context.Context) error {
 
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
-	log.P2P().WithContext(ctx).Info("Running  kademlia network")
+	logtrace.Info(ctx, "Running  kademlia network", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	// configure the kademlia dht for p2p service
 	if err := s.configure(ctx); err != nil {
 		return errors.Errorf("configure kademlia dht: %w", err)
@@ -86,13 +85,13 @@ func (s *p2p) run(ctx context.Context) error {
 
 	// start the node for kademlia network
 	if err := s.dht.Start(ctx); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Error("failed to start kademlia network")
+		logtrace.Error(ctx, "failed to start kademlia network", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		return errors.Errorf("start the kademlia network: %w", err)
 	}
 
 	if err := s.dht.ConfigureBootstrapNodes(ctx, s.config.BootstrapNodes); err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Error("failed to configure bootstrap nodes")
-		log.P2P().WithContext(ctx).WithError(err).Error("failed to get bootstap ip")
+		logtrace.Error(ctx, "failed to configure bootstrap nodes", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+		logtrace.Error(ctx, "failed to get bootstap ip", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 	}
 
 	// join the kademlia network if bootstrap nodes is set
@@ -103,7 +102,7 @@ func (s *p2p) run(ctx context.Context) error {
 	}
 	s.running = true
 
-	log.WithContext(ctx).Info("p2p service is started")
+	logtrace.Info(ctx, "p2p service is started", logtrace.Fields{})
 
 	// block until context is done
 	<-ctx.Done()
@@ -111,13 +110,12 @@ func (s *p2p) run(ctx context.Context) error {
 	// stop the node for kademlia network
 	s.dht.Stop(ctx)
 
-	log.WithContext(ctx).Info("p2p service is stopped")
+	logtrace.Info(ctx, "p2p service is stopped", logtrace.Fields{})
 	return nil
 }
 
 // Store store data into the kademlia network
 func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return "", errors.New("p2p service is not running")
@@ -128,7 +126,6 @@ func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
 
 // StoreBatch will store a batch of values with their Blake3 hash as the key
 func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) error {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return errors.New("p2p service is not running")
@@ -139,7 +136,6 @@ func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID str
 
 // Retrieve retrive the data from the kademlia network
 func (s *p2p) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]byte, error) {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return nil, errors.New("p2p service is not running")
@@ -150,7 +146,6 @@ func (s *p2p) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 
 // BatchRetrieve retrive the data from the kademlia network
 func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error) {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return nil, errors.New("p2p service is not running")
@@ -161,7 +156,6 @@ func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, tx
 
 // Delete delete key in queries node
 func (s *p2p) Delete(ctx context.Context, key string) error {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return errors.New("p2p service is not running")
@@ -203,9 +197,7 @@ func (s *p2p) NClosestNodes(ctx context.Context, n int, key string, ignores ...s
 		ret = append(ret, string(node.ID))
 	}
 
-	log.WithContext(ctx).WithField("no_of_closest_nodes", n).WithField("file_hash", key).
-		WithField("closest_nodes", ret).
-		Debug("closest nodes retrieved")
+	logtrace.Debug(ctx, "closest nodes retrieved", logtrace.Fields{"no_of_closest_nodes": n, "file_hash": key, "closest_nodes": ret})
 	return ret
 }
 
@@ -226,9 +218,7 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 		ret = append(ret, string(node.ID))
 	}
 
-	log.WithContext(ctx).WithField("no_of_closest_nodes", n).WithField("file_hash", key).
-		WithField("closest_nodes", ret).
-		Debug("closest nodes retrieved")
+	logtrace.Debug(ctx, "closest nodes retrieved", logtrace.Fields{"no_of_closest_nodes": n, "file_hash": key, "closest_nodes": ret})
 	return ret
 }
 
@@ -287,7 +277,6 @@ func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr key
 
 // LocalStore store data into the kademlia network
 func (s *p2p) LocalStore(ctx context.Context, key string, data []byte) (string, error) {
-	ctx = log.ContextWithPrefix(ctx, logPrefix)
 
 	if !s.running {
 		return "", errors.New("p2p service is not running")
@@ -338,7 +327,7 @@ func (s *p2p) GetLocalKeys(ctx context.Context, from *time.Time, to time.Time) (
 	for i := 0; i < len(keys); i++ {
 		str, err := hex.DecodeString(keys[i])
 		if err != nil {
-			log.WithContext(ctx).WithField("key", keys[i]).Error("replicate failed to hex decode key")
+			logtrace.Error(ctx, "replicate failed to hex decode key", logtrace.Fields{"key": keys[i]})
 			continue
 		}
 

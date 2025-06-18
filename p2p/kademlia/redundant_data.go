@@ -6,21 +6,21 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
 func (s *DHT) startDisabledKeysCleanupWorker(ctx context.Context) error {
-	log.P2P().WithContext(ctx).Info("disabled keys cleanup worker started")
+	logtrace.Info(ctx, "disabled keys cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultCleanupInterval):
 			s.cleanupDisabledKeys(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing disabled keys cleanup worker")
+			logtrace.Error(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -40,7 +40,7 @@ func (s *DHT) cleanupDisabledKeys(ctx context.Context) error {
 	for i := 0; i < len(disabledKeys); i++ {
 		dec, err := hex.DecodeString(disabledKeys[i].Key)
 		if err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("decode disabled key failed")
+			logtrace.Error(ctx, "decode disabled key failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			continue
 		}
 		s.metaStore.Delete(ctx, dec)
@@ -50,14 +50,14 @@ func (s *DHT) cleanupDisabledKeys(ctx context.Context) error {
 }
 
 func (s *DHT) startCleanupRedundantDataWorker(ctx context.Context) {
-	log.P2P().WithContext(ctx).Info("redundant data cleanup worker started")
+	logtrace.Info(ctx, "redundant data cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultRedundantDataCleanupInterval):
 			s.cleanupRedundantDataWorker(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing disabled keys cleanup worker")
+			logtrace.Error(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}
@@ -66,7 +66,7 @@ func (s *DHT) startCleanupRedundantDataWorker(ctx context.Context) {
 func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	from := time.Now().AddDate(-5, 0, 0) // 5 years ago
 
-	log.P2P().WithContext(ctx).WithField("from", from).Info("getting all possible replication keys past five years")
+	logtrace.Info(ctx, "getting all possible replication keys past five years", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
 	to := time.Now().UTC()
 	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
 
@@ -86,7 +86,7 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	removeKeys := make([]domain.DelKey, 0)
 	for key, closestContacts := range closestContactsMap {
 		if len(closestContacts) < Alpha {
-			log.P2P().WithContext(ctx).WithField("key", key).WithField("closest contacts", closestContacts).Info("not enough contacts to replicate")
+			logtrace.Info(ctx, "not enough contacts to replicate", logtrace.Fields{logtrace.FieldModule: "p2p", "key": key, "closest contacts": closestContacts})
 			continue
 		}
 
@@ -112,18 +112,18 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 
 	if len(insertKeys) > 0 {
 		if err := s.metaStore.BatchInsertDelKeys(ctx, insertKeys); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("insert keys failed")
+			logtrace.Error(ctx, "insert keys failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			return
 		}
 
-		log.P2P().WithContext(ctx).WithField("count-del-keys", len(insertKeys)).Info("insert del keys success")
+		logtrace.Info(ctx, "insert del keys success", logtrace.Fields{logtrace.FieldModule: "p2p", "count-del-keys": len(insertKeys)})
 	} else {
-		log.P2P().WithContext(ctx).Info("No redundant key found to be stored in the storage")
+		logtrace.Info(ctx, "No redundant key found to be stored in the storage", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	if len(removeKeys) > 0 {
 		if err := s.metaStore.BatchDeleteDelKeys(ctx, removeKeys); err != nil {
-			log.WithContext(ctx).WithError(err).Error("batch delete del-keys failed")
+			logtrace.Error(ctx, "batch delete del-keys failed", logtrace.Fields{logtrace.FieldError: err.Error()})
 			return
 		}
 	}
@@ -131,14 +131,14 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 }
 
 func (s *DHT) startDeleteDataWorker(ctx context.Context) {
-	log.P2P().WithContext(ctx).Info("start delete data worker")
+	logtrace.Info(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultDeleteDataInterval):
 			s.deleteRedundantData(ctx)
 		case <-ctx.Done():
-			log.P2P().WithContext(ctx).Error("closing delete data worker")
+			logtrace.Error(ctx, "closing delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}
@@ -149,7 +149,7 @@ func (s *DHT) deleteRedundantData(ctx context.Context) {
 
 	delKeys, err := s.metaStore.GetAllToDelKeys(delKeysCountThreshold)
 	if err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Error("get all to delete keys failed")
+		logtrace.Error(ctx, "get all to delete keys failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 		return
 	}
 
@@ -157,7 +157,7 @@ func (s *DHT) deleteRedundantData(ctx context.Context) {
 		// Check the available disk space
 		isLow, err := utils.CheckDiskSpace(lowSpaceThreshold)
 		if err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("check disk space failed")
+			logtrace.Error(ctx, "check disk space failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			break
 		}
 
@@ -180,7 +180,7 @@ func (s *DHT) deleteRedundantData(ctx context.Context) {
 
 		// Perform the deletion
 		if err := s.store.BatchDeleteRecords(keysToDelete); err != nil {
-			log.P2P().WithContext(ctx).WithError(err).Error("batch delete records failed")
+			logtrace.Error(ctx, "batch delete records failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			break
 		}
 

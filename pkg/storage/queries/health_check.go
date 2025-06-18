@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/types"
 	"github.com/LumeraProtocol/supernode/pkg/utils/metrics"
 	json "github.com/json-iterator/go"
@@ -98,10 +98,10 @@ func (s *SQLiteStore) GetHCSummaryStats(from time.Time) (hcMetrics metrics.HCMet
 	if err != nil {
 		return hcMetrics, err
 	}
-	log.WithField("observer_evaluations", len(hcObserversEvaluations)).Info("observer evaluations retrieved")
+	logtrace.Info(context.Background(), "observer evaluations retrieved", logtrace.Fields{"observer_evaluations": len(hcObserversEvaluations), "from": from})
 
 	observerEvaluationMetrics := processHCObserverEvaluations(hcObserversEvaluations)
-	log.WithField("observer_evaluation_metrics", len(observerEvaluationMetrics)).Info("observer evaluation metrics retrieved")
+	logtrace.Info(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{"observer_evaluation_metrics": len(observerEvaluationMetrics), "from": from})
 
 	for _, obMetrics := range observerEvaluationMetrics {
 		if obMetrics.ChallengesVerified >= 3 {
@@ -154,7 +154,7 @@ func (s *SQLiteStore) GetMetricsDataByHealthCheckChallengeID(ctx context.Context
 	if err != nil {
 		return healthCheckChallengeMessages, err
 	}
-	log.WithContext(ctx).WithField("rows", len(hcMetrics)).Info("health-check-challenge metrics row count")
+	logtrace.Info(ctx, "health-check-challenge metrics row count", logtrace.Fields{"rows": len(hcMetrics), "challenge_id": challengeID})
 
 	for _, hcMetric := range hcMetrics {
 		msg := types.HealthCheckMessageData{}

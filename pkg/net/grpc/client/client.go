@@ -9,32 +9,31 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/grpclog"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
-	"github.com/LumeraProtocol/supernode/pkg/random"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/pkg/random"
 )
 
 const (
-	_        = iota
+	_      = iota
 	KB int = 1 << (10 * iota) // 1024
 	MB                        // 1048576
 	GB                        // 1073741824
 )
 
 const (
-	defaultTimeout = 30 * time.Second
-	defaultConnWaitTime   = 10 * time.Second
+	defaultTimeout       = 30 * time.Second
+	defaultConnWaitTime  = 10 * time.Second
 	defaultRetryWaitTime = 1 * time.Second
 	maxRetries           = 3
 
-	logPrefix = "client"	
+	logPrefix = "client"
 )
 
 type grpcClient interface {
@@ -67,19 +66,19 @@ type ClientConn interface {
 
 // Client represents a gRPC client with Lumera ALTS credentials
 type Client struct {
-	creds credentials.TransportCredentials
-	builder DialOptionBuilder
+	creds       credentials.TransportCredentials
+	builder     DialOptionBuilder
 	connHandler ConnectionHandler
 }
 
 // ClientOptions contains options for creating a new client
 type ClientOptions struct {
 	// Connection parameters
-	MaxRecvMsgSize     int           // Maximum message size the client can receive (in bytes)
-	MaxSendMsgSize     int           // Maximum message size the client can send (in bytes)
-	InitialWindowSize  int32         // Initial window size for stream flow control
-	InitialConnWindowSize int32      // Initial window size for connection flow control
-	ConnWaitTime       time.Duration // Maximum time to wait for connection to become ready
+	MaxRecvMsgSize        int           // Maximum message size the client can receive (in bytes)
+	MaxSendMsgSize        int           // Maximum message size the client can send (in bytes)
+	InitialWindowSize     int32         // Initial window size for stream flow control
+	InitialConnWindowSize int32         // Initial window size for connection flow control
+	ConnWaitTime          time.Duration // Maximum time to wait for connection to become ready
 
 	// Keepalive parameters
 	KeepAliveTime      time.Duration // Time after which client pings server if there's no activity
@@ -87,12 +86,12 @@ type ClientOptions struct {
 	AllowWithoutStream bool          // Allow pings even when there are no active streams
 
 	// Retry parameters
-	MaxRetries         int           // Maximum number of connection retry attempts
-	RetryWaitTime     time.Duration // Time to wait between retry attempts
-	EnableRetries     bool          // Whether to enable connection retry logic
+	MaxRetries    int           // Maximum number of connection retry attempts
+	RetryWaitTime time.Duration // Time to wait between retry attempts
+	EnableRetries bool          // Whether to enable connection retry logic
 
 	// Backoff parameters - controls how retry delays increase over time
-	BackoffConfig     *backoff.Config // Configuration for retry backoff strategy
+	BackoffConfig *backoff.Config // Configuration for retry backoff strategy
 
 	// Additional options
 	UserAgent         string        // User-Agent header value for all requests
@@ -104,29 +103,29 @@ type ClientOptions struct {
 // BaseDelay * (Multiplier ^ n) * (1 ± Jitter)
 var defaultBackoffConfig = backoff.Config{
 	BaseDelay:  1.0 * time.Second, // Initial delay between retries
-	Multiplier: 1.6,			   // Factor by which the delay increases
-	Jitter:     0.2,			   // Randomness factor to prevent thundering herd
+	Multiplier: 1.6,               // Factor by which the delay increases
+	Jitter:     0.2,               // Randomness factor to prevent thundering herd
 	MaxDelay:   120 * time.Second, // Maximum delay between retries
 }
 
 // DefaultClientOptions returns default client options
 func DefaultClientOptions() *ClientOptions {
 	return &ClientOptions{
-		MaxRecvMsgSize:     100 * MB,
-		MaxSendMsgSize:     100 * MB, // 100MB
+		MaxRecvMsgSize:        100 * MB,
+		MaxSendMsgSize:        100 * MB,        // 100MB
 		InitialWindowSize:     (int32)(1 * MB), // 1MB - controls initial frame size for streams
 		InitialConnWindowSize: (int32)(1 * MB), // 1MB - controls initial frame size for connection
-		ConnWaitTime:       defaultConnWaitTime,
-		
+		ConnWaitTime:          defaultConnWaitTime,
+
 		KeepAliveTime:      30 * time.Minute,
 		KeepAliveTimeout:   30 * time.Minute,
 		AllowWithoutStream: true,
 
-		MaxRetries:         maxRetries,
-		RetryWaitTime:     defaultRetryWaitTime,
-		EnableRetries:     true,
+		MaxRetries:    maxRetries,
+		RetryWaitTime: defaultRetryWaitTime,
+		EnableRetries: true,
 
-		BackoffConfig:    &defaultBackoffConfig,
+		BackoffConfig: &defaultBackoffConfig,
 
 		MinConnectTimeout: 20 * time.Second,
 	}
@@ -136,7 +135,7 @@ func DefaultClientOptions() *ClientOptions {
 type defaultDialOptionsBuilder struct{}
 
 // defaultConnectionHandler is the default implementation of ConnectionHandler
-type defaultConnectionHandler struct{
+type defaultConnectionHandler struct {
 	client grpcClient
 }
 
@@ -176,16 +175,16 @@ func (b *defaultDialOptionsBuilder) buildConnectParams(opts *ClientOptions) grpc
 // NewClient creates a new gRPC client with the given ALTS credentials
 func NewClient(creds credentials.TransportCredentials) *Client {
 	client := &Client{
-		creds: creds,
+		creds:   creds,
 		builder: &defaultDialOptionsBuilder{},
 	}
 	client.connHandler = &defaultConnectionHandler{client}
 	return client
 }
 
-// NewClientEx allows injecting a custom DialOptionBuilder and/or 
+// NewClientEx allows injecting a custom DialOptionBuilder and/or
 // ConnectionHandler (for testing)
-func NewClientEx(creds credentials.TransportCredentials, builder DialOptionBuilder, 
+func NewClientEx(creds credentials.TransportCredentials, builder DialOptionBuilder,
 	connHandler ConnectionHandler) *Client {
 
 	if builder == nil {
@@ -276,26 +275,27 @@ func (ch *defaultConnectionHandler) attemptConnection(ctx context.Context, targe
 	// Wait for connection to be ready
 	if err := waitForConnection(ctx, gclient, opts.ConnWaitTime); err != nil {
 		gclient.Close()
-		log.WithContext(ctx).WithError(err).Error("Connection failed")
+		logtrace.Error(ctx, "Connection failed", logtrace.Fields{"target": target, "error": err})
+
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
 
-	log.WithContext(ctx).Debugf("Connected to %s", target)
+	logtrace.Debug(ctx, "Connected to gRPC server", logtrace.Fields{"target": target})
 	return gclient, nil
 }
 
 // retryConnection attempts to connect with retry logic
 func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address string, opts *ClientOptions) (*grpc.ClientConn, error) {
 	var lastErr error
-	
+
 	for retries := 0; retries < opts.MaxRetries; retries++ {
 		conn, err := ch.attemptConnection(ctx, address, opts)
 		if err == nil {
 			return conn, nil
 		}
-		
+
 		lastErr = err
-		
+
 		// Check if we should retry
 		if !opts.EnableRetries || retries >= opts.MaxRetries-1 {
 			break
@@ -304,10 +304,10 @@ func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address
 		// Wait before retry, respecting context cancellation
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).Debugf("Disconnected %s", address)
+			logtrace.Debug(ctx, "Connection attempt cancelled", logtrace.Fields{"address": address, "retries": retries + 1})
 			return nil, ctx.Err()
 		case <-time.After(opts.RetryWaitTime):
-			log.WithContext(ctx).Debugf("Retrying connection to %s (attempt #%d)", address, retries+1)
+			logtrace.Debug(ctx, "Retrying connection", logtrace.Fields{"address": address, "attempt": retries + 1})
 			continue
 		}
 	}
@@ -316,11 +316,12 @@ func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address
 }
 
 // configureContext ensures the context has a timeout and sets up logging
+// configureContext ensures the context has a timeout and sets up logging
 func (ch *defaultConnectionHandler) configureContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
+	logtrace.SetGRPCLogger(ctx)
 
 	id, _ := random.String(8, random.Base62Chars)
-	ctx = log.ContextWithPrefix(ctx, fmt.Sprintf("%s-%s", logPrefix, id))
+	ctx = logtrace.CtxWithCorrelationID(ctx, fmt.Sprintf("%s-%s", logPrefix, id))
 
 	if _, ok := ctx.Deadline(); !ok {
 		return context.WithTimeout(ctx, defaultTimeout)
@@ -338,7 +339,7 @@ func (c *Client) Connect(ctx context.Context, address string, opts *ClientOption
 	if opts == nil {
 		opts = DefaultClientOptions()
 	}
-	
+
 	// Extract identity if in Lumera format
 	remoteIdentity, grpcAddress, err := ltc.ExtractIdentity(address)
 	if err != nil {

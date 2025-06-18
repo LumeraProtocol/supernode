@@ -2,13 +2,14 @@ package cloud
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/google/uuid"
 )
 
@@ -30,12 +31,14 @@ type Storage interface {
 type RcloneStorage struct {
 	bucketName string
 	specName   string
+	ctx        context.Context
 }
 
 func NewRcloneStorage(bucketName, specName string) *RcloneStorage {
 	return &RcloneStorage{
 		bucketName: bucketName,
 		specName:   specName,
+		ctx:        context.Background(),
 	}
 }
 
@@ -44,7 +47,7 @@ func (r *RcloneStorage) Store(key string, data []byte) (string, error) {
 
 	// Write data to a temporary file using os.WriteFile
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		log.WithField("filePath", filePath).WithError(err).Error("Failed to write data to file")
+		logtrace.Error(r.ctx, "Failed to write data to file", logtrace.Fields{"filePath": filePath, logtrace.FieldError: err})
 		return "", fmt.Errorf("failed to write data to file: %w", err)
 	}
 
@@ -57,14 +60,14 @@ func (r *RcloneStorage) Store(key string, data []byte) (string, error) {
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stderr = cmdOutput // Capture standard error
 	if err := cmd.Run(); err != nil {
-		log.WithField("key", key).WithError(err).Error("rclone command failed to upload file")
+		logtrace.Error(r.ctx, "rclone command failed to upload file", logtrace.Fields{"key": key, logtrace.FieldError: err})
 		return "", fmt.Errorf("rclone command failed: %s, error: %w", cmdOutput.String(), err)
 	}
 
 	// Delete the local file after successful upload
 	go func() {
 		if err := os.Remove(filePath); err != nil {
-			log.WithField("filePath", filePath).WithError(err).Error("Failed to delete local file after upload")
+			logtrace.Error(r.ctx, "Failed to delete local file after upload", logtrace.Fields{"filePath": filePath, logtrace.FieldError: err})
 		}
 	}()
 
@@ -84,7 +87,7 @@ func (r *RcloneStorage) Upload(key string, data []byte) (string, error) {
 	cmd.Stdin = bytes.NewReader(data) // Provide data as stdin
 
 	if err := cmd.Run(); err != nil {
-		log.WithField("remotePath", remotePath).Errorf("rclone command failed to upload file:%s", cmdOutput.String())
+		logtrace.Error(r.ctx, fmt.Sprintf("rclone command failed to upload file:%s", cmdOutput.String()), logtrace.Fields{"remotePath": remotePath})
 		return "", fmt.Errorf("rclone command failed: %s, error: %w", cmdOutput.String(), err)
 	}
 
@@ -101,7 +104,7 @@ func (r *RcloneStorage) Fetch(key string) ([]byte, error) {
 	cmd.Stderr = cmdOutput // Capture standard error
 	err := cmd.Run()
 	if err != nil {
-		log.WithField("key", key).WithError(err).Errorf("rclone command failed to fetch file:%s", cmdOutput.String())
+		logtrace.Error(r.ctx, fmt.Sprintf("rclone command failed to fetch file:%s", cmdOutput.String()), logtrace.Fields{"key": key, logtrace.FieldError: err})
 		return nil, fmt.Errorf("rclone command failed: %s, error: %w", cmdOutput.String(), err)
 	}
 
@@ -216,7 +219,7 @@ func (r *RcloneStorage) Delete(key string) error {
 	// Execute the command
 	err := cmd.Run()
 	if err != nil {
-		log.WithField("key", key).WithError(err).Errorf("rclone command failed to delete file:%s", cmdOutput.String())
+		logtrace.Error(r.ctx, fmt.Sprintf("rclone command failed to delete file:%s", cmdOutput.String()), logtrace.Fields{"key": key, logtrace.FieldError: err})
 		return fmt.Errorf("rclone command failed: %s, error: %w", cmdOutput.String(), err)
 	}
 
@@ -271,7 +274,7 @@ func (r *RcloneStorage) DeleteBatch(keys []string) error {
 			cmd.Stderr = cmdOutput // Capture standard error
 
 			if err := cmd.Run(); err != nil {
-				log.WithField("key", key).WithError(err).Errorf("rclone command failed to delete file:%s", cmdOutput.String())
+				logtrace.Error(r.ctx, fmt.Sprintf("rclone command failed to delete file:%s", cmdOutput.String()), logtrace.Fields{"key": key, logtrace.FieldError: err})
 				mu.Lock()
 				if lastError == nil {
 					lastError = fmt.Errorf("failed to delete some files")

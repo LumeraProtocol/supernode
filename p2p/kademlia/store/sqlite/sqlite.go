@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 
 	"github.com/cenkalti/backoff/v4"
@@ -74,7 +74,7 @@ func NewStore(ctx context.Context, dataDir string, cloud cloud.Storage, mst *Mig
 		quit:     make(chan bool),
 	}
 
-	log.P2P().WithContext(ctx).Infof("p2p data dir: %v", dataDir)
+	logtrace.Info(ctx, "p2p data dir", logtrace.Fields{logtrace.FieldModule: "p2p", "data_dir": dataDir})
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dataDir, 0750); err != nil {
 			return nil, fmt.Errorf("mkdir %q: %w", dataDir, err)
@@ -116,33 +116,33 @@ func NewStore(ctx context.Context, dataDir string, cloud cloud.Storage, mst *Mig
 	}
 
 	if err := s.ensureDatatypeColumn(); err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create datatype column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create datatype column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
 	if err := s.ensureAttempsColumn(); err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create attemps column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create attemps column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
 	if err := s.ensureIsOnCloudColumn(); err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create is_on_cloud column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create is_on_cloud column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
 	if err := s.ensureLastSeenColumn(); err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create datatype column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create datatype column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
-	log.WithContext(ctx).Info("p2p database creating index on key column")
+	logtrace.Info(ctx, "p2p database creating index on key column", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_key ON data(key);")
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create index on key column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create index on key column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
-	log.WithContext(ctx).Info("p2p database created index on key column")
+	logtrace.Info(ctx, "p2p database created index on key column", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_createdat ON data(createdAt);")
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("URGENT! unable to create index on createdAt column in p2p database")
+		logtrace.Error(ctx, "URGENT! unable to create index on createdAt column in p2p database", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
-	log.WithContext(ctx).Info("p2p database created index on createdAt column")
+	logtrace.Info(ctx, "p2p database created index on createdAt column", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
@@ -283,7 +283,7 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 			}
 			return err
 		}, b, func(err error, duration time.Duration) {
-			log.WithContext(ctx).WithField("duration", duration).Error("Failed to perform checkpoint, retrying...")
+			logtrace.Error(ctx, "Failed to perform checkpoint, retrying...", logtrace.Fields{logtrace.FieldError: err.Error(), "duration": duration})
 		})
 
 		if err == nil {
@@ -294,10 +294,10 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).Info("Stopping checkpoint worker because of context cancel")
+			logtrace.Info(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
 			return
 		case <-s.worker.quit:
-			log.WithContext(ctx).Info("Stopping checkpoint worker because of quit signal")
+			logtrace.Info(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
 			return
 		default:
 		}
@@ -310,13 +310,13 @@ func (s *Store) start(ctx context.Context) {
 		select {
 		case job := <-s.worker.JobQueue:
 			if err := s.performJob(job); err != nil {
-				log.WithError(err).Error("Failed to perform job")
+				logtrace.Error(ctx, "Failed to perform job", logtrace.Fields{logtrace.FieldError: err.Error()})
 			}
 		case <-s.worker.quit:
-			log.Info("exit sqlite db worker - quit signal received")
+			logtrace.Info(ctx, "exit sqlite db worker - quit signal received", logtrace.Fields{})
 			return
 		case <-ctx.Done():
-			log.Info("exit sqlite db worker- ctx done signal received")
+			logtrace.Info(ctx, "exit sqlite db worker- ctx done signal received", logtrace.Fields{})
 			return
 		}
 	}
@@ -340,7 +340,7 @@ func (s *Store) Store(ctx context.Context, key []byte, value []byte, datatype in
 		IsOriginal: isOriginal,
 	}
 
-	if val := ctx.Value(log.TaskIDKey); val != nil {
+	if val := ctx.Value(logtrace.CorrelationIDKey); val != nil {
 		switch val := val.(type) {
 		case string:
 			job.TaskID = val
@@ -365,7 +365,7 @@ func (s *Store) StoreBatch(ctx context.Context, values [][]byte, datatype int, i
 		IsOriginal: isOriginal,
 	}
 
-	if val := ctx.Value(log.TaskIDKey); val != nil {
+	if val := ctx.Value(logtrace.CorrelationIDKey); val != nil {
 		switch val := val.(type) {
 		case string:
 			job.TaskID = val
@@ -473,22 +473,23 @@ func (s *Store) checkpoint() error {
 
 // PerformJob performs the job in the JobQueue
 func (s *Store) performJob(j Job) error {
+	ctx := context.Background()
 	switch j.JobType {
 	case "Insert":
 		err := s.storeRecord(j.Key, j.Value, j.DataType, j.IsOriginal)
 		if err != nil {
-			log.WithError(err).WithField("taskID", j.TaskID).WithField("id", j.ReqID).Error("failed to store record")
+			logtrace.Error(ctx, "failed to store record", logtrace.Fields{logtrace.FieldError: err.Error(), logtrace.FieldTaskID: j.TaskID, "id": j.ReqID})
 			return fmt.Errorf("failed to store record: %w", err)
 		}
 
 	case "BatchInsert":
 		err := s.storeBatchRecord(j.Values, j.DataType, j.IsOriginal)
 		if err != nil {
-			log.WithError(err).WithField("taskID", j.TaskID).WithField("id", j.ReqID).Error("failed to store batch records")
+			logtrace.Error(ctx, "failed to store batch records", logtrace.Fields{logtrace.FieldError: err.Error(), logtrace.FieldTaskID: j.TaskID, "id": j.ReqID})
 			return fmt.Errorf("failed to store batch record: %w", err)
 		}
 
-		log.WithField("taskID", j.TaskID).WithField("id", j.ReqID).Info("successfully stored batch records")
+		logtrace.Info(ctx, "successfully stored batch records", logtrace.Fields{logtrace.FieldTaskID: j.TaskID, "id": j.ReqID})
 	case "Update":
 		err := s.updateKeyReplication(j.Key, j.ReplicatedAt)
 		if err != nil {
@@ -610,17 +611,18 @@ func (s *Store) storeBatchRecord(values [][]byte, typ int, isOriginal bool) erro
 
 // deleteRecord a key/value pair from the Store
 func (s *Store) deleteRecord(key []byte) {
+	ctx := context.Background()
 	hkey := hex.EncodeToString(key)
 
 	res, err := s.db.Exec("DELETE FROM data WHERE key = ?", hkey)
 	if err != nil {
-		log.P2P().Debugf("cannot delete record by key %s: %v", hkey, err)
+		logtrace.Debug(ctx, "cannot delete record by key", logtrace.Fields{logtrace.FieldModule: "p2p", "key": hkey, logtrace.FieldError: err.Error()})
 	}
 
 	if rowsAffected, err := res.RowsAffected(); err != nil {
-		log.P2P().Debugf("failed to delete record by key %s: %v", hkey, err)
+		logtrace.Debug(ctx, "failed to delete record by key", logtrace.Fields{logtrace.FieldModule: "p2p", "key": hkey, logtrace.FieldError: err.Error()})
 	} else if rowsAffected == 0 {
-		log.P2P().Debugf("failed to delete record by key %s", hkey)
+		logtrace.Debug(ctx, "failed to delete record by key", logtrace.Fields{logtrace.FieldModule: "p2p", "key": hkey})
 	}
 }
 
@@ -666,7 +668,7 @@ func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 	stats := map[string]interface{}{}
 	fi, err := os.Stat(dbFilePath)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("failed to get p2p db size")
+		logtrace.Error(ctx, "failed to get p2p db size", logtrace.Fields{logtrace.FieldError: err.Error()})
 	} else {
 		stats["p2p_db_size"] = utils.BytesToMB(uint64(fi.Size()))
 	}
@@ -674,7 +676,7 @@ func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 	if count, err := s.Count(ctx); err == nil {
 		stats["p2p_db_records_count"] = count
 	} else {
-		log.WithContext(ctx).WithError(err).Error("failed to get p2p records count")
+		logtrace.Error(ctx, "failed to get p2p records count", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 
 	return stats, nil
@@ -686,7 +688,7 @@ func (s *Store) Close(ctx context.Context) {
 
 	if s.db != nil {
 		if err := s.db.Close(); err != nil {
-			log.P2P().WithContext(ctx).Errorf("Failed to close database: %s", err)
+			logtrace.Error(ctx, "Failed to close database", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 		}
 	}
 }
@@ -698,7 +700,7 @@ func (s *Store) GetOwnCreatedAt(ctx context.Context) (time.Time, error) {
 
 	err := s.db.Get(&createdAtStr, query)
 	if err != nil {
-		log.P2P().WithContext(ctx).WithError(err).Errorf("failed to get own createdAt")
+		logtrace.Error(ctx, "failed to get own createdAt", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 		return time.Time{}, fmt.Errorf("failed to get own createdAt: %w", err)
 	}
 
@@ -717,7 +719,7 @@ func (s *Store) GetOwnCreatedAt(ctx context.Context) (time.Time, error) {
 			if err != nil {
 				created, err = time.Parse("2006-01-02 15:04:05", createdAtString)
 				if err != nil {
-					log.P2P().WithContext(ctx).WithError(err).Errorf("failed to parse createdAt")
+					logtrace.Error(ctx, "failed to parse createdAt", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 					return time.Time{}, fmt.Errorf("failed to parse createdAt: %w", err)
 				}
 			}
@@ -730,11 +732,12 @@ func (s *Store) GetOwnCreatedAt(ctx context.Context) (time.Time, error) {
 // GetLocalKeys func
 func (s *Store) GetLocalKeys(from time.Time, to time.Time) ([]string, error) {
 	var keys []string
-	log.Info("getting all keys for SC")
+	ctx := context.Background()
+	logtrace.Info(ctx, "getting all keys for SC", logtrace.Fields{})
 	if err := s.db.Select(&keys, `SELECT key FROM data WHERE createdAt > ? and createdAt < ?`, from, to); err != nil {
 		return keys, fmt.Errorf("error reading all keys from database: %w", err)
 	}
-	log.Info("got all keys for SC")
+	logtrace.Info(ctx, "got all keys for SC", logtrace.Fields{})
 
 	return keys, nil
 }
@@ -746,7 +749,8 @@ func (s *Store) BatchDeleteRecords(keys []string) error {
 
 func batchDeleteRecords(db *sqlx.DB, keys []string) error {
 	if len(keys) == 0 {
-		log.P2P().Info("no keys provided for batch delete")
+		ctx := context.Background()
+		logtrace.Info(ctx, "no keys provided for batch delete", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		return nil
 	}
 
@@ -783,7 +787,7 @@ func stringArgsToInterface(args []string) []interface{} {
 
 func batchSetMigratedRecords(db *sqlx.DB, keys []string) error {
 	if len(keys) == 0 {
-		log.P2P().Info("no keys provided for batch update (migrated)")
+		logtrace.Info(context.Background(), "no keys provided for batch update (migrated)", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		return nil
 	}
 

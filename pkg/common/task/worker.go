@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 // Worker represents a pool of the task.
@@ -62,17 +62,18 @@ func (worker *Worker) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.WithContext(ctx).Warn("worker run stopping : %w", ctx.Err())
+			logtrace.Warn(ctx, "Worker run stopping", logtrace.Fields{logtrace.FieldError: ctx.Err().Error()})
 			return group.Wait()
 		case t := <-worker.taskCh: // Rename here
 			currentTask := t // Capture the loop variable
 			group.Go(func() error {
 				defer func() {
 					if r := recover(); r != nil {
-						log.WithContext(ctx).Errorf("Recovered from panic in common task's worker run: %v", r)
+						logtrace.Error(ctx, "Recovered from panic in common task's worker run", logtrace.Fields{"task": currentTask.ID(), "error": r})
 					}
 
-					log.WithContext(ctx).WithField("task", currentTask.ID()).Info("Task Removed")
+					logtrace.Info(ctx, "Task Removed", logtrace.Fields{"task": currentTask.ID()})
+					// Remove the task from the worker's task list
 					worker.RemoveTask(currentTask)
 				}()
 

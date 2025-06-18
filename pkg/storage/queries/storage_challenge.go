@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/types"
 	"github.com/LumeraProtocol/supernode/pkg/utils/metrics"
 
@@ -96,7 +96,10 @@ func (s *SQLiteStore) GetMetricsDataByStorageChallengeID(ctx context.Context, ch
 	if err != nil {
 		return storageChallengeMessages, err
 	}
-	log.WithContext(ctx).WithField("rows", len(scMetrics)).Info("storage-challenge metrics row count")
+	// log.WithContext(ctx).WithField("rows", len(scMetrics)).Info("storage-challenge metrics row count")
+	logtrace.Info(ctx, "storage-challenge metrics row count", logtrace.Fields{
+		"rows": len(scMetrics),
+	})
 
 	for _, scMetric := range scMetrics {
 		msg := types.MessageData{}
@@ -206,10 +209,16 @@ func (s *SQLiteStore) GetSCSummaryStats(from time.Time) (scMetrics metrics.SCMet
 	if err != nil {
 		return scMetrics, err
 	}
-	log.WithField("observer_evaluations", len(observersEvaluations)).Info("observer evaluations retrieved")
+	// log.WithField("observer_evaluations", len(observersEvaluations)).Info("observer evaluations retrieved")
+	logtrace.Info(context.Background(), "observer evaluations retrieved", logtrace.Fields{
+		"observer_evaluations": len(observersEvaluations),
+	})
 
 	observerEvaluationMetrics := processObserverEvaluations(observersEvaluations)
-	log.WithField("observer_evaluation_metrics", len(observerEvaluationMetrics)).Info("observer evaluation metrics retrieved")
+	// log.WithField("observer_evaluation_metrics", len(observerEvaluationMetrics)).Info("observer evaluation metrics retrieved")
+	logtrace.Info(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{
+		"observer_evaluation_metrics": len(observerEvaluationMetrics),
+	})
 
 	for _, obMetrics := range observerEvaluationMetrics {
 		if obMetrics.ChallengesVerified > 2 {

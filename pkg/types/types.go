@@ -1,9 +1,10 @@
 package types
 
 import (
+	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 
 	json "github.com/json-iterator/go"
 )
@@ -95,11 +96,12 @@ type Details struct {
 	Fields  Fields
 }
 
-// Stringify convert the Details' struct to stringify json
 func (d *Details) Stringify() string {
 	details, err := json.Marshal(&d)
 	if err != nil {
-		log.WithError(err).Error("unable to marshal task history details")
+		logtrace.Error(context.Background(), "unable to marshal task history details", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		})
 		return ""
 	}
 

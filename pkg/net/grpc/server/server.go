@@ -13,12 +13,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 const (
@@ -204,7 +203,7 @@ func (s *Server) createListener(ctx context.Context, address string) (net.Listen
 	if err != nil {
 		return nil, errors.Errorf("failed to create listener: %w", err).WithField("address", address)
 	}
-	log.WithContext(ctx).Infof("gRPC server listening on %q", address)
+	logtrace.Info(ctx, "gRPC server listening", logtrace.Fields{"address": address})
 	return lis, nil
 }
 
@@ -218,8 +217,8 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 		opts = DefaultServerOptions()
 	}
 
-	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
-	ctx = log.ContextWithPrefix(ctx, s.name)
+	logtrace.SetGRPCLogger(ctx)
+	ctx = logtrace.CtxWithCorrelationID(ctx, s.name)
 
 	// Create server with options
 	serverOpts := s.buildServerOptions(opts)
@@ -257,7 +256,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 	// Wait for context cancellation or error
 	select {
 	case <-ctx.Done():
-		log.WithContext(ctx).Infof("Shutting down gRPC server at %q", address)
+		logtrace.Info(ctx, "Shutting down gRPC server", logtrace.Fields{"address": address})
 		return s.Stop(opts.GracefulShutdownTime)
 	case err := <-serveErr:
 		return err

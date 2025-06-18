@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 // StartTimer news a timer for doing the function
@@ -23,7 +23,10 @@ func StartTimer(ctx context.Context, name string, done chan struct{}, interval t
 			case <-ticker.C:
 				// do the function
 				if err := fn(); err != nil {
-					log.P2P().WithContext(ctx).WithError(err).Errorf("run worker(%s) failed", name)
+					logtrace.Error(ctx, "timer function failed", logtrace.Fields{
+						logtrace.FieldModule: "helpers",
+						logtrace.FieldError:  err.Error(),
+					})
 				}
 
 				// reset the timer

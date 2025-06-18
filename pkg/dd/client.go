@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/random"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
@@ -35,12 +35,12 @@ func (cl *client) Connect(ctx context.Context, address string) (Connection, erro
 		return nil, errors.Errorf("fail to dial: %w", err).WithField("address", address)
 	}
 
-	log.DD().WithContext(ctx).Debugf("Connected to %s with max recv size 35 MB", address)
+	logtrace.Debug(ctx, "Connected to address with max recv size 35 MB", logtrace.Fields{logtrace.FieldModule: "dd", "address": address})
 
 	conn := newClientConn(id, grpcConn)
 	go func() {
 		//<-conn.Done() // FIXME: to be implemented by new gRPC package
-		log.DD().WithContext(ctx).Debugf("Disconnected %s", grpcConn.Target())
+		logtrace.Debug(ctx, "Disconnected", logtrace.Fields{logtrace.FieldModule: "dd", "target": grpcConn.Target()})
 	}()
 	return conn, nil
 }

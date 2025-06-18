@@ -2,13 +2,14 @@ package kademlia
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/big"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
 )
 
@@ -163,7 +164,7 @@ func (s *NodeList) distance(id1, id2 []byte) *big.Int {
 // Sort sorts nodes
 func (s *NodeList) Sort() {
 	if len(s.Comparator) == 0 {
-		log.Warn("sort without comparator!!")
+		logtrace.Warn(context.Background(), "sort without comparator", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	s.Mux.Lock()

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -80,12 +80,12 @@ func NewMigrationMetaStore(ctx context.Context, dataDir string, cloud cloud.Stor
 	db.SetMaxIdleConns(10)
 
 	if err := setPragmas(db); err != nil {
-		log.WithContext(ctx).WithError(err).Error("error executing pragmas")
+		logtrace.Error(ctx, "error executing pragmas", logtrace.Fields{logtrace.FieldError: err})
 	}
 
 	p2pDataStore, err := connectP2PDataStore(dataDir)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("error connecting p2p store from meta-migration store")
+		logtrace.Error(ctx, "error connecting p2p store from meta-migration store", logtrace.Fields{logtrace.FieldError: err})
 	}
 
 	handler := &MigrationMetaStore{
@@ -98,15 +98,15 @@ func NewMigrationMetaStore(ctx context.Context, dataDir string, cloud cloud.Stor
 	}
 
 	if err := handler.migrateMeta(); err != nil {
-		log.P2P().WithContext(ctx).Errorf("cannot create meta table in sqlite database: %s", err.Error())
+		logtrace.Error(ctx, "cannot create meta table in sqlite database", logtrace.Fields{logtrace.FieldError: err, logtrace.FieldModule: "p2p"})
 	}
 
 	if err := handler.migrateMetaMigration(); err != nil {
-		log.P2P().WithContext(ctx).Errorf("cannot create meta-migration table in sqlite database: %s", err.Error())
+		logtrace.Error(ctx, "cannot create meta-migration table in sqlite database", logtrace.Fields{logtrace.FieldError: err, logtrace.FieldModule: "p2p"})
 	}
 
 	if err := handler.migrateMigration(); err != nil {
-		log.P2P().WithContext(ctx).Errorf("cannot create migration table in sqlite database: %s", err.Error())
+		logtrace.Error(ctx, "cannot create migration table in sqlite database", logtrace.Fields{logtrace.FieldError: err, logtrace.FieldModule: "p2p"})
 	}
 
 	go func() {
@@ -114,7 +114,7 @@ func NewMigrationMetaStore(ctx context.Context, dataDir string, cloud cloud.Stor
 			handler.isSyncInProgress = true
 			err := handler.syncMetaWithData(ctx)
 			if err != nil {
-				log.WithContext(ctx).WithError(err).Error("error syncing meta with p2p data")
+				logtrace.Error(ctx, "error syncing meta with p2p data", logtrace.Fields{logtrace.FieldError: err})
 			}
 
 			handler.isSyncInProgress = false
@@ -124,7 +124,7 @@ func NewMigrationMetaStore(ctx context.Context, dataDir string, cloud cloud.Stor
 	go handler.startLastAccessedUpdateWorker(ctx)
 	go handler.startInsertWorker(ctx)
 	go handler.startMigrationExecutionWorker(ctx)
-	log.WithContext(ctx).Info("MigrationMetaStore workers started")
+	logtrace.Info(ctx, "MigrationMetaStore workers started", logtrace.Fields{})
 
 	return handler, nil
 }
@@ -237,14 +237,14 @@ func (d *MigrationMetaStore) syncMetaWithData(ctx context.Context) error {
 	for continueProcessing {
 		rows, err := d.p2pDataStore.Queryx(query, metaSyncBatchSize, offset)
 		if err != nil {
-			log.WithContext(ctx).WithError(err).Error("error querying p2p data store")
+			logtrace.Error(ctx, "error querying p2p data store", logtrace.Fields{logtrace.FieldError: err})
 			break
 		}
 
 		tx, err := d.db.Beginx()
 		if err != nil {
 			rows.Close()
-			log.WithContext(ctx).WithError(err).Error("failed to start transaction")
+			logtrace.Error(ctx, "failed to start transaction", logtrace.Fields{logtrace.FieldError: err})
 			continue
 		}
 
@@ -252,7 +252,7 @@ func (d *MigrationMetaStore) syncMetaWithData(ctx context.Context) error {
 		if err != nil {
 			tx.Rollback()
 			rows.Close()
-			log.WithContext(ctx).WithError(err).Error("failed to prepare statement")
+			logtrace.Error(ctx, "failed to prepare statement", logtrace.Fields{logtrace.FieldError: err})
 			continue
 		}
 
@@ -262,7 +262,7 @@ func (d *MigrationMetaStore) syncMetaWithData(ctx context.Context) error {
 			var t *time.Time
 
 			if err := rows.Scan(&r.Key, &r.Data, &t); err != nil {
-				log.WithContext(ctx).WithError(err).Error("error scanning row from p2p data store")
+				logtrace.Error(ctx, "error scanning row from p2p data store", logtrace.Fields{logtrace.FieldError: err})
 				continue
 			}
 			if t != nil {
@@ -270,7 +270,7 @@ func (d *MigrationMetaStore) syncMetaWithData(ctx context.Context) error {
 			}
 
 			if _, err := stmt.Exec(r.Key, r.UpdatedAt, len(r.Data)); err != nil {
-				log.WithContext(ctx).WithField("key", r.Key).WithError(err).Error("error inserting key to meta")
+				logtrace.Error(ctx, "error inserting key to meta", logtrace.Fields{"key": r.Key, logtrace.FieldError: err})
 				continue
 			}
 
@@ -278,12 +278,12 @@ func (d *MigrationMetaStore) syncMetaWithData(ctx context.Context) error {
 		}
 
 		if err := rows.Err(); err != nil {
-			log.WithContext(ctx).WithError(err).Error("error iterating rows")
+			logtrace.Error(ctx, "error iterating rows", logtrace.Fields{logtrace.FieldError: err})
 		}
 
 		if recordsProcessed > 0 {
 			if err := tx.Commit(); err != nil {
-				log.WithContext(ctx).WithError(err).Error("Failed to commit transaction")
+				logtrace.Error(ctx, "Failed to commit transaction", logtrace.Fields{logtrace.FieldError: err})
 			}
 		} else {
 			tx.Rollback()
@@ -332,7 +332,7 @@ func PostAccessUpdate(updates []string) {
 		}:
 			// Inserted
 		default:
-			log.WithContext(context.Background()).Error("updateChannel is full, dropping update")
+			logtrace.Error(context.Background(), "updateChannel is full, dropping update", logtrace.Fields{})
 		}
 
 	}
@@ -348,7 +348,7 @@ func (d *MigrationMetaStore) startLastAccessedUpdateWorker(ctx context.Context) 
 		case <-d.updateTicker.C:
 			d.commitLastAccessedUpdates(ctx)
 		case <-ctx.Done():
-			log.WithContext(ctx).Info("Shutting down last accessed update worker")
+			logtrace.Info(ctx, "Shutting down last accessed update worker", logtrace.Fields{})
 			return
 		}
 	}
@@ -359,12 +359,12 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 	d.updates.Range(func(key, value interface{}) bool {
 		k, ok := key.(string)
 		if !ok {
-			log.WithContext(ctx).Error("Error converting key to string (commitLastAccessedUpdates)")
+			logtrace.Error(ctx, "Error converting key to string (commitLastAccessedUpdates)", logtrace.Fields{})
 			return false
 		}
 		v, ok := value.(time.Time)
 		if !ok {
-			log.WithContext(ctx).Error("Error converting value to time.Time (commitLastAccessedUpdates)")
+			logtrace.Error(ctx, "Error converting value to time.Time (commitLastAccessedUpdates)", logtrace.Fields{})
 			return false
 		}
 		keysToUpdate[k] = v
@@ -378,7 +378,7 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 
 	tx, err := d.db.BeginTxx(ctx, nil)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("Error starting transaction (commitLastAccessedUpdates)")
+		logtrace.Error(ctx, "Error starting transaction (commitLastAccessedUpdates)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 
@@ -391,7 +391,7 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 		access_count = access_count + 1`)
 	if err != nil {
 		tx.Rollback() // Roll back the transaction on error
-		log.WithContext(ctx).WithError(err).Error("Error preparing statement (commitLastAccessedUpdates)")
+		logtrace.Error(ctx, "Error preparing statement (commitLastAccessedUpdates)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 	defer stmt.Close()
@@ -399,13 +399,13 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 	for k, v := range keysToUpdate {
 		_, err := stmt.Exec(k, v)
 		if err != nil {
-			log.WithContext(ctx).WithError(err).WithField("key", k).Error("Error executing statement (commitLastAccessedUpdates)")
+			logtrace.Error(ctx, "Error executing statement (commitLastAccessedUpdates)", logtrace.Fields{logtrace.FieldError: err, "key": k})
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		tx.Rollback()
-		log.WithContext(ctx).WithError(err).Error("Error committing transaction (commitLastAccessedUpdates)")
+		logtrace.Error(ctx, "Error committing transaction (commitLastAccessedUpdates)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 
@@ -414,7 +414,7 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 		d.updates.Delete(k)
 	}
 
-	log.WithContext(ctx).WithField("count", len(keysToUpdate)).Info("Committed last accessed updates")
+	logtrace.Info(ctx, "Committed last accessed updates", logtrace.Fields{"count": len(keysToUpdate)})
 }
 
 func PostKeysInsert(updates []UpdateMessage) {
@@ -423,7 +423,7 @@ func PostKeysInsert(updates []UpdateMessage) {
 		case insertChannel <- update:
 			// Inserted
 		default:
-			log.WithContext(context.Background()).Error("insertChannel is full, dropping update")
+			logtrace.Error(context.Background(), "insertChannel is full, dropping update", logtrace.Fields{})
 		}
 	}
 }
@@ -437,7 +437,7 @@ func (d *MigrationMetaStore) startInsertWorker(ctx context.Context) {
 		case <-d.insertTicker.C:
 			d.commitInserts(ctx)
 		case <-ctx.Done():
-			log.WithContext(ctx).Info("Shutting down insert meta keys worker")
+			logtrace.Info(ctx, "Shutting down insert meta keys worker", logtrace.Fields{})
 			d.commitInserts(ctx)
 			return
 		}
@@ -449,12 +449,12 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 	d.inserts.Range(func(key, value interface{}) bool {
 		k, ok := key.(string)
 		if !ok {
-			log.WithContext(ctx).Error("Error converting key to string (commitInserts)")
+			logtrace.Error(ctx, "Error converting key to string (commitInserts)", logtrace.Fields{})
 			return false
 		}
 		v, ok := value.(UpdateMessage)
 		if !ok {
-			log.WithContext(ctx).Error("Error converting value to UpdateMessage (commitInserts)")
+			logtrace.Error(ctx, "Error converting value to UpdateMessage (commitInserts)", logtrace.Fields{})
 			return false
 		}
 
@@ -469,7 +469,7 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 
 	tx, err := d.db.BeginTxx(ctx, nil)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("Error starting transaction (commitInserts)")
+		logtrace.Error(ctx, "Error starting transaction (commitInserts)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 
@@ -477,7 +477,7 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 	stmt, err := tx.Preparex("INSERT OR REPLACE INTO meta (key, last_accessed, access_count, data_size) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		tx.Rollback() // Ensure to rollback in case of an error
-		log.WithContext(ctx).WithError(err).Error("Error preparing statement (commitInserts)")
+		logtrace.Error(ctx, "Error preparing statement (commitInserts)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 	defer stmt.Close()
@@ -486,13 +486,13 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 		accessCount := 1
 		_, err := stmt.Exec(k, v.LastAccessTime, accessCount, v.Size)
 		if err != nil {
-			log.WithContext(ctx).WithError(err).WithField("key", k).Error("Error executing statement (commitInserts)")
+			logtrace.Error(ctx, "Error executing statement (commitInserts)", logtrace.Fields{logtrace.FieldError: err, "key": k})
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		tx.Rollback() // Rollback transaction if commit fails
-		log.WithContext(ctx).WithError(err).Error("Error committing transaction (commitInserts)")
+		logtrace.Error(ctx, "Error committing transaction (commitInserts)", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
 
@@ -501,7 +501,7 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 		d.inserts.Delete(k)
 	}
 
-	log.WithContext(ctx).WithField("count", len(keysToUpdate)).Info("Committed inserts")
+	logtrace.Info(ctx, "Committed inserts", logtrace.Fields{"count": len(keysToUpdate)})
 }
 
 // startMigrationExecutionWorker starts the worker that executes a migration
@@ -511,7 +511,7 @@ func (d *MigrationMetaStore) startMigrationExecutionWorker(ctx context.Context) 
 		case <-d.migrationExecutionTicker.C:
 			d.checkAndExecuteMigration(ctx)
 		case <-ctx.Done():
-			log.WithContext(ctx).Info("Shutting down data migration worker")
+			logtrace.Info(ctx, "Shutting down data migration worker", logtrace.Fields{})
 			return
 		}
 	}
@@ -536,7 +536,7 @@ func (d *MigrationMetaStore) checkAndExecuteMigration(ctx context.Context) {
 	// Check the available disk space
 	isLow, err := utils.CheckDiskSpace(lowSpaceThresholdGB)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("migration worker: check disk space failed")
+		logtrace.Error(ctx, "migration worker: check disk space failed", logtrace.Fields{logtrace.FieldError: err})
 	}
 
 	//if !isLow {
@@ -544,23 +544,23 @@ func (d *MigrationMetaStore) checkAndExecuteMigration(ctx context.Context) {
 	//return
 	//}
 
-	log.WithContext(ctx).WithField("islow", isLow).Info("Starting data migration")
+	logtrace.Info(ctx, "Starting data migration", logtrace.Fields{"islow": isLow})
 	// Step 1: Fetch pending migrations
 	var migrations Migrations
 
 	err = d.db.Select(&migrations, `SELECT id FROM migration WHERE migration_started_at IS NULL or migration_finished_at IS NULL`)
 	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("Failed to fetch pending migrations")
+		logtrace.Error(ctx, "Failed to fetch pending migrations", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
-	log.WithContext(ctx).WithField("count", len(migrations)).Info("Fetched pending migrations")
+	logtrace.Info(ctx, "Fetched pending migrations", logtrace.Fields{"count": len(migrations)})
 
 	// Iterate over each migration
 	for _, migration := range migrations {
-		log.WithContext(ctx).WithField("migration_id", migration.ID).Info("Processing migration")
+		logtrace.Info(ctx, "Processing migration", logtrace.Fields{"migration_id": migration.ID})
 
 		if err := d.ProcessMigrationInBatches(ctx, migration); err != nil {
-			log.WithContext(ctx).WithError(err).WithField("migration_id", migration.ID).Error("Failed to process migration")
+			logtrace.Error(ctx, "Failed to process migration", logtrace.Fields{logtrace.FieldError: err, "migration_id": migration.ID})
 			continue
 		}
 	}
@@ -579,7 +579,7 @@ func (d *MigrationMetaStore) ProcessMigrationInBatches(ctx context.Context, migr
 	}
 
 	if totalKeys < minKeysToMigrate {
-		log.WithContext(ctx).WithField("migration_id", migration.ID).WithField("keys-count", totalKeys).Info("Skipping migration due to insufficient keys")
+		logtrace.Info(ctx, "Skipping migration due to insufficient keys", logtrace.Fields{"migration_id": migration.ID, "keys-count": totalKeys})
 		return nil
 	}
 
@@ -612,7 +612,7 @@ func (d *MigrationMetaStore) ProcessMigrationInBatches(ctx context.Context, migr
 
 		// Retrieve and upload data for current batch
 		if err := d.processSingleBatch(ctx, batchKeys); err != nil {
-			log.WithContext(ctx).WithError(err).WithField("migration_id", migration.ID).WithField("batch-keys-count", len(batchKeys)).Error("Failed to process batch")
+			logtrace.Error(ctx, "Failed to process batch", logtrace.Fields{logtrace.FieldError: err, "migration_id": migration.ID, "batch-keys-count": len(batchKeys)})
 			return fmt.Errorf("failed to process batch: %w - exiting now", err)
 		}
 	}
@@ -630,7 +630,7 @@ func (d *MigrationMetaStore) ProcessMigrationInBatches(ctx context.Context, migr
 		}
 	}
 
-	log.WithContext(ctx).WithField("migration_id", migration.ID).WithField("tota-keys-count", totalKeys).WithField("migrated_in_current_iteration", nonMigratedKeys).Info("Migration processed successfully")
+	logtrace.Info(ctx, "Migration processed successfully", logtrace.Fields{"migration_id": migration.ID, "tota-keys-count": totalKeys, "migrated_in_current_iteration": nonMigratedKeys})
 
 	return nil
 }
@@ -666,24 +666,24 @@ func (d *MigrationMetaStore) uploadInBatches(ctx context.Context, keys []string,
 
 		uploadedKeys, err := d.cloud.UploadBatch(batchKeys, batchData)
 		if err != nil {
-			log.WithContext(ctx).WithError(err).Errorf("Failed to upload batch %d", i+1)
+			logtrace.Error(ctx, "Failed to upload batch", logtrace.Fields{logtrace.FieldError: err, "batch": i + 1})
 			lastError = err
 			continue
 		}
 
 		if err := batchSetMigratedRecords(d.p2pDataStore, uploadedKeys); err != nil {
-			log.WithContext(ctx).WithError(err).Errorf("Failed to delete batch %d", i+1)
+			logtrace.Error(ctx, "Failed to delete batch", logtrace.Fields{logtrace.FieldError: err, "batch": i + 1})
 			lastError = err
 			continue
 		}
 
 		if err := d.batchSetMigrated(uploadedKeys); err != nil {
-			log.WithContext(ctx).WithError(err).Errorf("Failed to batch is_migrated %d", i+1)
+			logtrace.Error(ctx, "Failed to batch is_migrated", logtrace.Fields{logtrace.FieldError: err, "batch": i + 1})
 			lastError = err
 			continue
 		}
 
-		log.WithContext(ctx).Infof("Successfully uploaded and deleted records for batch %d of %d", i+1, batches)
+		logtrace.Info(ctx, "Successfully uploaded and deleted records for batch", logtrace.Fields{"batch": i + 1, "total_batches": batches})
 	}
 
 	return lastError
@@ -822,7 +822,8 @@ func (d *MigrationMetaStore) InsertMetaMigrationData(ctx context.Context, migrat
 
 func (d *MigrationMetaStore) batchSetMigrated(keys []string) error {
 	if len(keys) == 0 {
-		log.P2P().Info("no keys provided for batch update (is_migrated)")
+		// log.P2P().Info("no keys provided for batch update (is_migrated)")
+		logtrace.Info(context.Background(), "No keys provided for batch update (is_migrated)", logtrace.Fields{})
 		return nil
 	}
 

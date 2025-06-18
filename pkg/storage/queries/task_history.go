@@ -1,9 +1,10 @@
 package queries
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/types"
 
 	json "github.com/json-iterator/go"
@@ -57,8 +58,9 @@ func (s *SQLiteStore) QueryTaskHistory(taskID string) (history []types.TaskHisto
 		if details != emptyString {
 			err = json.Unmarshal([]byte(details), &i.Details)
 			if err != nil {
-				log.Info(details)
-				log.WithError(err).Error(fmt.Sprintf("cannot unmarshal task history details: %s", details))
+
+				logtrace.Info(context.Background(), "Detals", logtrace.Fields{"details": details})
+				logtrace.Error(context.Background(), fmt.Sprintf("cannot unmarshal task history details: %s", details), logtrace.Fields{"error": err})
 				i.Details = nil
 			}
 		}
