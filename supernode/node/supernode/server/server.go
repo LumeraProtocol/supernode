@@ -8,13 +8,12 @@ import (
 	"strings"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
@@ -43,30 +42,35 @@ func (server *Server) Run(ctx context.Context) error {
 
 	conn.RegisterALTSRecordProtocols()
 	defer conn.UnregisterALTSRecordProtocols()
-	grpclog.SetLoggerV2(log.NewLoggerWithErrorLevel())
-	log.WithContext(ctx).Infof("Server identity: %s", server.config.Identity)
-	log.WithContext(ctx).Infof("Listening on: %s", server.config.ListenAddresses)
-	ctx = log.ContextWithPrefix(ctx, server.name)
+
+	// Add correlation ID to context
+	ctx = logtrace.CtxWithCorrelationID(ctx, server.name)
+
+	// Set up gRPC logging
+	logtrace.SetGRPCLogger(ctx)
+	logtrace.Info(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.config.Identity})
+	logtrace.Info(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.config.ListenAddresses})
 
 	group, ctx := errgroup.WithContext(ctx)
 
 	addresses := strings.Split(server.config.ListenAddresses, ",")
 	if err := server.setupGRPCServer(); err != nil {
+		logtrace.Error(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
 		return fmt.Errorf("failed to setup gRPC server: %w", err)
 	}
 
 	// Custom server options
 	opts := grpcserver.DefaultServerOptions()
 
-	// Defaul ServerOptions needs to be updated to hanlde larger files
-
-	// opts.GracefulShutdownTime = 60 * time.Second
+	//TODO : Defaul ServerOptions needs to be updated to hanlde larger files
+	//EXAMPLE: opts.GracefulShutdownTime = 60 * time.Second
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
 		address := addr // Create a new variable to avoid closure issues
 
 		group.Go(func() error {
+			logtrace.Info(ctx, "Starting gRPC server", logtrace.Fields{logtrace.FieldModule: "server", "address": address})
 			return server.grpcServer.Serve(ctx, address, opts)
 		})
 	}

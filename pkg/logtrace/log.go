@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"runtime"
 )
@@ -62,10 +63,8 @@ func extractCorrelationID(ctx context.Context) string {
 // addCorrelationID ensures logs include the correlation ID without modifying the input fields.
 func addCorrelationID(ctx context.Context, fields Fields) Fields {
 	newFields := make(Fields, len(fields)+1) // Copy fields to avoid mutation
-	for k, v := range fields {
-		newFields[k] = v
-	}
-	newFields["correlation_id"] = extractCorrelationID(ctx)
+	maps.Copy(newFields, fields)
+	newFields[FieldCorrelationID] = extractCorrelationID(ctx)
 	return newFields
 }
 
@@ -84,7 +83,12 @@ func Warn(ctx context.Context, message string, fields Fields) {
 	log(slog.Warn, message, addCorrelationID(ctx, fields))
 }
 
-// CtxWithCorrelationID stores a correlation ID inside the gRPC context.
+// Debug logs a debug message with structured fields.
+func Debug(ctx context.Context, message string, fields Fields) {
+	log(slog.Debug, message, addCorrelationID(ctx, fields))
+}
+
+// CtxWithCorrelationID stores a correlation ID inside the context.
 func CtxWithCorrelationID(ctx context.Context, correlationID string) context.Context {
 	return context.WithValue(ctx, CorrelationIDKey, correlationID)
 }

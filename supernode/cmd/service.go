@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/log"
+	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
 type service interface {
@@ -21,9 +21,9 @@ func RunServices(ctx context.Context, services ...service) error {
 		group.Go(func() error {
 			err := service.Run(ctx)
 			if err != nil {
-				log.WithContext(ctx).WithError(err).Errorf("service %s stopped", reflect.TypeOf(service))
+				logtrace.Error(ctx, "service stopped with an error", logtrace.Fields{"service": reflect.TypeOf(service).String(), "error": err})
 			} else {
-				log.WithContext(ctx).Warnf("service %s stopped", reflect.TypeOf(service))
+				logtrace.Info(ctx, "service stopped", logtrace.Fields{"service": reflect.TypeOf(service).String()})
 			}
 			return err
 		})
