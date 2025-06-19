@@ -35,10 +35,9 @@ source ~/.bashrc
 
 Download the latest release from GitHub:
 
-
 ### 2. Create Configuration File
 
-Create a `config.yml` file in the same directory as your binary 
+Create a `config.yml` file in your base directory (default: `~/.supernode/config.yml`):
 
 ```yaml
 # Supernode Configuration
@@ -156,13 +155,13 @@ The supernode binary supports the following command-line flags:
 
 | Flag | Short | Description | Value Type | Example | Default |
 |------|-------|-------------|------------|---------|---------|
-| `--config` | `-c` | Path to configuration file | String | `-c /path/to/config.yml` | `config.yml` in current directory |
+| `--config` | `-c` | Path to configuration file | String | `-c /path/to/config.yml` | `config.yml` in basedir (`~/.supernode/config.yml`) |
 | `--basedir` | `-d` | Base directory for data storage | String | `-d /custom/path` | `~/.supernode` |
 
 ### Usage Examples
 
 ```bash
-# Use default config.yml in current directory, with ~/.supernode as basedir
+# Use default config.yml in basedir (~/.supernode/config.yml), with ~/.supernode as basedir
 supernode start
 
 # Use custom config file
@@ -180,7 +179,6 @@ supernode start -c /etc/supernode/config.yml -d /opt/supernode
 ⚠️ **CRITICAL: Consistent Flag Usage Across Commands**
 
 If you use custom flags (`--config` or `--basedir`) for key management operations, you **MUST** use the same flags for ALL subsequent commands, including the `start` command. Otherwise, your configuration will break and keys will not be found.
-
 
 ### Additional Important Notes:
 
