@@ -24,6 +24,8 @@ type Manager interface {
 	DeleteTask(ctx context.Context, taskID string) error
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
+
+	CreateDownloadTask(ctx context.Context, actionID, outputPath string) (string, error)
 }
 
 type ManagerImpl struct {
@@ -225,4 +227,54 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 	if m.taskCache != nil {
 		m.taskCache.Close(ctx)
 	}
+}
+
+func (m *ManagerImpl) CreateDownloadTask(
+	ctx context.Context,
+	actionID string,
+	outputPath string,
+) (string, error) {
+
+	// First validate the action before creating the task
+	action, err := m.validateDownloadAction(ctx, actionID)
+	if err != nil {
+		return "", err
+	}
+
+	taskID := uuid.New().String()[:8]
+
+	m.logger.Debug(ctx, "Generated download task ID", "task_id", taskID)
+
+	baseTask := BaseTask{
+		TaskID:   taskID,
+		ActionID: actionID,
+		TaskType: TaskTypeCascade,
+		Action:   action,
+		client:   m.lumeraClient,
+		keyring:  m.keyring,
+		config:   m.config,
+		onEvent:  m.handleEvent,
+		logger:   m.logger,
+	}
+
+	task := NewCascadeDownloadTask(baseTask, actionID, outputPath)
+
+	// Store task in cache
+	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)
+
+	// Ensure task is stored before returning
+	m.taskCache.Wait()
+
+	go func() {
+		m.logger.Debug(ctx, "Starting download cascade task asynchronously", "taskID", taskID)
+		err := task.Run(ctx)
+		if err != nil {
+			// Error handling is done via events in the task.Run method
+			// This is just a failsafe in case something goes wrong
+			m.logger.Error(ctx, "Download Cascade task failed with error", "taskID", taskID, "error", err)
+		}
+	}()
+
+	m.logger.Info(ctx, "Download Cascade task created successfully", "taskID", taskID)
+	return taskID, nil
 }

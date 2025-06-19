@@ -54,8 +54,8 @@ type DecodeRequest struct {
 }
 
 type DecodeResponse struct {
-	LayoutPath string
-	FilePath   string
+	DecodeTmpDir string
+	FilePath     string
 }
 
 // Decode decodes the provided symbols and returns the original file
@@ -70,7 +70,7 @@ func (c *codecImpl) Decode(ctx context.Context, req DecodeRequest) (DecodeRespon
 	}
 
 	return DecodeResponse{
-		LayoutPath: resp.LayoutPath,
-		FilePath:   resp.Path,
+		FilePath:     resp.Path,
+		DecodeTmpDir: resp.DecodeTmpDir,
 	}, nil
 }

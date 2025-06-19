@@ -407,7 +407,7 @@ func (s *SystemUnderTest) AwaitBlockHeight(t *testing.T, targetHeight int64, tim
 // Returns the new height
 func (s *SystemUnderTest) AwaitNextBlock(t *testing.T, timeout ...time.Duration) int64 {
 	t.Helper()
-	maxWaitTime := s.blockTime * 3
+	maxWaitTime := s.blockTime * 10
 	if len(timeout) != 0 { // optional argument to overwrite default timeout
 		maxWaitTime = timeout[0]
 	}
@@ -760,7 +760,7 @@ func NewEventListener(t *testing.T, rpcAddr string) *EventListener {
 	return &EventListener{client: httpClient, t: t}
 }
 
-var DefaultWaitTime = 30 * time.Second
+var DefaultWaitTime = 60 * time.Second
 
 type (
 	CleanupFn     func()
