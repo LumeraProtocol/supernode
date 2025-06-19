@@ -2,6 +2,7 @@ package codec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,8 +18,8 @@ type DecodeRequest struct {
 }
 
 type DecodeResponse struct {
-	Path       string
-	LayoutPath string
+	Path         string
+	DecodeTmpDir string
 }
 
 func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error) {
@@ -52,14 +53,27 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 	}
 	logtrace.Info(ctx, "symbols written to disk", fields)
 
+	// ---------- write layout.json ----------  ←★
+	layoutPath := filepath.Join(symbolsDir, "layout.json")
+	layoutBytes, err := json.Marshal(req.Layout)
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return DecodeResponse{}, fmt.Errorf("marshal layout: %w", err)
+	}
+	if err := os.WriteFile(layoutPath, layoutBytes, 0o644); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return DecodeResponse{}, fmt.Errorf("write layout file: %w", err)
+	}
+	logtrace.Info(ctx, "layout.json written", fields)
+
 	// Decode
 	outputPath := filepath.Join(symbolsDir, "output")
-	if err := processor.DecodeSymbols(symbolsDir, outputPath, ""); err != nil {
+	if err := processor.DecodeSymbols(symbolsDir, outputPath, layoutPath); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		_ = os.Remove(outputPath)
 		return DecodeResponse{}, fmt.Errorf("raptorq decode: %w", err)
 	}
 
 	logtrace.Info(ctx, "RaptorQ decoding completed successfully", fields)
-	return DecodeResponse{Path: outputPath, LayoutPath: ""}, nil
+	return DecodeResponse{Path: outputPath, DecodeTmpDir: symbolsDir}, nil
 }

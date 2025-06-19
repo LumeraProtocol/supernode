@@ -80,3 +80,22 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 
 	return nil
 }
+
+func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID string) (lumera.Action, error) {
+	action, err := m.lumeraClient.GetAction(ctx, actionID)
+	if err != nil {
+		return lumera.Action{}, fmt.Errorf("failed to get action: %w", err)
+	}
+
+	// Check if action exists
+	if action.ID == "" {
+		return lumera.Action{}, fmt.Errorf("no action found with the specified ID")
+	}
+
+	// Check action state
+	if action.State != lumera.ACTION_STATE_DONE {
+		return lumera.Action{}, fmt.Errorf("action is in %s state, expected DONE", action.State)
+	}
+
+	return action, nil
+}

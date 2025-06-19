@@ -28,7 +28,21 @@ type CascadeSupernodeRegisterResponse struct {
 	TxHash  string
 }
 
+type CascadeSupernodeDownloadRequest struct {
+	ActionID    string
+	TaskID      string
+	OutputPath  string
+	EventLogger LoggerFunc
+}
+
+type CascadeSupernodeDownloadResponse struct {
+	Success    bool
+	Message    string
+	OutputPath string
+}
+
 //go:generate mockery --name=CascadeServiceClient --output=testutil/mocks --outpkg=mocks --filename=cascade_service_mock.go
 type CascadeServiceClient interface {
 	CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
+	CascadeSupernodeDownload(ctx context.Context, in *CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*CascadeSupernodeDownloadResponse, error)
 }

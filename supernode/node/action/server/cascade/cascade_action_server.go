@@ -197,6 +197,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	task := server.factory.NewCascadeRegistrationTask()
 
 	var restoredFile []byte
+	var tmpDir string
 
 	err := task.Download(ctx, &cascadeService.DownloadRequest{
 		ActionID: req.GetActionId(),
@@ -212,6 +213,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 		if len(resp.Artefacts) > 0 {
 			restoredFile = resp.Artefacts
+			tmpDir = resp.DownloadedDir
 		}
 
 		return stream.Send(grpcResp)
@@ -253,6 +255,15 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 			return err
 		}
 	}
+
+	err = task.DownloadCleanup(ctx, tmpDir)
+	if err != nil {
+		logtrace.Error(ctx, "error cleaning up the tmp dir", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		})
+	}
+	fields["tmp_dir"] = tmpDir
+	logtrace.Info(ctx, "tmp dir has been cleaned up", fields)
 
 	logtrace.Info(ctx, "completed streaming all chunks", fields)
 	return nil

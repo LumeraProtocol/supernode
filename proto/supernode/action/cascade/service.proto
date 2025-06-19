@@ -59,7 +59,7 @@ enum SupernodeEventType {
   RQID_VERIFIED = 9;
   ARTEFACTS_STORED = 10;
   ACTION_FINALIZED = 11;
-  Artefacts_Downloaded = 12;
+  ARTEFACTS_DOWNLOADED = 12;
 }
 
 message HealthCheckRequest {}

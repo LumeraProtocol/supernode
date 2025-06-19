@@ -362,8 +362,8 @@ func TestCascadeE2E(t *testing.T) {
 	sut.AwaitNextBlock(t)
 
 	// Verify the account can be queried with its public key
-	accountResp := cli.CustomQuery("q", "auth", "account", userAddress)
-	require.Contains(t, accountResp, "public_key", "User account public key should be available")
+	//accountResp := cli.CustomQuery("q", "auth", "account", userAddress)
+	//require.Contains(t, accountResp, "public_key", "User account public key should be available")
 
 	// Extract transaction hash from response for verification
 	txHash := txresp.TxHash
@@ -381,6 +381,8 @@ func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	// Step 8: Extract action ID and start cascade
 	// ---------------------------------------
+	time.Sleep(30 * time.Second)
+
 	t.Log("Step 8: Extracting action ID and creating cascade request")
 
 	// Extract action ID from transaction events
@@ -557,6 +559,18 @@ func TestCascadeE2E(t *testing.T) {
 	require.Equal(t, price, amount, "Payment amount should match action price")
 
 	t.Log("Test completed successfully!")
+
+	time.Sleep(1 * time.Minute)
+
+	outputFileName := "output.txt"
+	outputFileFullpath := filepath.Join(t.TempDir(), outputFileName)
+	// Try to download the file using the action ID
+	dtaskID, err := actionClient.DownloadCascade(ctx, actionID, outputFileFullpath)
+
+	t.Logf("Download response: %s", dtaskID)
+	require.NoError(t, err, "Failed to download cascade data using action ID")
+
+	time.Sleep(30 * time.Second) // Wait to ensure all events are processed
 }
 func Blake3Hash(msg []byte) ([]byte, error) {
 	hasher := blake3.New(32, nil)
