@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/net"
@@ -178,16 +179,20 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 		ActionId: in.ActionID,
 	}, opts...)
 	if err != nil {
-		a.logger.Error(ctx, "failed to create download stream",
-			"action_id", in.ActionID, "error", err)
+		a.logger.Error(ctx, "failed to create download stream", "action_id", in.ActionID, "error", err)
 		return nil, err
 	}
 
 	// 2. Prepare destination file
+	// Create directory structure if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(in.OutputPath), 0755); err != nil {
+		a.logger.Error(ctx, "failed to create output directory", "path", filepath.Dir(in.OutputPath), "error", err)
+		return nil, fmt.Errorf("create output directory: %w", err)
+	}
+
 	outFile, err := os.Create(in.OutputPath)
 	if err != nil {
-		a.logger.Error(ctx, "failed to create output file",
-			"path", in.OutputPath, "error", err)
+		a.logger.Error(ctx, "failed to create output file", "path", in.OutputPath, "error", err)
 		return nil, fmt.Errorf("create output file: %w", err)
 	}
 	defer outFile.Close()
@@ -211,10 +216,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 		// 3a. Progress / event message
 		case *cascade.DownloadResponse_Event:
-			a.logger.Info(ctx, "supernode event",
-				"event_type", x.Event.EventType,
-				"message", x.Event.Message,
-				"action_id", in.ActionID)
+			a.logger.Info(ctx, "supernode event", "event_type", x.Event.EventType, "message", x.Event.Message, "action_id", in.ActionID)
 
 			if in.EventLogger != nil {
 				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
@@ -237,17 +239,11 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			bytesWritten += int64(len(data))
 			chunkIndex++
 
-			a.logger.Debug(ctx, "received chunk",
-				"chunk_index", chunkIndex,
-				"chunk_size", len(data),
-				"bytes_written", bytesWritten)
+			a.logger.Debug(ctx, "received chunk", "chunk_index", chunkIndex, "chunk_size", len(data), "bytes_written", bytesWritten)
 		}
 	}
 
-	a.logger.Info(ctx, "download complete",
-		"bytes_written", bytesWritten,
-		"path", in.OutputPath,
-		"action_id", in.ActionID)
+	a.logger.Info(ctx, "download complete", "bytes_written", bytesWritten, "path", in.OutputPath, "action_id", in.ActionID)
 
 	return &CascadeSupernodeDownloadResponse{
 		Success:    true,
