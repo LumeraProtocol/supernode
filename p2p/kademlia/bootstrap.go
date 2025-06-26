@@ -3,7 +3,6 @@ package kademlia
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,11 +33,6 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 		return nil, errors.New("empty address")
 	}
 
-	/*if strings.Contains(extP2P, "0.0.0.0") {
-		fmt.Println("skippping node")
-		return nil, errors.New("invalid address")
-	}*/
-
 	if extP2P == selfAddr {
 		return nil, errors.New("self address")
 	}
@@ -61,24 +55,12 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 			if err != nil {
 				return nil, errors.New("invalid port number")
 			}
-
-			// For system testing, use port+1 if SYSTEM_TEST=true
-			if os.Getenv("SYSTEM_TEST") == "true" {
-				port = uint16(portNum) + 1
-				logtrace.Info(context.Background(), "Using port+1 for system testing", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					"original_port":      portNum,
-					"adjusted_port":      port,
-				})
-			} else {
-				// For normal P2P operation, always use the default port
-				port = defaultNetworkPort
-			}
+			port = uint16(portNum)
 		}
 	} else {
 		// No port in the address
 		ip = extP2P
-		port = defaultNetworkPort
+		port = defaultSuperNodeP2PPort
 	}
 
 	if ip == "" {
@@ -170,13 +152,32 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 				continue
 			}
 
-			// Parse the node from the IP address
-			node, err := s.parseNode(latestIP, selfAddress)
+			// Extract IP from the address (remove port if present)
+			var ip string
+			if idx := strings.LastIndex(latestIP, ":"); idx != -1 {
+				ip = latestIP[:idx]
+			} else {
+				ip = latestIP
+			}
+
+			// Use p2p_port from supernode record
+			p2pPort := defaultSuperNodeP2PPort
+			if supernode.P2PPort != "" {
+				if port, err := strconv.ParseUint(supernode.P2PPort, 10, 16); err == nil {
+					p2pPort = int(port)
+				}
+			}
+
+			// Create full address with p2p port for validation
+			fullAddress := fmt.Sprintf("%s:%d", ip, p2pPort)
+
+			// Parse the node from the full address
+			node, err := s.parseNode(fullAddress, selfAddress)
 			if err != nil {
 				logtrace.Warn(ctx, "Skip Bad Bootstrap Address", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
 					logtrace.FieldError:  err.Error(),
-					"address":            latestIP,
+					"address":            fullAddress,
 					"supernode":          supernode.SupernodeAccount,
 				})
 				continue
@@ -184,7 +185,7 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 			// Store the supernode account as the node ID
 			node.ID = []byte(supernode.SupernodeAccount)
-			mapNodes[latestIP] = node
+			mapNodes[fullAddress] = node
 		}
 
 		// Convert the map to a slice
