@@ -469,7 +469,9 @@ func TestCascadeE2E(t *testing.T) {
 	)
 	require.NoError(t, err, "Failed to start cascade operation")
 	t.Logf("Cascade operation started with task ID: %s", taskID)
-
+	status, err := actionClient.GetSupernodeStatus(ctx, "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
+	t.Logf("Supernode status: %s", status)
+	require.NoError(t, err, "Failed to get supernode status")
 	recievedhash := <-txHashCh
 	<-completionCh
 

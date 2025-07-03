@@ -15,6 +15,7 @@ type SupernodeClient interface {
 	// HealthCheck performs a health check on the supernode
 	HealthCheck(ctx context.Context) (*grpc_health_v1.HealthCheckResponse, error)
 
+	GetSupernodeStatus(ctx context.Context) (supernodeservice.SupernodeStatusresponse, error)
 	// Close releases resources used by the client
 	Close(ctx context.Context) error
 }

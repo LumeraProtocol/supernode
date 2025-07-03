@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/sdk/config"
 	"github.com/LumeraProtocol/supernode/sdk/event"
 	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/sdk/net"
 	"github.com/LumeraProtocol/supernode/sdk/task"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -25,14 +28,16 @@ type Client interface {
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
+	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (supernodeservice.SupernodeStatusresponse, error)
 }
 
 // ClientImpl implements the Client interface
 type ClientImpl struct {
-	config      config.Config
-	taskManager task.Manager
-	logger      log.Logger
-	keyring     keyring.Keyring
+	config       config.Config
+	taskManager  task.Manager
+	logger       log.Logger
+	keyring      keyring.Keyring
+	lumeraClient lumera.Client
 }
 
 // Verify interface compliance at compile time
@@ -44,15 +49,31 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Cl
 		logger = log.NewNoopLogger()
 	}
 
-	taskManager, err := task.NewManager(ctx, config, logger)
+	// Create lumera client once
+	lumeraClient, err := lumera.NewAdapter(ctx,
+		lumera.ConfigParams{
+			GRPCAddr: config.Lumera.GRPCAddr,
+			ChainID:  config.Lumera.ChainID,
+			KeyName:  config.Account.KeyName,
+			Keyring:  config.Account.Keyring,
+		},
+		logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create lumera client: %w", err)
+	}
+
+	// Create task manager with shared lumera client
+	taskManager, err := task.NewManagerWithLumeraClient(ctx, config, logger, lumeraClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task manager: %w", err)
 	}
 
 	return &ClientImpl{
-		config:      config,
-		taskManager: taskManager,
-		logger:      logger,
+		config:       config,
+		taskManager:  taskManager,
+		logger:       logger,
+		keyring:      config.Account.Keyring,
+		lumeraClient: lumeraClient,
 	}, nil
 }
 
@@ -127,4 +148,59 @@ func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Han
 	c.taskManager.SubscribeToAllEvents(ctx, handler)
 
 	return nil
+}
+
+// GetSupernodeStatus retrieves the status of a specific supernode by its address
+func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress string) (supernodeservice.SupernodeStatusresponse, error) {
+	if supernodeAddress == "" {
+		c.logger.Error(ctx, "Empty supernode address provided")
+		return nil, fmt.Errorf("supernode address cannot be empty")
+	}
+
+	c.logger.Debug(ctx, "Getting supernode status", "address", supernodeAddress)
+
+	// Get supernode details from blockchain
+	supernode, err := c.lumeraClient.GetSupernodeBySupernodeAddress(ctx, supernodeAddress)
+	if err != nil {
+		c.logger.Error(ctx, "Failed to get supernode details", "address", supernodeAddress, "error", err)
+		return nil, fmt.Errorf("failed to get supernode details: %w", err)
+	}
+
+	// Get the latest IP address for the supernode
+	if len(supernode.PrevIpAddresses) == 0 {
+		return nil, fmt.Errorf("no IP addresses found for supernode %s", supernodeAddress)
+	}
+
+	ipAddress := supernode.PrevIpAddresses[0].Address
+
+	// Create lumera supernode object for network client
+	lumeraSupernode := lumera.Supernode{
+		CosmosAddress: supernodeAddress,
+		GrpcEndpoint:  ipAddress,
+		State:         lumera.SUPERNODE_STATE_ACTIVE, // Assume active since we're querying
+	}
+
+	// Create network client factory
+	clientFactory := net.NewClientFactory(ctx, c.logger, c.keyring, c.lumeraClient, net.FactoryConfig{
+		LocalCosmosAddress: c.config.Account.LocalCosmosAddress,
+		PeerType:           c.config.Account.PeerType,
+	})
+
+	// Create client for the specific supernode
+	supernodeClient, err := clientFactory.CreateClient(ctx, lumeraSupernode)
+	if err != nil {
+		c.logger.Error(ctx, "Failed to create supernode client", "address", supernodeAddress, "error", err)
+		return nil, fmt.Errorf("failed to create supernode client: %w", err)
+	}
+	defer supernodeClient.Close(ctx)
+
+	// Get the supernode status
+	status, err := supernodeClient.GetSupernodeStatus(ctx)
+	if err != nil {
+		c.logger.Error(ctx, "Failed to get supernode status", "address", supernodeAddress, "error", err)
+		return nil, fmt.Errorf("failed to get supernode status: %w", err)
+	}
+
+	c.logger.Info(ctx, "Successfully retrieved supernode status", "address", supernodeAddress)
+	return status, nil
 }

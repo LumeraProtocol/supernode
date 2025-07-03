@@ -164,6 +164,18 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}, nil
 }
 
+func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
+	resp, err := a.client.HealthCheck(ctx, &cascade.HealthCheckRequest{})
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
+		return nil, fmt.Errorf("failed to get supernode status: %w", err)
+	}
+
+	a.logger.Debug(ctx, "Supernode status retrieved", "status", resp)
+
+	return resp, nil
+}
+
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 	switch e {

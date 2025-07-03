@@ -43,9 +43,6 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger) (M
 
 	logger.Info(ctx, "Initializing task manager")
 
-	// 2 - Event bus
-	eventBus := event.NewBus(ctx, logger, MAX_EVENT_WORKERS)
-
 	// 3 - Create the Lumera client adapter
 	clientAdapter, err := lumera.NewAdapter(ctx,
 		lumera.ConfigParams{
@@ -60,6 +57,20 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger) (M
 		panic(fmt.Sprintf("Failed to create Lumera client: %v", err))
 	}
 
+	return NewManagerWithLumeraClient(ctx, config, logger, clientAdapter)
+}
+
+func NewManagerWithLumeraClient(ctx context.Context, config config.Config, logger log.Logger, lumeraClient lumera.Client) (Manager, error) {
+	// 1 - Logger
+	if logger == nil {
+		logger = log.NewNoopLogger()
+	}
+
+	logger.Info(ctx, "Initializing task manager with provided lumera client")
+
+	// 2 - Event bus
+	eventBus := event.NewBus(ctx, logger, MAX_EVENT_WORKERS)
+
 	taskCache, err := NewTaskCache(ctx, logger)
 	if err != nil {
 		logger.Error(ctx, "Failed to create task cache", "error", err)
@@ -67,7 +78,7 @@ func NewManager(ctx context.Context, config config.Config, logger log.Logger) (M
 	}
 
 	return &ManagerImpl{
-		lumeraClient: clientAdapter,
+		lumeraClient: lumeraClient,
 		config:       config,
 		taskCache:    taskCache,
 		eventBus:     eventBus,
