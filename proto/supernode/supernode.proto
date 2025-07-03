@@ -1,0 +1,37 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/gen/supernode";
+
+// SupernodeService provides status information for all services
+service SupernodeService {
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+message StatusRequest {}
+
+// The StatusResponse represents system status.
+message StatusResponse {
+  message CPU {
+    string usage = 1;
+    string remaining = 2;
+  }
+
+  message Memory {
+    uint64 total = 1;
+    uint64 used = 2;
+    uint64 available = 3;
+    double used_perc = 4;
+  }
+
+  // ServiceTasks contains task information for a specific service
+  message ServiceTasks {
+    string service_name = 1;
+    repeated string task_ids = 2;
+    int32 task_count = 3;
+  }
+
+  CPU cpu = 1;
+  Memory memory = 2;
+  repeated ServiceTasks services = 3;
+  repeated string available_services = 4;
+}

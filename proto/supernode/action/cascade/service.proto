@@ -4,7 +4,6 @@ option go_package = "github.com/LumeraProtocol/supernode/gen/supernode/action/ca
 
 service CascadeService {
   rpc Register (stream RegisterRequest) returns (stream RegisterResponse);
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
   rpc Download (DownloadRequest) returns (stream DownloadResponse);
 }
 
@@ -62,23 +61,3 @@ enum SupernodeEventType {
   ARTEFACTS_DOWNLOADED = 12;
 }
 
-message HealthCheckRequest {}
-
-// The HealthCheckResponse represents system health status.
-message HealthCheckResponse {
-  message CPU {
-    string usage = 1;
-    string remaining = 2;
-  }
-
-  message Memory {
-    uint64 total = 1;
-    uint64 used = 2;
-    uint64 available = 3;
-    double used_perc = 4;
-  }
-
-  CPU cpu = 1;
-  Memory memory = 2;
-  repeated string tasks_in_progress = 3;
-}

@@ -103,6 +103,11 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create cascade action server
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
 
+		// Create supernode status service
+		statusService := common.NewSupernodeStatusService()
+		statusService.RegisterTaskProvider(cService)
+		supernodeServer := server.NewSupernodeServer(statusService)
+
 		// Configure server
 		serverConfig := &server.Config{
 
@@ -117,6 +122,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			kr,
 			lumeraClient,
 			cascadeActionServer,
+			supernodeServer,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create gRPC server: %w", err)

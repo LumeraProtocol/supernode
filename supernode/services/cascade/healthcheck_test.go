@@ -81,8 +81,28 @@ func TestHealthCheck(t *testing.T) {
 			assert.True(t, resp.Memory.Used <= resp.Memory.Total)
 			assert.True(t, resp.Memory.UsedPerc >= 0 && resp.Memory.UsedPerc <= 100)
 
-			// Task count check
-			assert.Equal(t, tt.expectTasks, len(resp.TasksInProgress))
+			// Available services check
+			assert.Contains(t, resp.AvailableServices, "cascade")
+
+			// Task count check - look for cascade service in the services list
+			var cascadeService *common.ServiceTasks
+			for _, service := range resp.Services {
+				if service.ServiceName == "cascade" {
+					cascadeService = &service
+					break
+				}
+			}
+
+			if tt.expectTasks > 0 {
+				assert.NotNil(t, cascadeService, "cascade service should be present")
+				assert.Equal(t, tt.expectTasks, int(cascadeService.TaskCount))
+				assert.Equal(t, tt.expectTasks, len(cascadeService.TaskIDs))
+			} else {
+				// If no tasks expected, either no cascade service or empty task count
+				if cascadeService != nil {
+					assert.Equal(t, 0, int(cascadeService.TaskCount))
+				}
+			}
 		})
 	}
 }

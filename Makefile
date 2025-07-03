@@ -48,6 +48,15 @@ gen-cascade:
 		--go-grpc_opt=paths=source_relative \
 		proto/supernode/action/cascade/service.proto
 
+gen-supernode:
+	protoc \
+		--proto_path=proto \
+		--go_out=gen \
+		--go_opt=paths=source_relative \
+		--go-grpc_out=gen \
+		--go-grpc_opt=paths=source_relative \
+		proto/supernode/supernode.proto
+
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
 DATA_DIR=tests/system/supernode-data1

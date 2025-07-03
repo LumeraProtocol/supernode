@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LumeraProtocol/supernode/gen/supernode"
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -16,11 +17,12 @@ import (
 )
 
 type cascadeAdapter struct {
-	client cascade.CascadeServiceClient
-	logger log.Logger
+	client       cascade.CascadeServiceClient
+	statusClient supernode.SupernodeServiceClient
+	logger       log.Logger
 }
 
-func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient, logger log.Logger) CascadeServiceClient {
+func NewCascadeAdapter(ctx context.Context, conn *grpc.ClientConn, logger log.Logger) CascadeServiceClient {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
@@ -28,8 +30,9 @@ func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient,
 	logger.Debug(ctx, "Creating cascade service adapter")
 
 	return &cascadeAdapter{
-		client: client,
-		logger: logger,
+		client:       cascade.NewCascadeServiceClient(conn),
+		statusClient: supernode.NewSupernodeServiceClient(conn),
+		logger:       logger,
 	}
 }
 
@@ -166,7 +169,7 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 }
 
 func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
-	resp, err := a.client.HealthCheck(ctx, &cascade.HealthCheckRequest{})
+	resp, err := a.statusClient.GetStatus(ctx, &supernode.StatusRequest{})
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
 		return SupernodeStatusresponse{}, fmt.Errorf("failed to get supernode status: %w", err)
@@ -296,10 +299,8 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 	}
 }
 
-func toSdkSupernodeStatus(resp *cascade.HealthCheckResponse) *SupernodeStatusresponse {
-	result := &SupernodeStatusresponse{
-		TasksInProgress: resp.TasksInProgress,
-	}
+func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
+	result := &SupernodeStatusresponse{}
 
 	// Convert CPU data
 	if resp.Cpu != nil {
@@ -313,6 +314,12 @@ func toSdkSupernodeStatus(resp *cascade.HealthCheckResponse) *SupernodeStatusres
 		result.Memory.Used = resp.Memory.Used
 		result.Memory.Available = resp.Memory.Available
 		result.Memory.UsedPerc = resp.Memory.UsedPerc
+	}
+
+	// Aggregate all task IDs from all services
+	result.TasksInProgress = make([]string, 0)
+	for _, service := range resp.Services {
+		result.TasksInProgress = append(result.TasksInProgress, service.TaskIds...)
 	}
 
 	return result

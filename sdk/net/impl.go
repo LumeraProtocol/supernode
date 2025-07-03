@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
@@ -93,7 +92,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(
 		ctx,
-		cascade.NewCascadeServiceClient(conn),
+		conn,
 		logger,
 	)
 
