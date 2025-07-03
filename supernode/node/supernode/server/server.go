@@ -12,9 +12,11 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
+	"github.com/LumeraProtocol/supernode/gen/supernode"
 	"github.com/LumeraProtocol/supernode/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
@@ -148,4 +150,18 @@ func New(config *Config, name string, kr keyring.Keyring, lumeraClient lumera.Cl
 		kr:           kr,
 		lumeraClient: lumeraClient,
 	}, nil
+}
+
+type SupernodeActionServer struct {
+	supernode.UnimplementedSupernodeServiceServer
+	factory common.TaskFactory
+}
+
+// NewSupernodeActionServer creates a new SupernodeActionServer with injected service
+func NewSupernodeActionServer(factory common.TaskFactory) *SupernodeActionServer {
+	return &SupernodeActionServer{factory: factory}
+}
+
+func (server *SupernodeActionServer) Desc() *grpc.ServiceDesc {
+	return &supernode.SupernodeService_ServiceDesc
 }

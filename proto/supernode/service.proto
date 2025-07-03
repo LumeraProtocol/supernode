@@ -1,0 +1,28 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/gen/supernode";
+
+service SupernodeService {
+	rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {}
+
+// The HealthCheckResponse represents system health status.
+message HealthCheckResponse {
+	message CPU {
+		string usage = 1;
+		string remaining = 2;
+}
+
+message Memory {
+	uint64 total = 1;
+	uint64 used = 2;
+	uint64 available = 3;
+	double used_perc = 4;
+}
+
+CPU cpu = 1;
+	Memory memory = 2;
+	repeated string tasks_in_progress = 3;
+}

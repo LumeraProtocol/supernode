@@ -1,9 +1,8 @@
-package cascade
+package common
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -23,9 +22,10 @@ type HealthCheckResponse struct {
 		UsedPerc  float64
 	}
 	TasksInProgress []string
+	Services        []string
 }
 
-func (task *CascadeRegistrationTask) HealthCheck(ctx context.Context) (HealthCheckResponse, error) {
+func (task *SuperNodeTask) HealthCheck(ctx context.Context) (HealthCheckResponse, error) {
 	fields := logtrace.Fields{
 		logtrace.FieldMethod: "HealthCheck",
 		logtrace.FieldModule: "CascadeActionServer",
@@ -36,7 +36,7 @@ func (task *CascadeRegistrationTask) HealthCheck(ctx context.Context) (HealthChe
 
 	percentages, err := cpu.Percent(time.Second, false)
 	if err != nil {
-		log.Fatal(err)
+		logtrace.Error(ctx, "failed to get cpu info", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
 	fmt.Println(percentages)
 	usage := percentages[0]
@@ -54,9 +54,9 @@ func (task *CascadeRegistrationTask) HealthCheck(ctx context.Context) (HealthChe
 	resp.Memory.UsedPerc = vmem.UsedPercent
 
 	// Tasks
-	for _, t := range task.Worker.Tasks() {
-		resp.TasksInProgress = append(resp.TasksInProgress, t.ID())
-	}
+	//for _, t := range task.Worker.Tasks() {
+	//	resp.TasksInProgress = append(resp.TasksInProgress, t.ID())
+	//}
 
 	logtrace.Info(ctx, "top-style healthcheck data", logtrace.Fields{
 		"cpu_usage":     fmt.Sprintf("%.2f", usage),

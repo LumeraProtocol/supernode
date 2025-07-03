@@ -1,10 +1,9 @@
-package cascade
+package common
 
 import (
 	"context"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -40,11 +39,9 @@ func TestHealthCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup service and worker
-			service := &CascadeService{
-				SuperNodeService: common.NewSuperNodeService(nil),
-			}
+			service := NewSuperNodeService(nil)
 
-			var primaryTask *CascadeRegistrationTask
+			var primaryTask *SuperNodeTask
 
 			go func() {
 				service.RunHelper(ctx, "node-id", "prefix")
@@ -52,7 +49,7 @@ func TestHealthCheck(t *testing.T) {
 
 			// Register tasks
 			for i := 0; i < tt.taskCount; i++ {
-				task := NewCascadeRegistrationTask(service)
+				task := NewSuperNodeTask("supernode")
 				service.Worker.AddTask(task)
 				if i == 0 {
 					primaryTask = task
@@ -61,7 +58,7 @@ func TestHealthCheck(t *testing.T) {
 
 			// Always call HealthCheck from first task (if any), otherwise create a temp one
 			if primaryTask == nil {
-				primaryTask = NewCascadeRegistrationTask(service)
+				primaryTask = NewSuperNodeTask("supernode")
 			}
 
 			resp, err := primaryTask.HealthCheck(ctx)

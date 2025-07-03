@@ -1,7 +1,6 @@
 package cascade
 
 import (
-	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -160,28 +159,6 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 
 	logtrace.Info(ctx, "cascade registration completed successfully", fields)
 	return nil
-}
-
-func (server *ActionServer) HealthCheck(ctx context.Context, _ *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
-	resp, err := server.factory.NewCascadeRegistrationTask().HealthCheck(ctx)
-	if err != nil {
-		logtrace.Error(ctx, "error retrieving health-check metrics for supernode", logtrace.Fields{})
-		return nil, err
-	}
-
-	return &pb.HealthCheckResponse{
-		Cpu: &pb.HealthCheckResponse_CPU{
-			Usage:     resp.CPU.Usage,
-			Remaining: resp.CPU.Remaining,
-		},
-		Memory: &pb.HealthCheckResponse_Memory{
-			Total:     resp.Memory.Total,
-			Used:      resp.Memory.Used,
-			Available: resp.Memory.Available,
-			UsedPerc:  resp.Memory.UsedPerc,
-		},
-		TasksInProgress: resp.TasksInProgress,
-	}, nil
 }
 
 func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeService_DownloadServer) error {

@@ -4,7 +4,6 @@ option go_package = "github.com/LumeraProtocol/supernode/gen/supernode/action/ca
 
 service CascadeService {
   rpc Register (stream RegisterRequest) returns (stream RegisterResponse);
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
   rpc Download (DownloadRequest) returns (stream DownloadResponse);
 }
 
