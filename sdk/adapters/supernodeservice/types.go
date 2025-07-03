@@ -28,6 +28,13 @@ type CascadeSupernodeRegisterResponse struct {
 	TxHash  string
 }
 
+// ServiceTasks contains task information for a specific service
+type ServiceTasks struct {
+	ServiceName string
+	TaskIDs     []string
+	TaskCount   int32
+}
+
 type SupernodeStatusresponse struct {
 	CPU struct {
 		Usage     string
@@ -39,7 +46,8 @@ type SupernodeStatusresponse struct {
 		Available uint64
 		UsedPerc  float64
 	}
-	TasksInProgress []string
+	Services          []ServiceTasks
+	AvailableServices []string
 }
 type CascadeSupernodeDownloadRequest struct {
 	ActionID    string
