@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/sdk/config"
@@ -240,21 +241,30 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 	}
 }
 
-func (m *ManagerImpl) CreateDownloadTask(
-	ctx context.Context,
-	actionID string,
-	outputPath string,
-) (string, error) {
-
+func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string) (string, error) {
 	// First validate the action before creating the task
 	action, err := m.validateDownloadAction(ctx, actionID)
 	if err != nil {
 		return "", err
 	}
 
+	// Decode metadata to get the filename
+	metadata, err := m.lumeraClient.DecodeCascadeMetadata(ctx, action)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode cascade metadata: %w", err)
+	}
+
+	// Ensure we have a filename from metadata
+	if metadata.FileName == "" {
+		return "", fmt.Errorf("no filename found in cascade metadata")
+	}
+
+	// Ensure the output path includes the correct filename
+	finalOutputPath := path.Join(outputDir, action.ID, metadata.FileName)
+
 	taskID := uuid.New().String()[:8]
 
-	m.logger.Debug(ctx, "Generated download task ID", "task_id", taskID)
+	m.logger.Debug(ctx, "Generated download task ID", "task_id", taskID, "final_output_path", finalOutputPath)
 
 	baseTask := BaseTask{
 		TaskID:   taskID,
@@ -268,7 +278,8 @@ func (m *ManagerImpl) CreateDownloadTask(
 		logger:   m.logger,
 	}
 
-	task := NewCascadeDownloadTask(baseTask, actionID, outputPath)
+	// Use the final output path with the correct filename
+	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath)
 
 	// Store task in cache
 	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)
@@ -286,6 +297,6 @@ func (m *ManagerImpl) CreateDownloadTask(
 		}
 	}()
 
-	m.logger.Info(ctx, "Download Cascade task created successfully", "taskID", taskID)
+	m.logger.Info(ctx, "Download Cascade task created successfully", "taskID", taskID, "outputPath", finalOutputPath)
 	return taskID, nil
 }

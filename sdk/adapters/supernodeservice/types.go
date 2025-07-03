@@ -3,7 +3,6 @@ package supernodeservice
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"google.golang.org/grpc"
 
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -29,7 +28,19 @@ type CascadeSupernodeRegisterResponse struct {
 	TxHash  string
 }
 
-type SupernodeStatusresponse *cascade.HealthCheckResponse
+type SupernodeStatusresponse struct {
+	CPU struct {
+		Usage     string
+		Remaining string
+	}
+	Memory struct {
+		Total     uint64
+		Used      uint64
+		Available uint64
+		UsedPerc  float64
+	}
+	TasksInProgress []string
+}
 type CascadeSupernodeDownloadRequest struct {
 	ActionID    string
 	TaskID      string

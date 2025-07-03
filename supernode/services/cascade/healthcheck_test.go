@@ -72,6 +72,10 @@ func TestHealthCheck(t *testing.T) {
 
 			assert.NoError(t, err)
 
+			// CPU checks
+			assert.NotEmpty(t, resp.CPU.Usage)
+			assert.NotEmpty(t, resp.CPU.Remaining)
+
 			// Memory checks
 			assert.True(t, resp.Memory.Total > 0)
 			assert.True(t, resp.Memory.Used <= resp.Memory.Total)

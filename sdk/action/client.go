@@ -19,17 +19,16 @@ import (
 //
 //go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=client_mock.go
 type Client interface {
-	//   - signature: Base64-encoded cryptographic signature of the file's data hash (blake3)
-	//   	1- hash(blake3)  > 2- sign > 3- base64
-	//     The signature must be created by the same account that created the Lumera action.
-	//     It must be a digital signature of the data hash found in the action's CASCADE metadata.
+	// StartCascade initiates a cascade operation with file path, action ID, and signature
+	// signature: Base64-encoded signature of file's blake3 hash by action creator
 	StartCascade(ctx context.Context, filePath string, actionID string, signature string) (string, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
-	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (supernodeservice.SupernodeStatusresponse, error)
-	DownloadCascade(ctx context.Context, actionID, outputPath string) (string, error)
+	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*supernodeservice.SupernodeStatusresponse, error)
+	// DownloadCascade downloads cascade to outputDir, filename determined by action ID
+	DownloadCascade(ctx context.Context, actionID, outputDir string) (string, error)
 }
 
 // ClientImpl implements the Client interface
@@ -152,7 +151,7 @@ func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Han
 }
 
 // GetSupernodeStatus retrieves the status of a specific supernode by its address
-func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress string) (supernodeservice.SupernodeStatusresponse, error) {
+func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*supernodeservice.SupernodeStatusresponse, error) {
 	if supernodeAddress == "" {
 		c.logger.Error(ctx, "Empty supernode address provided")
 		return nil, fmt.Errorf("supernode address cannot be empty")
@@ -205,16 +204,14 @@ func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress st
 	c.logger.Info(ctx, "Successfully retrieved supernode status", "address", supernodeAddress)
 	return status, nil
 }
-func (c *ClientImpl) DownloadCascade(
-	ctx context.Context,
-	actionID, outputPath string,
-) (string, error) {
+
+func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir string) (string, error) {
 
 	if actionID == "" {
 		return "", fmt.Errorf("actionID is empty")
 	}
 
-	taskID, err := c.taskManager.CreateDownloadTask(ctx, actionID, outputPath)
+	taskID, err := c.taskManager.CreateDownloadTask(ctx, actionID, outputDir)
 	if err != nil {
 		return "", fmt.Errorf("create download task: %w", err)
 	}

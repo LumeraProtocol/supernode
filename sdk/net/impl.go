@@ -129,14 +129,14 @@ func (c *supernodeClient) HealthCheck(ctx context.Context) (*grpc_health_v1.Heal
 	return resp, nil
 }
 
-func (c *supernodeClient) GetSupernodeStatus(ctx context.Context) (supernodeservice.SupernodeStatusresponse, error) {
+func (c *supernodeClient) GetSupernodeStatus(ctx context.Context) (*supernodeservice.SupernodeStatusresponse, error) {
 	resp, err := c.cascadeClient.GetSupernodeStatus(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get supernode status: %w", err)
 	}
 
 	c.logger.Debug(ctx, "Supernode status retrieved successfully")
-	return resp, nil
+	return &resp, nil
 }
 
 // Download downloads the cascade action file
