@@ -16,4 +16,5 @@ type RegistrationTaskService interface {
 	Register(ctx context.Context, req *RegisterRequest, send func(resp *RegisterResponse) error) error
 	HealthCheck(ctx context.Context) (HealthCheckResponse, error)
 	Download(ctx context.Context, req *DownloadRequest, send func(resp *DownloadResponse) error) error
+	DownloadCleanup(ctx context.Context, actionID string) error
 }

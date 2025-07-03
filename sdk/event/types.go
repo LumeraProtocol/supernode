@@ -23,21 +23,27 @@ const (
 	SDKTaskTxHashReceived     EventType = "sdk:txhash_received"
 	SDKTaskCompleted          EventType = "sdk:completed"
 	SDKTaskFailed             EventType = "sdk:failed"
+
+	SDKDownloadAttempt    EventType = "sdk:download_attempt"
+	SDKDownloadFailure    EventType = "sdk:download_failure"
+	SDKOutputPathReceived EventType = "sdk:output_path_received"
+	SDKDownloadSuccessful EventType = "sdk:download_successful"
 )
 
 const (
-	SupernodeActionRetrieved   EventType = "supernode:action_retrieved"
-	SupernodeActionFeeVerified EventType = "supernode:action_fee_verified"
-	SupernodeTopCheckPassed    EventType = "supernode:top_check_passed"
-	SupernodeMetadataDecoded   EventType = "supernode:metadata_decoded"
-	SupernodeDataHashVerified  EventType = "supernode:data_hash_verified"
-	SupernodeInputEncoded      EventType = "supernode:input_encoded"
-	SupernodeSignatureVerified EventType = "supernode:signature_verified"
-	SupernodeRQIDGenerated     EventType = "supernode:rqid_generated"
-	SupernodeRQIDVerified      EventType = "supernode:rqid_verified"
-	SupernodeArtefactsStored   EventType = "supernode:artefacts_stored"
-	SupernodeActionFinalized   EventType = "supernode:action_finalized"
-	SupernodeUnknown           EventType = "supernode:unknown"
+	SupernodeActionRetrieved     EventType = "supernode:action_retrieved"
+	SupernodeActionFeeVerified   EventType = "supernode:action_fee_verified"
+	SupernodeTopCheckPassed      EventType = "supernode:top_check_passed"
+	SupernodeMetadataDecoded     EventType = "supernode:metadata_decoded"
+	SupernodeDataHashVerified    EventType = "supernode:data_hash_verified"
+	SupernodeInputEncoded        EventType = "supernode:input_encoded"
+	SupernodeSignatureVerified   EventType = "supernode:signature_verified"
+	SupernodeRQIDGenerated       EventType = "supernode:rqid_generated"
+	SupernodeRQIDVerified        EventType = "supernode:rqid_verified"
+	SupernodeArtefactsStored     EventType = "supernode:artefacts_stored"
+	SupernodeActionFinalized     EventType = "supernode:action_finalized"
+	SupernodeArtefactsDownloaded EventType = "supernode:artefacts_downloaded"
+	SupernodeUnknown             EventType = "supernode:unknown"
 )
 
 // EventData is a map of event data attributes using standardized keys

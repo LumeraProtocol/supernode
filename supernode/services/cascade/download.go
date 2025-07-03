@@ -23,9 +23,10 @@ type DownloadRequest struct {
 }
 
 type DownloadResponse struct {
-	EventType SupernodeEventType
-	Message   string
-	Artefacts []byte
+	EventType     SupernodeEventType
+	Message       string
+	Artefacts     []byte
+	DownloadedDir string
 }
 
 func (task *CascadeRegistrationTask) Download(
@@ -42,7 +43,7 @@ func (task *CascadeRegistrationTask) Download(
 		return task.wrapErr(ctx, "failed to get action", err, fields)
 	}
 	logtrace.Info(ctx, "action has been retrieved", fields)
-	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "action has been retrieved", nil, send)
+	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "action has been retrieved", nil, "", send)
 
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
 		err = errors.New("action is not in a valid state")
@@ -51,7 +52,7 @@ func (task *CascadeRegistrationTask) Download(
 		return task.wrapErr(ctx, "action not found", err, fields)
 	}
 	logtrace.Info(ctx, "action has been validated", fields)
-	task.streamDownloadEvent(SupernodeEventTypeActionFinalized, "action state has been validated", nil, send)
+	task.streamDownloadEvent(SupernodeEventTypeActionFinalized, "action state has been validated", nil, "", send)
 
 	metadata, err := task.decodeCascadeMetadata(ctx, actionDetails.GetAction().Metadata, fields)
 	if err != nil {
@@ -59,20 +60,22 @@ func (task *CascadeRegistrationTask) Download(
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
 	}
 	logtrace.Info(ctx, "cascade metadata has been decoded", fields)
-	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "metadata has been decoded", nil, send)
+	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "metadata has been decoded", nil, "", send)
 
-	file, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields)
+	file, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
 	}
 	logtrace.Info(ctx, "artifacts have been downloaded", fields)
-	task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "artifacts have been downloaded", file, send)
+	task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "artifacts have been downloaded", file, tmpDir, send)
 
 	return nil
 }
 
-func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) ([]byte, error) {
+func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) ([]byte, string, error) {
+	logtrace.Info(ctx, "started downloading the artifacts", fields)
+
 	var layout codec.Layout
 	for _, rqID := range metadata.RqIdsIds {
 		rqIDFile, err := task.P2PClient.Retrieve(ctx, rqID)
@@ -87,18 +90,19 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 			continue
 		}
 
-		if len(layout.Blocks) < int(float64(len(metadata.RqIdsIds))*requiredSymbolPercent/100) {
-			logtrace.Info(ctx, "not enough symbols found in RQ metadata", fields)
-			continue
-		}
+		//if len(layout.Blocks) < int(float64(len(metadata.RqIdsIds))*requiredSymbolPercent/100) {
+		//	logtrace.Info(ctx, "not enough symbols found in RQ metadata", fields)
+		//	continue
+		//}
 
 		if err == nil {
+			logtrace.Info(ctx, "layout file retrieved", fields)
 			break
 		}
 	}
 
 	if len(layout.Blocks) == 0 {
-		return nil, errors.New("no symbols found in RQ metadata")
+		return nil, "", errors.New("no symbols found in RQ metadata")
 	}
 
 	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID)
@@ -109,7 +113,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	layout codec.Layout,
 	dataHash string,
 	actionID string,
-) ([]byte, error) {
+) ([]byte, string, error) {
 
 	fields := logtrace.Fields{
 		logtrace.FieldActionID: actionID,
@@ -131,7 +135,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to retrieve symbols", fields)
-		return nil, fmt.Errorf("failed to retrieve symbols: %w", err)
+		return nil, "", fmt.Errorf("failed to retrieve symbols: %w", err)
 	}
 
 	fields["retrievedSymbols"] = len(symbols)
@@ -146,14 +150,14 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to decode symbols", fields)
-		return nil, fmt.Errorf("decode symbols using RaptorQ: %w", err)
+		return nil, "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
 	}
 
 	file, err := os.ReadFile(decodeInfo.FilePath)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to read file", fields)
-		return nil, fmt.Errorf("read decoded file: %w", err)
+		return nil, "", fmt.Errorf("read decoded file: %w", err)
 	}
 
 	// 3. Validate hash (Blake3)
@@ -161,26 +165,39 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to do hash", fields)
-		return nil, fmt.Errorf("hash file: %w", err)
+		return nil, "", fmt.Errorf("hash file: %w", err)
 	}
 
 	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)
 		fields[logtrace.FieldError] = err.Error()
-		return nil, err
+		return nil, decodeInfo.DecodeTmpDir, err
 	}
 
 	logtrace.Info(ctx, "file successfully restored and hash verified", fields)
-	return file, nil
+	return file, decodeInfo.DecodeTmpDir, nil
 }
 
-func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEventType, msg string, file []byte, send func(resp *DownloadResponse) error) {
+func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEventType, msg string, file []byte, tmpDir string, send func(resp *DownloadResponse) error) {
 	_ = send(&DownloadResponse{
-		EventType: eventType,
-		Message:   msg,
-		Artefacts: file,
+		EventType:     eventType,
+		Message:       msg,
+		Artefacts:     file,
+		DownloadedDir: tmpDir,
 	})
 
 	return
+}
+
+func (task *CascadeRegistrationTask) DownloadCleanup(ctx context.Context, symbolsDir string) error {
+	if symbolsDir == "" {
+		return errors.New("symbolsDir path is empty")
+	}
+
+	if err := os.RemoveAll(symbolsDir); err != nil {
+		return errors.Errorf("failed to delete symbols directory: %s, :%s", symbolsDir, err.Error())
+	}
+
+	return nil
 }

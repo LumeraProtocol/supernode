@@ -86,6 +86,20 @@ func (mr *MockRegistrationTaskServiceMockRecorder) Download(ctx, req, send inter
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockRegistrationTaskService)(nil).Download), ctx, req, send)
 }
 
+// DownloadCleanup mocks base method.
+func (m *MockRegistrationTaskService) DownloadCleanup(ctx context.Context, actionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DownloadCleanup", ctx, actionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DownloadCleanup indicates an expected call of DownloadCleanup.
+func (mr *MockRegistrationTaskServiceMockRecorder) DownloadCleanup(ctx, actionID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadCleanup", reflect.TypeOf((*MockRegistrationTaskService)(nil).DownloadCleanup), ctx, actionID)
+}
+
 // HealthCheck mocks base method.
 func (m *MockRegistrationTaskService) HealthCheck(ctx context.Context) (cascade.HealthCheckResponse, error) {
 	m.ctrl.T.Helper()

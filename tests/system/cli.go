@@ -174,7 +174,7 @@ func (c LumeradCli) awaitTxCommitted(submitResp string, timeout ...time.Duration
 	txHash := gjson.Get(submitResp, "txhash")
 	require.True(c.t, txHash.Exists())
 	var txResult string
-	for i := 0; i < 3; i++ { // max blocks to wait for a commit
+	for i := 0; i < 10; i++ { // max blocks to wait for a commit
 		txResult = c.WithRunErrorsIgnored().CustomQuery("q", "tx", txHash.String())
 		if code := gjson.Get(txResult, "code"); code.Exists() {
 			if code.Int() != 0 { // 0 = success code

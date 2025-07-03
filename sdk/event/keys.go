@@ -14,6 +14,7 @@ const (
 	KeyMessage          EventDataKey = "message"
 	KeyProgress         EventDataKey = "progress"
 	KeyEventType        EventDataKey = "event_type"
+	KeyOutputPath       EventDataKey = "output_path"
 
 	// Task specific keys
 	KeyTaskID   EventDataKey = "task_id"
