@@ -65,33 +65,42 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		OutputPath: t.outputPath,
 	}
 
-	var lastErr error
-	for idx, sn := range supernodes {
-		t.LogEvent(ctx, event.SDKDownloadAttempt, "attempting download from super-node", event.EventData{
-			event.KeySupernode:        sn.GrpcEndpoint,
-			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyIteration:        idx + 1,
-		})
-
-		if err := t.attemptDownload(ctx, sn, clientFactory, req); err != nil {
-			lastErr = err
-			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
-				event.KeySupernode:        sn.GrpcEndpoint,
-				event.KeySupernodeAddress: sn.CosmosAddress,
-				event.KeyIteration:        idx + 1,
-				event.KeyError:            err.Error(),
-			})
-			continue
+	// Process supernodes in pairs
+	var allErrors []error
+	for i := 0; i < len(supernodes); i += 2 {
+		// Determine how many supernodes to try in this batch (1 or 2)
+		batchSize := 2
+		if i+1 >= len(supernodes) {
+			batchSize = 1
 		}
 
-		t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
-			event.KeySupernode:        sn.GrpcEndpoint,
-			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyIteration:        idx + 1,
-		})
-		return nil
+		t.logger.Info(ctx, "attempting concurrent download from supernode batch", "batch_start", i, "batch_size", batchSize)
+
+		// Try downloading from this batch concurrently
+		result, batchErrors := t.attemptConcurrentDownload(ctx, supernodes[i:i+batchSize], clientFactory, req, i)
+
+		if result != nil {
+			// Success! Log and return
+			t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
+				event.KeySupernode:        result.SupernodeEndpoint,
+				event.KeySupernodeAddress: result.SupernodeAddress,
+				event.KeyIteration:        result.Iteration,
+			})
+			return nil
+		}
+
+		// Both (or the single one) failed, collect errors
+		allErrors = append(allErrors, batchErrors...)
+
+		// Log batch failure
+		t.logger.Warn(ctx, "download batch failed", "batch_start", i, "batch_size", batchSize, "errors", len(batchErrors))
 	}
-	return fmt.Errorf("failed to download from all super-nodes: %w", lastErr)
+
+	// All attempts failed
+	if len(allErrors) > 0 {
+		return fmt.Errorf("failed to download from all super-nodes: %v", allErrors)
+	}
+	return fmt.Errorf("no supernodes available for download")
 }
 
 func (t *CascadeDownloadTask) attemptDownload(
@@ -128,4 +137,107 @@ func (t *CascadeDownloadTask) attemptDownload(
 	})
 
 	return nil
+}
+
+// downloadResult holds the result of a successful download attempt
+type downloadResult struct {
+	SupernodeAddress  string
+	SupernodeEndpoint string
+	Iteration         int
+}
+
+// attemptConcurrentDownload tries to download from multiple supernodes concurrently
+// Returns the first successful result or all errors if all attempts fail
+func (t *CascadeDownloadTask) attemptConcurrentDownload(
+	ctx context.Context,
+	batch lumera.Supernodes,
+	factory *net.ClientFactory,
+	req *supernodeservice.CascadeSupernodeDownloadRequest,
+	baseIteration int,
+) (*downloadResult, []error) {
+	// Create a cancellable context for this batch
+	batchCtx, cancelBatch := context.WithCancel(ctx)
+	defer cancelBatch()
+
+	// Channels for results
+	type attemptResult struct {
+		success *downloadResult
+		err     error
+		idx     int
+	}
+	resultCh := make(chan attemptResult, len(batch))
+
+	// Start concurrent download attempts
+	for idx, sn := range batch {
+		iteration := baseIteration + idx + 1
+
+		// Log download attempt
+		t.LogEvent(ctx, event.SDKDownloadAttempt, "attempting download from super-node", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyIteration:        iteration,
+		})
+
+		go func(sn lumera.Supernode, idx int, iter int) {
+			// Create a copy of the request for this goroutine
+			reqCopy := &supernodeservice.CascadeSupernodeDownloadRequest{
+				ActionID:   req.ActionID,
+				TaskID:     req.TaskID,
+				OutputPath: req.OutputPath,
+			}
+
+			err := t.attemptDownload(batchCtx, sn, factory, reqCopy)
+			if err != nil {
+				resultCh <- attemptResult{
+					err: err,
+					idx: idx,
+				}
+				return
+			}
+
+			resultCh <- attemptResult{
+				success: &downloadResult{
+					SupernodeAddress:  sn.CosmosAddress,
+					SupernodeEndpoint: sn.GrpcEndpoint,
+					Iteration:         iter,
+				},
+				idx: idx,
+			}
+		}(sn, idx, iteration)
+	}
+
+	// Collect results
+	var errors []error
+	for i := 0; i < len(batch); i++ {
+		select {
+		case result := <-resultCh:
+			if result.success != nil {
+				// Success! Cancel other attempts and return
+				cancelBatch()
+				// Drain remaining results to avoid goroutine leaks
+				go func() {
+					for j := i + 1; j < len(batch); j++ {
+						<-resultCh
+					}
+				}()
+				return result.success, nil
+			}
+
+			// Log failure
+			sn := batch[result.idx]
+			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
+				event.KeySupernode:        sn.GrpcEndpoint,
+				event.KeySupernodeAddress: sn.CosmosAddress,
+				event.KeyIteration:        baseIteration + result.idx + 1,
+				event.KeyError:            result.err.Error(),
+			})
+			errors = append(errors, result.err)
+
+		case <-ctx.Done():
+			return nil, []error{ctx.Err()}
+		}
+	}
+
+	// All attempts in this batch failed
+	return nil, errors
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 )
@@ -98,4 +100,20 @@ func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID strin
 	}
 
 	return action, nil
+}
+
+// Helper function to ensure output path has the correct filename
+func ensureOutputPathWithFilename(outputPath, filename string) string {
+	// If outputPath is empty, just return the filename
+	if outputPath == "" {
+		return filename
+	}
+
+	// Check if the path already ends with the filename
+	if strings.HasSuffix(outputPath, filename) {
+		return outputPath
+	}
+
+	// Otherwise, append the filename to the path
+	return filepath.Join(outputPath, filename)
 }

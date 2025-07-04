@@ -32,6 +32,20 @@ func (service *CascadeService) Run(ctx context.Context) error {
 	return service.RunHelper(ctx, service.config.SupernodeAccountAddress, logPrefix)
 }
 
+// GetServiceName returns the name of the cascade service
+func (service *CascadeService) GetServiceName() string {
+	return "cascade"
+}
+
+// GetRunningTasks returns a list of currently running task IDs
+func (service *CascadeService) GetRunningTasks() []string {
+	var taskIDs []string
+	for _, task := range service.Worker.Tasks() {
+		taskIDs = append(taskIDs, task.ID())
+	}
+	return taskIDs
+}
+
 // NewCascadeService returns a new CascadeService instance
 func NewCascadeService(config *Config, lumera lumera.Client, p2pClient p2p.Client, codec codec.Codec, rqstore rqstore.Store) *CascadeService {
 	return &CascadeService{
