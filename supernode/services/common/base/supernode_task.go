@@ -1,4 +1,4 @@
-package common
+package base
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/common/task/state"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 )
 
 // TaskCleanerFunc pointer to func that removes artefacts
@@ -53,7 +54,7 @@ func (task *SuperNodeTask) RemoveFile(file *files.File) {
 // NewSuperNodeTask returns a new Task instance.
 func NewSuperNodeTask(logPrefix string) *SuperNodeTask {
 	snt := &SuperNodeTask{
-		Task:      task.New(StatusTaskStarted),
+		Task:      task.New(common.StatusTaskStarted),
 		LogPrefix: logPrefix,
 	}
 

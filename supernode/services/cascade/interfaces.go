@@ -2,19 +2,21 @@ package cascade
 
 import (
 	"context"
+
+	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 )
 
-// TaskFactory defines an interface to create a new cascade registration task
+// CascadeServiceFactory defines an interface to create cascade tasks
 //
 //go:generate mockgen -destination=mocks/cascade_interfaces_mock.go -package=cascademocks -source=interfaces.go
-type TaskFactory interface {
-	NewCascadeRegistrationTask() RegistrationTaskService
+type CascadeServiceFactory interface {
+	NewCascadeRegistrationTask() CascadeTask
 }
 
-// RegistrationTaskService interface allows to register a new cascade
-type RegistrationTaskService interface {
+// CascadeTask interface defines operations for cascade registration and data management
+type CascadeTask interface {
 	Register(ctx context.Context, req *RegisterRequest, send func(resp *RegisterResponse) error) error
-	HealthCheck(ctx context.Context) (HealthCheckResponse, error)
+	GetStatus(ctx context.Context) (supernode.StatusResponse, error)
 	Download(ctx context.Context, req *DownloadRequest, send func(resp *DownloadResponse) error) error
-	DownloadCleanup(ctx context.Context, actionID string) error
+	CleanupDownload(ctx context.Context, actionID string) error
 }

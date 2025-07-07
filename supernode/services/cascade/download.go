@@ -190,13 +190,14 @@ func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEven
 	return
 }
 
-func (task *CascadeRegistrationTask) DownloadCleanup(ctx context.Context, symbolsDir string) error {
-	if symbolsDir == "" {
-		return errors.New("symbolsDir path is empty")
+func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, actionID string) error {
+	if actionID == "" {
+		return errors.New("actionID is empty")
 	}
 
-	if err := os.RemoveAll(symbolsDir); err != nil {
-		return errors.Errorf("failed to delete symbols directory: %s, :%s", symbolsDir, err.Error())
+	// For now, we use actionID as the directory path to maintain compatibility
+	if err := os.RemoveAll(actionID); err != nil {
+		return errors.Errorf("failed to delete download directory: %s, :%s", actionID, err.Error())
 	}
 
 	return nil

@@ -3,15 +3,16 @@ package cascade
 import (
 	"context"
 	"github.com/LumeraProtocol/supernode/pkg/storage/files"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/base"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/storage"
 )
 
 // CascadeRegistrationTask is the task for cascade registration
 type CascadeRegistrationTask struct {
 	*CascadeService
 
-	*common.SuperNodeTask
-	storage *common.StorageHandler
+	*base.SuperNodeTask
+	storage *storage.StorageHandler
 
 	Asset            *files.File
 	dataHash         string
@@ -21,6 +22,9 @@ type CascadeRegistrationTask struct {
 const (
 	logPrefix = "cascade"
 )
+
+// Compile-time check to ensure CascadeRegistrationTask implements CascadeTask interface
+var _ CascadeTask = (*CascadeRegistrationTask)(nil)
 
 // Run starts the task
 func (task *CascadeRegistrationTask) Run(ctx context.Context) error {
@@ -35,7 +39,7 @@ func (task *CascadeRegistrationTask) removeArtifacts() {
 // NewCascadeRegistrationTask returns a new Task instance
 func NewCascadeRegistrationTask(service *CascadeService) *CascadeRegistrationTask {
 	task := &CascadeRegistrationTask{
-		SuperNodeTask:  common.NewSuperNodeTask(logPrefix),
+		SuperNodeTask:  base.NewSuperNodeTask(logPrefix),
 		CascadeService: service,
 	}
 

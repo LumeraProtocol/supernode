@@ -9,13 +9,14 @@ import (
 
 	pb "github.com/LumeraProtocol/supernode/gen/supernode"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 )
 
 func TestSupernodeServer_GetStatus(t *testing.T) {
 	ctx := context.Background()
 
 	// Create status service
-	statusService := common.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService()
 
 	// Create server
 	server := NewSupernodeServer(statusService)
@@ -41,7 +42,7 @@ func TestSupernodeServer_GetStatusWithService(t *testing.T) {
 	ctx := context.Background()
 
 	// Create status service
-	statusService := common.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService()
 
 	// Add a mock task provider
 	mockProvider := &common.MockTaskProvider{
@@ -71,7 +72,7 @@ func TestSupernodeServer_GetStatusWithService(t *testing.T) {
 }
 
 func TestSupernodeServer_Desc(t *testing.T) {
-	statusService := common.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService()
 	server := NewSupernodeServer(statusService)
 
 	desc := server.Desc()

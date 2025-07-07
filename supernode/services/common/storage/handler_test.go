@@ -1,11 +1,11 @@
-package common_test
+package storage
 
 import (
 	"context"
-	"github.com/LumeraProtocol/supernode/p2p/mocks"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/p2p/mocks"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -32,7 +32,7 @@ func (m *mockStore) UpdateIsFirstBatchStored(txID string) error {
 
 func TestStoreBytesIntoP2P(t *testing.T) {
 	p2pClient := new(mockP2PClient)
-	handler := common.NewStorageHandler(p2pClient, "", nil)
+	handler := NewStorageHandler(p2pClient, "", nil)
 
 	data := []byte("hello")
 	p2pClient.On("Store", mock.Anything, data, 1).Return("some-id", nil)
@@ -45,7 +45,7 @@ func TestStoreBytesIntoP2P(t *testing.T) {
 
 func TestStoreBatch(t *testing.T) {
 	p2pClient := new(mockP2PClient)
-	handler := common.NewStorageHandler(p2pClient, "", nil)
+	handler := NewStorageHandler(p2pClient, "", nil)
 
 	ctx := context.WithValue(context.Background(), "task_id", "123")
 	list := [][]byte{[]byte("a"), []byte("b")}

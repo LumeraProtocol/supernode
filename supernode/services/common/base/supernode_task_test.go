@@ -1,4 +1,4 @@
-package common_test
+package base
 
 import (
 	"context"
@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNewSuperNodeTask(t *testing.T) {
-	task := common.NewSuperNodeTask("testprefix")
+	task := NewSuperNodeTask("testprefix")
 	assert.NotNil(t, task)
 	assert.Equal(t, "testprefix", task.LogPrefix)
 }
@@ -23,7 +22,7 @@ func TestSuperNodeTask_RunHelper(t *testing.T) {
 		called = true
 	}
 
-	snt := common.NewSuperNodeTask("log")
+	snt := NewSuperNodeTask("log")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -54,7 +53,7 @@ func TestSuperNodeTask_RunHelper(t *testing.T) {
 }
 
 func TestSuperNodeTask_RunHelper_WithError(t *testing.T) {
-	snt := common.NewSuperNodeTask("log")
+	snt := NewSuperNodeTask("log")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

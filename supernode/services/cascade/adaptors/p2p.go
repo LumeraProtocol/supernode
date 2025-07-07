@@ -15,7 +15,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/storage"
 	"github.com/pkg/errors"
 )
 
@@ -71,7 +71,7 @@ func (p *p2pImpl) storeCascadeMetadata(ctx context.Context, metadataFiles [][]by
 		"fileCount": len(metadataFiles),
 	})
 
-	return p.p2p.StoreBatch(ctx, metadataFiles, common.P2PDataCascadeMetadata, taskID)
+	return p.p2p.StoreBatch(ctx, metadataFiles, storage.P2PDataCascadeMetadata, taskID)
 }
 
 func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID string, symbolsDir string) error {
@@ -155,7 +155,7 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if err := c.p2p.StoreBatch(ctx, symbols, common.P2PDataRaptorQSymbol, taskID); err != nil {
+	if err := c.p2p.StoreBatch(ctx, symbols, storage.P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})

@@ -21,6 +21,7 @@ import (
 	"github.com/LumeraProtocol/supernode/supernode/node/supernode/server"
 	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	supernodeService "github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
@@ -104,7 +105,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
 
 		// Create supernode status service
-		statusService := common.NewSupernodeStatusService()
+		statusService := supernodeService.NewSupernodeStatusService()
 		statusService.RegisterTaskProvider(cService)
 		supernodeServer := server.NewSupernodeServer(statusService)
 

@@ -6,17 +6,17 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/LumeraProtocol/supernode/gen/supernode"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 )
 
 // SupernodeServer implements the SupernodeService gRPC service
 type SupernodeServer struct {
 	pb.UnimplementedSupernodeServiceServer
-	statusService *common.SupernodeStatusService
+	statusService *supernode.SupernodeStatusService
 }
 
 // NewSupernodeServer creates a new SupernodeServer
-func NewSupernodeServer(statusService *common.SupernodeStatusService) *SupernodeServer {
+func NewSupernodeServer(statusService *supernode.SupernodeStatusService) *SupernodeServer {
 	return &SupernodeServer{
 		statusService: statusService,
 	}

@@ -1,9 +1,10 @@
-package common
+package supernode
 
 import (
 	"context"
 	"testing"
 
+	"github.com/LumeraProtocol/supernode/supernode/services/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,7 +31,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		statusService := NewSupernodeStatusService()
 
 		// Register a mock task provider
-		mockProvider := &MockTaskProvider{
+		mockProvider := &common.MockTaskProvider{
 			ServiceName: "test-service",
 			TaskIDs:     []string{"task1", "task2", "task3"},
 		}
@@ -54,11 +55,11 @@ func TestSupernodeStatusService(t *testing.T) {
 		statusService := NewSupernodeStatusService()
 
 		// Register multiple mock task providers
-		cascadeProvider := &MockTaskProvider{
+		cascadeProvider := &common.MockTaskProvider{
 			ServiceName: "cascade",
 			TaskIDs:     []string{"cascade1", "cascade2"},
 		}
-		senseProvider := &MockTaskProvider{
+		senseProvider := &common.MockTaskProvider{
 			ServiceName: "sense",
 			TaskIDs:     []string{"sense1"},
 		}
@@ -96,7 +97,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		statusService := NewSupernodeStatusService()
 
 		// Register a mock task provider with no tasks
-		mockProvider := &MockTaskProvider{
+		mockProvider := &common.MockTaskProvider{
 			ServiceName: "empty-service",
 			TaskIDs:     []string{},
 		}

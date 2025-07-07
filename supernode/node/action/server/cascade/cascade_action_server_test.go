@@ -17,8 +17,8 @@ func TestRegister_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTask := cascademocks.NewMockRegistrationTaskService(ctrl)
-	mockFactory := cascademocks.NewMockTaskFactory(ctrl)
+	mockTask := cascademocks.NewMockCascadeTask(ctrl)
+	mockFactory := cascademocks.NewMockCascadeServiceFactory(ctrl)
 
 	// Expect Register to be called with any input, respond via callback
 	mockTask.EXPECT().Register(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
@@ -56,7 +56,7 @@ func TestRegister_Error_NoMetadata(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockFactory := cascademocks.NewMockTaskFactory(ctrl)
+	mockFactory := cascademocks.NewMockCascadeServiceFactory(ctrl)
 	server := NewCascadeActionServer(mockFactory)
 
 	stream := &mockStream{
@@ -74,8 +74,8 @@ func TestRegister_Error_TaskFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTask := cascademocks.NewMockRegistrationTaskService(ctrl)
-	mockFactory := cascademocks.NewMockTaskFactory(ctrl)
+	mockTask := cascademocks.NewMockCascadeTask(ctrl)
+	mockFactory := cascademocks.NewMockCascadeServiceFactory(ctrl)
 
 	mockTask.EXPECT().Register(gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("task failed")).Times(1)
 	mockFactory.EXPECT().NewCascadeRegistrationTask().Return(mockTask).Times(1)

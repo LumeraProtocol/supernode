@@ -8,11 +8,12 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/base"
+	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 )
 
 type CascadeService struct {
-	*common.SuperNodeService
+	*base.SuperNodeService
 	config *Config
 
 	LumeraClient adaptors.LumeraClient
@@ -20,8 +21,12 @@ type CascadeService struct {
 	RQ           adaptors.CodecService
 }
 
+// Compile-time checks to ensure CascadeService implements required interfaces
+var _ supernode.TaskProvider = (*CascadeService)(nil)
+var _ CascadeServiceFactory = (*CascadeService)(nil)
+
 // NewCascadeRegistrationTask creates a new task for cascade registration
-func (service *CascadeService) NewCascadeRegistrationTask() RegistrationTaskService {
+func (service *CascadeService) NewCascadeRegistrationTask() CascadeTask {
 	task := NewCascadeRegistrationTask(service)
 	service.Worker.AddTask(task)
 	return task
@@ -50,7 +55,7 @@ func (service *CascadeService) GetRunningTasks() []string {
 func NewCascadeService(config *Config, lumera lumera.Client, p2pClient p2p.Client, codec codec.Codec, rqstore rqstore.Store) *CascadeService {
 	return &CascadeService{
 		config:           config,
-		SuperNodeService: common.NewSuperNodeService(p2pClient),
+		SuperNodeService: base.NewSuperNodeService(p2pClient),
 		LumeraClient:     adaptors.NewLumeraClient(lumera),
 		P2P:              adaptors.NewP2PService(p2pClient, rqstore),
 		RQ:               adaptors.NewCodecService(codec),

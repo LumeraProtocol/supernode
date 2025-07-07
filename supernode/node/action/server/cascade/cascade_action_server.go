@@ -16,11 +16,11 @@ import (
 
 type ActionServer struct {
 	pb.UnimplementedCascadeServiceServer
-	factory cascadeService.TaskFactory
+	factory cascadeService.CascadeServiceFactory
 }
 
 // NewCascadeActionServer creates a new CascadeActionServer with injected service
-func NewCascadeActionServer(factory cascadeService.TaskFactory) *ActionServer {
+func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *ActionServer {
 	return &ActionServer{factory: factory}
 }
 
@@ -233,7 +233,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		}
 	}
 
-	err = task.DownloadCleanup(ctx, tmpDir)
+	err = task.CleanupDownload(ctx, tmpDir)
 	if err != nil {
 		logtrace.Error(ctx, "error cleaning up the tmp dir", logtrace.Fields{
 			logtrace.FieldError: err.Error(),
