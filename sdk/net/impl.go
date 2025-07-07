@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
@@ -93,7 +92,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(
 		ctx,
-		cascade.NewCascadeServiceClient(conn),
+		conn,
 		logger,
 	)
 
@@ -127,6 +126,16 @@ func (c *supernodeClient) HealthCheck(ctx context.Context) (*grpc_health_v1.Heal
 
 	c.logger.Debug(ctx, "Health check completed", "status", resp.Status)
 	return resp, nil
+}
+
+func (c *supernodeClient) GetSupernodeStatus(ctx context.Context) (*supernodeservice.SupernodeStatusresponse, error) {
+	resp, err := c.cascadeClient.GetSupernodeStatus(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supernode status: %w", err)
+	}
+
+	c.logger.Debug(ctx, "Supernode status retrieved successfully")
+	return &resp, nil
 }
 
 // Download downloads the cascade action file

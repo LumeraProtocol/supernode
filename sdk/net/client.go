@@ -15,6 +15,7 @@ type SupernodeClient interface {
 	// HealthCheck performs a health check on the supernode
 	HealthCheck(ctx context.Context) (*grpc_health_v1.HealthCheckResponse, error)
 
+	GetSupernodeStatus(ctx context.Context) (*supernodeservice.SupernodeStatusresponse, error)
 	// Download downloads the cascade action file
 	Download(ctx context.Context, in *supernodeservice.CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*supernodeservice.CascadeSupernodeDownloadResponse, error)
 

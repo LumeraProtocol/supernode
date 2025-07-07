@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
+	"github.com/LumeraProtocol/supernode/gen/supernode"
 	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/pkg/net"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -15,11 +17,12 @@ import (
 )
 
 type cascadeAdapter struct {
-	client cascade.CascadeServiceClient
-	logger log.Logger
+	client       cascade.CascadeServiceClient
+	statusClient supernode.SupernodeServiceClient
+	logger       log.Logger
 }
 
-func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient, logger log.Logger) CascadeServiceClient {
+func NewCascadeAdapter(ctx context.Context, conn *grpc.ClientConn, logger log.Logger) CascadeServiceClient {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
@@ -27,8 +30,9 @@ func NewCascadeAdapter(ctx context.Context, client cascade.CascadeServiceClient,
 	logger.Debug(ctx, "Creating cascade service adapter")
 
 	return &cascadeAdapter{
-		client: client,
-		logger: logger,
+		client:       cascade.NewCascadeServiceClient(conn),
+		statusClient: supernode.NewSupernodeServiceClient(conn),
+		logger:       logger,
 	}
 }
 
@@ -164,6 +168,18 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}, nil
 }
 
+func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
+	resp, err := a.statusClient.GetStatus(ctx, &supernode.StatusRequest{})
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
+		return SupernodeStatusresponse{}, fmt.Errorf("failed to get supernode status: %w", err)
+	}
+
+	a.logger.Debug(ctx, "Supernode status retrieved", "status", resp)
+
+	return *toSdkSupernodeStatus(resp), nil
+}
+
 // CascadeSupernodeDownload downloads a file from a supernode gRPC stream
 func (a *cascadeAdapter) CascadeSupernodeDownload(
 	ctx context.Context,
@@ -178,16 +194,20 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 		ActionId: in.ActionID,
 	}, opts...)
 	if err != nil {
-		a.logger.Error(ctx, "failed to create download stream",
-			"action_id", in.ActionID, "error", err)
+		a.logger.Error(ctx, "failed to create download stream", "action_id", in.ActionID, "error", err)
 		return nil, err
 	}
 
 	// 2. Prepare destination file
+	// Create directory structure if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(in.OutputPath), 0755); err != nil {
+		a.logger.Error(ctx, "failed to create output directory", "path", filepath.Dir(in.OutputPath), "error", err)
+		return nil, fmt.Errorf("create output directory: %w", err)
+	}
+
 	outFile, err := os.Create(in.OutputPath)
 	if err != nil {
-		a.logger.Error(ctx, "failed to create output file",
-			"path", in.OutputPath, "error", err)
+		a.logger.Error(ctx, "failed to create output file", "path", in.OutputPath, "error", err)
 		return nil, fmt.Errorf("create output file: %w", err)
 	}
 	defer outFile.Close()
@@ -211,10 +231,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 		// 3a. Progress / event message
 		case *cascade.DownloadResponse_Event:
-			a.logger.Info(ctx, "supernode event",
-				"event_type", x.Event.EventType,
-				"message", x.Event.Message,
-				"action_id", in.ActionID)
+			a.logger.Info(ctx, "supernode event", "event_type", x.Event.EventType, "message", x.Event.Message, "action_id", in.ActionID)
 
 			if in.EventLogger != nil {
 				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
@@ -237,17 +254,11 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			bytesWritten += int64(len(data))
 			chunkIndex++
 
-			a.logger.Debug(ctx, "received chunk",
-				"chunk_index", chunkIndex,
-				"chunk_size", len(data),
-				"bytes_written", bytesWritten)
+			a.logger.Debug(ctx, "received chunk", "chunk_index", chunkIndex, "chunk_size", len(data), "bytes_written", bytesWritten)
 		}
 	}
 
-	a.logger.Info(ctx, "download complete",
-		"bytes_written", bytesWritten,
-		"path", in.OutputPath,
-		"action_id", in.ActionID)
+	a.logger.Info(ctx, "download complete", "bytes_written", bytesWritten, "path", in.OutputPath, "action_id", in.ActionID)
 
 	return &CascadeSupernodeDownloadResponse{
 		Success:    true,
@@ -286,4 +297,38 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 	default:
 		return event.SupernodeUnknown
 	}
+}
+
+func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
+	result := &SupernodeStatusresponse{}
+
+	// Convert CPU data
+	if resp.Cpu != nil {
+		result.CPU.Usage = resp.Cpu.Usage
+		result.CPU.Remaining = resp.Cpu.Remaining
+	}
+
+	// Convert Memory data
+	if resp.Memory != nil {
+		result.Memory.Total = resp.Memory.Total
+		result.Memory.Used = resp.Memory.Used
+		result.Memory.Available = resp.Memory.Available
+		result.Memory.UsedPerc = resp.Memory.UsedPerc
+	}
+
+	// Convert Services data
+	result.Services = make([]ServiceTasks, 0, len(resp.Services))
+	for _, service := range resp.Services {
+		result.Services = append(result.Services, ServiceTasks{
+			ServiceName: service.ServiceName,
+			TaskIDs:     service.TaskIds,
+			TaskCount:   service.TaskCount,
+		})
+	}
+	
+	// Convert AvailableServices data
+	result.AvailableServices = make([]string, len(resp.AvailableServices))
+	copy(result.AvailableServices, resp.AvailableServices)
+
+	return result
 }

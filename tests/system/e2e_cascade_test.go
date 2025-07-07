@@ -238,7 +238,7 @@ func TestCascadeE2E(t *testing.T) {
 	)
 	require.NoError(t, err, "Failed to create Lumera client configuration")
 
-	lumeraClinet, err := lumera.NewClient(ctx, lumeraCfg)
+	lumeraClinet, err := lumera.NewClient(context.Background(), lumeraCfg)
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
 	// ---------------------------------------
@@ -360,7 +360,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Wait for transaction to be included in a block
 	sut.AwaitNextBlock(t)
-
+	time.Sleep(5 * time.Second) // Allow some time for the transaction to be processed
 	// Verify the account can be queried with its public key
 	//accountResp := cli.CustomQuery("q", "auth", "account", userAddress)
 	//require.Contains(t, accountResp, "public_key", "User account public key should be available")
@@ -406,8 +406,6 @@ func TestCascadeE2E(t *testing.T) {
 	require.NotEmpty(t, actionID, "Action ID should not be empty")
 	t.Logf("Extracted action ID: %s", actionID)
 
-	time.Sleep(60 * time.Second)
-
 	// Set up action client configuration
 	// This defines how to connect to network services
 	accConfig := sdkconfig.AccountConfig{
@@ -427,7 +425,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Initialize action client for cascade operations
 	actionClient, err := action.NewClient(
-		ctx,
+		context.Background(),
 		actionConfig,
 		nil, // Nil logger - use default
 
@@ -443,7 +441,7 @@ func TestCascadeE2E(t *testing.T) {
 	completionCh := make(chan bool, 1)
 
 	// Subscribe to ALL events
-	err = actionClient.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
+	err = actionClient.SubscribeToAllEvents(context.Background(), func(ctx context.Context, e event.Event) {
 		// Only capture TxhasReceived events
 		if e.Type == event.SDKTaskTxHashReceived {
 			if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
@@ -560,17 +558,54 @@ func TestCascadeE2E(t *testing.T) {
 
 	t.Log("Test completed successfully!")
 
-	time.Sleep(1 * time.Minute)
+	time.Sleep(10 * time.Second)
 
-	outputFileName := "output.txt"
-	outputFileFullpath := filepath.Join(t.TempDir(), outputFileName)
+	outputFileBaseDir := filepath.Join(".")
 	// Try to download the file using the action ID
-	dtaskID, err := actionClient.DownloadCascade(ctx, actionID, outputFileFullpath)
+	dtaskID, err := actionClient.DownloadCascade(context.Background(), actionID, outputFileBaseDir)
 
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")
 
-	time.Sleep(30 * time.Second) // Wait to ensure all events are processed
+	time.Sleep(10 * time.Second) // Wait to ensure all events are processed
+
+	// ---------------------------------------
+	// Step 11: Validate downloaded files exist
+	// ---------------------------------------
+	t.Log("Step 11: Validating downloaded files exist in expected directory structure")
+
+	// Construct expected directory path: baseDir/{actionID}/
+	expectedDownloadDir := filepath.Join(outputFileBaseDir, actionID)
+	t.Logf("Checking for files in directory: %s", expectedDownloadDir)
+
+	// Check if the action directory exists
+	if _, err := os.Stat(expectedDownloadDir); os.IsNotExist(err) {
+		t.Fatalf("Expected download directory does not exist: %s", expectedDownloadDir)
+	}
+
+	// Read directory contents
+	files, err := os.ReadDir(expectedDownloadDir)
+	require.NoError(t, err, "Failed to read download directory: %s", expectedDownloadDir)
+
+	// Filter out directories, only count actual files
+	fileCount := 0
+	var fileNames []string
+	for _, file := range files {
+		if !file.IsDir() {
+			fileCount++
+			fileNames = append(fileNames, file.Name())
+		}
+	}
+
+	t.Logf("Found %d files in download directory: %v", fileCount, fileNames)
+
+	// Validate that at least one file was downloaded
+	require.True(t, fileCount >= 1, "Expected at least 1 file in download directory %s, found %d files", expectedDownloadDir, fileCount)
+
+	status, err := actionClient.GetSupernodeStatus(ctx, "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
+	t.Logf("Supernode status: %+v", status)
+	require.NoError(t, err, "Failed to get supernode status")
+
 }
 func Blake3Hash(msg []byte) ([]byte, error) {
 	hasher := blake3.New(32, nil)

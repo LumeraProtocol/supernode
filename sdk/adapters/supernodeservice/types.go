@@ -28,6 +28,27 @@ type CascadeSupernodeRegisterResponse struct {
 	TxHash  string
 }
 
+// ServiceTasks contains task information for a specific service
+type ServiceTasks struct {
+	ServiceName string
+	TaskIDs     []string
+	TaskCount   int32
+}
+
+type SupernodeStatusresponse struct {
+	CPU struct {
+		Usage     string
+		Remaining string
+	}
+	Memory struct {
+		Total     uint64
+		Used      uint64
+		Available uint64
+		UsedPerc  float64
+	}
+	Services          []ServiceTasks
+	AvailableServices []string
+}
 type CascadeSupernodeDownloadRequest struct {
 	ActionID    string
 	TaskID      string
@@ -44,5 +65,6 @@ type CascadeSupernodeDownloadResponse struct {
 //go:generate mockery --name=CascadeServiceClient --output=testutil/mocks --outpkg=mocks --filename=cascade_service_mock.go
 type CascadeServiceClient interface {
 	CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
+	GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error)
 	CascadeSupernodeDownload(ctx context.Context, in *CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*CascadeSupernodeDownloadResponse, error)
 }

@@ -9,9 +9,9 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/golang/protobuf/proto"
 )
 

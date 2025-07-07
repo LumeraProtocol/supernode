@@ -55,7 +55,7 @@ gen-supernode:
 		--go_opt=paths=source_relative \
 		--go-grpc_out=gen \
 		--go-grpc_opt=paths=source_relative \
-		proto/supernode/service.proto
+		proto/supernode/supernode.proto
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
@@ -70,11 +70,16 @@ CONFIG_FILE3=tests/system/config.test-3.yml
 SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 
 # Install Lumera
+# Optional: specify lumera binary path to skip download
+LUMERAD_BINARY ?=
+# Optional: specify installation mode (latest-release, latest-tag, or vX.Y.Z)
+INSTALL_MODE ?=latest-tag
+
 install-lumera:
 	@echo "Installing Lumera..."
 	@chmod +x tests/scripts/install-lumera.sh
-	@sudo tests/scripts/install-lumera.sh latest-tag
-
+	@sudo LUMERAD_BINARY="$(LUMERAD_BINARY)" tests/scripts/install-lumera.sh $(INSTALL_MODE)
+	@echo "PtTDUHythfRfXHh63yzyiGDid4TZj2P76Zd,18749999981413" > ~/claims.csv
 # Setup supernode environments
 setup-supernodes:
 	@echo "Setting up all supernode environments..."
