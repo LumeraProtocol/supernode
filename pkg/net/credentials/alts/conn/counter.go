@@ -42,4 +42,3 @@ func (c *Counter) Inc() {
 		c.invalid = true
 	}
 }
-

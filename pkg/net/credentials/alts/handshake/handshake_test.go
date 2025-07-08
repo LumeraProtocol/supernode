@@ -17,12 +17,12 @@ import (
 	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/testutil"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	. "github.com/LumeraProtocol/supernode/pkg/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 const defaultTestTimeout = 100 * time.Second
@@ -331,7 +331,7 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 						SupernodeAccount: serverAddr,
 					}, nil).
 					Times(1)
-					
+
 				serverMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
 				serverMockValidator.EXPECT().
 					GetSupernodeBySupernodeAddress(gomock.Any(), serverAddr).

@@ -63,7 +63,7 @@ type Conn struct {
 
 // NewConn creates a new secure channel instance given the other party role and
 // handshaking result.
-var NewConn = func (c net.Conn, side Side, recordProtocol string, key, protected []byte) (net.Conn, error) {
+var NewConn = func(c net.Conn, side Side, recordProtocol string, key, protected []byte) (net.Conn, error) {
 	newCrypto := protocols[recordProtocol]
 	if newCrypto == nil {
 		return nil, fmt.Errorf("negotiated unknown next_protocol %q", recordProtocol)

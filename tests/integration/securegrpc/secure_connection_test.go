@@ -12,23 +12,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	pb "github.com/LumeraProtocol/supernode/gen/supernode/tests/integration/securegrpc"
+	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
 	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
-	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
-	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/supernode/pkg/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 )
 
 func waitForServerReady(address string, timeout time.Duration) error {
@@ -98,7 +98,7 @@ func TestSecureGRPCConnection(t *testing.T) {
 			SupernodeAccount: serverAddress,
 		}, nil).
 		Times(1)
-		
+
 	serverMockValidator := lumeraidmocks.NewMockKeyExchangerValidator(ctrl)
 	serverMockValidator.EXPECT().
 		GetSupernodeBySupernodeAddress(gomock.Any(), serverAddress).

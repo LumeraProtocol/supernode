@@ -3,9 +3,9 @@ package handshake
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
+	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewAuthInfo(t *testing.T) {

@@ -1,17 +1,17 @@
 package testutil
 
 import (
-	"testing"
 	"crypto/ecdh"
 	"github.com/stretchr/testify/require"
+	"testing"
 
-	"github.com/cosmos/go-bip39"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/go-bip39"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 )
@@ -27,9 +27,9 @@ type TestAccount struct {
 	Address string
 	PubKey  cryptotypes.PubKey
 }
-	
+
 // setupTestKeyExchange creates a key exchange instance for testing
-func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string, 
+func SetupTestKeyExchange(t *testing.T, kb keyring.Keyring, addr string,
 	peerType securekeyx.PeerType, validator securekeyx.KeyExchangerValidator) *securekeyx.SecureKeyExchange {
 	ke, err := securekeyx.NewSecureKeyExchange(kb, addr, peerType, ecdh.P256(), validator)
 	require.NoError(t, err)

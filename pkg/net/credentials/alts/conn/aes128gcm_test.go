@@ -2,11 +2,11 @@ package conn
 
 import (
 	"bytes"
-	"testing"
-	"runtime"
 	"fmt"
-	"time"
+	"runtime"
 	"strconv"
+	"testing"
+	"time"
 
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
 )

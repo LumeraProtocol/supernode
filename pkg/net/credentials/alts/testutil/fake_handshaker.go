@@ -3,12 +3,12 @@ package testutil
 import (
 	"bytes"
 	"fmt"
-	"time"
 	"net"
+	"time"
 
-	"github.com/cosmos/gogoproto/proto"
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
 	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 // FakeHandshakeConn implements a fake handshake connection
@@ -52,11 +52,11 @@ func (c *FakeHandshakeConn) Close() error {
 
 // FakeHandshaker simulates a peer in the handshake process
 type FakeHandshaker struct {
-	conn       *FakeHandshakeConn
-	signature  []byte
-	pubKey     []byte
-	peerType   int32
-	curve      string
+	conn      *FakeHandshakeConn
+	signature []byte
+	pubKey    []byte
+	peerType  int32
+	curve     string
 }
 
 func NewFakeHandshaker(conn *FakeHandshakeConn) *FakeHandshaker {

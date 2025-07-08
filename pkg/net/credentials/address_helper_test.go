@@ -1,8 +1,8 @@
 package credentials
 
 import (
-	"testing"
 	"reflect"
+	"testing"
 )
 
 func TestExtractIdentity(t *testing.T) {

@@ -29,7 +29,7 @@ type ServiceTasks struct {
 type TaskProvider interface {
 	// GetServiceName returns the unique name identifier for this service
 	GetServiceName() string
-	
+
 	// GetRunningTasks returns a list of currently active task IDs
 	GetRunningTasks() []string
 }

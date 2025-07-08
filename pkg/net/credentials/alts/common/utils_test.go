@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"github.com/cosmos/gogoproto/proto"
+	"github.com/stretchr/testify/require"
 	"io"
 	"net"
 	"strings"
 	"testing"
 	"time"
-	"github.com/cosmos/gogoproto/proto"
-	"github.com/stretchr/testify/require"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
@@ -231,10 +231,10 @@ func TestReceiveHandshakeMessageFailures(t *testing.T) {
 func TestParseValidHandshakeMessage(t *testing.T) {
 	// Create a valid handshake message.
 	validHandshake := &lumeraidtypes.HandshakeInfo{
-		Address: "127.0.0.1:8080",
-		PeerType: int32(securekeyx.Supernode),
+		Address:   "127.0.0.1:8080",
+		PeerType:  int32(securekeyx.Supernode),
 		PublicKey: []byte("public-key"),
-		Curve: "curve-name",
+		Curve:     "curve-name",
 	}
 	handshakeBytes, err := proto.Marshal(validHandshake)
 	if err != nil {

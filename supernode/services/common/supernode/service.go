@@ -6,11 +6,10 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
-
 // SupernodeStatusService provides centralized status information
 // by collecting system metrics and aggregating task information from registered services
 type SupernodeStatusService struct {
-	taskProviders []TaskProvider  // List of registered services that provide task information
+	taskProviders []TaskProvider    // List of registered services that provide task information
 	metrics       *MetricsCollector // System metrics collector for CPU and memory stats
 }
 

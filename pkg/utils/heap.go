@@ -10,10 +10,10 @@ type DistanceEntry struct {
 	str      string
 }
 
-//MaxHeap to efficiently sort XOR distances
+// MaxHeap to efficiently sort XOR distances
 type MaxHeap []DistanceEntry
 
-//Len returns the length of heap
+// Len returns the length of heap
 func (h MaxHeap) Len() int {
 	return len(h)
 }

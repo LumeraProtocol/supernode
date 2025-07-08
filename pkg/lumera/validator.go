@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 type SecureKeyExchangeValidator struct {

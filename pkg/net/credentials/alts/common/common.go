@@ -24,10 +24,10 @@ const (
 	// Record protocol using XChaCha20-Poly1305 with rekeying
 	RecordProtocolXChaCha20Poly1305ReKey = "ALTSRP_XCHACHA20_POLY1305_REKEY"
 
-    // Key sizes for different protocols
-    KeySizeAESGCM                 = 16
-    KeySizeAESGCMReKey           = 44 // 32 bytes key + 12 bytes counter mask
-    KeySizeXChaCha20Poly1305ReKey = 56 // 32 bytes key + 24 bytes nonce
+	// Key sizes for different protocols
+	KeySizeAESGCM                 = 16
+	KeySizeAESGCMReKey            = 44 // 32 bytes key + 12 bytes counter mask
+	KeySizeXChaCha20Poly1305ReKey = 56 // 32 bytes key + 24 bytes nonce
 )
 
 // ALTSRecordCrypto is the interface for gRPC ALTS record protocol.

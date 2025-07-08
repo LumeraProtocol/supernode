@@ -29,7 +29,7 @@ func (m *MetricsCollector) CollectCPUMetrics(ctx context.Context) (usage, remain
 
 	usageFloat := percentages[0]
 	remainingFloat := 100 - usageFloat
-	
+
 	return fmt.Sprintf("%.2f", usageFloat), fmt.Sprintf("%.2f", remainingFloat), nil
 }
 

@@ -12,7 +12,6 @@ import (
 	types0 "github.com/cosmos/cosmos-sdk/types"
 	signing "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	gomock "go.uber.org/mock/gomock"
-
 )
 
 // MockKeyring is a mock of Keyring interface.

@@ -325,7 +325,7 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 			TaskCount:   service.TaskCount,
 		})
 	}
-	
+
 	// Convert AvailableServices data
 	result.AvailableServices = make([]string, len(resp.AvailableServices))
 	copy(result.AvailableServices, resp.AvailableServices)
