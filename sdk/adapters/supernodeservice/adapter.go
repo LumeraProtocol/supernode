@@ -36,6 +36,45 @@ func NewCascadeAdapter(ctx context.Context, conn *grpc.ClientConn, logger log.Lo
 	}
 }
 
+// calculateOptimalChunkSize returns an optimal chunk size based on file size
+// to balance throughput and memory usage
+func calculateOptimalChunkSize(fileSize int64) int {
+	const (
+		minChunkSize = 64 * 1024    // 64 KB minimum
+		maxChunkSize = 4 * 1024 * 1024  // 4 MB maximum for 1GB+ files
+		smallFileThreshold = 1024 * 1024  // 1 MB
+		mediumFileThreshold = 50 * 1024 * 1024  // 50 MB
+		largeFileThreshold = 500 * 1024 * 1024  // 500 MB
+	)
+
+	var chunkSize int
+	
+	switch {
+	case fileSize <= smallFileThreshold:
+		// For small files (up to 1MB), use 64KB chunks
+		chunkSize = minChunkSize
+	case fileSize <= mediumFileThreshold:
+		// For medium files (1MB-50MB), use 256KB chunks
+		chunkSize = 256 * 1024
+	case fileSize <= largeFileThreshold:
+		// For large files (50MB-500MB), use 1MB chunks
+		chunkSize = 1024 * 1024
+	default:
+		// For very large files (500MB+), use 4MB chunks for optimal throughput
+		chunkSize = maxChunkSize
+	}
+	
+	// Ensure chunk size is within bounds
+	if chunkSize < minChunkSize {
+		chunkSize = minChunkSize
+	}
+	if chunkSize > maxChunkSize {
+		chunkSize = maxChunkSize
+	}
+	
+	return chunkSize
+}
+
 func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
 	// Create the client stream
 	ctx = net.AddCorrelationID(ctx)
@@ -63,8 +102,10 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}
 	totalBytes := fileInfo.Size()
 
-	// Define chunk size
-	const chunkSize = 1024 // 1 KB
+	// Define adaptive chunk size based on file size
+	chunkSize := calculateOptimalChunkSize(totalBytes)
+	
+	a.logger.Debug(ctx, "Calculated optimal chunk size", "fileSize", totalBytes, "chunkSize", chunkSize)
 
 	// Keep track of how much data we've processed
 	bytesRead := int64(0)

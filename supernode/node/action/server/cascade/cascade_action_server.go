@@ -24,6 +24,45 @@ func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *Actio
 	return &ActionServer{factory: factory}
 }
 
+// calculateOptimalChunkSize returns an optimal chunk size based on file size
+// to balance throughput and memory usage
+func calculateOptimalChunkSize(fileSize int64) int {
+	const (
+		minChunkSize = 64 * 1024    // 64 KB minimum
+		maxChunkSize = 4 * 1024 * 1024  // 4 MB maximum for 1GB+ files
+		smallFileThreshold = 1024 * 1024  // 1 MB
+		mediumFileThreshold = 50 * 1024 * 1024  // 50 MB
+		largeFileThreshold = 500 * 1024 * 1024  // 500 MB
+	)
+
+	var chunkSize int
+	
+	switch {
+	case fileSize <= smallFileThreshold:
+		// For small files (up to 1MB), use 64KB chunks
+		chunkSize = minChunkSize
+	case fileSize <= mediumFileThreshold:
+		// For medium files (1MB-50MB), use 256KB chunks
+		chunkSize = 256 * 1024
+	case fileSize <= largeFileThreshold:
+		// For large files (50MB-500MB), use 1MB chunks
+		chunkSize = 1024 * 1024
+	default:
+		// For very large files (500MB+), use 4MB chunks for optimal throughput
+		chunkSize = maxChunkSize
+	}
+	
+	// Ensure chunk size is within bounds
+	if chunkSize < minChunkSize {
+		chunkSize = minChunkSize
+	}
+	if chunkSize > maxChunkSize {
+		chunkSize = maxChunkSize
+	}
+	
+	return chunkSize
+}
+
 func (server *ActionServer) Desc() *grpc.ServiceDesc {
 	return &pb.CascadeService_ServiceDesc
 }
@@ -209,8 +248,15 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	}
 	logtrace.Info(ctx, "streaming artefact file in chunks", fields)
 
-	// Split and stream the file in 1024 byte chunks
-	const chunkSize = 1024
+	// Calculate optimal chunk size based on file size
+	chunkSize := calculateOptimalChunkSize(int64(len(restoredFile)))
+	
+	logtrace.Info(ctx, "calculated optimal chunk size for download", logtrace.Fields{
+		"file_size": len(restoredFile),
+		"chunk_size": chunkSize,
+	})
+
+	// Split and stream the file using adaptive chunk size
 	for i := 0; i < len(restoredFile); i += chunkSize {
 		end := i + chunkSize
 		if end > len(restoredFile) {
