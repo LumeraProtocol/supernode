@@ -17,6 +17,8 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/cosmos/btcutil/base58"
 	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
@@ -77,7 +79,6 @@ func TestCascadeE2E(t *testing.T) {
 	sut.ModifyGenesisJSON(t, SetActionParams(t))
 
 	// Reset and start the blockchain
-	sut.ResetChain(t)
 	sut.StartChain(t)
 	cli := NewLumeradCLI(t, sut, true)
 	// ---------------------------------------
@@ -97,9 +98,10 @@ func TestCascadeE2E(t *testing.T) {
 		// Register the supernode with the network
 		registerCmd := []string{
 			"tx", "supernode", "register-supernode",
-			valAddr,             // validator address
-			"localhost:" + port, // IP address with unique port
-			addr,                // supernode account
+			valAddr,
+			"localhost:" + port,
+			addr,
+			"--p2p-port", p2pPort,
 			"--from", nodeKey,
 		}
 
@@ -246,13 +248,13 @@ func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	t.Log("Step 4: Creating test file for RaptorQ encoding")
 
-	// Create a test file with sample data in a temporary directory
+	// Use test file from tests/system directory
+	testFileName := "test.txt"
+	testFileFullpath := filepath.Join(testFileName)
 
-	testFileName := "testfile.txt"
-	testFileFullpath := filepath.Join(t.TempDir(), testFileName)
-	testData := []byte("This is test data for RaptorQ encoding in the Lumera nasaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaasassasetwork")
-	err = os.WriteFile(testFileFullpath, testData, 0644)
-	require.NoError(t, err, "Failed to write test file")
+	// Verify test file exists
+	_, err = os.Stat(testFileFullpath)
+	require.NoError(t, err, "Test file not found: %s", testFileFullpath)
 
 	// Read the file into memory for processing
 	file, err := os.Open(testFileFullpath)
@@ -283,25 +285,82 @@ func TestCascadeE2E(t *testing.T) {
 	me, err := json.Marshal(metadataFile)
 	require.NoError(t, err, "Failed to marshal metadata to JSON")
 
-	// Step 1: Encode the metadata JSON as base64 string
-	// This becomes the first part of our signature format
-	regularbase64EncodedData := base64.StdEncoding.EncodeToString(me)
-	t.Logf("Base64 encoded RQ IDs file length: %d", len(regularbase64EncodedData))
+	// Step 1: Encode the metadata JSON as base64 string for layout signature
+	layoutBase64 := base64.StdEncoding.EncodeToString(me)
+	t.Logf("Base64 encoded layout file length: %d", len(layoutBase64))
 
-	// Step 2: Sign the base64-encoded string with user key instead of testkey1
-	signedMetaData, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(regularbase64EncodedData))
-	require.NoError(t, err, "Failed to sign metadata")
+	// Step 2: Sign the layout with user key (layout signature)
+	layoutSignature, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(layoutBase64))
+	require.NoError(t, err, "Failed to sign layout")
+	layoutSignatureB64 := base64.StdEncoding.EncodeToString(layoutSignature)
 
-	// Step 3: Encode the resulting signature as base64
-	signedbase64EncodedData := base64.StdEncoding.EncodeToString(signedMetaData)
-	t.Logf("Base64 signed RQ IDs file length: %d", len(signedbase64EncodedData))
+	// Step 3: Generate real layout files and IDs (production flow)
+	// Create redundant layout files with counters and signatures
+	const ic = uint32(121)
+	const maxFiles = uint32(50)
 
-	// Step 4: Format according to the expected verification pattern: Base64(rq_ids).signature
-	// This format is expected by VerifySignature in the CascadeActionHandler.RegisterAction method
-	// - regularbase64EncodedData: The base64-encoded metadata
-	// - signedbase64EncodedData: The base64-encoded signature of the above
-	signatureFormat := fmt.Sprintf("%s.%s", regularbase64EncodedData, signedbase64EncodedData)
+	// Create layout file with signature (base64Layout.signature)
+	layoutWithSig := fmt.Sprintf("%s.%s", layoutBase64, layoutSignatureB64)
+
+	// Generate layout IDs
+	layoutIDs := make([]string, maxFiles)
+	for i := range maxFiles {
+		counter := ic + uint32(i)
+		// Create layout file content: base64Layout.signature.counter
+		layoutFileContent := fmt.Sprintf("%s.%d", layoutWithSig, counter)
+
+		// Compress and hash to get layout ID
+		compressedData, err := utils.ZstdCompress([]byte(layoutFileContent))
+		require.NoError(t, err, "Failed to compress layout file")
+
+		hash, err := utils.Blake3Hash(compressedData)
+		require.NoError(t, err, "Failed to hash layout file")
+
+		layoutIDs[i] = base58.Encode(hash)
+	}
+	t.Logf("Generated %d real layout IDs", len(layoutIDs))
+
+	// Create index file structure with l layout IDs
+	indexFile := map[string]any{
+		"layout_ids":       layoutIDs,
+		"layout_signature": layoutSignatureB64,
+	}
+
+	// Step 4: Marshal and encode index file
+	indexFileJSON, err := json.Marshal(indexFile)
+	require.NoError(t, err, "Failed to marshal index file")
+	indexFileBase64 := base64.StdEncoding.EncodeToString(indexFileJSON)
+	t.Logf("Base64 encoded index file length: %d", len(indexFileBase64))
+
+	// Step 5: Sign the index file with user key (creator signature)
+	creatorSignature, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(indexFileBase64))
+	require.NoError(t, err, "Failed to sign index file")
+	creatorSignatureB64 := base64.StdEncoding.EncodeToString(creatorSignature)
+
+	// Step 6: Format  Base64(index_file).creators_signature
+	// The chain uses this format to regenerate and validate index IDs
+	signatureFormat := fmt.Sprintf("%s.%s", indexFileBase64, creatorSignatureB64)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
+
+	// Step 7: Generate index file IDs (what the supernode should send to chain)
+	// Supernode creates index IDs using: Base58(BLAKE3(zstd(rq_ids_signature.counter)))
+	// where rq_ids_signature is the signatureFormat we just created
+	indexFileIDs := make([]string, maxFiles)
+	for i := range maxFiles {
+		counter := ic + uint32(i)
+		// Create index file content: rq_ids_signature.counter
+		indexFileContent := fmt.Sprintf("%s.%d", signatureFormat, counter)
+
+		// Compress and hash to get index file ID
+		compressedData, err := utils.ZstdCompress([]byte(indexFileContent))
+		require.NoError(t, err, "Failed to compress index file")
+
+		hash, err := utils.Blake3Hash(compressedData)
+		require.NoError(t, err, "Failed to hash index file")
+
+		indexFileIDs[i] = base58.Encode(hash)
+	}
+	t.Logf("Generated %d index file IDs for chain verification", len(indexFileIDs))
 
 	// Data hash with blake3
 	hash, err := Blake3Hash(data)
@@ -381,7 +440,7 @@ func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	// Step 8: Extract action ID and start cascade
 	// ---------------------------------------
-	time.Sleep(30 * time.Second)
+	time.Sleep(40 * time.Second)
 
 	t.Log("Step 8: Extracting action ID and creating cascade request")
 
@@ -558,7 +617,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	t.Log("Test completed successfully!")
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(120 * time.Second)
 
 	outputFileBaseDir := filepath.Join(".")
 	// Try to download the file using the action ID
@@ -567,7 +626,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")
 
-	time.Sleep(10 * time.Second) // Wait to ensure all events are processed
+	time.Sleep(4 * time.Second)
 
 	// ---------------------------------------
 	// Step 11: Validate downloaded files exist
@@ -625,8 +684,8 @@ func SetActionParams(t *testing.T) GenesisMutator {
                 "denom": "ulume"
             },
             "expiration_duration": "24h0m0s",
-            "fee_per_byte": {
-                "amount": "100",
+            "fee_per_kbyte": {
+                "amount": "0",
                 "denom": "ulume"
             },
             "foundation_fee_share": "0.000000000000000000",

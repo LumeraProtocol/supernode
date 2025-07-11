@@ -80,8 +80,8 @@ func (task *CascadeRegistrationTask) verifyDataHash(ctx context.Context, dh []by
 	return nil
 }
 
-func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, path string, dataSize int, f logtrace.Fields) (*adaptors.EncodeResult, error) {
-	resp, err := task.RQ.EncodeInput(ctx, task.ID(), path, dataSize)
+func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, path string, dataSize int, f logtrace.Fields) (*adaptors.EncodeResult, error) {
+	resp, err := task.RQ.EncodeInput(ctx, actionID, path, dataSize)
 	if err != nil {
 		return nil, task.wrapErr(ctx, "failed to encode data", err, f)
 	}
@@ -91,42 +91,56 @@ func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, path strin
 func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.Context, encoded string, creator string,
 	encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
 
-	file, sig, err := extractSignatureAndFirstPart(encoded)
+	// Extract index file and creator signature from encoded data
+	// The signatures field contains: Base64(index_file).creators_signature
+	indexFileB64, creatorSig, err := extractIndexFileAndSignature(encoded)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract signature and first part", err, f)
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract index file and creator signature", err, f)
 	}
-	logtrace.Info(ctx, "signature and first part have been extracted", f)
 
-	// Decode the base64-encoded signature
-	sigBytes, err := base64.StdEncoding.DecodeString(sig)
+	// Verify creator signature on index file
+	creatorSigBytes, err := base64.StdEncoding.DecodeString(creatorSig)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode signature from base64", err, f)
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode creator signature from base64", err, f)
 	}
 
-	// Log the verification attempt for the node creator
-	logtrace.Info(ctx, "verifying signature from node creator", logtrace.Fields{
-		"creator": creator,
-		"taskID":  task.ID(),
-	})
-
-	// Pass the decoded signature bytes for verification
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(file), sigBytes); err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify node creator signature", err, f)
+	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexFileB64), creatorSigBytes); err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify creator signature", err, f)
 	}
+	logtrace.Info(ctx, "creator signature successfully verified", f)
 
-	logtrace.Info(ctx, "node creator signature successfully verified", f)
-
-	layout, err := decodeMetadataFile(file)
+	// Decode index file to get the layout signature
+	indexFile, err := decodeIndexFile(indexFileB64)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode metadata file", err, f)
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode index file", err, f)
 	}
 
-	return layout, sig, nil
+	// Verify layout signature on the actual layout
+	layoutSigBytes, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
+	if err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode layout signature from base64", err, f)
+	}
+
+	layoutJSON, err := json.Marshal(encodedMeta)
+	if err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to marshal layout", err, f)
+	}
+	layoutB64 := utils.B64Encode(layoutJSON)
+	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigBytes); err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify layout signature", err, f)
+	}
+	logtrace.Info(ctx, "layout signature successfully verified", f)
+
+	return encodedMeta, indexFile.LayoutSignature, nil
 }
 
 func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata,
 	sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (GenRQIdentifiersFilesResponse, error) {
-	res, err := GenRQIdentifiersFiles(ctx, GenRQIdentifiersFilesRequest{
+	// The signatures field contains: Base64(index_file).creators_signature
+	// This full format will be used for ID generation to match chain expectations
+
+	// Generate layout files
+	layoutRes, err := GenRQIdentifiersFiles(ctx, GenRQIdentifiersFilesRequest{
 		Metadata:         encodedMeta,
 		CreatorSNAddress: creator,
 		RqMax:            uint32(meta.RqIdsMax),
@@ -135,10 +149,24 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 	})
 	if err != nil {
 		return GenRQIdentifiersFilesResponse{},
-			task.wrapErr(ctx, "failed to generate RQID Files", err, f)
+			task.wrapErr(ctx, "failed to generate layout files", err, f)
 	}
-	logtrace.Info(ctx, "rq symbols, rq-ids and rqid-files have been generated", f)
-	return res, nil
+
+	// Generate index files using full signatures format for ID generation (matches chain expectation)
+	indexIDs, indexFiles, err := GenIndexFiles(ctx, layoutRes.RedundantMetadataFiles, sig, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+	if err != nil {
+		return GenRQIdentifiersFilesResponse{},
+			task.wrapErr(ctx, "failed to generate index files", err, f)
+	}
+
+	// Store layout files and index files separately in P2P
+	allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
+
+	// Return index IDs (sent to chain) and all files (stored in P2P)
+	return GenRQIdentifiersFilesResponse{
+		RQIDs:                  indexIDs,
+		RedundantMetadataFiles: allFiles,
+	}, nil
 }
 
 func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) error {
@@ -261,4 +289,27 @@ func parseRQMetadataFile(data []byte) (layout codec.Layout, signature string, co
 	counter = string(parts[2])
 
 	return layout, signature, counter, nil
+}
+
+// extractIndexFileAndSignature extracts index file and creator signature from signatures field
+// data is expected to be in format: Base64(index_file).creators_signature
+func extractIndexFileAndSignature(data string) (indexFileB64 string, creatorSignature string, err error) {
+	parts := strings.Split(data, ".")
+	if len(parts) < 2 {
+		return "", "", errors.New("invalid signatures format")
+	}
+	return parts[0], parts[1], nil
+}
+
+// decodeIndexFile decodes base64 encoded index file
+func decodeIndexFile(data string) (IndexFile, error) {
+	var indexFile IndexFile
+	decodedData, err := utils.B64Decode([]byte(data))
+	if err != nil {
+		return indexFile, errors.Errorf("failed to decode index file: %w", err)
+	}
+	if err := json.Unmarshal(decodedData, &indexFile); err != nil {
+		return indexFile, errors.Errorf("failed to unmarshal index file: %w", err)
+	}
+	return indexFile, nil
 }

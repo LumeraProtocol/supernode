@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -75,10 +76,12 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 						},
 					}, nil)
 
-				// 3. Signature verification
+				// 3. Signature verification - layout signature on layout file
+				// Expect two verification calls: creator signature and layout signature
 				lc.EXPECT().
 					Verify(gomock.Any(), "creator1", gomock.Any(), gomock.Any()).
-					Return(nil)
+					Return(nil).
+					Times(2)
 
 				// 4. Finalize
 				lc.EXPECT().
@@ -253,9 +256,19 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 func encodedCascadeMetadata(hash string, t *testing.T) []byte {
 	t.Helper()
 
-	// Fake encoded layout and signature
-	fakeLayout := base64.StdEncoding.EncodeToString([]byte(`{"blocks":[{"block_id":1,"hash":"abc"}]}`))
-	fakeSig := base64.StdEncoding.EncodeToString([]byte("fakesignature"))
+	// Fake layout signature for new index file format
+	fakeLayoutSig := base64.StdEncoding.EncodeToString([]byte("fakelayoutsignature"))
+
+	// Create index file structure
+	indexFile := map[string]any{
+		"layout_ids":       []string{"layout_id_1", "layout_id_2"},
+		"layout_signature": fakeLayoutSig,
+	}
+	indexFileJSON, _ := json.Marshal(indexFile)
+	fakeIndexFile := base64.StdEncoding.EncodeToString(indexFileJSON)
+
+	// Fake creators signature - this is what the chain uses for index ID generation
+	fakeCreatorsSig := base64.StdEncoding.EncodeToString([]byte("fakecreatorssignature"))
 
 	metadata := &actiontypes.CascadeMetadata{
 		DataHash:   hash,
@@ -263,7 +276,7 @@ func encodedCascadeMetadata(hash string, t *testing.T) []byte {
 		RqIdsIc:    2,
 		RqIdsMax:   4,
 		RqIdsIds:   []string{"id1", "id2"},
-		Signatures: fakeLayout + "." + fakeSig,
+		Signatures: fakeIndexFile + "." + fakeCreatorsSig,
 	}
 
 	bytes, err := proto.Marshal(metadata)

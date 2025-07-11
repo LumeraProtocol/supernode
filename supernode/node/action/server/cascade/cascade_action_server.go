@@ -154,6 +154,13 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	fields[logtrace.FieldActionID] = metadata.GetActionId()
 	logtrace.Info(ctx, "metadata received from action-sdk", fields)
 
+	// Ensure all data is written to disk before calculating hash
+	if err := tempFile.Sync(); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		logtrace.Error(ctx, "failed to sync temp file", fields)
+		return fmt.Errorf("failed to sync temp file: %w", err)
+	}
+
 	hash := hasher.Sum(nil)
 	hashHex := hex.EncodeToString(hash)
 	fields[logtrace.FieldHashHex] = hashHex

@@ -90,7 +90,7 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeDataHashVerified, "data-hash has been verified", "", send)
 
 	/* 6. Encode the raw data ------------------------------------------------------ */
-	encResp, err := task.encodeInput(ctx, req.FilePath, req.DataSize, fields)
+	encResp, err := task.encodeInput(ctx, req.ActionID, req.FilePath, req.DataSize, fields)
 	if err != nil {
 		return err
 	}

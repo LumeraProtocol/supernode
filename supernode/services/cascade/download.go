@@ -1,6 +1,7 @@
 package cascade
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -77,26 +78,29 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	logtrace.Info(ctx, "started downloading the artifacts", fields)
 
 	var layout codec.Layout
-	for _, rqID := range metadata.RqIdsIds {
-		rqIDFile, err := task.P2PClient.Retrieve(ctx, rqID)
-		if err != nil || len(rqIDFile) == 0 {
+
+	for _, indexID := range metadata.RqIdsIds {
+		indexFile, err := task.P2PClient.Retrieve(ctx, indexID)
+		if err != nil || len(indexFile) == 0 {
 			continue
 		}
 
-		layout, _, _, err = parseRQMetadataFile(rqIDFile)
-
-		if len(layout.Blocks) == 0 {
-			logtrace.Info(ctx, "no symbols found in RQ metadata", fields)
+		// Parse index file to get layout IDs
+		indexData, err := task.parseIndexFile(indexFile)
+		if err != nil {
+			logtrace.Info(ctx, "failed to parse index file", fields)
 			continue
 		}
 
-		//if len(layout.Blocks) < int(float64(len(metadata.RqIdsIds))*requiredSymbolPercent/100) {
-		//	logtrace.Info(ctx, "not enough symbols found in RQ metadata", fields)
-		//	continue
-		//}
+		// Try to retrieve layout files using layout IDs from index file
+		layout, err = task.retrieveLayoutFromIndex(ctx, indexData, fields)
+		if err != nil {
+			logtrace.Info(ctx, "failed to retrieve layout from index", fields)
+			continue
+		}
 
-		if err == nil {
-			logtrace.Info(ctx, "layout file retrieved", fields)
+		if len(layout.Blocks) > 0 {
+			logtrace.Info(ctx, "layout file retrieved via index", fields)
 			break
 		}
 	}
@@ -188,6 +192,45 @@ func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEven
 	})
 
 	return
+}
+
+// parseIndexFile parses compressed index file to extract IndexFile structure
+func (task *CascadeRegistrationTask) parseIndexFile(data []byte) (IndexFile, error) {
+	decompressed, err := utils.ZstdDecompress(data)
+	if err != nil {
+		return IndexFile{}, errors.Errorf("decompress index file: %w", err)
+	}
+
+	// Parse decompressed data: base64IndexFile.signature.counter
+	parts := bytes.Split(decompressed, []byte{SeparatorByte})
+	if len(parts) < 2 {
+		return IndexFile{}, errors.New("invalid index file format")
+	}
+
+	// Decode the base64 index file
+	return decodeIndexFile(string(parts[0]))
+}
+
+// retrieveLayoutFromIndex retrieves layout file using layout IDs from index file
+func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context, indexData IndexFile, fields logtrace.Fields) (codec.Layout, error) {
+	// Try to retrieve layout files using layout IDs from index file
+	for _, layoutID := range indexData.LayoutIDs {
+		layoutFile, err := task.P2PClient.Retrieve(ctx, layoutID)
+		if err != nil || len(layoutFile) == 0 {
+			continue
+		}
+
+		layout, _, _, err := parseRQMetadataFile(layoutFile)
+		if err != nil {
+			continue
+		}
+
+		if len(layout.Blocks) > 0 {
+			return layout, nil
+		}
+	}
+
+	return codec.Layout{}, errors.New("no valid layout found in index")
 }
 
 func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, actionID string) error {

@@ -18,6 +18,13 @@ const (
 	SeparatorByte byte = 46 // separator in dd_and_fingerprints.signature i.e. '.'
 )
 
+// IndexFile represents the structure of the index file
+type IndexFile struct {
+	Version         int      `json:"version"`
+	LayoutIDs       []string `json:"layout_ids"`
+	LayoutSignature string   `json:"layout_signature"`
+}
+
 type GenRQIdentifiersFilesRequest struct {
 	Metadata         codec.Layout
 	RqMax            uint32
@@ -92,4 +99,29 @@ func GetIDFiles(ctx context.Context, encMetadataFileWithSignature []byte, ic uin
 	}
 
 	return ids, idFiles, nil
+}
+
+// GenIndexFiles generates index files and their IDs from layout files using full signatures format
+func GenIndexFiles(ctx context.Context, layoutFiles [][]byte, layoutSignature string, signaturesFormat string, ic uint32, max uint32) (indexIDs []string, indexFiles [][]byte, err error) {
+	// Create layout IDs from layout files
+	layoutIDs := make([]string, len(layoutFiles))
+	for i, layoutFile := range layoutFiles {
+		hash, err := utils.Blake3Hash(layoutFile)
+		if err != nil {
+			return nil, nil, errors.Errorf("hash layout file: %w", err)
+		}
+		layoutIDs[i] = base58.Encode(hash)
+	}
+
+	// Use the full signatures format that matches what was sent during RequestAction
+	// The chain expects this exact format for ID generation
+	indexFileWithSignatures := []byte(signaturesFormat)
+
+	// Generate index file IDs using full signatures format
+	indexIDs, indexFiles, err = GetIDFiles(ctx, indexFileWithSignatures, ic, max)
+	if err != nil {
+		return nil, nil, errors.Errorf("get index ID files: %w", err)
+	}
+
+	return indexIDs, indexFiles, nil
 }

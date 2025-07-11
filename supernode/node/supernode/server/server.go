@@ -62,8 +62,12 @@ func (server *Server) Run(ctx context.Context) error {
 	// Custom server options
 	opts := grpcserver.DefaultServerOptions()
 
-	//TODO : Defaul ServerOptions needs to be updated to hanlde larger files
-	//EXAMPLE: opts.GracefulShutdownTime = 60 * time.Second
+	opts.MaxRecvMsgSize = 2 * 1024 * 1024 * 1024  // 2 GB
+	opts.MaxSendMsgSize = 2 * 1024 * 1024 * 1024  // 2 GB
+	opts.InitialWindowSize = 32 * 1024 * 1024     // 32 MB
+	opts.InitialConnWindowSize = 32 * 1024 * 1024 // 32 MB
+	opts.WriteBufferSize = 1024 * 1024            // 1 MB
+	opts.ReadBufferSize = 1024 * 1024             // 1 MB
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
