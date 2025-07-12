@@ -316,9 +316,8 @@ func (ch *defaultConnectionHandler) retryConnection(ctx context.Context, address
 }
 
 // configureContext ensures the context has a timeout and sets up logging
-// configureContext ensures the context has a timeout and sets up logging
 func (ch *defaultConnectionHandler) configureContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	logtrace.SetGRPCLogger(ctx)
+	logtrace.SetGRPCLogger()
 
 	id, _ := random.String(8, random.Base62Chars)
 	ctx = logtrace.CtxWithCorrelationID(ctx, fmt.Sprintf("%s-%s", logPrefix, id))

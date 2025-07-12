@@ -348,7 +348,7 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		conn, err = NewSecureServerConn(ctx, s.tc, rawConn)
 		if err != nil {
 			rawConn.Close()
-			logtrace.Error(ctx, "Server secure handshake failed", logtrace.Fields{
+			logtrace.Warn(ctx, "Server secure handshake failed", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				logtrace.FieldError:  err.Error(),
 			})
@@ -373,7 +373,7 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			if err == io.EOF {
 				return
 			}
-			logtrace.Error(ctx, "Read and decode failed", logtrace.Fields{
+			logtrace.Warn(ctx, "Read and decode failed", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				logtrace.FieldError:  err.Error(),
 			})

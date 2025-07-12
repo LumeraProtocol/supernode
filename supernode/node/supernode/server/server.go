@@ -47,7 +47,7 @@ func (server *Server) Run(ctx context.Context) error {
 	ctx = logtrace.CtxWithCorrelationID(ctx, server.name)
 
 	// Set up gRPC logging
-	logtrace.SetGRPCLogger(ctx)
+	logtrace.SetGRPCLogger()
 	logtrace.Info(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.config.Identity})
 	logtrace.Info(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.config.ListenAddresses})
 

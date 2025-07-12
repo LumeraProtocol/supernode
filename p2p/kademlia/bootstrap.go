@@ -192,7 +192,11 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 		for _, node := range mapNodes {
 			hID, _ := utils.Blake3Hash(node.ID)
 			node.HashedID = hID
-			fmt.Println("node adding", node.String(), "hashed id", string(node.HashedID))
+			logtrace.Debug(ctx, "node adding", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"node":               node.String(),
+				"hashed_id":          string(node.HashedID),
+			})
 			boostrapNodes = append(boostrapNodes, node)
 		}
 	}
@@ -267,7 +271,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 					// So if bootstrap failed, should try to connect to node again for next bootstrap retry
 					// s.cache.SetWithExpiry(addr, []byte("true"), badAddrExpiryHours*time.Hour)
 
-					logtrace.Error(ctx, "network call failed, sleeping 3 seconds", logtrace.Fields{
+					logtrace.Debug(ctx, "network call failed, sleeping 3 seconds", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 						logtrace.FieldError:  err.Error(),
 					})
