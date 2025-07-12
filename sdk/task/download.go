@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
@@ -121,6 +122,13 @@ func (t *CascadeDownloadTask) attemptDownload(
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)
+	}
+
+	// Remove existing file if it exists to allow overwrite
+	if _, err := os.Stat(req.OutputPath); err == nil {
+		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
+			return fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)
+		}
 	}
 
 	resp, err := client.Download(ctx, req)
