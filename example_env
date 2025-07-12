@@ -1,0 +1,5 @@
+# Options: debug, info, warn, error, fatal
+# Default: info
+LOG_LEVEL=info
+LOG_TRACING=1
+

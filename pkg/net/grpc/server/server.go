@@ -217,7 +217,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 		opts = DefaultServerOptions()
 	}
 
-	logtrace.SetGRPCLogger(ctx)
+	logtrace.SetGRPCLogger()
 	ctx = logtrace.CtxWithCorrelationID(ctx, s.name)
 
 	// Create server with options

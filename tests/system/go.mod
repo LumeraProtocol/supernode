@@ -30,6 +30,7 @@ require (
 	github.com/LumeraProtocol/lumera v1.6.0
 	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.17
+	github.com/cosmos/btcutil v1.0.5
 	github.com/tidwall/gjson v1.14.2
 	github.com/tidwall/sjson v1.2.5
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
@@ -66,7 +67,6 @@ require (
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/cometbft/cometbft-db v0.14.1 // indirect
-	github.com/cosmos/btcutil v1.0.5 // indirect
 	github.com/cosmos/cosmos-db v1.1.1 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
@@ -157,6 +157,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/mock v0.5.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect

@@ -34,7 +34,7 @@ var startCmd = &cobra.Command{
 The supernode will connect to the Lumera network and begin participating in the network.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize logging
-		logtrace.Setup("supernode", "dev", appConfig.LogConfig.Level)
+		logtrace.Setup("supernode")
 
 		// Create context with correlation ID for tracing
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")

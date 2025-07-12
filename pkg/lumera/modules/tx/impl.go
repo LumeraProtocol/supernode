@@ -24,9 +24,6 @@ const (
 	DefaultGasPadding    = uint64(50000)
 	DefaultFeeDenom      = "ulume"
 	DefaultGasPrice      = "0.000001"
-
-	// Gas costs from chain parameters
-	TxSizeCostPerByte = uint64(10) // tx_size_cost_per_byte: "10"
 )
 
 // module implements the Module interface
@@ -45,107 +42,64 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 	}, nil
 }
 
-// calculateGasForTxSize calculates gas needed for transaction size
-func (m *module) calculateGasForTxSize(txSizeBytes int) uint64 {
-	return uint64(txSizeBytes) * TxSizeCostPerByte
-}
-
 // SimulateTransaction simulates a transaction with given messages and returns gas used
 func (m *module) SimulateTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig) (*sdktx.SimulateResponse, error) {
-	// Create encoding config
+	// Create encoding config and client context
 	encCfg := lumeracodec.GetEncodingConfig()
-
-	// Create client context
 	clientCtx := client.Context{}.
 		WithCodec(encCfg.Codec).
 		WithTxConfig(encCfg.TxConfig).
-		WithKeyring(config.Keyring).
-		WithBroadcastMode("sync")
+		WithKeyring(config.Keyring)
 
-	// Get the key for public key
+	// Create a transaction factory with Gas set to 0 to trigger auto-estimation
+	// and add a minimal fee to pass the mempool check during simulation.
+	txf := tx.Factory{}.
+		WithTxConfig(clientCtx.TxConfig).
+		WithKeybase(config.Keyring).
+		WithAccountNumber(accountInfo.AccountNumber).
+		WithSequence(accountInfo.Sequence).
+		WithChainID(config.ChainID).
+		WithGas(0). // Setting Gas to 0 is the key for estimation
+		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
+		WithFees(fmt.Sprintf("1%s", config.FeeDenom)) // Minimal fee for simulation
+
+	// Build the unsigned transaction once
+	txb, err := txf.BuildUnsignedTx(msgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unsigned tx for simulation: %w", err)
+	}
+
+	// Create a dummy signature to account for its size in the gas estimation
 	key, err := config.Keyring.Key(config.KeyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key from keyring: %w", err)
 	}
-
 	pubKey, err := key.GetPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
-
-	minFee := fmt.Sprintf("1%s", config.FeeDenom)
-
-	// Build transaction with minimal gas to get size
-	txBuilder, err := tx.Factory{}.
-		WithTxConfig(clientCtx.TxConfig).
-		WithKeybase(config.Keyring).
-		WithAccountNumber(accountInfo.AccountNumber).
-		WithSequence(accountInfo.Sequence).
-		WithChainID(config.ChainID).
-		WithGas(10000).
-		WithGasAdjustment(config.GasAdjustment).
-		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
-		WithFees(minFee).
-		BuildUnsignedTx(msgs...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build unsigned tx: %w", err)
-	}
-
-	// Set empty signature
-	txBuilder.SetSignatures(signingtypes.SignatureV2{
+	sig := signingtypes.SignatureV2{
 		PubKey:   pubKey,
-		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
+		Data:     &signingtypes.SingleSignatureData{SignMode: txf.SignMode(), Signature: nil},
 		Sequence: accountInfo.Sequence,
-	})
-
-	// Get transaction size
-	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode transaction: %w", err)
+	}
+	if err := txb.SetSignatures(sig); err != nil {
+		return nil, fmt.Errorf("failed to set dummy signature: %w", err)
 	}
 
-	// Calculate required gas and rebuild
-	gasLimit := m.calculateGasForTxSize(len(txBytes))
-
-	txBuilder, err = tx.Factory{}.
-		WithTxConfig(clientCtx.TxConfig).
-		WithKeybase(config.Keyring).
-		WithAccountNumber(accountInfo.AccountNumber).
-		WithSequence(accountInfo.Sequence).
-		WithChainID(config.ChainID).
-		WithGas(gasLimit).
-		WithGasAdjustment(config.GasAdjustment).
-		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
-		WithFees(minFee).
-		BuildUnsignedTx(msgs...)
+	// Encode the transaction for simulation
+	txBytes, err := clientCtx.TxConfig.TxEncoder()(txb.GetTx())
 	if err != nil {
-		return nil, fmt.Errorf("failed to rebuild tx: %w", err)
+		return nil, fmt.Errorf("failed to encode transaction for simulation: %w", err)
 	}
 
-	// Reset signature
-	txBuilder.SetSignatures(signingtypes.SignatureV2{
-		PubKey:   pubKey,
-		Data:     &signingtypes.SingleSignatureData{SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT, Signature: nil},
-		Sequence: accountInfo.Sequence,
-	})
-
-	// Encode final transaction
-	txBytes, err = clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode transaction: %w", err)
-	}
-
-	logtrace.Info(ctx, fmt.Sprintf("simulating transaction | txSize=%d gasLimit=%d", len(txBytes), gasLimit), nil)
-
-	// Simulate transaction
+	// Simulate the transaction
 	simRes, err := m.client.Simulate(ctx, &sdktx.SimulateRequest{TxBytes: txBytes})
 	if err != nil {
-		logtrace.Error(ctx, fmt.Sprintf("simulation failed | error=%s txSize=%d gasLimit=%d", err.Error(), len(txBytes), gasLimit), nil)
 		return nil, fmt.Errorf("simulation error: %w", err)
 	}
 
-	logtrace.Info(ctx, fmt.Sprintf("simulation complete | gasUsed=%d gasWanted=%d", simRes.GasInfo.GasUsed, simRes.GasInfo.GasWanted), nil)
-
+	logtrace.Info(ctx, fmt.Sprintf("simulation complete | gasUsed=%d", simRes.GasInfo.GasUsed), nil)
 	return simRes, nil
 }
 
@@ -185,7 +139,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	logtrace.Info(ctx, fmt.Sprintf("transaction signed successfully"), nil)
+	logtrace.Info(ctx, "transaction signed successfully", nil)
 
 	// Encode signed transaction
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
@@ -230,13 +184,13 @@ func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
 // ProcessTransaction handles the complete flow: simulate, build, sign, and broadcast
 func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig) (*sdktx.BroadcastTxResponse, error) {
 	// Step 1: Simulate transaction to get gas estimate
-	simulatedGas, err := m.SimulateTransaction(ctx, msgs, accountInfo, config)
+	simRes, err := m.SimulateTransaction(ctx, msgs, accountInfo, config)
 	if err != nil {
 		return nil, fmt.Errorf("simulation failed: %w", err)
 	}
 
 	// Step 2: Calculate gas with adjustment and padding
-	simulatedGasUsed := simulatedGas.GasInfo.GasUsed
+	simulatedGasUsed := simRes.GasInfo.GasUsed
 	adjustedGas := uint64(float64(simulatedGasUsed) * config.GasAdjustment)
 	gasToUse := adjustedGas + config.GasPadding
 

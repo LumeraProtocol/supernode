@@ -49,7 +49,6 @@ type Config struct {
 	P2PConfig          `yaml:"p2p"`
 	LumeraClientConfig `yaml:"lumera"`
 	RaptorQConfig      `yaml:"raptorq"`
-	LogConfig          `yaml:"log"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`
@@ -145,7 +144,6 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 		"keyringDir":      config.GetKeyringDir(),
 		"p2pDataDir":      config.GetP2PDataDir(),
 		"raptorqFilesDir": config.GetRaptorQFilesDir(),
-		"logLevel":        config.LogConfig.Level,
 	})
 
 	return &config, nil
