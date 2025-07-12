@@ -3,6 +3,7 @@ package system
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -268,6 +269,10 @@ func TestCascadeE2E(t *testing.T) {
 	_, err = io.ReadFull(file, data)
 	require.NoError(t, err, "Failed to read file contents")
 	t.Logf("Read %d bytes from test file", len(data))
+
+	// Calculate SHA256 hash of original file for later comparison
+	originalHash := sha256.Sum256(data)
+	t.Logf("Original file SHA256 hash: %x", originalHash)
 
 	rqCodec := codec.NewRaptorQCodec(raptorQFilesDir)
 
@@ -615,9 +620,7 @@ func TestCascadeE2E(t *testing.T) {
 	require.NotEmpty(t, toAddress, "Receiver address should not be empty")
 	require.Equal(t, price, amount, "Payment amount should match action price")
 
-	t.Log("Test completed successfully!")
-
-	time.Sleep(120 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	outputFileBaseDir := filepath.Join(".")
 	// Try to download the file using the action ID
@@ -626,7 +629,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")
 
-	time.Sleep(4 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// ---------------------------------------
 	// Step 11: Validate downloaded files exist
@@ -660,6 +663,53 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Validate that at least one file was downloaded
 	require.True(t, fileCount >= 1, "Expected at least 1 file in download directory %s, found %d files", expectedDownloadDir, fileCount)
+
+	// ---------------------------------------
+	// Step 12: Validate downloaded file content matches original
+	// ---------------------------------------
+	t.Log("Step 12: Validating downloaded file content matches original file")
+
+	// Find and verify the downloaded file that matches our original test file
+	var downloadedFilePath string
+	for _, fileName := range fileNames {
+		filePath := filepath.Join(expectedDownloadDir, fileName)
+		// Check if this is our test file by comparing base name
+		if filepath.Base(fileName) == filepath.Base(testFileFullpath) {
+			downloadedFilePath = filePath
+			break
+		}
+	}
+
+	if downloadedFilePath == "" {
+		// If exact name match not found, use the first file (common in single-file downloads)
+		if len(fileNames) > 0 {
+			downloadedFilePath = filepath.Join(expectedDownloadDir, fileNames[0])
+			t.Logf("Using first downloaded file for verification: %s", fileNames[0])
+		} else {
+			t.Fatalf("No files found in download directory for content verification")
+		}
+	}
+
+	// Read the downloaded file
+	downloadedFile, err := os.Open(downloadedFilePath)
+	require.NoError(t, err, "Failed to open downloaded file: %s", downloadedFilePath)
+	defer downloadedFile.Close()
+
+	// Read downloaded file content
+	downloadedData, err := io.ReadAll(downloadedFile)
+	require.NoError(t, err, "Failed to read downloaded file content")
+
+	// Calculate SHA256 hash of downloaded file
+	downloadedHash := sha256.Sum256(downloadedData)
+	t.Logf("Downloaded file SHA256 hash: %x", downloadedHash)
+
+	// Compare file sizes
+	require.Equal(t, len(data), len(downloadedData), "Downloaded file size should match original file size")
+
+	// Compare file hashes
+	require.Equal(t, originalHash, downloadedHash, "Downloaded file hash should match original file hash")
+
+	t.Logf("File verification successful: downloaded file content matches original file")
 
 	status, err := actionClient.GetSupernodeStatus(ctx, "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
 	t.Logf("Supernode status: %+v", status)

@@ -124,13 +124,6 @@ func (t *CascadeDownloadTask) attemptDownload(
 		t.LogEvent(ctx, evt, msg, data)
 	}
 
-	// Remove existing file if it exists to allow overwrite
-	if _, err := os.Stat(req.OutputPath); err == nil {
-		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
-			return fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)
-		}
-	}
-
 	resp, err := client.Download(ctx, req)
 	if err != nil {
 		return fmt.Errorf("download from %s: %w", sn.CosmosAddress, err)
@@ -163,6 +156,13 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
 	baseIteration int,
 ) (*downloadResult, []error) {
+	// Remove existing file if it exists to allow overwrite (do this once before concurrent attempts)
+	if _, err := os.Stat(req.OutputPath); err == nil {
+		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
+			return nil, []error{fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)}
+		}
+	}
+
 	// Create a cancellable context for this batch
 	batchCtx, cancelBatch := context.WithCancel(ctx)
 	defer cancelBatch()
@@ -216,7 +216,7 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 
 	// Collect results
 	var errors []error
-	for i := 0; i < len(batch); i++ {
+	for i := range len(batch) {
 		select {
 		case result := <-resultCh:
 			if result.success != nil {
