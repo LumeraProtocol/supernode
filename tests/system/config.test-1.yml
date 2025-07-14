@@ -16,14 +16,11 @@ p2p:
   listen_address: "0.0.0.0"
   port: 4445
   data_dir: "data/p2p"  # Relative to base_dir
-  bootstrap_nodes: ""
-  external_ip: ""
 
 # Lumera Chain Configuration
 lumera:
   grpc_addr: "localhost:9090"
   chain_id: "testing"
-  timeout: 300
 
 # RaptorQ Configuration
 raptorq:

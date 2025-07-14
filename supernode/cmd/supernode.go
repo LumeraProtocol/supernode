@@ -83,8 +83,8 @@ func (s *Supernode) Start(ctx context.Context) error {
 		ListenAddress:  s.config.P2PConfig.ListenAddress,
 		Port:           s.config.P2PConfig.Port,
 		DataDir:        s.config.GetP2PDataDir(),
-		BootstrapNodes: s.config.P2PConfig.BootstrapNodes,
-		ExternalIP:     s.config.P2PConfig.ExternalIP,
+		BootstrapNodes: "",
+		ExternalIP:     "",
 		ID:             address.String(),
 	}
 

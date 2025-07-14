@@ -52,11 +52,9 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			Dir:     keyringDir,
 		},
 		P2PConfig: P2PConfig{
-			ListenAddress:  "0.0.0.0",
-			Port:           4445,
-			DataDir:        "data/p2p",
-			BootstrapNodes: "",
-			ExternalIP:     "",
+			ListenAddress: "0.0.0.0",
+			Port:          4445,
+			DataDir:       "data/p2p",
 		},
 		LumeraClientConfig: LumeraClientConfig{
 			GRPCAddr: "localhost:9090",

@@ -165,8 +165,8 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 		ListenAddress:  config.P2PConfig.ListenAddress,
 		Port:           config.P2PConfig.Port,
 		DataDir:        config.GetP2PDataDir(),
-		BootstrapNodes: config.P2PConfig.BootstrapNodes,
-		ExternalIP:     config.P2PConfig.ExternalIP,
+		BootstrapNodes: "",
+		ExternalIP:     "",
 		ID:             address.String(),
 	}
 

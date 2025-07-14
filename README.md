@@ -57,8 +57,6 @@ p2p:
   listen_address: "0.0.0.0"
   port: 4445
   data_dir: "data/p2p"
-  bootstrap_nodes: ""
-  external_ip: ""
 
 # Lumera Chain Configuration
 lumera:
@@ -181,8 +179,6 @@ supernode start -d /path/to/basedir
 | `p2p.listen_address` | IP address for P2P networking | **Yes** | - | `"0.0.0.0"` | Use `"0.0.0.0"` to listen on all interfaces |
 | `p2p.port` | P2P communication port | **Yes** | - | `4445` | **Do not change this default value** |
 | `p2p.data_dir` | Directory for P2P data storage | No | `"data/p2p"` | `"data/p2p"` | Relative paths are appended to basedir, absolute paths used as-is |
-| `p2p.bootstrap_nodes` | Initial peer nodes for network discovery | No | `""` | `""` | Comma-separated list of peer addresses, leave empty for auto-discovery |
-| `p2p.external_ip` | Your public IP address | No | `""` | `""` | Leave empty for auto-detection, or specify your public IP |
 | `lumera.grpc_addr` | gRPC endpoint of Lumera validator node | **Yes** | - | `"localhost:9090"` | Must be accessible from supernode |
 | `lumera.chain_id` | Lumera blockchain chain identifier | **Yes** | - | `"lumera"` | Must match the actual chain ID |
 | `raptorq.files_dir` | Directory to store RaptorQ files | No | `"raptorq_files"` | `"raptorq_files"` | Relative paths are appended to basedir, absolute paths used as-is |
