@@ -28,15 +28,15 @@ func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *Actio
 // to balance throughput and memory usage
 func calculateOptimalChunkSize(fileSize int64) int {
 	const (
-		minChunkSize = 64 * 1024    // 64 KB minimum
-		maxChunkSize = 4 * 1024 * 1024  // 4 MB maximum for 1GB+ files
-		smallFileThreshold = 1024 * 1024  // 1 MB
+		minChunkSize        = 64 * 1024         // 64 KB minimum
+		maxChunkSize        = 4 * 1024 * 1024   // 4 MB maximum for 1GB+ files
+		smallFileThreshold  = 1024 * 1024       // 1 MB
 		mediumFileThreshold = 50 * 1024 * 1024  // 50 MB
-		largeFileThreshold = 500 * 1024 * 1024  // 500 MB
+		largeFileThreshold  = 500 * 1024 * 1024 // 500 MB
 	)
 
 	var chunkSize int
-	
+
 	switch {
 	case fileSize <= smallFileThreshold:
 		// For small files (up to 1MB), use 64KB chunks
@@ -51,7 +51,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 		// For very large files (500MB+), use 4MB chunks for optimal throughput
 		chunkSize = maxChunkSize
 	}
-	
+
 	// Ensure chunk size is within bounds
 	if chunkSize < minChunkSize {
 		chunkSize = minChunkSize
@@ -59,7 +59,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 	if chunkSize > maxChunkSize {
 		chunkSize = maxChunkSize
 	}
-	
+
 	return chunkSize
 }
 
@@ -219,6 +219,22 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	task := server.factory.NewCascadeRegistrationTask()
 
+	// Verify signature if provided
+	if req.GetSignature() != "" {
+		// Cast to concrete type to access helper method
+		if cascadeTask, ok := task.(*cascadeService.CascadeRegistrationTask); ok {
+			err := cascadeTask.VerifyDownloadSignature(ctx, req.GetActionId(), req.GetSignature())
+			if err != nil {
+				fields[logtrace.FieldError] = err.Error()
+				logtrace.Error(ctx, "signature verification failed", fields)
+				return fmt.Errorf("signature verification failed: %w", err)
+			}
+		} else {
+			logtrace.Error(ctx, "unable to cast task to CascadeRegistrationTask", fields)
+			return fmt.Errorf("unable to verify signature: task type assertion failed")
+		}
+	}
+
 	var restoredFile []byte
 	var tmpDir string
 
@@ -257,9 +273,9 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	// Calculate optimal chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(int64(len(restoredFile)))
-	
+
 	logtrace.Info(ctx, "calculated optimal chunk size for download", logtrace.Fields{
-		"file_size": len(restoredFile),
+		"file_size":  len(restoredFile),
 		"chunk_size": chunkSize,
 	})
 

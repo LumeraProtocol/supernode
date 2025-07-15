@@ -21,13 +21,15 @@ type CascadeDownloadTask struct {
 	BaseTask
 	actionId   string
 	outputPath string
+	signature  string
 }
 
-func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string) *CascadeDownloadTask {
+func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string, signature string) *CascadeDownloadTask {
 	return &CascadeDownloadTask{
 		BaseTask:   base,
 		actionId:   actionId,
 		outputPath: outputPath,
+		signature:  signature,
 	}
 }
 
@@ -64,6 +66,7 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		ActionID:   t.actionId,
 		TaskID:     t.TaskID,
 		OutputPath: t.outputPath,
+		Signature:  t.signature,
 	}
 
 	// Process supernodes in pairs
@@ -192,6 +195,7 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 				ActionID:   req.ActionID,
 				TaskID:     req.TaskID,
 				OutputPath: req.OutputPath,
+				Signature:  req.Signature,
 			}
 
 			err := t.attemptDownload(batchCtx, sn, factory, reqCopy)

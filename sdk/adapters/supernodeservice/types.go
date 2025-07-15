@@ -53,6 +53,7 @@ type CascadeSupernodeDownloadRequest struct {
 	ActionID    string
 	TaskID      string
 	OutputPath  string
+	Signature   string
 	EventLogger LoggerFunc
 }
 

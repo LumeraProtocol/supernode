@@ -313,3 +313,38 @@ func decodeIndexFile(data string) (IndexFile, error) {
 	}
 	return indexFile, nil
 }
+
+// VerifyDownloadSignature verifies the download signature for actionID.creatorAddress
+func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context, actionID, signature string) error {
+	fields := logtrace.Fields{
+		logtrace.FieldActionID: actionID,
+		logtrace.FieldMethod:   "VerifyDownloadSignature",
+	}
+
+	// Get action details to extract creator address
+	actionDetails, err := task.LumeraClient.GetAction(ctx, actionID)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to get action", err, fields)
+	}
+
+	creatorAddress := actionDetails.GetAction().Creator
+	fields["creator_address"] = creatorAddress
+
+	// Create the expected signature data: actionID.creatorAddress
+	signatureData := fmt.Sprintf("%s.%s", actionID, creatorAddress)
+	fields["signature_data"] = signatureData
+
+	// Decode the base64 signature
+	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to decode signature from base64", err, fields)
+	}
+
+	// Verify the signature using Lumera client
+	if err := task.LumeraClient.Verify(ctx, creatorAddress, []byte(signatureData), signatureBytes); err != nil {
+		return task.wrapErr(ctx, "failed to verify download signature", err, fields)
+	}
+
+	logtrace.Info(ctx, "download signature successfully verified", fields)
+	return nil
+}

@@ -26,7 +26,7 @@ type Manager interface {
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
 
-	CreateDownloadTask(ctx context.Context, actionID, outputPath string) (string, error)
+	CreateDownloadTask(ctx context.Context, actionID, outputPath, signature string) (string, error)
 }
 
 type ManagerImpl struct {
@@ -241,13 +241,12 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 	}
 }
 
-func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string) (string, error) {
+func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string, signature string) (string, error) {
 	// First validate the action before creating the task
 	action, err := m.validateDownloadAction(ctx, actionID)
 	if err != nil {
 		return "", err
 	}
-
 	// Decode metadata to get the filename
 	metadata, err := m.lumeraClient.DecodeCascadeMetadata(ctx, action)
 	if err != nil {
@@ -279,7 +278,7 @@ func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, o
 	}
 
 	// Use the final output path with the correct filename
-	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath)
+	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath, signature)
 
 	// Store task in cache
 	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)

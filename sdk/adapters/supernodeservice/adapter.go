@@ -232,7 +232,8 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 	// 1. Open gRPC stream (server-stream)
 	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
-		ActionId: in.ActionID,
+		ActionId:  in.ActionID,
+		Signature: in.Signature,
 	}, opts...)
 	if err != nil {
 		a.logger.Error(ctx, "failed to create download stream", "action_id", in.ActionID, "error", err)

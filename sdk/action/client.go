@@ -28,7 +28,7 @@ type Client interface {
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
 	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*supernodeservice.SupernodeStatusresponse, error)
 	// DownloadCascade downloads cascade to outputDir, filename determined by action ID
-	DownloadCascade(ctx context.Context, actionID, outputDir string) (string, error)
+	DownloadCascade(ctx context.Context, actionID, outputDir, signature string) (string, error)
 }
 
 // ClientImpl implements the Client interface
@@ -205,13 +205,13 @@ func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress st
 	return status, nil
 }
 
-func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir string) (string, error) {
+func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir, signature string) (string, error) {
 
 	if actionID == "" {
 		return "", fmt.Errorf("actionID is empty")
 	}
 
-	taskID, err := c.taskManager.CreateDownloadTask(ctx, actionID, outputDir)
+	taskID, err := c.taskManager.CreateDownloadTask(ctx, actionID, outputDir, signature)
 	if err != nil {
 		return "", fmt.Errorf("create download task: %w", err)
 	}
