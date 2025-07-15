@@ -1,7 +1,6 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,9 +17,6 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/cosmos/btcutil/base58"
-	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -286,89 +282,19 @@ func TestCascadeE2E(t *testing.T) {
 
 	metadataFile := encodeRes.Metadata
 
-	// Marshal metadata to JSON and convert to bytes
-	me, err := json.Marshal(metadataFile)
-	require.NoError(t, err, "Failed to marshal metadata to JSON")
-
-	// Step 1: Encode the metadata JSON as base64 string for layout signature
-	layoutBase64 := base64.StdEncoding.EncodeToString(me)
-	t.Logf("Base64 encoded layout file length: %d", len(layoutBase64))
-
-	// Step 2: Sign the layout with user key (layout signature)
-	layoutSignature, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(layoutBase64))
-	require.NoError(t, err, "Failed to sign layout")
-	layoutSignatureB64 := base64.StdEncoding.EncodeToString(layoutSignature)
-
-	// Step 3: Generate real layout files and IDs (production flow)
-	// Create redundant layout files with counters and signatures
+	// Cascade signature creation process
 	const ic = uint32(121)
 	const maxFiles = uint32(50)
 
-	// Create layout file with signature (base64Layout.signature)
-	layoutWithSig := fmt.Sprintf("%s.%s", layoutBase64, layoutSignatureB64)
+	// Create cascade signature format
+	signatureFormat, indexFileIDs, err := createCascadeLayoutSignature(metadataFile, keplrKeyring, userKeyName, ic, maxFiles)
+	require.NoError(t, err, "Failed to create cascade signature")
 
-	// Generate layout IDs
-	layoutIDs := make([]string, maxFiles)
-	for i := range maxFiles {
-		counter := ic + uint32(i)
-		// Create layout file content: base64Layout.signature.counter
-		layoutFileContent := fmt.Sprintf("%s.%d", layoutWithSig, counter)
-
-		// Compress and hash to get layout ID
-		compressedData, err := utils.ZstdCompress([]byte(layoutFileContent))
-		require.NoError(t, err, "Failed to compress layout file")
-
-		hash, err := utils.Blake3Hash(compressedData)
-		require.NoError(t, err, "Failed to hash layout file")
-
-		layoutIDs[i] = base58.Encode(hash)
-	}
-	t.Logf("Generated %d real layout IDs", len(layoutIDs))
-
-	// Create index file structure with l layout IDs
-	indexFile := map[string]any{
-		"layout_ids":       layoutIDs,
-		"layout_signature": layoutSignatureB64,
-	}
-
-	// Step 4: Marshal and encode index file
-	indexFileJSON, err := json.Marshal(indexFile)
-	require.NoError(t, err, "Failed to marshal index file")
-	indexFileBase64 := base64.StdEncoding.EncodeToString(indexFileJSON)
-	t.Logf("Base64 encoded index file length: %d", len(indexFileBase64))
-
-	// Step 5: Sign the index file with user key (creator signature)
-	creatorSignature, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(indexFileBase64))
-	require.NoError(t, err, "Failed to sign index file")
-	creatorSignatureB64 := base64.StdEncoding.EncodeToString(creatorSignature)
-
-	// Step 6: Format  Base64(index_file).creators_signature
-	// The chain uses this format to regenerate and validate index IDs
-	signatureFormat := fmt.Sprintf("%s.%s", indexFileBase64, creatorSignatureB64)
 	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
-
-	// Step 7: Generate index file IDs (what the supernode should send to chain)
-	// Supernode creates index IDs using: Base58(BLAKE3(zstd(rq_ids_signature.counter)))
-	// where rq_ids_signature is the signatureFormat we just created
-	indexFileIDs := make([]string, maxFiles)
-	for i := range maxFiles {
-		counter := ic + uint32(i)
-		// Create index file content: rq_ids_signature.counter
-		indexFileContent := fmt.Sprintf("%s.%d", signatureFormat, counter)
-
-		// Compress and hash to get index file ID
-		compressedData, err := utils.ZstdCompress([]byte(indexFileContent))
-		require.NoError(t, err, "Failed to compress index file")
-
-		hash, err := utils.Blake3Hash(compressedData)
-		require.NoError(t, err, "Failed to hash index file")
-
-		indexFileIDs[i] = base58.Encode(hash)
-	}
 	t.Logf("Generated %d index file IDs for chain verification", len(indexFileIDs))
 
 	// Data hash with blake3
-	hash, err := Blake3Hash(data)
+	hash, err := ComputeBlake3Hash(data)
 	b64EncodedHash := base64.StdEncoding.EncodeToString(hash)
 	require.NoError(t, err, "Failed to compute Blake3 hash")
 
@@ -722,13 +648,6 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Supernode status: %+v", status)
 	require.NoError(t, err, "Failed to get supernode status")
 
-}
-func Blake3Hash(msg []byte) ([]byte, error) {
-	hasher := blake3.New(32, nil)
-	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {
-		return nil, err
-	}
-	return hasher.Sum(nil), nil
 }
 
 // SetActionParams sets the initial parameters for the action module in genesis
