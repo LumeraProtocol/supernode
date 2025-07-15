@@ -46,22 +46,20 @@ func NewSupernode(ctx context.Context, config *config.Config, kr keyring.Keyring
 
 // Start starts all supernode services
 func (s *Supernode) Start(ctx context.Context) error {
-	// Initialize p2p service
-
 	// Verify that the key specified in config exists
-	keyInfo, err := s.keyring.Key(appConfig.SupernodeConfig.KeyName)
+	keyInfo, err := s.keyring.Key(s.config.SupernodeConfig.KeyName)
 	if err != nil {
 		logtrace.Error(ctx, "Key not found in keyring", logtrace.Fields{
-			"key_name": appConfig.SupernodeConfig.KeyName,
+			"key_name": s.config.SupernodeConfig.KeyName,
 			"error":    err.Error(),
 		})
 
 		// Provide helpful guidance
 		fmt.Printf("\nError: Key '%s' not found in keyring at %s\n",
-			appConfig.SupernodeConfig.KeyName, appConfig.GetKeyringDir())
+			s.config.SupernodeConfig.KeyName, s.config.GetKeyringDir())
 		fmt.Println("\nPlease create the key first with one of these commands:")
-		fmt.Printf("  supernode keys add %s\n", appConfig.SupernodeConfig.KeyName)
-		fmt.Printf("  supernode keys recover %s\n", appConfig.SupernodeConfig.KeyName)
+		fmt.Printf("  supernode keys add %s\n", s.config.SupernodeConfig.KeyName)
+		fmt.Printf("  supernode keys recover %s\n", s.config.SupernodeConfig.KeyName)
 		return fmt.Errorf("key not found")
 	}
 
@@ -75,31 +73,11 @@ func (s *Supernode) Start(ctx context.Context) error {
 	}
 
 	logtrace.Info(ctx, "Found valid key in keyring", logtrace.Fields{
-		"key_name": appConfig.SupernodeConfig.KeyName,
+		"key_name": s.config.SupernodeConfig.KeyName,
 		"address":  address.String(),
 	})
 
-	p2pConfig := &p2p.Config{
-		ListenAddress:  s.config.P2PConfig.ListenAddress,
-		Port:           s.config.P2PConfig.Port,
-		DataDir:        s.config.GetP2PDataDir(),
-		ID:             address.String(),
-	}
-
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{
-		"listen_address": p2pConfig.ListenAddress,
-		"port":           p2pConfig.Port,
-		"data_dir":       p2pConfig.DataDir,
-		"supernode_id":   address.String(),
-	})
-
-	p2pService, err := p2p.New(ctx, p2pConfig, s.lumeraClient, s.keyring, s.rqStore, nil, nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize p2p service: %w", err)
-	}
-	s.p2pService = p2pService
-
-	// Run the p2p service
+	// Use the P2P service that was passed in via constructor
 	logtrace.Info(ctx, "Starting P2P service", logtrace.Fields{})
 	if err := s.p2pService.Run(ctx); err != nil {
 		return fmt.Errorf("p2p service error: %w", err)

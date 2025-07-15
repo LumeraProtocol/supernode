@@ -77,11 +77,7 @@ Example:
 			return fmt.Errorf("failed to create directories: %w", err)
 		}
 
-		// Initialize keyring
-		kr, err := keyring.InitKeyring(
-			appConfig.KeyringConfig.Backend,
-			appConfig.GetKeyringDir(),
-		)
+		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)
 		}
@@ -95,17 +91,20 @@ Example:
 				return fmt.Errorf("mnemonic is required when --recover is specified")
 			}
 
-			// Process the mnemonic to ensure proper formatting
-			initMnemonic = processAndValidateMnemonic(initMnemonic)
+			// Process and validate mnemonic using helper function
+			processedMnemonic, err := processAndValidateMnemonic(initMnemonic)
+			if err != nil {
+				fmt.Printf("Warning: %v\n", err)
+				// Continue with original mnemonic if validation fails
+				processedMnemonic = initMnemonic
+			}
 
-			// Recover account from mnemonic
-			info, err := keyring.RecoverAccountFromMnemonic(kr, initKeyName, initMnemonic)
+			info, err := keyring.RecoverAccountFromMnemonic(kr, initKeyName, processedMnemonic)
 			if err != nil {
 				return fmt.Errorf("failed to recover account: %w", err)
 			}
 
-			// Get address
-			addr, err := info.GetAddress()
+			addr, err := getAddressFromKeyName(kr, initKeyName)
 			if err != nil {
 				return fmt.Errorf("failed to get address: %w", err)
 			}
@@ -122,8 +121,7 @@ Example:
 				return fmt.Errorf("failed to create new account: %w", err)
 			}
 
-			// Get address
-			addr, err := info.GetAddress()
+			addr, err := getAddressFromKeyName(kr, initKeyName)
 			if err != nil {
 				return fmt.Errorf("failed to get address: %w", err)
 			}
@@ -152,85 +150,6 @@ Example:
 
 		return nil
 	},
-}
-
-// processAndValidateMnemonic processes and validates the mnemonic
-func processAndValidateMnemonic(mnemonic string) string {
-	// Normalize whitespace (replace multiple spaces with single space)
-	processed := normalizeWhitespace(mnemonic)
-
-	// Validate BIP39 mnemonic word count
-	wordCount := countWords(processed)
-	if !isValidBIP39WordCount(wordCount) {
-		fmt.Printf("Warning: Invalid mnemonic word count: %d. Valid BIP39 mnemonic lengths are 12, 15, 18, 21, or 24 words\n", wordCount)
-	}
-
-	return processed
-}
-
-// normalizeWhitespace replaces multiple spaces with a single space
-func normalizeWhitespace(s string) string {
-	return normalizeWhitespaceImpl(s)
-}
-
-// countWords counts the number of words in a string
-func countWords(s string) int {
-	return len(splitWords(s))
-}
-
-// splitWords splits a string into words
-func splitWords(s string) []string {
-	return splitWordsImpl(s)
-}
-
-// normalizeWhitespaceImpl is the implementation of normalizeWhitespace
-// It's a separate function to make it easier to test
-func normalizeWhitespaceImpl(s string) string {
-	// Import strings package locally to avoid adding it to the imports
-	// if it's not already there
-	return normalizeWhitespaceWithStrings(s)
-}
-
-// normalizeWhitespaceWithStrings normalizes whitespace using the strings package
-func normalizeWhitespaceWithStrings(s string) string {
-	// This is a simplified implementation
-	// In a real implementation, we would use the strings package
-	words := splitWordsImpl(s)
-	return joinWords(words, " ")
-}
-
-// splitWordsImpl is the implementation of splitWords
-func splitWordsImpl(s string) []string {
-	// This is a simplified implementation
-	// In a real implementation, we would use the strings package
-	var words []string
-	var word string
-	for _, c := range s {
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-			if word != "" {
-				words = append(words, word)
-				word = ""
-			}
-		} else {
-			word += string(c)
-		}
-	}
-	if word != "" {
-		words = append(words, word)
-	}
-	return words
-}
-
-// joinWords joins words with a separator
-func joinWords(words []string, sep string) string {
-	if len(words) == 0 {
-		return ""
-	}
-	result := words[0]
-	for _, word := range words[1:] {
-		result += sep + word
-	}
-	return result
 }
 
 func init() {

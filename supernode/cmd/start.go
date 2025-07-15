@@ -26,6 +26,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// createP2PConfig creates a P2P config from the app config and address
+func createP2PConfig(config *config.Config, address string) *p2p.Config {
+	return &p2p.Config{
+		ListenAddress: config.P2PConfig.ListenAddress,
+		Port:          config.P2PConfig.Port,
+		DataDir:       config.GetP2PDataDir(),
+		ID:            address,
+	}
+}
+
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -40,21 +50,12 @@ The supernode will connect to the Lumera network and begin participating in the 
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")
 
 		// Log configuration info
-		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{
-			"config_file": cfgFile,
-			"keyring_dir": appConfig.GetKeyringDir(),
-			"key_name":    appConfig.SupernodeConfig.KeyName,
-		})
+		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
-		kr, err := keyring.InitKeyring(
-			appConfig.KeyringConfig.Backend,
-			appConfig.GetKeyringDir(),
-		)
+		kr, err := keyring.InitKeyring(appConfig.KeyringConfig.Backend, appConfig.GetKeyringDir())
 		if err != nil {
-			logtrace.Error(ctx, "Failed to initialize keyring", logtrace.Fields{
-				"error": err.Error(),
-			})
+			logtrace.Error(ctx, "Failed to initialize keyring", logtrace.Fields{"error": err.Error()})
 			return err
 		}
 
@@ -76,12 +77,10 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to initialize P2P service: %w", err)
 		}
 
-		// Initialize the supernode (next step)
-		_, err = NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
+		// Initialize the supernode
+		supernodeInstance, err := NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
 		if err != nil {
-			logtrace.Error(ctx, "Failed to initialize supernode", logtrace.Fields{
-				"error": err.Error(),
-			})
+			logtrace.Error(ctx, "Failed to initialize supernode", logtrace.Fields{"error": err.Error()})
 			return err
 		}
 
@@ -109,26 +108,23 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Configure server
 		serverConfig := &server.Config{
-
 			Identity:        appConfig.SupernodeConfig.Identity,
 			ListenAddresses: appConfig.SupernodeConfig.IpAddress,
 			Port:            int(appConfig.SupernodeConfig.Port),
 		}
 
 		// Create gRPC server
-		grpcServer, err := server.New(serverConfig,
-			"service",
-			kr,
-			lumeraClient,
-			cascadeActionServer,
-			supernodeServer,
-		)
+		grpcServer, err := server.New(serverConfig, "service", kr, lumeraClient, cascadeActionServer, supernodeServer)
 		if err != nil {
 			return fmt.Errorf("failed to create gRPC server: %w", err)
 		}
 
 		// Start the services
-		RunServices(ctx, grpcServer, cService, *p2pService)
+		go func() {
+			if err := RunServices(ctx, grpcServer, cService, *p2pService); err != nil {
+				logtrace.Error(ctx, "Service error", logtrace.Fields{"error": err.Error()})
+			}
+		}()
 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
@@ -136,9 +132,12 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Wait for termination signal
 		sig := <-sigCh
-		logtrace.Info(ctx, "Received signal, shutting down", logtrace.Fields{
-			"signal": sig.String(),
-		})
+		logtrace.Info(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
+
+		// Graceful shutdown
+		if err := supernodeInstance.Stop(ctx); err != nil {
+			logtrace.Error(ctx, "Error during shutdown", logtrace.Fields{"error": err.Error()})
+		}
 
 		return nil
 	},
@@ -160,22 +159,10 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 		return nil, fmt.Errorf("failed to get address from key: %w", err)
 	}
 
-	// Initialize P2P service
-	p2pConfig := &p2p.Config{
-		ListenAddress:  config.P2PConfig.ListenAddress,
-		Port:           config.P2PConfig.Port,
-		DataDir:        config.GetP2PDataDir(),
-		BootstrapNodes: "",
-		ExternalIP:     "",
-		ID:             address.String(),
-	}
+	// Create P2P config using helper function
+	p2pConfig := createP2PConfig(config, address.String())
 
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{
-		"listen_address": p2pConfig.ListenAddress,
-		"port":           p2pConfig.Port,
-		"data_dir":       p2pConfig.DataDir,
-		"supernode_id":   address.String(),
-	})
+	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"listen_address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
 	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
 	if err != nil {

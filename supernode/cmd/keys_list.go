@@ -6,7 +6,6 @@ import (
 	"sort"
 	"text/tabwriter"
 
-	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/spf13/cobra"
 )
 
@@ -20,11 +19,8 @@ This command displays a table with key names, types, and addresses.
 Example:
   supernode keys list`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize keyring using config values
-		kr, err := snkeyring.InitKeyring(
-			appConfig.KeyringConfig.Backend,
-			appConfig.GetKeyringDir(),
-		)
+		// Initialize keyring using helper function
+		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)
 		}

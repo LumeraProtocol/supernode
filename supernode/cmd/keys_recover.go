@@ -36,11 +36,8 @@ Example:
 			return fmt.Errorf("key name is required")
 		}
 
-		// Initialize keyring using config values
-		kr, err := keyring.InitKeyring(
-			appConfig.KeyringConfig.Backend,
-			appConfig.GetKeyringDir(),
-		)
+		// Initialize keyring using helper function
+		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)
 		}
@@ -59,32 +56,27 @@ Example:
 			if err != nil {
 				return fmt.Errorf("failed to read mnemonic: %w", err)
 			}
-			mnemonic = strings.TrimSpace(mnemonic)
 		}
 
-		// Process the mnemonic to ensure proper formatting
-		mnemonic = strings.TrimSpace(mnemonic)
-		// Normalize whitespace (replace multiple spaces with single space)
-		mnemonic = strings.Join(strings.Fields(mnemonic), " ")
+		// Process and validate mnemonic using helper function
+		processedMnemonic, err := processAndValidateMnemonic(mnemonic)
+		if err != nil {
+			return err
+		}
 
 		// Add debug output to see what's being processed
-		wordCount := len(strings.Fields(mnemonic))
+		wordCount := len(strings.Fields(processedMnemonic))
 		fmt.Printf("Processing mnemonic with %d words\n", wordCount)
 
-		// Validate BIP39 mnemonic word count
-		if !isValidBIP39WordCount(wordCount) {
-			return fmt.Errorf("invalid mnemonic word count: %d. Valid BIP39 mnemonic lengths are 12, 15, 18, 21, or 24 words", wordCount)
-		}
-
 		// Recover account from mnemonic
-		info, err := keyring.RecoverAccountFromMnemonic(kr, keyName, mnemonic)
+		info, err := keyring.RecoverAccountFromMnemonic(kr, keyName, processedMnemonic)
 		if err != nil {
 			// Check if the error is due to an invalid mnemonic
 			return fmt.Errorf("failed to recover account: %w", err)
 		}
 
-		// Get address
-		address, err := info.GetAddress()
+		// Get address using helper function
+		address, err := getAddressFromKeyName(kr, keyName)
 		if err != nil {
 			return fmt.Errorf("failed to get address: %w", err)
 		}
@@ -97,17 +89,6 @@ Example:
 
 		return nil
 	},
-}
-
-// isValidBIP39WordCount checks if the word count is valid for BIP39 mnemonics
-func isValidBIP39WordCount(wordCount int) bool {
-	validCounts := []int{12, 15, 18, 21, 24}
-	for _, count := range validCounts {
-		if wordCount == count {
-			return true
-		}
-	}
-	return false
 }
 
 func init() {

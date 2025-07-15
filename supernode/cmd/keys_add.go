@@ -32,11 +32,8 @@ Example:
 			return fmt.Errorf("key name is required")
 		}
 
-		// Initialize keyring using config values
-		kr, err := keyring.InitKeyring(
-			appConfig.KeyringConfig.Backend,
-			appConfig.GetKeyringDir(),
-		)
+		// Initialize keyring using helper function
+		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
 			return fmt.Errorf("failed to initialize keyring: %w", err)
 		}
@@ -48,8 +45,8 @@ Example:
 			return fmt.Errorf("failed to create new account: %w", err)
 		}
 
-		// Get address
-		address, err := info.GetAddress()
+		// Get address using helper function
+		address, err := getAddressFromKeyName(kr, keyName)
 		if err != nil {
 			return fmt.Errorf("failed to get address: %w", err)
 		}
