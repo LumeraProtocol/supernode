@@ -235,7 +235,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		}
 	}
 
-	var restoredFile []byte
+	var restoredFilePath string
 	var tmpDir string
 
 	err := task.Download(ctx, &cascadeService.DownloadRequest{
@@ -250,8 +250,8 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 			},
 		}
 
-		if len(resp.Artefacts) > 0 {
-			restoredFile = resp.Artefacts
+		if resp.FilePath != "" {
+			restoredFilePath = resp.FilePath
 			tmpDir = resp.DownloadedDir
 		}
 
@@ -265,15 +265,23 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		return err
 	}
 
-	if len(restoredFile) == 0 {
+	if restoredFilePath == "" {
 		logtrace.Error(ctx, "no artefact file retrieved", fields)
 		return fmt.Errorf("no artefact to stream")
 	}
 	logtrace.Info(ctx, "streaming artefact file in chunks", fields)
 
+	restoredFile, err := readFileContentsInChunks(restoredFilePath)
+	if err != nil {
+		logtrace.Error(ctx, "failed to read restored file", logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		})
+		return err
+	}
+	logtrace.Info(ctx, "file has been read in chunks", fields)
+
 	// Calculate optimal chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(int64(len(restoredFile)))
-
 	logtrace.Info(ctx, "calculated optimal chunk size for download", logtrace.Fields{
 		"file_size":  len(restoredFile),
 		"chunk_size": chunkSize,
@@ -313,4 +321,31 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	logtrace.Info(ctx, "completed streaming all chunks", fields)
 	return nil
+}
+
+func readFileContentsInChunks(filePath string) ([]byte, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	buf := make([]byte, 1024*1024)
+	var fileBytes []byte
+
+	for {
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			// Process chunk
+			fileBytes = append(fileBytes, buf[:n]...)
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("chunked read failed: %w", readErr)
+		}
+	}
+
+	return fileBytes, nil
 }
