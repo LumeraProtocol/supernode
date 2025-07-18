@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	pb "github.com/LumeraProtocol/supernode/gen/supernode"
+	"github.com/LumeraProtocol/supernode/pkg/capabilities"
 	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 )
 
@@ -13,12 +15,14 @@ import (
 type SupernodeServer struct {
 	pb.UnimplementedSupernodeServiceServer
 	statusService *supernode.SupernodeStatusService
+	capabilities  *capabilities.Capabilities
 }
 
 // NewSupernodeServer creates a new SupernodeServer
-func NewSupernodeServer(statusService *supernode.SupernodeStatusService) *SupernodeServer {
+func NewSupernodeServer(statusService *supernode.SupernodeStatusService, caps *capabilities.Capabilities) *SupernodeServer {
 	return &SupernodeServer{
 		statusService: statusService,
+		capabilities:  caps,
 	}
 }
 
@@ -57,6 +61,34 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 	}
 
 	return response, nil
+}
+
+// GetCapabilities implements SupernodeService.GetCapabilities
+func (s *SupernodeServer) GetCapabilities(ctx context.Context, req *pb.GetCapabilitiesRequest) (*pb.GetCapabilitiesResponse, error) {
+	if s.capabilities == nil {
+		return nil, grpc.Errorf(codes.Internal, "capabilities not initialized")
+	}
+
+	// Convert action versions to protobuf format
+	actionVersions := make(map[string]*pb.ActionVersions)
+	for action, versions := range s.capabilities.ActionVersions {
+		actionVersions[action] = &pb.ActionVersions{
+			Versions: versions,
+		}
+	}
+
+	// Create protobuf capabilities
+	pbCapabilities := &pb.Capabilities{
+		Version:          s.capabilities.Version,
+		SupportedActions: s.capabilities.SupportedActions,
+		ActionVersions:   actionVersions,
+		Metadata:         s.capabilities.Metadata,
+		Timestamp:        s.capabilities.Timestamp.Unix(),
+	}
+
+	return &pb.GetCapabilitiesResponse{
+		Capabilities: pbCapabilities,
+	}, nil
 }
 
 // Desc implements the service interface for gRPC service registration

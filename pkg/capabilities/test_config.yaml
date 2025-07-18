@@ -1,0 +1,13 @@
+version: "2.1.0"
+supported_actions:
+  - cascade
+  - sense
+action_versions:
+  cascade:
+    - "2.0.0"
+    - "2.1.0"
+  sense:
+    - "1.0.0"
+metadata:
+  build_info: "test"
+  features: "advanced"

@@ -5,6 +5,7 @@ option go_package = "github.com/LumeraProtocol/supernode/gen/supernode";
 // SupernodeService provides status information for all services
 service SupernodeService {
   rpc GetStatus(StatusRequest) returns (StatusResponse);
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
 }
 
 message StatusRequest {}
@@ -34,4 +35,22 @@ message StatusResponse {
   Memory memory = 2;
   repeated ServiceTasks services = 3;
   repeated string available_services = 4;
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  Capabilities capabilities = 1;
+}
+
+message Capabilities {
+  string version = 1;
+  repeated string supported_actions = 2;
+  map<string, ActionVersions> action_versions = 3;
+  map<string, string> metadata = 4;
+  int64 timestamp = 5;
+}
+
+message ActionVersions {
+  repeated string versions = 1;
 }

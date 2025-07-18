@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
+	"github.com/LumeraProtocol/supernode/pkg/capabilities"
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
@@ -101,10 +103,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create cascade action server
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
 
+		// Load capabilities
+		capConfigPath := filepath.Join(baseDir, "capabilities.yaml")
+		caps, err := capabilities.LoadCapabilitiesFromConfig(capConfigPath)
+		if err != nil {
+			logtrace.Warn(ctx, "Failed to load capabilities config, using defaults", logtrace.Fields{"error": err.Error(), "config_path": capConfigPath})
+			caps = capabilities.CreateDefaultCapabilities()
+		}
+		logtrace.Info(ctx, "Loaded capabilities", logtrace.Fields{"version": caps.Version, "actions": caps.SupportedActions})
+
 		// Create supernode status service
 		statusService := supernodeService.NewSupernodeStatusService()
 		statusService.RegisterTaskProvider(cService)
-		supernodeServer := server.NewSupernodeServer(statusService)
+		supernodeServer := server.NewSupernodeServer(statusService, caps)
 
 		// Configure server
 		serverConfig := &server.Config{
