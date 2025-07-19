@@ -19,7 +19,7 @@ var versionCmd = &cobra.Command{
 	Short: "Show version information",
 	Long:  `Display version information for the supernode.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(Version)
+		fmt.Printf("Version: %s\n", Version)
 	},
 }
 

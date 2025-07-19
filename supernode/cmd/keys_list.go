@@ -39,14 +39,13 @@ Example:
 		// Check if we found any keys
 		if len(keyInfos) == 0 {
 			fmt.Println("No keys found in keyring")
-			fmt.Printf("\nCreate a new key with:\n  supernode keys add <name>\n")
 			return nil
 		}
 
 		// Format output with tabwriter for aligned columns
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tTYPE\tADDRESS\tPUBLIC KEY")
-		fmt.Fprintln(w, "----\t----\t-------\t----------")
+		fmt.Fprintln(w, "NAME\tADDRESS")
+		fmt.Fprintln(w, "----\t-------")
 
 		// Print key information
 		for _, info := range keyInfos {
@@ -56,24 +55,13 @@ Example:
 				return fmt.Errorf("failed to get address for key %s: %w", info.Name, err)
 			}
 
-			// Get public key
-			pubKey, err := info.GetPubKey()
-			if err != nil {
-				return fmt.Errorf("failed to get public key for key %s: %w", info.Name, err)
-			}
-
-			// Highlight the default key (from config)
+			// Check if this key is selected in config
 			name := info.Name
-			if name == appConfig.SupernodeConfig.KeyName {
-				name = name + " (default)"
+			if name == appConfig.SupernodeConfig.KeyName && address.String() == appConfig.SupernodeConfig.Identity {
+				name = name + " (selected)"
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-				name,
-				info.GetType(),
-				address.String(),
-				pubKey.String()[:20]+"...", // Show truncated public key
-			)
+			fmt.Fprintf(w, "%s\t%s\n", name, address.String())
 		}
 		w.Flush()
 

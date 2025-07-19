@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/LumeraProtocol/supernode/p2p"
@@ -50,6 +51,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")
 
 		// Log configuration info
+		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
 		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring

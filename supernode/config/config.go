@@ -110,11 +110,6 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 		return nil, fmt.Errorf("error getting absolute path for config file: %w", err)
 	}
 
-	logtrace.Info(ctx, "Loading configuration", logtrace.Fields{
-		"path":    absPath,
-		"baseDir": baseDir,
-	})
-
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("config file %s does not exist", absPath)
 	}

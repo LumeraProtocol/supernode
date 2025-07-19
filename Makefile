@@ -10,12 +10,7 @@ LDFLAGS = -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=$(VERSION
           -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=$(GIT_COMMIT) \
           -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=$(BUILD_TIME)
 
-# Development build
 build:
-	go build -ldflags "$(LDFLAGS)" -o supernode ./supernode
-
-# Release build (matches GitHub workflow)
-build-release:
 	@mkdir -p release
 	CGO_ENABLED=1 \
 	GOOS=linux \
@@ -27,15 +22,12 @@ build-release:
 		./supernode
 	@chmod +x release/supernode-linux-amd64
 
-# Run unit tests (regular tests with code)
 test-unit:
 	go test -v ./...
 
-# Run integration tests
 test-integration:
 	go test -v -p 1 -count=1 -tags=integration ./...
 
-# Run system tests
 test-system:
 	cd tests/system && go test -tags=system_test -v .
 

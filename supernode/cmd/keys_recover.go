@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
@@ -50,11 +51,20 @@ Example:
 
 		// If mnemonic wasn't provided as a flag, prompt for it
 		if mnemonic == "" {
-			fmt.Print("Enter your mnemonic: ")
-			reader := bufio.NewReader(os.Stdin)
-			mnemonic, err = reader.ReadString('\n')
+			// Try interactive prompt first (better UX)
+			mnemonicPrompt := &survey.Password{
+				Message: "Enter your mnemonic phrase:",
+				Help:    "Space-separated words (typically 12 or 24 words)",
+			}
+			err = survey.AskOne(mnemonicPrompt, &mnemonic, survey.WithValidator(survey.Required))
 			if err != nil {
-				return fmt.Errorf("failed to read mnemonic: %w", err)
+				// Fall back to standard input for backwards compatibility
+				fmt.Print("Enter your mnemonic: ")
+				reader := bufio.NewReader(os.Stdin)
+				mnemonic, err = reader.ReadString('\n')
+				if err != nil {
+					return fmt.Errorf("failed to read mnemonic: %w", err)
+				}
 			}
 		}
 

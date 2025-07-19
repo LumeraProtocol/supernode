@@ -9,7 +9,7 @@ var keysCmd = &cobra.Command{
 	Use:   "keys",
 	Short: "Manage keys",
 	Long: `Manage keys for the Supernode.
-This command provides subcommands for adding, recovering, and listing keys.`,
+This command provides subcommands for recovering and listing keys.`,
 }
 
 func init() {

@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	cfgFile   string
 	baseDir   string
 	appConfig *config.Config
 )
@@ -26,29 +25,9 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// findConfigFile searches for config files in base directory only
-func findConfigFile(baseDirPath string) string {
-	// If config file is explicitly specified, use it
-	if cfgFile != "" {
-		return cfgFile
-	}
-
-	// Only search in base directory as default
-	if baseDirPath != "" {
-		searchPaths := []string{
-			filepath.Join(baseDirPath, DefaultConfigFile),
-			filepath.Join(baseDirPath, "config.yaml"),
-		}
-
-		// Return first existing config file
-		for _, path := range searchPaths {
-			if fileExists(path) {
-				return path
-			}
-		}
-	}
-
-	return ""
+// getConfigFile returns the config file path in base directory
+func getConfigFile(baseDirPath string) string {
+	return filepath.Join(baseDirPath, DefaultConfigFile)
 }
 
 func setupBaseDir() (string, error) {
@@ -64,26 +43,14 @@ func setupBaseDir() (string, error) {
 	return filepath.Join(homeDir, DefaultBaseDir), nil
 }
 
-// logConfig logs information about config and base directory
-func logConfig(configPath, baseDirPath string) {
-	// For config file
-	if absPath, err := filepath.Abs(configPath); err == nil {
-		fmt.Printf("Using config file: %s\n", absPath)
-	} else {
-		fmt.Printf("Using config file: %s\n", configPath)
-	}
-
-	fmt.Printf("Using base directory: %s\n", baseDirPath)
-}
-
 var rootCmd = &cobra.Command{
 	Use:   "supernode",
 	Short: "Lumera CLI tool for key management",
 	Long: `A command line tool for managing Lumera blockchain keys.
 This application allows you to create and recover keys using mnemonics.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip config loading for help command and init command
-		if cmd.Name() == "help" || cmd.Name() == "init" {
+		// Skip config loading for help command, init command, and version command
+		if cmd.Name() == "help" || cmd.Name() == "init" || cmd.Name() == "version" {
 			// For init command, we still need to set up the base directory
 			if cmd.Name() == "init" {
 				var err error
@@ -102,14 +69,11 @@ This application allows you to create and recover keys using mnemonics.`,
 			return err
 		}
 
-		// Find config file (only searches in base directory by default)
-		cfgFile = findConfigFile(baseDir)
-		if cfgFile == "" {
+		// Get config file path
+		cfgFile := getConfigFile(baseDir)
+		if !fileExists(cfgFile) {
 			return fmt.Errorf("no config file found in base directory (%s)", baseDir)
 		}
-
-		// Log configuration
-		logConfig(cfgFile, baseDir)
 
 		// Load configuration
 		appConfig, err = config.LoadConfig(cfgFile, baseDir)
@@ -131,8 +95,6 @@ func Execute() {
 
 func init() {
 	// Use default values in flag descriptions
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "",
-		fmt.Sprintf("Config file path (default is ~/%s/%s)", DefaultBaseDir, DefaultConfigFile))
 	rootCmd.PersistentFlags().StringVarP(&baseDir, "basedir", "d", "",
 		fmt.Sprintf("Base directory for all data (default is ~/%s)", DefaultBaseDir))
 }
