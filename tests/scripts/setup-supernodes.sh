@@ -60,9 +60,9 @@ else
 fi
 
     # Check if config already exists
-    if [ ! -f "$DATA_DIR/config.yaml" ]; then
+    if [ ! -f "$DATA_DIR/config.yml" ]; then
         info "Copying config file from $CONFIG_FILE to $DATA_DIR..."
-        cp "$CONFIG_FILE" "$DATA_DIR/config.yaml" || error "Failed to copy config file"
+        cp "$CONFIG_FILE" "$DATA_DIR/config.yml" || error "Failed to copy config file"
         success "Config file copied successfully"
     else
         info "Config file already exists in $DATA_DIR, skipping copy..."
@@ -93,8 +93,8 @@ fi
         MNEMONIC="${MNEMONICS[$i]}"
         
         info "Recovering key: $KEY_NAME"
-        # Pipe the mnemonic directly to the command and specify the base directory
-        echo "$MNEMONIC" | "$DATA_DIR/supernode" keys recover "$KEY_NAME" --config="$DATA_DIR/config.yaml" --basedir="$DATA_DIR" 2>/dev/null || {
+        # Use mnemonic flag and specify the base directory
+        "$DATA_DIR/supernode" keys recover "$KEY_NAME" --mnemonic="$MNEMONIC" --basedir="$DATA_DIR" 2>/dev/null || {
             warning "Key recovery for $KEY_NAME may have failed if the key already exists. This is not necessarily an error."
         }
     done
@@ -144,7 +144,7 @@ setup_secondary() {
         
         # Copy config file to the new directory
         info "Copying config file to $NEW_DIR..."
-        cp "$CONFIG_FILE" "$NEW_DIR/config.yaml" || error "Failed to copy config file to $NEW_DIR"
+        cp "$CONFIG_FILE" "$NEW_DIR/config.yml" || error "Failed to copy config file to $NEW_DIR"
         
         # Copy keyring from original directory to new directory
         if [ -d "$ORIGINAL_DIR/keys" ]; then

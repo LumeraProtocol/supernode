@@ -27,7 +27,6 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 	// Start each supernode
 	for i, dataDir := range dataDirs {
 		binPath := filepath.Join(dataDir, "supernode")
-		configPath := filepath.Join(dataDir, "config.yaml")
 
 		// Ensure the binary exists
 		if _, err := os.Stat(binPath); os.IsNotExist(err) {
@@ -37,7 +36,6 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 		// Build and start the command
 		cmd := exec.Command(binPath,
 			"start",
-			"--config", configPath,
 			"--basedir", dataDir,
 		)
 
