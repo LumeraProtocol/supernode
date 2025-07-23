@@ -15,8 +15,32 @@ import (
 )
 
 var (
-	forceInit bool
+	forceInit          bool
+	skipInteractive    bool
+	keyringBackendFlag string
 )
+
+// Default configuration values
+const (
+	DefaultKeyringBackend = "test"
+	DefaultKeyName        = ""
+	DefaultSupernodeAddr  = "0.0.0.0"
+	DefaultSupernodePort  = 4444
+	DefaultLumeraGRPC     = "localhost:9090"
+	DefaultChainID        = "lumera"
+)
+
+// InitInputs holds all user inputs for initialization
+type InitInputs struct {
+	KeyringBackend string
+	KeyName        string
+	ShouldRecover  bool
+	Mnemonic       string
+	SupernodeAddr  string
+	SupernodePort  int
+	LumeraGRPC     string
+	ChainID        string
+}
 
 // initCmd represents the init command
 var initCmd = &cobra.Command{
@@ -32,7 +56,8 @@ This command will guide you through an interactive setup process to:
 
 Example:
   supernode init
-  supernode init --force  # Override existing installation`,
+  supernode init --force  # Override existing installation
+  supernode init -y       # Use default values, skip interactive prompts`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Setup base directory
@@ -40,25 +65,28 @@ Example:
 			return err
 		}
 
-		// Get user inputs through interactive prompts
-		keyringBackend, keyName, shouldRecover, mnemonic, supernodeAddr, supernodePort, lumeraGrpcAddr, chainID, err := gatherUserInputs()
+		// Get user inputs through interactive prompts or use defaults
+		inputs, err := gatherUserInputs()
 		if err != nil {
 			return err
 		}
 
 		// Create and setup configuration
-		if err := createAndSetupConfig(keyName, chainID, keyringBackend); err != nil {
+		if err := createAndSetupConfig(inputs.KeyName, inputs.ChainID, inputs.KeyringBackend); err != nil {
 			return err
 		}
 
-		// Setup keyring and handle key creation/recovery
-		address, err := setupKeyring(keyName, shouldRecover, mnemonic)
-		if err != nil {
-			return err
+		// Setup keyring and handle key creation/recovery (skip if using -y flag)
+		var address string
+		if !skipInteractive {
+			address, err = setupKeyring(inputs.KeyName, inputs.ShouldRecover, inputs.Mnemonic)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Update config with gathered settings and save
-		if err := updateAndSaveConfig(address, supernodeAddr, supernodePort, lumeraGrpcAddr, chainID); err != nil {
+		if err := updateAndSaveConfig(address, inputs.SupernodeAddr, inputs.SupernodePort, inputs.LumeraGRPC, inputs.ChainID); err != nil {
 			return err
 		}
 
@@ -107,25 +135,47 @@ func setupBaseDirectory() error {
 	return nil
 }
 
-// gatherUserInputs collects all user inputs through interactive prompts
-func gatherUserInputs() (keyringBackend, keyName string, shouldRecover bool, mnemonic string, supernodeAddr string, supernodePort int, lumeraGrpcAddr string, chainID string, err error) {
+// gatherUserInputs collects all user inputs through interactive prompts or uses defaults
+func gatherUserInputs() (InitInputs, error) {
+	if skipInteractive {
+		// Use default values when -y flag is set
+		fmt.Println("Using default configuration values...")
+		backend := DefaultKeyringBackend
+		if keyringBackendFlag != "" {
+			backend = keyringBackendFlag
+		}
+		return InitInputs{
+			KeyringBackend: backend,
+			KeyName:        "",
+			ShouldRecover:  false,
+			Mnemonic:       "",
+			SupernodeAddr:  DefaultSupernodeAddr,
+			SupernodePort:  DefaultSupernodePort,
+			LumeraGRPC:     DefaultLumeraGRPC,
+			ChainID:        DefaultChainID,
+		}, nil
+	}
+
+	var inputs InitInputs
+	var err error
+
 	// Interactive setup
-	keyringBackend, err = promptKeyringBackend()
+	inputs.KeyringBackend, err = promptKeyringBackend()
 	if err != nil {
-		return "", "", false, "", "", 0, "", "", fmt.Errorf("failed to select keyring backend: %w", err)
+		return InitInputs{}, fmt.Errorf("failed to select keyring backend: %w", err)
 	}
 
-	keyName, shouldRecover, mnemonic, err = promptKeyManagement()
+	inputs.KeyName, inputs.ShouldRecover, inputs.Mnemonic, err = promptKeyManagement()
 	if err != nil {
-		return "", "", false, "", "", 0, "", "", fmt.Errorf("failed to configure key management: %w", err)
+		return InitInputs{}, fmt.Errorf("failed to configure key management: %w", err)
 	}
 
-	supernodeAddr, supernodePort, lumeraGrpcAddr, chainID, err = promptNetworkConfig()
+	inputs.SupernodeAddr, inputs.SupernodePort, inputs.LumeraGRPC, inputs.ChainID, err = promptNetworkConfig()
 	if err != nil {
-		return "", "", false, "", "", 0, "", "", fmt.Errorf("failed to configure network settings: %w", err)
+		return InitInputs{}, fmt.Errorf("failed to configure network settings: %w", err)
 	}
 
-	return keyringBackend, keyName, shouldRecover, mnemonic, supernodeAddr, supernodePort, lumeraGrpcAddr, chainID, nil
+	return inputs, nil
 }
 
 // createAndSetupConfig creates default configuration and necessary directories
@@ -256,7 +306,6 @@ func promptKeyringBackend() (string, error) {
 }
 
 func promptKeyManagement() (keyName string, shouldRecover bool, mnemonic string, err error) {
-	// Only recovery option available
 	shouldRecover = true
 
 	// Key name input with validation
@@ -286,7 +335,7 @@ func promptNetworkConfig() (supernodeAddr string, supernodePort int, lumeraGrpcA
 	// Supernode IP address
 	supernodePrompt := &survey.Input{
 		Message: "Enter supernode IP address:",
-		Default: "0.0.0.0",
+		Default: DefaultSupernodeAddr,
 	}
 	err = survey.AskOne(supernodePrompt, &supernodeAddr)
 	if err != nil {
@@ -297,7 +346,7 @@ func promptNetworkConfig() (supernodeAddr string, supernodePort int, lumeraGrpcA
 	var portStr string
 	supernodePortPrompt := &survey.Input{
 		Message: "Enter supernode port:",
-		Default: "4444",
+		Default: fmt.Sprintf("%d", DefaultSupernodePort),
 	}
 	err = survey.AskOne(supernodePortPrompt, &portStr)
 	if err != nil {
@@ -309,11 +358,10 @@ func promptNetworkConfig() (supernodeAddr string, supernodePort int, lumeraGrpcA
 		return "", 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
 	}
 
-
 	// Lumera GRPC address (full address with port)
 	lumeraPrompt := &survey.Input{
 		Message: "Enter Lumera GRPC address:",
-		Default: "localhost:9090",
+		Default: DefaultLumeraGRPC,
 	}
 	err = survey.AskOne(lumeraPrompt, &lumeraGrpcAddr)
 	if err != nil {
@@ -323,7 +371,7 @@ func promptNetworkConfig() (supernodeAddr string, supernodePort int, lumeraGrpcA
 	// Chain ID
 	chainPrompt := &survey.Input{
 		Message: "Enter chain ID:",
-		Default: "lumera",
+		Default: DefaultChainID,
 	}
 	err = survey.AskOne(chainPrompt, &chainID, survey.WithValidator(survey.Required))
 	if err != nil {
@@ -338,4 +386,6 @@ func init() {
 
 	// Add flags
 	initCmd.Flags().BoolVar(&forceInit, "force", false, "Force initialization, overwriting existing directory")
+	initCmd.Flags().BoolVarP(&skipInteractive, "yes", "y", false, "Skip interactive prompts and use default values")
+	initCmd.Flags().StringVar(&keyringBackendFlag, "keyring-backend", "", "Keyring backend to use with -y flag (test, file, os)")
 }
