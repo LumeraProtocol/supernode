@@ -149,3 +149,9 @@ func Warn(ctx context.Context, message string, fields Fields) {
 func Debug(ctx context.Context, message string, fields Fields) {
 	logWithLevel(zapcore.DebugLevel, ctx, message, fields)
 }
+
+// Fatal logs an error message and exits cleanly without stack traces
+func Fatal(ctx context.Context, message string, fields Fields) {
+	logWithLevel(zapcore.ErrorLevel, ctx, message, fields)
+	os.Exit(1)
+}

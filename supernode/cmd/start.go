@@ -57,33 +57,31 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Initialize keyring
 		kr, err := keyring.InitKeyring(appConfig.KeyringConfig.Backend, appConfig.GetKeyringDir())
 		if err != nil {
-			logtrace.Error(ctx, "Failed to initialize keyring", logtrace.Fields{"error": err.Error()})
-			return err
+			logtrace.Fatal(ctx, "Failed to initialize keyring", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Initialize Lumera client
 		lumeraClient, err := initLumeraClient(ctx, appConfig, kr)
 		if err != nil {
-			return fmt.Errorf("failed to initialize Lumera client: %w", err)
+			logtrace.Fatal(ctx, "Failed to initialize Lumera client", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
 		if err != nil {
-			return fmt.Errorf("failed to initialize RaptorQ store: %w", err)
+			logtrace.Fatal(ctx, "Failed to initialize RaptorQ store", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Initialize P2P service
 		p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil)
 		if err != nil {
-			return fmt.Errorf("failed to initialize P2P service: %w", err)
+			logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Initialize the supernode
 		supernodeInstance, err := NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
 		if err != nil {
-			logtrace.Error(ctx, "Failed to initialize supernode", logtrace.Fields{"error": err.Error()})
-			return err
+			logtrace.Fatal(ctx, "Failed to initialize supernode", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Configure cascade service
@@ -118,7 +116,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create gRPC server
 		grpcServer, err := server.New(serverConfig, "service", kr, lumeraClient, cascadeActionServer, supernodeServer)
 		if err != nil {
-			return fmt.Errorf("failed to create gRPC server: %w", err)
+			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Start the services

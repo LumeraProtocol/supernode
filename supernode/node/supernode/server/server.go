@@ -55,8 +55,7 @@ func (server *Server) Run(ctx context.Context) error {
 
 	addresses := strings.Split(server.config.ListenAddresses, ",")
 	if err := server.setupGRPCServer(); err != nil {
-		logtrace.Error(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
-		return fmt.Errorf("failed to setup gRPC server: %w", err)
+		logtrace.Fatal(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
 	}
 
 	// Custom server options
