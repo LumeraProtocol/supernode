@@ -109,6 +109,68 @@ enum SupernodeEventType {
 }
 ```
 
+## HTTP Gateway
+
+The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port (default: 8002) and provides:
+
+### Endpoints
+
+#### GET /status
+Returns the current supernode status including CPU, memory usage and active services.
+
+```bash
+curl http://localhost:8002/status
+```
+
+Response:
+```json
+{
+  "cpu": {
+    "usage": "15.2%",
+    "remaining": "84.8%"
+  },
+  "memory": {
+    "total": "16777216000",
+    "used": "8388608000",
+    "available": "8388608000",
+    "usedPerc": 50.0
+  },
+  "services": [
+    {
+      "serviceName": "cascade",
+      "taskIds": ["task1", "task2"],
+      "taskCount": 2
+    }
+  ],
+  "availableServices": ["cascade", "sense"]
+}
+```
+
+#### GET /services
+Returns the list of available services on the supernode.
+
+```bash
+curl http://localhost:8002/services
+```
+
+Response:
+```json
+{
+  "services": ["cascade", "sense"]
+}
+```
+
+The gateway automatically translates between HTTP/JSON and gRPC/protobuf formats, making it easy to integrate with web applications and monitoring tools.
+
+### API Documentation
+
+The gateway provides interactive API documentation via Swagger UI:
+
+- **Swagger UI**: http://localhost:8002/swagger-ui/
+- **OpenAPI Spec**: http://localhost:8002/swagger.json
+
+The Swagger UI provides an interactive interface to explore and test all available API endpoints.
+
 ## CLI Commands
 
 ### Core Commands
@@ -117,13 +179,49 @@ enum SupernodeEventType {
 Initialize a new supernode with interactive setup.
 
 ```bash
-supernode init                    # Interactive setup
-supernode init --force           # Override existing installation  
-supernode init -y                # Use defaults, skip prompts
-supernode init --keyring-backend os --key-name mykey  # Specify keyring and key
-supernode init --recover --mnemonic "word1 word2..."  # Recover from mnemonic
-supernode init --supernode-addr 0.0.0.0 --supernode-port 4444  # Set network
-supernode init --lumera-grpc localhost:9090 --chain-id lumera-mainnet-1  # Set chain
+# Interactive setup
+supernode init
+
+# Non-interactive setup with all flags (plain passphrase - use only for testing)
+supernode init -y \
+  --keyring-backend file \
+  --keyring-passphrase "your-secure-passphrase" \
+  --key-name mykey \
+  --recover \
+  --mnemonic "word1 word2 word3 ... word24" \
+  --supernode-addr 0.0.0.0 \
+  --supernode-port 4444 \
+  --gateway-port 8002 \
+  --lumera-grpc https://grpc.testnet.lumera.io \
+  --chain-id lumera-testnet-1
+
+# Non-interactive setup with passphrase from environment variable
+export KEYRING_PASS="your-secure-passphrase"
+supernode init -y \
+  --keyring-backend file \
+  --keyring-passphrase-env KEYRING_PASS \
+  --key-name mykey \
+  --recover \
+  --mnemonic "word1 word2 word3 ... word24" \
+  --supernode-addr 0.0.0.0 \
+  --supernode-port 4444 \
+  --gateway-port 8002 \
+  --lumera-grpc https://grpc.testnet.lumera.io \
+  --chain-id lumera-testnet-1
+
+# Non-interactive setup with passphrase from file
+echo "your-secure-passphrase" > /path/to/passphrase.txt
+supernode init -y \
+  --keyring-backend file \
+  --keyring-passphrase-file /path/to/passphrase.txt \
+  --key-name mykey \
+  --recover \
+  --mnemonic "word1 word2 word3 ... word24" \
+  --supernode-addr 0.0.0.0 \
+  --supernode-port 4444 \
+  --gateway-port 8002 \
+  --lumera-grpc https://grpc.testnet.lumera.io \
+  --chain-id lumera-testnet-1
 ```
 
 **Available flags:**
@@ -135,8 +233,12 @@ supernode init --lumera-grpc localhost:9090 --chain-id lumera-mainnet-1  # Set c
 - `--mnemonic` - Mnemonic phrase for recovery (use with --recover)
 - `--supernode-addr` - IP address for supernode service
 - `--supernode-port` - Port for supernode service
+- `--gateway-port` - Port for the HTTP gateway to listen on
 - `--lumera-grpc` - Lumera gRPC address (host:port)
 - `--chain-id` - Lumera blockchain chain ID
+- `--keyring-passphrase` - Keyring passphrase for non-interactive mode (plain text)
+- `--keyring-passphrase-env` - Environment variable containing keyring passphrase
+- `--keyring-passphrase-file` - File containing keyring passphrase
 
 #### `supernode start`
 Start the supernode service.
@@ -207,13 +309,17 @@ supernode:
   identity: "lumera15t2e8gjgmuqtj..."  # Lumera address for this supernode  
   ip_address: "0.0.0.0"               # IP address to bind the service
   port: 4444                          # Port for the supernode service
+  gateway_port: 8002                   # Port for the HTTP gateway service
 ```
 
 ### Keyring Configuration
 ```yaml
 keyring:
-  backend: "os"      # Key storage backend (os, file, test)
-  dir: "keys"        # Directory to store keyring files (relative to basedir)
+  backend: "os"              # Key storage backend (os, file, test)
+  dir: "keys"                # Directory to store keyring files (relative to basedir)
+  passphrase_plain: ""       # Plain text passphrase (use only for testing)
+  passphrase_env: ""         # Environment variable containing passphrase
+  passphrase_file: ""        # Path to file containing passphrase
 ```
 
 ### P2P Configuration
