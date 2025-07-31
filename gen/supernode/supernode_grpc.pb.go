@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SupernodeService_GetStatus_FullMethodName = "/supernode.SupernodeService/GetStatus"
+	SupernodeService_GetStatus_FullMethodName    = "/supernode.SupernodeService/GetStatus"
+	SupernodeService_ListServices_FullMethodName = "/supernode.SupernodeService/ListServices"
 )
 
 // SupernodeServiceClient is the client API for SupernodeService service.
@@ -29,6 +30,7 @@ const (
 // SupernodeService provides status information for all services
 type SupernodeServiceClient interface {
 	GetStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	ListServices(ctx context.Context, in *ListServicesRequest, opts ...grpc.CallOption) (*ListServicesResponse, error)
 }
 
 type supernodeServiceClient struct {
@@ -49,6 +51,16 @@ func (c *supernodeServiceClient) GetStatus(ctx context.Context, in *StatusReques
 	return out, nil
 }
 
+func (c *supernodeServiceClient) ListServices(ctx context.Context, in *ListServicesRequest, opts ...grpc.CallOption) (*ListServicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListServicesResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_ListServices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SupernodeServiceServer is the server API for SupernodeService service.
 // All implementations must embed UnimplementedSupernodeServiceServer
 // for forward compatibility.
@@ -56,6 +68,7 @@ func (c *supernodeServiceClient) GetStatus(ctx context.Context, in *StatusReques
 // SupernodeService provides status information for all services
 type SupernodeServiceServer interface {
 	GetStatus(context.Context, *StatusRequest) (*StatusResponse, error)
+	ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error)
 	mustEmbedUnimplementedSupernodeServiceServer()
 }
 
@@ -68,6 +81,9 @@ type UnimplementedSupernodeServiceServer struct{}
 
 func (UnimplementedSupernodeServiceServer) GetStatus(context.Context, *StatusRequest) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedSupernodeServiceServer) ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListServices not implemented")
 }
 func (UnimplementedSupernodeServiceServer) mustEmbedUnimplementedSupernodeServiceServer() {}
 func (UnimplementedSupernodeServiceServer) testEmbeddedByValue()                          {}
@@ -108,6 +124,24 @@ func _SupernodeService_GetStatus_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SupernodeService_ListServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListServicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupernodeServiceServer).ListServices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupernodeService_ListServices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupernodeServiceServer).ListServices(ctx, req.(*ListServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SupernodeService_ServiceDesc is the grpc.ServiceDesc for SupernodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -118,6 +152,10 @@ var SupernodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _SupernodeService_GetStatus_Handler,
+		},
+		{
+			MethodName: "ListServices",
+			Handler:    _SupernodeService_ListServices_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

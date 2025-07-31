@@ -5,6 +5,7 @@ supernode:
   identity: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c"
   ip_address: "0.0.0.0"
   port: 4446
+  gateway_port: 8003
 
 # Keyring Configuration
 keyring:

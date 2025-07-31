@@ -11,10 +11,11 @@ import (
 )
 
 type SupernodeConfig struct {
-	KeyName   string `yaml:"key_name"`
-	Identity  string `yaml:"identity"`
-	IpAddress string `yaml:"ip_address"`
-	Port      uint16 `yaml:"port"`
+	KeyName     string `yaml:"key_name"`
+	Identity    string `yaml:"identity"`
+	IpAddress   string `yaml:"ip_address"`
+	Port        uint16 `yaml:"port"`
+	GatewayPort uint16 `yaml:"gateway_port"`
 }
 
 type KeyringConfig struct {

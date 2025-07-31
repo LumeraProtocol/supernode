@@ -18,6 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/supernode/config"
 	"github.com/LumeraProtocol/supernode/supernode/node/action/server/cascade"
+	"github.com/LumeraProtocol/supernode/supernode/node/supernode/gateway"
 	"github.com/LumeraProtocol/supernode/supernode/node/supernode/server"
 	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
@@ -106,6 +107,8 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service
 		statusService := supernodeService.NewSupernodeStatusService()
 		statusService.RegisterTaskProvider(cService)
+
+		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusService)
 
 		// Configure server
@@ -121,9 +124,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to create gRPC server: %w", err)
 		}
 
+		// Create HTTP gateway server that directly calls the supernode server
+		gatewayPort := appConfig.SupernodeConfig.GatewayPort
+		if gatewayPort == 0 {
+			gatewayPort = 8002 // Default fallback
+		}
+		gatewayServer, err := gateway.NewServer(int(gatewayPort), supernodeServer)
+		if err != nil {
+			return fmt.Errorf("failed to create gateway server: %w", err)
+		}
+
 		// Start the services
 		go func() {
-			if err := RunServices(ctx, grpcServer, cService, *p2pService); err != nil {
+			if err := RunServices(ctx, grpcServer, cService, *p2pService, gatewayServer); err != nil {
 				logtrace.Error(ctx, "Service error", logtrace.Fields{"error": err.Error()})
 			}
 		}()

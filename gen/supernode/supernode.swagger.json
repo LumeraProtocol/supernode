@@ -1,0 +1,200 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "supernode/supernode.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "SupernodeService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/api/v1/services": {
+      "get": {
+        "operationId": "SupernodeService_ListServices",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeListServicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "SupernodeService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "StatusResponseCPU": {
+      "type": "object",
+      "properties": {
+        "usage": {
+          "type": "string"
+        },
+        "remaining": {
+          "type": "string"
+        }
+      }
+    },
+    "StatusResponseMemory": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "used": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "available": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "usedPerc": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "StatusResponseServiceTasks": {
+      "type": "object",
+      "properties": {
+        "serviceName": {
+          "type": "string"
+        },
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "taskCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "ServiceTasks contains task information for a specific service"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "supernodeListServicesResponse": {
+      "type": "object",
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/supernodeServiceInfo"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "supernodeServiceInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "supernodeStatusResponse": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "$ref": "#/definitions/StatusResponseCPU"
+        },
+        "memory": {
+          "$ref": "#/definitions/StatusResponseMemory"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/StatusResponseServiceTasks"
+          }
+        },
+        "availableServices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "The StatusResponse represents system status."
+    }
+  }
+}
