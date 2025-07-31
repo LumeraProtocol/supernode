@@ -179,8 +179,26 @@ func setupBaseDirectory() error {
 	return nil
 }
 
+func passphraseFlagCount() int {
+	c := 0
+	if passphrasePlain != "" {
+		c++
+	}
+	if passphraseEnv != "" {
+		c++
+	}
+	if passphraseFile != "" {
+		c++
+	}
+	return c
+}
+
 // gatherUserInputs collects all user inputs through interactive prompts or uses defaults/flags
 func gatherUserInputs() (InitInputs, error) {
+	if count := passphraseFlagCount(); count > 1 {
+		return InitInputs{}, fmt.Errorf("specify only one of --keyring-passphrase, --keyring-passphrase-env, or --keyring-passphrase-file")
+	}
+
 	// Check if all required parameters are provided via flags
 	allFlagsProvided := keyNameFlag != "" &&
 		(supernodeAddrFlag != "" && supernodePortFlag != 0 && lumeraGrpcFlag != "" && chainIDFlag != "") &&
@@ -298,12 +316,8 @@ func gatherUserInputs() (InitInputs, error) {
 	backend := strings.ToLower(inputs.KeyringBackend)
 	switch backend {
 	case "file", "os":
-		// These back-ends always need a pass-phrase.
-		if passphrasePlain != "" {
-			// Caller supplied it on the flag → just copy it.
-			inputs.PassphrasePlain = passphrasePlain
-		} else {
-			// No flag value → prompt the operator.
+		switch passphraseFlagCount() {
+		case 0:
 			prompt := &survey.Password{
 				Message: "Enter keyring passphrase:",
 				Help:    "Required for 'file' or 'os' keyring back-ends – Ctrl-C to abort.",
@@ -311,12 +325,18 @@ func gatherUserInputs() (InitInputs, error) {
 			if err = survey.AskOne(prompt, &inputs.PassphrasePlain, survey.WithValidator(survey.Required)); err != nil {
 				return InitInputs{}, fmt.Errorf("failed to get keyring passphrase: %w", err)
 			}
+		case 1:
+			inputs.PassphrasePlain = passphrasePlain
+			inputs.PassphraseEnv = passphraseEnv
+			inputs.PassphraseFile = passphraseFile
+		default:
+			return InitInputs{}, fmt.Errorf("specify only one of --keyring-passphrase, --keyring-passphrase-env, or --keyring-passphrase-file")
 		}
 
 	default:
-		// Back-ends like "test", "memory", "kwallet" don’t use a pass-phrase,
-		// but we still copy whatever was supplied so downstream code has it.
 		inputs.PassphrasePlain = passphrasePlain
+		inputs.PassphraseEnv = passphraseEnv
+		inputs.PassphraseFile = passphraseFile
 	}
 
 	inputs.KeyName, inputs.ShouldRecover, inputs.Mnemonic, err = promptKeyManagement(keyNameFlag, shouldRecoverFlag, mnemonicFlag)
