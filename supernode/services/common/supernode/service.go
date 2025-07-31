@@ -57,25 +57,28 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	resp.Memory.UsedPerc = memUsedPerc
 
 	// Collect service information from all registered providers
-	resp.Services = make([]ServiceTasks, 0, len(s.taskProviders))
-	resp.AvailableServices = make([]string, 0, len(s.taskProviders))
+	resp.RunningTasks = make([]ServiceTasks, 0, len(s.taskProviders))
+	resp.RegisteredServices = make([]string, 0, len(s.taskProviders))
 
 	for _, provider := range s.taskProviders {
 		serviceName := provider.GetServiceName()
 		tasks := provider.GetRunningTasks()
 
+		// Add to registered services list
+		resp.RegisteredServices = append(resp.RegisteredServices, serviceName)
+
+		// Add all services to running tasks (even with 0 tasks)
 		serviceTask := ServiceTasks{
 			ServiceName: serviceName,
 			TaskIDs:     tasks,
 			TaskCount:   int32(len(tasks)),
 		}
-		resp.Services = append(resp.Services, serviceTask)
-		resp.AvailableServices = append(resp.AvailableServices, serviceName)
+		resp.RunningTasks = append(resp.RunningTasks, serviceTask)
 	}
 
 	// Log summary statistics
 	totalTasks := 0
-	for _, service := range resp.Services {
+	for _, service := range resp.RunningTasks {
 		totalTasks += int(service.TaskCount)
 	}
 
@@ -85,7 +88,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 		"mem_total":     memTotal,
 		"mem_used":      memUsed,
 		"mem_used%":     memUsedPerc,
-		"service_count": len(resp.Services),
+		"service_count": len(resp.RunningTasks),
 		"total_tasks":   totalTasks,
 	})
 

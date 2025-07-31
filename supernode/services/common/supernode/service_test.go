@@ -23,8 +23,8 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.True(t, resp.Memory.Total > 0)
 
 		// Should have empty services list
-		assert.Empty(t, resp.Services)
-		assert.Empty(t, resp.AvailableServices)
+		assert.Empty(t, resp.RunningTasks)
+		assert.Empty(t, resp.RegisteredServices)
 	})
 
 	t.Run("single service with tasks", func(t *testing.T) {
@@ -41,11 +41,11 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Should have one service
-		assert.Len(t, resp.Services, 1)
-		assert.Len(t, resp.AvailableServices, 1)
-		assert.Equal(t, []string{"test-service"}, resp.AvailableServices)
+		assert.Len(t, resp.RunningTasks, 1)
+		assert.Len(t, resp.RegisteredServices, 1)
+		assert.Equal(t, []string{"test-service"}, resp.RegisteredServices)
 
-		service := resp.Services[0]
+		service := resp.RunningTasks[0]
 		assert.Equal(t, "test-service", service.ServiceName)
 		assert.Equal(t, int32(3), service.TaskCount)
 		assert.Equal(t, []string{"task1", "task2", "task3"}, service.TaskIDs)
@@ -71,14 +71,14 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Should have two services
-		assert.Len(t, resp.Services, 2)
-		assert.Len(t, resp.AvailableServices, 2)
-		assert.Contains(t, resp.AvailableServices, "cascade")
-		assert.Contains(t, resp.AvailableServices, "sense")
+		assert.Len(t, resp.RunningTasks, 2)
+		assert.Len(t, resp.RegisteredServices, 2)
+		assert.Contains(t, resp.RegisteredServices, "cascade")
+		assert.Contains(t, resp.RegisteredServices, "sense")
 
 		// Check services are present
 		serviceMap := make(map[string]ServiceTasks)
-		for _, service := range resp.Services {
+		for _, service := range resp.RunningTasks {
 			serviceMap[service.ServiceName] = service
 		}
 
@@ -107,11 +107,11 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Should have one service
-		assert.Len(t, resp.Services, 1)
-		assert.Len(t, resp.AvailableServices, 1)
-		assert.Equal(t, []string{"empty-service"}, resp.AvailableServices)
+		assert.Len(t, resp.RunningTasks, 1)
+		assert.Len(t, resp.RegisteredServices, 1)
+		assert.Equal(t, []string{"empty-service"}, resp.RegisteredServices)
 
-		service := resp.Services[0]
+		service := resp.RunningTasks[0]
 		assert.Equal(t, "empty-service", service.ServiceName)
 		assert.Equal(t, int32(0), service.TaskCount)
 		assert.Empty(t, service.TaskIDs)

@@ -13,8 +13,8 @@ type StatusResponse struct {
 		Available uint64  // Available memory in bytes
 		UsedPerc  float64 // Memory usage percentage (0-100)
 	}
-	Services          []ServiceTasks // List of registered services and their tasks
-	AvailableServices []string       // Names of all available services
+	RunningTasks       []ServiceTasks // List of services with their running task counts
+	RegisteredServices []string       // Names of all registered/available services
 }
 
 // ServiceTasks contains task information for a specific service

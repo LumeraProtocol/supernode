@@ -34,8 +34,8 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	assert.True(t, resp.Memory.Total > 0)
 
 	// Should have no services initially
-	assert.Empty(t, resp.Services)
-	assert.Empty(t, resp.AvailableServices)
+	assert.Empty(t, resp.RunningTasks)
+	assert.Empty(t, resp.RegisteredServices)
 }
 
 func TestSupernodeServer_GetStatusWithService(t *testing.T) {
@@ -60,12 +60,12 @@ func TestSupernodeServer_GetStatusWithService(t *testing.T) {
 	assert.NotNil(t, resp)
 
 	// Should have one service
-	assert.Len(t, resp.Services, 1)
-	assert.Len(t, resp.AvailableServices, 1)
-	assert.Equal(t, []string{"test-service"}, resp.AvailableServices)
+	assert.Len(t, resp.RunningTasks, 1)
+	assert.Len(t, resp.RegisteredServices, 1)
+	assert.Equal(t, []string{"test-service"}, resp.RegisteredServices)
 
 	// Check service details
-	service := resp.Services[0]
+	service := resp.RunningTasks[0]
 	assert.Equal(t, "test-service", service.ServiceName)
 	assert.Equal(t, int32(2), service.TaskCount)
 	assert.Equal(t, []string{"task1", "task2"}, service.TaskIds)

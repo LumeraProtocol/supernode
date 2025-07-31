@@ -180,18 +180,20 @@
         "memory": {
           "$ref": "#/definitions/StatusResponseMemory"
         },
-        "services": {
+        "runningTasks": {
           "type": "array",
           "items": {
             "type": "object",
             "$ref": "#/definitions/StatusResponseServiceTasks"
-          }
+          },
+          "title": "Services with currently running tasks"
         },
-        "availableServices": {
+        "registeredServices": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "title": "All registered/available services"
         }
       },
       "description": "The StatusResponse represents system status."

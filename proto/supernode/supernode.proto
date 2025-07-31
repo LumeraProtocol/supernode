@@ -56,6 +56,6 @@ message StatusResponse {
 
   CPU cpu = 1;
   Memory memory = 2;
-  repeated ServiceTasks services = 3;
-  repeated string available_services = 4;
+  repeated ServiceTasks running_tasks = 3;  // Services with currently running tasks
+  repeated string registered_services = 4;   // All registered/available services
 }

@@ -70,18 +70,18 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 			Available: status.Memory.Available,
 			UsedPerc:  status.Memory.UsedPerc,
 		},
-		Services:          make([]*pb.StatusResponse_ServiceTasks, 0, len(status.Services)),
-		AvailableServices: status.AvailableServices,
+		RunningTasks:       make([]*pb.StatusResponse_ServiceTasks, 0, len(status.RunningTasks)),
+		RegisteredServices: status.RegisteredServices,
 	}
 
 	// Convert service tasks
-	for _, service := range status.Services {
+	for _, service := range status.RunningTasks {
 		serviceTask := &pb.StatusResponse_ServiceTasks{
 			ServiceName: service.ServiceName,
 			TaskIds:     service.TaskIDs,
 			TaskCount:   service.TaskCount,
 		}
-		response.Services = append(response.Services, serviceTask)
+		response.RunningTasks = append(response.RunningTasks, serviceTask)
 	}
 
 	return response, nil

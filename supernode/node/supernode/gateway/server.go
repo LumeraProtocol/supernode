@@ -33,8 +33,13 @@ func NewServer(port int, supernodeServer pb.SupernodeServiceServer) (*Server, er
 
 // Run starts the HTTP gateway server (implements service interface)
 func (s *Server) Run(ctx context.Context) error {
-	// Create gRPC-Gateway mux
-	mux := runtime.NewServeMux()
+	// Create gRPC-Gateway mux with custom JSON marshaler options
+	mux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			EmitDefaults: true,     // This ensures zero values are included
+			OrigName:     true,     // Use original proto field names
+		}),
+	)
 
 	// Register the service handler directly
 	err := pb.RegisterSupernodeServiceHandlerServer(ctx, mux, s.supernodeServer)

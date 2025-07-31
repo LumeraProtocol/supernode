@@ -73,12 +73,12 @@ func TestGetStatus(t *testing.T) {
 			assert.True(t, resp.Memory.Used <= resp.Memory.Total)
 			assert.True(t, resp.Memory.UsedPerc >= 0 && resp.Memory.UsedPerc <= 100)
 
-			// Available services check
-			assert.Contains(t, resp.AvailableServices, "cascade")
+			// Registered services check
+			assert.Contains(t, resp.RegisteredServices, "cascade")
 
-			// Task count check - look for cascade service in the services list
+			// Task count check - look for cascade service in the running tasks list
 			var cascadeService *supernode.ServiceTasks
-			for _, service := range resp.Services {
+			for _, service := range resp.RunningTasks {
 				if service.ServiceName == "cascade" {
 					cascadeService = &service
 					break
