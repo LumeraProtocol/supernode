@@ -54,14 +54,14 @@ type InitInputs struct {
 	PassphrasePlain string
 	PassphraseEnv   string
 	PassphraseFile  string
-	KeyName        string
-	ShouldRecover  bool
-	Mnemonic       string
-	SupernodeAddr  string
-	SupernodePort  int
-	GatewayPort    int
-	LumeraGRPC     string
-	ChainID        string
+	KeyName         string
+	ShouldRecover   bool
+	Mnemonic        string
+	SupernodeAddr   string
+	SupernodePort   int
+	GatewayPort     int
+	LumeraGRPC      string
+	ChainID         string
 }
 
 // initCmd represents the init command
@@ -114,7 +114,7 @@ Example:
 		}
 
 		// Create and setup configuration
-		if err := createAndSetupConfig(inputs.KeyName, inputs.ChainID, inputs.KeyringBackend, 
+		if err := createAndSetupConfig(inputs.KeyName, inputs.ChainID, inputs.KeyringBackend,
 			inputs.PassphrasePlain, inputs.PassphraseEnv, inputs.PassphraseFile); err != nil {
 			return err
 		}
@@ -280,9 +280,9 @@ func gatherUserInputs() (InitInputs, error) {
 			Mnemonic:        mnemonicFlag,
 			SupernodeAddr:   supernodeAddr,
 			SupernodePort:   supernodePort,
-			GatewayPort:    gatewayPort,
-			LumeraGRPC:     lumeraGRPC,
-			ChainID:        chainID,
+			GatewayPort:     gatewayPort,
+			LumeraGRPC:      lumeraGRPC,
+			ChainID:         chainID,
 		}, nil
 	}
 
@@ -295,17 +295,27 @@ func gatherUserInputs() (InitInputs, error) {
 		return InitInputs{}, fmt.Errorf("failed to select keyring backend: %w", err)
 	}
 
-	// Prompt for passphrase if keyring backend is "file" or "os"
-	if (inputs.KeyringBackend == "file" || inputs.KeyringBackend == "os") && passphrasePlain == "" {
-		passphrasePrompt := &survey.Password{
-			Message: "Enter keyring passphrase:",
-			Help:    "Passphrase to encrypt your keyring (required for 'file' and 'os' backends), Ctrl-C for exit",
+	backend := strings.ToLower(inputs.KeyringBackend)
+	switch backend {
+	case "file", "os":
+		// These back-ends always need a pass-phrase.
+		if passphrasePlain != "" {
+			// Caller supplied it on the flag → just copy it.
+			inputs.PassphrasePlain = passphrasePlain
+		} else {
+			// No flag value → prompt the operator.
+			prompt := &survey.Password{
+				Message: "Enter keyring passphrase:",
+				Help:    "Required for 'file' or 'os' keyring back-ends – Ctrl-C to abort.",
+			}
+			if err = survey.AskOne(prompt, &inputs.PassphrasePlain, survey.WithValidator(survey.Required)); err != nil {
+				return InitInputs{}, fmt.Errorf("failed to get keyring passphrase: %w", err)
+			}
 		}
-		err = survey.AskOne(passphrasePrompt, &inputs.PassphrasePlain, survey.WithValidator(survey.Required))
-		if err != nil {
-			return InitInputs{}, fmt.Errorf("failed to get keyring passphrase: %w", err)
-		}
-	} else {
+
+	default:
+		// Back-ends like "test", "memory", "kwallet" don’t use a pass-phrase,
+		// but we still copy whatever was supplied so downstream code has it.
 		inputs.PassphrasePlain = passphrasePlain
 	}
 
@@ -535,7 +545,7 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	} else {
 		port = fmt.Sprintf("%d", DefaultSupernodePort)
 	}
-	
+
 	var gPort string
 	if passedGatewayPort != 0 {
 		gPort = fmt.Sprintf("%d", passedGatewayPort)
@@ -585,7 +595,7 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	if err != nil || supernodePort < 1 || supernodePort > 65535 {
 		return "", 0, 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
 	}
-	
+
 	// Gateway port
 	var gatewayPortStr string
 	gatewayPortPrompt := &survey.Input{
@@ -597,7 +607,7 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	if err != nil {
 		return "", 0, 0, "", "", err
 	}
-	
+
 	gatewayPort, err = strconv.Atoi(gatewayPortStr)
 	if err != nil || gatewayPort < 1 || gatewayPort > 65535 {
 		return "", 0, 0, "", "", fmt.Errorf("invalid gateway port: %s", gatewayPortStr)
