@@ -12,7 +12,7 @@ import (
 
 // initKeyringFromConfig initializes keyring using app configuration
 func initKeyringFromConfig(config *config.Config) (cKeyring.Keyring, error) {
-	return keyring.InitKeyring(config.KeyringConfig.Backend, config.GetKeyringDir())
+	return keyring.InitKeyring(config.KeyringConfig)
 }
 
 // getAddressFromKeyName extracts address from keyring using key name

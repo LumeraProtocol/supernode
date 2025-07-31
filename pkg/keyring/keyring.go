@@ -1,188 +1,189 @@
+// Package keyring provides helpers around Cosmos-SDK key management.
 package keyring
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/go-bip39"
+
+	"github.com/LumeraProtocol/supernode/supernode/config"
 )
 
 const (
-	// Default BIP39 passphrase
 	DefaultBIP39Passphrase = ""
-
-	// Default HD path for Cosmos accounts
-	DefaultHDPath = "m/44'/118'/0'/0/0" // Cosmos HD path
-
-	// Lumera address prefixes
-	AccountAddressPrefix = "lumera"
-	Name                 = "lumera"
-
-	// Default keyring name
-	KeyringServiceName = "supernode-keyring"
-
-	defaultEntropySize = 256 // Default entropy size for mnemonic generation
+	DefaultHDPath          = "m/44'/118'/0'/0/0"
+	AccountAddressPrefix   = "lumera"
+	KeyringServiceName     = "supernode-keyring"
+	defaultEntropySize     = 256
 )
 
-// InitSDKConfig initializes the SDK configuration with Lumera-specific settings
 func InitSDKConfig() {
-	// Set prefixes
-	accountPubKeyPrefix := AccountAddressPrefix + "pub"
-	validatorAddressPrefix := AccountAddressPrefix + "valoper"
-	validatorPubKeyPrefix := AccountAddressPrefix + "valoperpub"
-	consNodeAddressPrefix := AccountAddressPrefix + "valcons"
-	consNodePubKeyPrefix := AccountAddressPrefix + "valconspub"
-
-	// Set and seal config
-	config := sdk.GetConfig()
-	config.SetBech32PrefixForAccount(AccountAddressPrefix, accountPubKeyPrefix)
-	config.SetBech32PrefixForValidator(validatorAddressPrefix, validatorPubKeyPrefix)
-	config.SetBech32PrefixForConsensusNode(consNodeAddressPrefix, consNodePubKeyPrefix)
-	config.Seal()
+	cfg := types.GetConfig()
+	cfg.SetBech32PrefixForAccount(AccountAddressPrefix, AccountAddressPrefix+"pub")
+	cfg.SetBech32PrefixForValidator(AccountAddressPrefix+"valoper", AccountAddressPrefix+"valoperpub")
+	cfg.SetBech32PrefixForConsensusNode(AccountAddressPrefix+"valcons", AccountAddressPrefix+"valconspub")
+	cfg.Seal()
 }
 
-// InitKeyring initializes the keyring
-func InitKeyring(backend, dir string) (keyring.Keyring, error) {
-	// Determine keyring backend type
-	var backendType string
-	switch backend {
-	case "file":
-		backendType = "file"
-	case "os":
-		backendType = "os"
-	case "test":
-		backendType = "test"
-	case "memory", "mem":
-		backendType = "memory"
-	default:
-		return nil, fmt.Errorf("unsupported keyring backend: %s", backend)
-	}
-
-	// Create interface registry and codec
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(interfaceRegistry)
-	cdc := codec.NewProtoCodec(interfaceRegistry)
-
-	// Create keyring with proper stdin handling
-	var stdin io.Reader = os.Stdin
-	if backendType == "test" {
-		stdin = nil // Only use nil for test backend
-	}
-
-	// Create keyring
-	kr, err := keyring.New(
-		KeyringServiceName,
-		backendType,
-		dir,
-		stdin,
-		cdc,
-	)
+func InitKeyring(cfg config.KeyringConfig) (sdkkeyring.Keyring, error) {
+	backend, err := normaliseBackend(cfg.Backend)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize keyring: %w", err)
+		return nil, err
+	}
+	dir, err := resolveDir(cfg.Dir)
+	if err != nil {
+		return nil, err
 	}
 
-	return kr, nil
+	reader, err := buildReaderAndPossiblySwapStdin(cfg, backend)
+	if err != nil {
+		return nil, err
+	}
+
+	reg := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(reg)
+	cdc := codec.NewProtoCodec(reg)
+
+	return sdkkeyring.New(KeyringServiceName, backend, dir, reader, cdc)
 }
 
-// GenerateMnemonic generates a new BIP39 mnemonic
+// buildReaderAndPossiblySwapStdin returns the reader handed to Cosmos-SDK.
+// For automation we replace os.Stdin with the read-end of an os.Pipe whose
+// FD is *not* a TTY, so input.GetPassword() falls into its non-interactive
+// code path.
+func buildReaderAndPossiblySwapStdin(cfg config.KeyringConfig, backend string) (io.Reader, error) {
+	if backend == "test" {
+		return nil, nil
+	}
+
+	pass := selectPassphrase(cfg)
+	if pass == "" {
+		// Interactive: leave the real terminal in place.
+		return os.Stdin, nil
+	}
+
+	// ---------- non-interactive ----------
+
+	// Create a pipe (both ends are *os.File, so assignment is legal).
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("create stdin pipe: %w", err)
+	}
+
+	// Replace os.Stdin with the pipe's read end (non-TTY).
+	os.Stdin = r
+
+	// Continuously write the passphrase + newline from a goroutine.
+	go func() {
+		line := []byte(pass + "\n")
+		for {
+			if _, err := w.Write(line); err != nil {
+				return // pipe closed on shutdown
+			}
+		}
+	}()
+
+	// The keyring prompt reads from the reader we pass to the SDK, so wrap
+	// the same *os.File r in a bufio.Reader and return it.
+	return bufio.NewReader(r), nil
+}
+
+func selectPassphrase(cfg config.KeyringConfig) string {
+	switch {
+	case cfg.PassPlain != "":
+		return cfg.PassPlain
+	case cfg.PassEnv != "":
+		return os.Getenv(cfg.PassEnv)
+	case cfg.PassFile != "":
+		if b, err := os.ReadFile(cfg.PassFile); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return ""
+}
+
+func normaliseBackend(b string) (string, error) {
+	switch strings.ToLower(b) {
+	case "file":
+		return "file", nil
+	case "os":
+		return "os", nil
+	case "test":
+		return "test", nil
+	case "memory", "mem":
+		return "memory", nil
+	default:
+		return "", fmt.Errorf("unsupported keyring backend: %s", b)
+	}
+}
+
+func resolveDir(dir string) (string, error) {
+	if filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".supernode", dir), nil
+}
+
 func GenerateMnemonic() (string, error) {
 	entropy, err := bip39.NewEntropy(defaultEntropySize)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate entropy: %w", err)
+		return "", err
 	}
-
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate mnemonic: %w", err)
-	}
-
-	return mnemonic, nil
+	return bip39.NewMnemonic(entropy)
 }
 
-// CreateNewAccount creates a new account in the keyring
-func CreateNewAccount(kr keyring.Keyring, name string) (string, *keyring.Record, error) {
-	// Generate a new mnemonic
-	mnemonic, err := GenerateMnemonic()
+func CreateNewAccount(kr sdkkeyring.Keyring, name string) (string, *sdkkeyring.Record, error) {
+	mn, err := GenerateMnemonic()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate mnemonic: %w", err)
+		return "", nil, err
 	}
-
-	// Create a new account with the generated mnemonic
-	info, err := kr.NewAccount(
-		name,
-		mnemonic,
-		DefaultBIP39Passphrase,
-		DefaultHDPath,
-		hd.Secp256k1,
-	)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create new account: %w", err)
-	}
-
-	return mnemonic, info, nil
+	info, err := kr.NewAccount(name, mn, DefaultBIP39Passphrase, DefaultHDPath, hd.Secp256k1)
+	return mn, info, err
 }
 
-// RecoverAccountFromMnemonic recovers an account from a mnemonic
-func RecoverAccountFromMnemonic(kr keyring.Keyring, name, mnemonic string) (*keyring.Record, error) {
-	// Import account from mnemonic
-	info, err := kr.NewAccount(
-		name,
-		mnemonic,
-		DefaultBIP39Passphrase,
-		DefaultHDPath,
-		hd.Secp256k1,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to recover account from mnemonic: %w", err)
-	}
-
-	return info, nil
+func RecoverAccountFromMnemonic(kr sdkkeyring.Keyring, name, mnemonic string) (*sdkkeyring.Record, error) {
+	return kr.NewAccount(name, mnemonic, DefaultBIP39Passphrase, DefaultHDPath, hd.Secp256k1)
 }
 
-// DerivePrivKeyFromMnemonic derives a private key directly from a mnemonic
 func DerivePrivKeyFromMnemonic(mnemonic, hdPath string) (*secp256k1.PrivKey, error) {
 	if hdPath == "" {
 		hdPath = DefaultHDPath
 	}
-
 	seed := bip39.NewSeed(mnemonic, DefaultBIP39Passphrase)
 	master, ch := hd.ComputeMastersFromSeed(seed)
-
-	derivedKey, err := hd.DerivePrivateKeyForPath(master, ch, hdPath)
+	derived, err := hd.DerivePrivateKeyForPath(master, ch, hdPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to derive private key: %w", err)
+		return nil, err
 	}
-
-	return &secp256k1.PrivKey{Key: derivedKey}, nil
+	return &secp256k1.PrivKey{Key: derived}, nil
 }
 
-// SignBytes signs a byte array using a key from the keyring
-func SignBytes(kr keyring.Keyring, name string, bytes []byte) ([]byte, error) {
-	// Get the key from the keyring
-	record, err := kr.Key(name)
+func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
+	rec, err := kr.Key(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get key '%s' from keyring: %w", name, err)
+		return nil, err
 	}
-
-	// Get the address from the record
-	addr, err := record.GetAddress()
+	addr, err := rec.GetAddress()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get address from record: %w", err)
+		return nil, err
 	}
-	// Sign the bytes
-	signature, _, err := kr.SignByAddress(addr, bytes, signing.SignMode_SIGN_MODE_DIRECT)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign bytes: %w", err)
-	}
-
-	return signature, nil
+	sig, _, err := kr.SignByAddress(addr, bz, signing.SignMode_SIGN_MODE_DIRECT)
+	return sig, err
 }

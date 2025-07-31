@@ -15,13 +15,12 @@ import (
 
 // Supernode represents a supernode in the Lumera network
 type Supernode struct {
-	config         *config.Config
-	lumeraClient   lumera.Client
-	p2pService     p2p.P2P
-	keyring        keyring.Keyring
-	rqStore        rqstore.Store
-	keyName        string // String that represents the supernode account in keyring
-	accountAddress string // String that represents the supernode account address lemera12Xxxxx
+	config       *config.Config
+	lumeraClient lumera.Client
+	p2pService   p2p.P2P
+	keyring      keyring.Keyring
+	rqStore      rqstore.Store
+	keyName      string // String that represents the supernode account in keyring
 }
 
 // NewSupernode creates a new supernode instance

@@ -19,8 +19,11 @@ type SupernodeConfig struct {
 }
 
 type KeyringConfig struct {
-	Backend string `yaml:"backend"`
-	Dir     string `yaml:"dir"`
+	Backend   string `yaml:"backend"`
+	Dir       string `yaml:"dir"`
+	PassPlain string `yaml:"passphrase_plain"`
+	PassEnv   string `yaml:"passphrase_env"`
+	PassFile  string `yaml:"passphrase_file"`
 }
 
 type P2PConfig struct {

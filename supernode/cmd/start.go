@@ -56,7 +56,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
-		kr, err := keyring.InitKeyring(appConfig.KeyringConfig.Backend, appConfig.GetKeyringDir())
+		kr, err := keyring.InitKeyring(appConfig.KeyringConfig)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize keyring", logtrace.Fields{"error": err.Error()})
 		}
