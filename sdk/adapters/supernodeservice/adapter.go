@@ -358,9 +358,9 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 		result.Memory.UsedPerc = resp.Memory.UsedPerc
 	}
 
-	// Convert Services data
-	result.Services = make([]ServiceTasks, 0, len(resp.Services))
-	for _, service := range resp.Services {
+	// Convert RunningTasks data
+	result.Services = make([]ServiceTasks, 0, len(resp.RunningTasks))
+	for _, service := range resp.RunningTasks {
 		result.Services = append(result.Services, ServiceTasks{
 			ServiceName: service.ServiceName,
 			TaskIDs:     service.TaskIds,
@@ -368,9 +368,9 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 		})
 	}
 
-	// Convert AvailableServices data
-	result.AvailableServices = make([]string, len(resp.AvailableServices))
-	copy(result.AvailableServices, resp.AvailableServices)
+	// Convert RegisteredServices data
+	result.AvailableServices = make([]string, len(resp.RegisteredServices))
+	copy(result.AvailableServices, resp.RegisteredServices)
 
 	return result
 }
