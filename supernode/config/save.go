@@ -31,7 +31,7 @@ func SaveConfig(config *Config, filename string) error {
 }
 
 // CreateDefaultConfig creates a default configuration with the specified values
-func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyringDir string) *Config {
+func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyringDir string, passPlain, passEnv, passFile string) *Config {
 	// Set default values
 	if keyringBackend == "" {
 		keyringBackend = "test"
@@ -49,8 +49,11 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			GatewayPort: 8002,
 		},
 		KeyringConfig: KeyringConfig{
-			Backend: keyringBackend,
-			Dir:     keyringDir,
+			Backend:   keyringBackend,
+			Dir:       keyringDir,
+			PassPlain: passPlain,
+			PassEnv:   passEnv,
+			PassFile:  passFile,
 		},
 		P2PConfig: P2PConfig{
 			ListenAddress: "0.0.0.0",

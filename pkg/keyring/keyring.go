@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -43,10 +42,8 @@ func InitKeyring(cfg config.KeyringConfig) (sdkkeyring.Keyring, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir, err := resolveDir(cfg.Dir)
-	if err != nil {
-		return nil, err
-	}
+	// Use the directory as-is, it should already be resolved by the config
+	dir := cfg.Dir
 
 	reader, err := buildReaderAndPossiblySwapStdin(cfg, backend)
 	if err != nil {
@@ -130,16 +127,6 @@ func normaliseBackend(b string) (string, error) {
 	}
 }
 
-func resolveDir(dir string) (string, error) {
-	if filepath.IsAbs(dir) {
-		return dir, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".supernode", dir), nil
-}
 
 func GenerateMnemonic() (string, error) {
 	entropy, err := bip39.NewEntropy(defaultEntropySize)

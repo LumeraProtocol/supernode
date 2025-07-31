@@ -17,6 +17,7 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/codec"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/supernode/config"
 
 	"github.com/LumeraProtocol/supernode/sdk/action"
 	"github.com/LumeraProtocol/supernode/sdk/event"
@@ -201,7 +202,10 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Create an in-memory keyring for cryptographic operations
 	// This keyring is separate from the blockchain keyring and used for local signing
-	keplrKeyring, err := keyring.InitKeyring("memory", "")
+	keplrKeyring, err := keyring.InitKeyring(config.KeyringConfig{
+		Backend: "memory",
+		Dir:     "",
+	})
 	require.NoError(t, err, "Failed to initialize in-memory keyring")
 
 	// Add the test key to the in-memory keyring

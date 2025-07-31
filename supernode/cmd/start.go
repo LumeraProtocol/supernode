@@ -12,7 +12,6 @@ import (
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
 	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/sqlite"
 	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
@@ -56,7 +55,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
-		kr, err := keyring.InitKeyring(appConfig.KeyringConfig)
+		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize keyring", logtrace.Fields{"error": err.Error()})
 		}
