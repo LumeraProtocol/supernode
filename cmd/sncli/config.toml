@@ -1,0 +1,34 @@
+# Lumera blockchain connection settings
+[lumera]
+
+# Address of the gRPC server for the Lumera node
+grpc_addr = "localhost:9090"
+# Chain ID of the Lumera network (used for signing and verification)
+chain_id = "lumera-devnet-1"
+
+# Keyring settings for managing keys and identities
+[keyring]
+
+# Backend for storing keys: "file", "test", or "os"
+backend = "test"
+
+# Directory where the keyring files are stored
+# For backend="file", this should be the path where the keyring data is kept
+dir = "~/.lumera"
+
+# Name of the key to use for signing transactions and identifying this client
+key_name = "sncli-account"
+
+# Bech32-encoded address of the local account (must match the address of key_name)
+# This is used as the "local peer" for secure key exchange and authentication
+local_address = "lumera1abc..."
+
+# Supernode connection settings
+[supernode]
+
+# gRPC endpoint of the Supernode you want to connect to
+grpc_endpoint = "127.0.0.1:4444"
+
+# Bech32-encoded Cosmos address of the Supernode peer
+# Used to authenticate the remote peer during secure key exchange
+address = "lumera1supernodeabc123"
