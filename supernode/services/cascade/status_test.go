@@ -65,13 +65,17 @@ func TestGetStatus(t *testing.T) {
 			assert.NoError(t, err)
 
 			// CPU checks
-			assert.NotEmpty(t, resp.CPU.Usage)
-			assert.NotEmpty(t, resp.CPU.Remaining)
+			assert.True(t, resp.Resources.CPU.UsagePercent >= 0)
+			assert.True(t, resp.Resources.CPU.UsagePercent <= 100)
 
 			// Memory checks
-			assert.True(t, resp.Memory.Total > 0)
-			assert.True(t, resp.Memory.Used <= resp.Memory.Total)
-			assert.True(t, resp.Memory.UsedPerc >= 0 && resp.Memory.UsedPerc <= 100)
+			assert.True(t, resp.Resources.Memory.TotalBytes > 0)
+			assert.True(t, resp.Resources.Memory.UsedBytes <= resp.Resources.Memory.TotalBytes)
+			assert.True(t, resp.Resources.Memory.UsagePercent >= 0 && resp.Resources.Memory.UsagePercent <= 100)
+
+			// Storage checks - should have default root filesystem
+			assert.NotEmpty(t, resp.Resources.Storage)
+			assert.Equal(t, "/", resp.Resources.Storage[0].Path)
 
 			// Registered services check
 			assert.Contains(t, resp.RegisteredServices, "cascade")

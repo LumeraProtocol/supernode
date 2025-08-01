@@ -18,9 +18,15 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Should have CPU and Memory info
-		assert.NotEmpty(t, resp.CPU.Usage)
-		assert.NotEmpty(t, resp.CPU.Remaining)
-		assert.True(t, resp.Memory.Total > 0)
+		assert.True(t, resp.Resources.CPU.UsagePercent >= 0)
+		assert.True(t, resp.Resources.CPU.UsagePercent <= 100)
+		assert.True(t, resp.Resources.Memory.TotalBytes > 0)
+		assert.True(t, resp.Resources.Memory.UsagePercent >= 0)
+		assert.True(t, resp.Resources.Memory.UsagePercent <= 100)
+
+		// Should have storage info (default root filesystem)
+		assert.NotEmpty(t, resp.Resources.Storage)
+		assert.Equal(t, "/", resp.Resources.Storage[0].Path)
 
 		// Should have empty services list
 		assert.Empty(t, resp.RunningTasks)

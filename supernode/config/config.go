@@ -21,9 +21,9 @@ type SupernodeConfig struct {
 type KeyringConfig struct {
 	Backend   string `yaml:"backend"`
 	Dir       string `yaml:"dir"`
-	PassPlain string `yaml:"passphrase_plain"`
-	PassEnv   string `yaml:"passphrase_env"`
-	PassFile  string `yaml:"passphrase_file"`
+	PassPlain string `yaml:"passphrase_plain,omitempty"`
+	PassEnv   string `yaml:"passphrase_env,omitempty"`
+	PassFile  string `yaml:"passphrase_file,omitempty"`
 }
 
 type P2PConfig struct {

@@ -60,18 +60,32 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 
 	// Convert to protobuf response
 	response := &pb.StatusResponse{
-		Cpu: &pb.StatusResponse_CPU{
-			Usage:     status.CPU.Usage,
-			Remaining: status.CPU.Remaining,
-		},
-		Memory: &pb.StatusResponse_Memory{
-			Total:     status.Memory.Total,
-			Used:      status.Memory.Used,
-			Available: status.Memory.Available,
-			UsedPerc:  status.Memory.UsedPerc,
+		Resources: &pb.StatusResponse_Resources{
+			Cpu: &pb.StatusResponse_Resources_CPU{
+				UsagePercent: status.Resources.CPU.UsagePercent,
+			},
+			Memory: &pb.StatusResponse_Resources_Memory{
+				TotalBytes:     status.Resources.Memory.TotalBytes,
+				UsedBytes:      status.Resources.Memory.UsedBytes,
+				AvailableBytes: status.Resources.Memory.AvailableBytes,
+				UsagePercent:   status.Resources.Memory.UsagePercent,
+			},
+			StorageVolumes: make([]*pb.StatusResponse_Resources_Storage, 0, len(status.Resources.Storage)),
 		},
 		RunningTasks:       make([]*pb.StatusResponse_ServiceTasks, 0, len(status.RunningTasks)),
 		RegisteredServices: status.RegisteredServices,
+	}
+
+	// Convert storage information
+	for _, storage := range status.Resources.Storage {
+		storageInfo := &pb.StatusResponse_Resources_Storage{
+			Path:           storage.Path,
+			TotalBytes:     storage.TotalBytes,
+			UsedBytes:      storage.UsedBytes,
+			AvailableBytes: storage.AvailableBytes,
+			UsagePercent:   storage.UsagePercent,
+		}
+		response.Resources.StorageVolumes = append(response.Resources.StorageVolumes, storageInfo)
 	}
 
 	// Convert service tasks

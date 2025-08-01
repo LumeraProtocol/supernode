@@ -62,37 +62,82 @@
     }
   },
   "definitions": {
-    "StatusResponseCPU": {
+    "ResourcesCPU": {
       "type": "object",
       "properties": {
-        "usage": {
-          "type": "string"
-        },
-        "remaining": {
-          "type": "string"
+        "usagePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "CPU usage percentage (0-100)"
         }
       }
     },
-    "StatusResponseMemory": {
+    "ResourcesMemory": {
       "type": "object",
       "properties": {
-        "total": {
+        "totalBytes": {
           "type": "string",
           "format": "uint64"
         },
-        "used": {
+        "usedBytes": {
           "type": "string",
           "format": "uint64"
         },
-        "available": {
+        "availableBytes": {
           "type": "string",
           "format": "uint64"
         },
-        "usedPerc": {
+        "usagePercent": {
           "type": "number",
-          "format": "double"
+          "format": "double",
+          "title": "Memory usage percentage (0-100)"
         }
       }
+    },
+    "ResourcesStorage": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "title": "Storage path being monitored"
+        },
+        "totalBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "usedBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "availableBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "usagePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "Storage usage percentage (0-100)"
+        }
+      }
+    },
+    "StatusResponseResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "$ref": "#/definitions/ResourcesCPU"
+        },
+        "memory": {
+          "$ref": "#/definitions/ResourcesMemory"
+        },
+        "storageVolumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/ResourcesStorage"
+          }
+        }
+      },
+      "title": "System resource information"
     },
     "StatusResponseServiceTasks": {
       "type": "object",
@@ -174,11 +219,8 @@
     "supernodeStatusResponse": {
       "type": "object",
       "properties": {
-        "cpu": {
-          "$ref": "#/definitions/StatusResponseCPU"
-        },
-        "memory": {
-          "$ref": "#/definitions/StatusResponseMemory"
+        "resources": {
+          "$ref": "#/definitions/StatusResponseResources"
         },
         "runningTasks": {
           "type": "array",
@@ -196,7 +238,7 @@
           "title": "All registered/available services"
         }
       },
-      "description": "The StatusResponse represents system status."
+      "title": "The StatusResponse represents system status with clear organization"
     }
   }
 }

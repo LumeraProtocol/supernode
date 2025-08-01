@@ -11,6 +11,7 @@ import (
 type SupernodeStatusService struct {
 	taskProviders []TaskProvider    // List of registered services that provide task information
 	metrics       *MetricsCollector // System metrics collector for CPU and memory stats
+	storagePaths  []string          // Paths to monitor for storage metrics
 }
 
 // NewSupernodeStatusService creates a new supernode status service instance
@@ -18,6 +19,7 @@ func NewSupernodeStatusService() *SupernodeStatusService {
 	return &SupernodeStatusService{
 		taskProviders: make([]TaskProvider, 0),
 		metrics:       NewMetricsCollector(),
+		storagePaths:  []string{"/"}, // Default to monitoring root filesystem
 	}
 }
 
@@ -39,22 +41,24 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	var resp StatusResponse
 
 	// Collect CPU metrics
-	cpuUsage, cpuRemaining, err := s.metrics.CollectCPUMetrics(ctx)
+	cpuUsage, err := s.metrics.CollectCPUMetrics(ctx)
 	if err != nil {
 		return resp, err
 	}
-	resp.CPU.Usage = cpuUsage
-	resp.CPU.Remaining = cpuRemaining
+	resp.Resources.CPU.UsagePercent = cpuUsage
 
 	// Collect memory metrics
 	memTotal, memUsed, memAvailable, memUsedPerc, err := s.metrics.CollectMemoryMetrics(ctx)
 	if err != nil {
 		return resp, err
 	}
-	resp.Memory.Total = memTotal
-	resp.Memory.Used = memUsed
-	resp.Memory.Available = memAvailable
-	resp.Memory.UsedPerc = memUsedPerc
+	resp.Resources.Memory.TotalBytes = memTotal
+	resp.Resources.Memory.UsedBytes = memUsed
+	resp.Resources.Memory.AvailableBytes = memAvailable
+	resp.Resources.Memory.UsagePercent = memUsedPerc
+
+	// Collect storage metrics
+	resp.Resources.Storage = s.metrics.CollectStorageMetrics(ctx, s.storagePaths)
 
 	// Collect service information from all registered providers
 	resp.RunningTasks = make([]ServiceTasks, 0, len(s.taskProviders))
@@ -83,13 +87,13 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	}
 
 	logtrace.Info(ctx, "status data collected", logtrace.Fields{
-		"cpu_usage":     cpuUsage,
-		"cpu_remaining": cpuRemaining,
-		"mem_total":     memTotal,
-		"mem_used":      memUsed,
-		"mem_used%":     memUsedPerc,
-		"service_count": len(resp.RunningTasks),
-		"total_tasks":   totalTasks,
+		"cpu_usage%":      cpuUsage,
+		"mem_total":       memTotal,
+		"mem_used":        memUsed,
+		"mem_usage%":      memUsedPerc,
+		"storage_volumes": len(resp.Resources.Storage),
+		"service_count":   len(resp.RunningTasks),
+		"total_tasks":     totalTasks,
 	})
 
 	return resp, nil

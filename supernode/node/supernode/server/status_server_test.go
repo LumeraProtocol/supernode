@@ -27,11 +27,24 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	assert.NotNil(t, resp)
 
 	// Check basic structure
-	assert.NotNil(t, resp.Cpu)
-	assert.NotNil(t, resp.Memory)
-	assert.NotEmpty(t, resp.Cpu.Usage)
-	assert.NotEmpty(t, resp.Cpu.Remaining)
-	assert.True(t, resp.Memory.Total > 0)
+	assert.NotNil(t, resp.Resources)
+	assert.NotNil(t, resp.Resources.Cpu)
+	assert.NotNil(t, resp.Resources.Memory)
+	assert.NotNil(t, resp.RunningTasks)
+	assert.NotNil(t, resp.RegisteredServices)
+
+	// Check CPU metrics
+	assert.True(t, resp.Resources.Cpu.UsagePercent >= 0)
+	assert.True(t, resp.Resources.Cpu.UsagePercent <= 100)
+
+	// Check Memory metrics
+	assert.True(t, resp.Resources.Memory.TotalBytes > 0)
+	assert.True(t, resp.Resources.Memory.UsagePercent >= 0)
+	assert.True(t, resp.Resources.Memory.UsagePercent <= 100)
+
+	// Check Storage (should have default root filesystem)
+	assert.NotEmpty(t, resp.Resources.StorageVolumes)
+	assert.Equal(t, "/", resp.Resources.StorageVolumes[0].Path)
 
 	// Should have no services initially
 	assert.Empty(t, resp.RunningTasks)
