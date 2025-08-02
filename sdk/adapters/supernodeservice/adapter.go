@@ -343,6 +343,7 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
 	result := &SupernodeStatusresponse{}
+	result.Version = resp.Version
 
 	// Convert Resources data
 	if resp.Resources != nil {

@@ -14,7 +14,6 @@ import (
 	reflect "reflect"
 
 	cascade "github.com/LumeraProtocol/supernode/supernode/services/cascade"
-	supernode "github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -106,21 +105,6 @@ func (m *MockCascadeTask) Download(ctx context.Context, req *cascade.DownloadReq
 func (mr *MockCascadeTaskMockRecorder) Download(ctx, req, send any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockCascadeTask)(nil).Download), ctx, req, send)
-}
-
-// GetStatus mocks base method.
-func (m *MockCascadeTask) GetStatus(ctx context.Context) (supernode.StatusResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetStatus", ctx)
-	ret0, _ := ret[0].(supernode.StatusResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetStatus indicates an expected call of GetStatus.
-func (mr *MockCascadeTaskMockRecorder) GetStatus(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockCascadeTask)(nil).GetStatus), ctx)
 }
 
 // Register mocks base method.

@@ -188,8 +188,6 @@ func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEven
 		FilePath:      filePath,
 		DownloadedDir: tmpDir,
 	})
-
-	return
 }
 
 // parseIndexFile parses compressed index file to extract IndexFile structure

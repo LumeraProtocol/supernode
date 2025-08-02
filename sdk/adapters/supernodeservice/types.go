@@ -45,6 +45,7 @@ type StorageInfo struct {
 }
 
 type SupernodeStatusresponse struct {
+	Version           string         // Supernode version
 	Resources struct {
 		CPU struct {
 			UsagePercent float64

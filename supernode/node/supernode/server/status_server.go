@@ -60,6 +60,7 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 
 	// Convert to protobuf response
 	response := &pb.StatusResponse{
+		Version: status.Version,
 		Resources: &pb.StatusResponse_Resources{
 			Cpu: &pb.StatusResponse_Resources_CPU{
 				UsagePercent: status.Resources.CPU.UsagePercent,

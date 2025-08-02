@@ -35,6 +35,8 @@ message ServiceInfo {
 
 // The StatusResponse represents system status with clear organization
 message StatusResponse {
+  string version = 1;                        // Supernode version
+  
   // System resource information
   message Resources {
     message CPU {
@@ -68,7 +70,7 @@ message StatusResponse {
     int32 task_count = 3;
   }
   
-  Resources resources = 1;
-  repeated ServiceTasks running_tasks = 2;  // Services with currently running tasks
-  repeated string registered_services = 3;   // All registered/available services
+  Resources resources = 2;
+  repeated ServiceTasks running_tasks = 3;  // Services with currently running tasks
+  repeated string registered_services = 4;   // All registered/available services
 }

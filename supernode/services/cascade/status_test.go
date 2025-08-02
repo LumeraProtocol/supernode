@@ -64,6 +64,9 @@ func TestGetStatus(t *testing.T) {
 
 			assert.NoError(t, err)
 
+			// Version check
+			assert.NotEmpty(t, resp.Version)
+
 			// CPU checks
 			assert.True(t, resp.Resources.CPU.UsagePercent >= 0)
 			assert.True(t, resp.Resources.CPU.UsagePercent <= 100)

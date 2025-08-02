@@ -6,6 +6,9 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
+// Version is the supernode version, set by the main application
+var Version = "dev"
+
 // SupernodeStatusService provides centralized status information
 // by collecting system metrics and aggregating task information from registered services
 type SupernodeStatusService struct {
@@ -39,6 +42,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	logtrace.Info(ctx, "status request received", fields)
 
 	var resp StatusResponse
+	resp.Version = Version
 
 	// Collect CPU metrics
 	cpuUsage, err := s.metrics.CollectCPUMetrics(ctx)

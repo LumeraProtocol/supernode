@@ -16,6 +16,9 @@ func TestSupernodeStatusService(t *testing.T) {
 
 		resp, err := statusService.GetStatus(ctx)
 		assert.NoError(t, err)
+		
+		// Should have version info
+		assert.NotEmpty(t, resp.Version)
 
 		// Should have CPU and Memory info
 		assert.True(t, resp.Resources.CPU.UsagePercent >= 0)

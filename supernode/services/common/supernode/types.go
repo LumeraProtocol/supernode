@@ -3,6 +3,7 @@ package supernode
 // StatusResponse represents the complete system status information
 // with clear organization of resources and services
 type StatusResponse struct {
+	Version            string          // Supernode version
 	Resources          Resources       // System resource information
 	RunningTasks       []ServiceTasks  // Services with currently running tasks
 	RegisteredServices []string        // All registered/available services

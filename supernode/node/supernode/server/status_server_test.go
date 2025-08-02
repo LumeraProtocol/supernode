@@ -32,6 +32,9 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	assert.NotNil(t, resp.Resources.Memory)
 	assert.NotNil(t, resp.RunningTasks)
 	assert.NotNil(t, resp.RegisteredServices)
+	
+	// Check version field
+	assert.NotEmpty(t, resp.Version)
 
 	// Check CPU metrics
 	assert.True(t, resp.Resources.Cpu.UsagePercent >= 0)
