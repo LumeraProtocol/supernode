@@ -18,8 +18,3 @@ func (service *CascadeService) GetStatus(ctx context.Context) (StatusResponse, e
 	// Get the status from the common service
 	return statusService.GetStatus(ctx)
 }
-
-// GetStatus method for task interface compatibility
-func (task *CascadeRegistrationTask) GetStatus(ctx context.Context) (StatusResponse, error) {
-	return task.CascadeService.GetStatus(ctx)
-}

@@ -18,28 +18,40 @@ service SupernodeService {
 message StatusRequest {}
 
 message StatusResponse {
-  message CPU {
-    string usage = 1;
-    string remaining = 2;
+  message Resources {
+    message CPU {
+      double usage_percent = 1;
+    }
+    
+    message Memory {
+      uint64 total_bytes = 1;
+      uint64 used_bytes = 2;
+      uint64 available_bytes = 3;
+      double usage_percent = 4;
+    }
+    
+    message Storage {
+      string path = 1;
+      uint64 total_bytes = 2;
+      uint64 used_bytes = 3;
+      uint64 available_bytes = 4;
+      double usage_percent = 5;
+    }
+    
+    CPU cpu = 1;
+    Memory memory = 2;
+    repeated Storage storage_volumes = 3;
   }
-
-  message Memory {
-    uint64 total = 1;
-    uint64 used = 2;
-    uint64 available = 3;
-    double used_perc = 4;
-  }
-
+  
   message ServiceTasks {
     string service_name = 1;
     repeated string task_ids = 2;
     int32 task_count = 3;
   }
-
-  CPU cpu = 1;
-  Memory memory = 2;
-  repeated ServiceTasks services = 3;
-  repeated string available_services = 4;
+  
+  Resources resources = 1;
+  repeated ServiceTasks running_tasks = 2;
+  repeated string registered_services = 3;
 }
 ```
 
@@ -115,42 +127,52 @@ The supernode provides an HTTP gateway that exposes the gRPC services via REST A
 
 ### Endpoints
 
-#### GET /status
-Returns the current supernode status including CPU, memory usage and active services.
+#### GET /api/v1/status
+Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
 ```bash
-curl http://localhost:8002/status
+curl http://localhost:8002/api/v1/status
 ```
 
 Response:
 ```json
 {
-  "cpu": {
-    "usage": "15.2%",
-    "remaining": "84.8%"
+  "resources": {
+    "cpu": {
+      "usage_percent": 15.2
+    },
+    "memory": {
+      "total_bytes": "16777216000",
+      "used_bytes": "8388608000",
+      "available_bytes": "8388608000",
+      "usage_percent": 50.0
+    },
+    "storage_volumes": [
+      {
+        "path": "/",
+        "total_bytes": "500000000000",
+        "used_bytes": "250000000000",
+        "available_bytes": "250000000000",
+        "usage_percent": 50.0
+      }
+    ]
   },
-  "memory": {
-    "total": "16777216000",
-    "used": "8388608000",
-    "available": "8388608000",
-    "usedPerc": 50.0
-  },
-  "services": [
+  "running_tasks": [
     {
-      "serviceName": "cascade",
-      "taskIds": ["task1", "task2"],
-      "taskCount": 2
+      "service_name": "cascade",
+      "task_ids": ["task1", "task2"],
+      "task_count": 2
     }
   ],
-  "availableServices": ["cascade", "sense"]
+  "registered_services": ["cascade", "sense"]
 }
 ```
 
-#### GET /services
+#### GET /api/v1/services
 Returns the list of available services on the supernode.
 
 ```bash
-curl http://localhost:8002/services
+curl http://localhost:8002/api/v1/services
 ```
 
 Response:
