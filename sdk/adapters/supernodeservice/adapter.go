@@ -344,19 +344,21 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
 	result := &SupernodeStatusresponse{}
 	result.Version = resp.Version
+	result.UptimeSeconds = resp.UptimeSeconds
 
 	// Convert Resources data
 	if resp.Resources != nil {
 		// Convert CPU data
 		if resp.Resources.Cpu != nil {
 			result.Resources.CPU.UsagePercent = resp.Resources.Cpu.UsagePercent
+			result.Resources.CPU.Cores = resp.Resources.Cpu.Cores
 		}
 
 		// Convert Memory data
 		if resp.Resources.Memory != nil {
-			result.Resources.Memory.TotalBytes = resp.Resources.Memory.TotalBytes
-			result.Resources.Memory.UsedBytes = resp.Resources.Memory.UsedBytes
-			result.Resources.Memory.AvailableBytes = resp.Resources.Memory.AvailableBytes
+			result.Resources.Memory.TotalGB = resp.Resources.Memory.TotalGb
+			result.Resources.Memory.UsedGB = resp.Resources.Memory.UsedGb
+			result.Resources.Memory.AvailableGB = resp.Resources.Memory.AvailableGb
 			result.Resources.Memory.UsagePercent = resp.Resources.Memory.UsagePercent
 		}
 
@@ -371,6 +373,9 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 				UsagePercent:   storage.UsagePercent,
 			})
 		}
+		
+		// Copy hardware summary
+		result.Resources.HardwareSummary = resp.Resources.HardwareSummary
 	}
 
 	// Convert RunningTasks data
@@ -386,6 +391,17 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 	// Convert RegisteredServices data
 	result.RegisteredServices = make([]string, len(resp.RegisteredServices))
 	copy(result.RegisteredServices, resp.RegisteredServices)
+
+	// Convert Network data
+	if resp.Network != nil {
+		result.Network.PeersCount = resp.Network.PeersCount
+		result.Network.PeerAddresses = make([]string, len(resp.Network.PeerAddresses))
+		copy(result.Network.PeerAddresses, resp.Network.PeerAddresses)
+	}
+
+	// Copy rank and IP address
+	result.Rank = resp.Rank
+	result.IPAddress = resp.IpAddress
 
 	return result
 }

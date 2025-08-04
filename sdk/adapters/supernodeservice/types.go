@@ -46,20 +46,29 @@ type StorageInfo struct {
 
 type SupernodeStatusresponse struct {
 	Version           string         // Supernode version
+	UptimeSeconds     uint64         // Uptime in seconds
 	Resources struct {
 		CPU struct {
 			UsagePercent float64
+			Cores        int32
 		}
 		Memory struct {
-			TotalBytes     uint64
-			UsedBytes      uint64
-			AvailableBytes uint64
-			UsagePercent   float64
+			TotalGB      float64
+			UsedGB       float64
+			AvailableGB  float64
+			UsagePercent float64
 		}
 		Storage []StorageInfo
+		HardwareSummary string // Formatted hardware summary
 	}
 	RunningTasks      []ServiceTasks // Services with running tasks
 	RegisteredServices []string       // All available service names
+	Network struct {
+		PeersCount    int32    // Number of connected peers
+		PeerAddresses []string // List of peer addresses
+	}
+	Rank      int32  // Rank in top supernodes list (0 if not in top list)
+	IPAddress string // Supernode IP address with port
 }
 type CascadeSupernodeDownloadRequest struct {
 	ActionID    string

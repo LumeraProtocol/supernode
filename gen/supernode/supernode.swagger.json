@@ -69,23 +69,31 @@
           "type": "number",
           "format": "double",
           "title": "CPU usage percentage (0-100)"
+        },
+        "cores": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Number of CPU cores"
         }
       }
     },
     "ResourcesMemory": {
       "type": "object",
       "properties": {
-        "totalBytes": {
-          "type": "string",
-          "format": "uint64"
+        "totalGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Total memory in GB"
         },
-        "usedBytes": {
-          "type": "string",
-          "format": "uint64"
+        "usedGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Used memory in GB"
         },
-        "availableBytes": {
-          "type": "string",
-          "format": "uint64"
+        "availableGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Available memory in GB"
         },
         "usagePercent": {
           "type": "number",
@@ -120,6 +128,24 @@
         }
       }
     },
+    "StatusResponseNetwork": {
+      "type": "object",
+      "properties": {
+        "peersCount": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Number of connected peers in P2P network"
+        },
+        "peerAddresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "List of connected peer addresses (optional, may be empty for privacy)"
+        }
+      },
+      "title": "Network information"
+    },
     "StatusResponseResources": {
       "type": "object",
       "properties": {
@@ -135,6 +161,10 @@
             "type": "object",
             "$ref": "#/definitions/ResourcesStorage"
           }
+        },
+        "hardwareSummary": {
+          "type": "string",
+          "title": "Formatted hardware summary (e.g., \"8 cores / 32GB RAM\")"
         }
       },
       "title": "System resource information"
@@ -223,6 +253,11 @@
           "type": "string",
           "title": "Supernode version"
         },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "uint64",
+          "title": "Uptime in seconds"
+        },
         "resources": {
           "$ref": "#/definitions/StatusResponseResources"
         },
@@ -240,6 +275,19 @@
             "type": "string"
           },
           "title": "All registered/available services"
+        },
+        "network": {
+          "$ref": "#/definitions/StatusResponseNetwork",
+          "title": "P2P network information"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Rank in the top supernodes list (0 if not in top list)"
+        },
+        "ipAddress": {
+          "type": "string",
+          "title": "Supernode IP address with port (e.g., \"192.168.1.1:4445\")"
         }
       },
       "title": "The StatusResponse represents system status with clear organization"

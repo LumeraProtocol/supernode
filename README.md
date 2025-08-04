@@ -18,29 +18,34 @@ service SupernodeService {
 message StatusRequest {}
 
 message StatusResponse {
+  string version = 1;                        // Supernode version
+  uint64 uptime_seconds = 2;                 // Uptime in seconds
+  
   message Resources {
     message CPU {
-      double usage_percent = 1;
+      double usage_percent = 1;  // CPU usage percentage (0-100)
+      int32 cores = 2;          // Number of CPU cores
     }
     
     message Memory {
-      uint64 total_bytes = 1;
-      uint64 used_bytes = 2;
-      uint64 available_bytes = 3;
-      double usage_percent = 4;
+      double total_gb = 1;       // Total memory in GB
+      double used_gb = 2;        // Used memory in GB
+      double available_gb = 3;   // Available memory in GB
+      double usage_percent = 4;  // Memory usage percentage (0-100)
     }
     
     message Storage {
-      string path = 1;
+      string path = 1;           // Storage path being monitored
       uint64 total_bytes = 2;
       uint64 used_bytes = 3;
       uint64 available_bytes = 4;
-      double usage_percent = 5;
+      double usage_percent = 5;  // Storage usage percentage (0-100)
     }
     
     CPU cpu = 1;
     Memory memory = 2;
     repeated Storage storage_volumes = 3;
+    string hardware_summary = 4;  // Formatted hardware summary (e.g., "8 cores / 32GB RAM")
   }
   
   message ServiceTasks {
@@ -49,9 +54,17 @@ message StatusResponse {
     int32 task_count = 3;
   }
   
-  Resources resources = 1;
-  repeated ServiceTasks running_tasks = 2;
-  repeated string registered_services = 3;
+  message Network {
+    int32 peers_count = 1;               // Number of connected peers in P2P network
+    repeated string peer_addresses = 2;  // List of connected peer addresses (format: "ID@IP:Port")
+  }
+  
+  Resources resources = 3;
+  repeated ServiceTasks running_tasks = 4;  // Services with currently running tasks
+  repeated string registered_services = 5;   // All registered/available services
+  Network network = 6;                      // P2P network information
+  int32 rank = 7;                           // Rank in the top supernodes list (0 if not in top list)
+  string ip_address = 8;                    // Supernode IP address with port (e.g., "192.168.1.1:4445")
 }
 ```
 
@@ -137,14 +150,17 @@ curl http://localhost:8002/api/v1/status
 Response:
 ```json
 {
+  "version": "1.0.0",
+  "uptime_seconds": "3600",
   "resources": {
     "cpu": {
-      "usage_percent": 15.2
+      "usage_percent": 15.2,
+      "cores": 8
     },
     "memory": {
-      "total_bytes": "16777216000",
-      "used_bytes": "8388608000",
-      "available_bytes": "8388608000",
+      "total_gb": 32.0,
+      "used_gb": 16.0,
+      "available_gb": 16.0,
       "usage_percent": 50.0
     },
     "storage_volumes": [
@@ -155,7 +171,8 @@ Response:
         "available_bytes": "250000000000",
         "usage_percent": 50.0
       }
-    ]
+    ],
+    "hardware_summary": "8 cores / 32GB RAM"
   },
   "running_tasks": [
     {
@@ -164,7 +181,16 @@ Response:
       "task_count": 2
     }
   ],
-  "registered_services": ["cascade", "sense"]
+  "registered_services": ["cascade", "sense"],
+  "network": {
+    "peers_count": 11,
+    "peer_addresses": [
+      "lumera13z4pkmgkr587sg6lkqnmqmqkkfpsau3rmjd5kx@156.67.29.226:4445",
+      "lumera1s55nzsyqsuwxsl3es0v7rxux7rypsa7zpzlqg5@18.216.80.56:4445"
+    ]
+  },
+  "rank": 6,
+  "ip_address": "192.168.1.100:4445"
 }
 ```
 

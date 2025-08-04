@@ -30,6 +30,17 @@ func (m *MetricsCollector) CollectCPUMetrics(ctx context.Context) (float64, erro
 	return percentages[0], nil
 }
 
+// GetCPUCores returns the number of CPU cores
+func (m *MetricsCollector) GetCPUCores(ctx context.Context) (int32, error) {
+	cores, err := cpu.Counts(true)
+	if err != nil {
+		logtrace.Error(ctx, "failed to get cpu core count", logtrace.Fields{logtrace.FieldError: err.Error()})
+		return 0, err
+	}
+	
+	return int32(cores), nil
+}
+
 // CollectMemoryMetrics gathers memory usage information
 // Returns memory statistics including total, used, available, and usage percentage
 func (m *MetricsCollector) CollectMemoryMetrics(ctx context.Context) (total, used, available uint64, usedPerc float64, err error) {

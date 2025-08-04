@@ -16,7 +16,7 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	ctx := context.Background()
 
 	// Create status service
-	statusService := supernode.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService(nil, nil, nil)
 
 	// Create server
 	server := NewSupernodeServer(statusService)
@@ -35,15 +35,24 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	
 	// Check version field
 	assert.NotEmpty(t, resp.Version)
+	
+	// Check uptime field
+	assert.True(t, resp.UptimeSeconds >= 0)
 
 	// Check CPU metrics
 	assert.True(t, resp.Resources.Cpu.UsagePercent >= 0)
 	assert.True(t, resp.Resources.Cpu.UsagePercent <= 100)
+	assert.True(t, resp.Resources.Cpu.Cores >= 0)
 
-	// Check Memory metrics
-	assert.True(t, resp.Resources.Memory.TotalBytes > 0)
+	// Check Memory metrics (now in GB)
+	assert.True(t, resp.Resources.Memory.TotalGb > 0)
 	assert.True(t, resp.Resources.Memory.UsagePercent >= 0)
 	assert.True(t, resp.Resources.Memory.UsagePercent <= 100)
+	
+	// Check hardware summary
+	if resp.Resources.Cpu.Cores > 0 && resp.Resources.Memory.TotalGb > 0 {
+		assert.NotEmpty(t, resp.Resources.HardwareSummary)
+	}
 
 	// Check Storage (should have default root filesystem)
 	assert.NotEmpty(t, resp.Resources.StorageVolumes)
@@ -52,13 +61,20 @@ func TestSupernodeServer_GetStatus(t *testing.T) {
 	// Should have no services initially
 	assert.Empty(t, resp.RunningTasks)
 	assert.Empty(t, resp.RegisteredServices)
+	
+	// Check new fields have default values
+	assert.NotNil(t, resp.Network)
+	assert.Equal(t, int32(0), resp.Network.PeersCount)
+	assert.Empty(t, resp.Network.PeerAddresses)
+	assert.Equal(t, int32(0), resp.Rank)
+	assert.Empty(t, resp.IpAddress)
 }
 
 func TestSupernodeServer_GetStatusWithService(t *testing.T) {
 	ctx := context.Background()
 
 	// Create status service
-	statusService := supernode.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService(nil, nil, nil)
 
 	// Add a mock task provider
 	mockProvider := &common.MockTaskProvider{
@@ -88,7 +104,7 @@ func TestSupernodeServer_GetStatusWithService(t *testing.T) {
 }
 
 func TestSupernodeServer_Desc(t *testing.T) {
-	statusService := supernode.NewSupernodeStatusService()
+	statusService := supernode.NewSupernodeStatusService(nil, nil, nil)
 	server := NewSupernodeServer(statusService)
 
 	desc := server.Desc()

@@ -66,15 +66,24 @@ func TestGetStatus(t *testing.T) {
 
 			// Version check
 			assert.NotEmpty(t, resp.Version)
+			
+			// Uptime check
+			assert.True(t, resp.UptimeSeconds >= 0)
 
 			// CPU checks
 			assert.True(t, resp.Resources.CPU.UsagePercent >= 0)
 			assert.True(t, resp.Resources.CPU.UsagePercent <= 100)
+			assert.True(t, resp.Resources.CPU.Cores >= 0)
 
-			// Memory checks
-			assert.True(t, resp.Resources.Memory.TotalBytes > 0)
-			assert.True(t, resp.Resources.Memory.UsedBytes <= resp.Resources.Memory.TotalBytes)
+			// Memory checks (now in GB)
+			assert.True(t, resp.Resources.Memory.TotalGB > 0)
+			assert.True(t, resp.Resources.Memory.UsedGB <= resp.Resources.Memory.TotalGB)
 			assert.True(t, resp.Resources.Memory.UsagePercent >= 0 && resp.Resources.Memory.UsagePercent <= 100)
+			
+			// Hardware summary check
+			if resp.Resources.CPU.Cores > 0 && resp.Resources.Memory.TotalGB > 0 {
+				assert.NotEmpty(t, resp.Resources.HardwareSummary)
+			}
 
 			// Storage checks - should have default root filesystem
 			assert.NotEmpty(t, resp.Resources.Storage)
@@ -82,6 +91,12 @@ func TestGetStatus(t *testing.T) {
 
 			// Registered services check
 			assert.Contains(t, resp.RegisteredServices, "cascade")
+			
+			// Check new fields have default values (since service doesn't have access to P2P/lumera/config)
+			assert.Equal(t, int32(0), resp.Network.PeersCount)
+			assert.Empty(t, resp.Network.PeerAddresses)
+			assert.Equal(t, int32(0), resp.Rank)
+			assert.Empty(t, resp.IPAddress)
 
 			// Task count check - look for cascade service in the running tasks list
 			var cascadeService *supernode.ServiceTasks
