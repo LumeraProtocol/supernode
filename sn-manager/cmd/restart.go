@@ -20,24 +20,16 @@ var restartCmd = &cobra.Command{
 
 func runRestart(cmd *cobra.Command, args []string) error {
 	fmt.Println("Restarting SuperNode...")
-	
+
 	// First stop the SuperNode
 	if err := runStop(cmd, args); err != nil {
 		return fmt.Errorf("failed to stop SuperNode: %w", err)
 	}
-	
+
 	// Wait a moment to ensure clean shutdown
 	time.Sleep(1 * time.Second)
-	
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+
+	home := getHomeDir()
 
 	// Check if initialized
 	configPath := filepath.Join(home, "config.yml")

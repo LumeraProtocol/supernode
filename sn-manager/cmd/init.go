@@ -9,47 +9,71 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	// Config flags
+	cfgCheckInterval      int
+	cfgAutoDownload       bool
+	cfgAutoUpgrade        bool
+	cfgCurrentVersion     string
+	cfgKeepVersions       int
+	cfgLogLevel           string
+	cfgMaxRestartAttempts int
+	cfgRestartDelay       int
+	cfgShutdownTimeout    int
+	forceInit             bool
+)
+
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize sn-manager environment",
-	Long: `Initialize the sn-manager environment and configuration.
+	Short: "Initialize sn-manager configuration",
+	Long:  `Initialize the sn-manager configuration file and directory structure.`,
+	RunE:  runInit,
+}
 
-This command:
-1. Creates ~/.sn-manager directory structure
-2. Generates sn-manager configuration file
-3. Sets up directories for version management
+func init() {
+	// Get default config for flag defaults
+	def := config.DefaultConfig()
 
-Note: To initialize SuperNode itself, use 'sn-manager init-supernode' or 'supernode init' directly.`,
-	RunE: runInit,
+	// Force flag
+	initCmd.Flags().BoolVar(&forceInit, "force", false, "Force re-initialization by removing existing directory")
+
+	// Updates config
+	initCmd.Flags().IntVar(&cfgCheckInterval, "check-interval", def.Updates.CheckInterval, "Update check interval (seconds)")
+	initCmd.Flags().BoolVar(&cfgAutoDownload, "auto-download", def.Updates.AutoDownload, "Auto-download new versions")
+	initCmd.Flags().BoolVar(&cfgAutoUpgrade, "auto-upgrade", def.Updates.AutoUpgrade, "Auto-upgrade when available")
+	initCmd.Flags().StringVar(&cfgCurrentVersion, "current-version", def.Updates.CurrentVersion, "Current version")
+	initCmd.Flags().IntVar(&cfgKeepVersions, "keep-versions", def.Updates.KeepVersions, "Number of old versions to keep")
+
+	// Manager config
+	initCmd.Flags().StringVar(&cfgLogLevel, "log-level", def.Manager.LogLevel, "Log level (debug/info/warn/error)")
+	initCmd.Flags().IntVar(&cfgMaxRestartAttempts, "max-restart-attempts", def.Manager.MaxRestartAttempts, "Max restart attempts on crash")
+	initCmd.Flags().IntVar(&cfgRestartDelay, "restart-delay", def.Manager.RestartDelay, "Delay between restarts (seconds)")
+	initCmd.Flags().IntVar(&cfgShutdownTimeout, "shutdown-timeout", def.Manager.ShutdownTimeout, "Shutdown timeout (seconds)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	fmt.Println("Initializing sn-manager...")
-	
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+	managerHome := config.GetManagerHome()
+	configPath := filepath.Join(managerHome, "config.yml")
 
 	// Check if already initialized
-	configPath := filepath.Join(home, "config.yml")
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("sn-manager already initialized at %s\n", home)
-		fmt.Println("To reinitialize, please remove the directory first.")
-		return nil
+		if !forceInit {
+			return fmt.Errorf("already initialized at %s. Use --force to re-initialize", managerHome)
+		}
+
+		// Force mode: remove existing directory
+		fmt.Printf("Removing existing directory at %s...\n", managerHome)
+		if err := os.RemoveAll(managerHome); err != nil {
+			return fmt.Errorf("failed to remove existing directory: %w", err)
+		}
 	}
 
 	// Create directory structure
 	dirs := []string{
-		home,
-		filepath.Join(home, "binaries"),
-		filepath.Join(home, "downloads"),
-		filepath.Join(home, "logs"),
+		managerHome,
+		filepath.Join(managerHome, "binaries"),
+		filepath.Join(managerHome, "downloads"),
+		filepath.Join(managerHome, "logs"),
 	}
 
 	for _, dir := range dirs {
@@ -58,27 +82,42 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create default config
+	// Start with default config
 	cfg := config.DefaultConfig()
-	
-	// Set supernode home directory to default location
-	userHome, _ := os.UserHomeDir()
-	cfg.SuperNode.Home = filepath.Join(userHome, ".supernode")
-	
+
+	// Override with provided flags only
+	if cmd.Flags().Changed("check-interval") {
+		cfg.Updates.CheckInterval = cfgCheckInterval
+	}
+	if cmd.Flags().Changed("auto-download") {
+		cfg.Updates.AutoDownload = cfgAutoDownload
+	}
+	if cmd.Flags().Changed("auto-upgrade") {
+		cfg.Updates.AutoUpgrade = cfgAutoUpgrade
+	}
+	if cmd.Flags().Changed("current-version") {
+		cfg.Updates.CurrentVersion = cfgCurrentVersion
+	}
+	if cmd.Flags().Changed("keep-versions") {
+		cfg.Updates.KeepVersions = cfgKeepVersions
+	}
+	if cmd.Flags().Changed("log-level") {
+		cfg.Manager.LogLevel = cfgLogLevel
+	}
+	if cmd.Flags().Changed("max-restart-attempts") {
+		cfg.Manager.MaxRestartAttempts = cfgMaxRestartAttempts
+	}
+	if cmd.Flags().Changed("restart-delay") {
+		cfg.Manager.RestartDelay = cfgRestartDelay
+	}
+	if cmd.Flags().Changed("shutdown-timeout") {
+		cfg.Manager.ShutdownTimeout = cfgShutdownTimeout
+	}
+
 	// Save config
 	if err := config.Save(cfg, configPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
-
-	fmt.Printf("\nsn-manager initialized successfully at %s\n", home)
-	fmt.Printf("\nConfiguration saved to: %s\n", configPath)
-	fmt.Printf("\nNext steps:\n")
-	fmt.Printf("1. Initialize SuperNode (if not already done):\n")
-	fmt.Printf("   sn-manager init-supernode\n")
-	fmt.Printf("2. Download SuperNode binary:\n")
-	fmt.Printf("   sn-manager upgrade\n")
-	fmt.Printf("3. Start SuperNode:\n")
-	fmt.Printf("   sn-manager start\n")
 
 	return nil
 }

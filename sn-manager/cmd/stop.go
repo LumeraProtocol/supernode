@@ -19,15 +19,7 @@ var stopCmd = &cobra.Command{
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+	home := getHomeDir()
 
 	// Check PID file
 	pidPath := filepath.Join(home, "supernode.pid")

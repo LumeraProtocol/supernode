@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"syscall"
+
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
 	"github.com/spf13/cobra"
-	"syscall"
 )
 
 var statusCmd = &cobra.Command{
@@ -19,15 +20,7 @@ var statusCmd = &cobra.Command{
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+	home := getHomeDir()
 
 	// Check if initialized
 	configPath := filepath.Join(home, "config.yml")
@@ -87,8 +80,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Manager Version: %s\n", appVersion)
 	fmt.Printf("  Auto-download: %v\n", cfg.Updates.AutoDownload)
 	fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
-	
-	// TODO: Query SuperNode HTTP API for more detailed status
-	
+
 	return nil
 }
