@@ -31,6 +31,7 @@ func Setup(serviceName string) {
 	tracingEnabled := getTracingEnabled()
 	config.EncoderConfig.TimeKey = "" // Remove the timestamp
 	config.DisableCaller = true
+	config.DisableStacktrace = true
 
 	// Always respect the LOG_LEVEL environment variable.
 	config.Level = zap.NewAtomicLevelAt(getLogLevel())
