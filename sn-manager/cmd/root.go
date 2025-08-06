@@ -11,10 +11,6 @@ var (
 	appVersion   string
 	appGitCommit string
 	appBuildTime string
-
-	// Global flags
-	homeDir string
-	debug   bool
 )
 
 // rootCmd represents the base command
@@ -27,7 +23,7 @@ It manages the SuperNode binary lifecycle, including:
 - Starting and stopping the SuperNode process
 - Monitoring process health and automatic restarts
 - Checking for and downloading new versions
-- Performing zero-downtime upgrades
+- Performing zero-downtime updates
 
 You can run SuperNode in two ways:
 1. Direct: 'supernode start' (no automatic updates)
@@ -39,25 +35,23 @@ func Execute(ver, commit, built string) error {
 	appVersion = ver
 	appGitCommit = commit
 	appBuildTime = built
-	
+
 	return rootCmd.Execute()
 }
 
 func init() {
-	// Global flags
-	rootCmd.PersistentFlags().StringVar(&homeDir, "home", "", "Manager home directory (default: ~/.sn-manager)")
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug logging")
-
 	// Add all subcommands
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(initSupernodeCmd)
+	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(useCmd)
+	rootCmd.AddCommand(lsCmd)
+	rootCmd.AddCommand(lsRemoteCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(restartCmd)
 	rootCmd.AddCommand(checkCmd)
-	rootCmd.AddCommand(upgradeCmd)
-	rootCmd.AddCommand(versionsCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 

@@ -22,20 +22,12 @@ The manager will:
 - Monitor its health
 - Restart on crashes (up to max_restart_attempts)
 - Check for updates periodically
-- Perform automatic upgrades if configured`,
+- Perform automatic updates if configured`,
 	RunE: runStart,
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+	home := getHomeDir()
 
 	// Check if initialized
 	configPath := filepath.Join(home, "config.yml")

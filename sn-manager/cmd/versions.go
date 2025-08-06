@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
 	"github.com/spf13/cobra"
@@ -17,15 +16,7 @@ var versionsCmd = &cobra.Command{
 }
 
 func runVersions(cmd *cobra.Command, args []string) error {
-	// Determine home directory
-	home := homeDir
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		home = filepath.Join(userHome, ".sn-manager")
-	}
+	home := getHomeDir()
 
 	// Create version manager
 	versionMgr := version.NewManager(home)
@@ -41,7 +32,7 @@ func runVersions(cmd *cobra.Command, args []string) error {
 
 	if len(versions) == 0 {
 		fmt.Println("No SuperNode versions installed.")
-		fmt.Println("Run 'sn-manager upgrade' to download the latest version.")
+		fmt.Println("Run 'sn-manager install' to download the latest version.")
 		return nil
 	}
 
@@ -52,7 +43,7 @@ func runVersions(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("    %s\n", v)
 		}
-		
+
 		// Show binary info
 		binaryPath := versionMgr.GetVersionBinary(v)
 		if info, err := os.Stat(binaryPath); err == nil {

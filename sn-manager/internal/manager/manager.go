@@ -24,9 +24,7 @@ type Manager struct {
 	logFile   *os.File
 	startTime time.Time
 
-	// Channels for lifecycle management
 	stopCh chan struct{}
-	doneCh chan struct{}
 }
 
 // New creates a new Manager instance
@@ -47,24 +45,18 @@ func New(homeDir string) (*Manager, error) {
 		config:  cfg,
 		homeDir: homeDir,
 		stopCh:  make(chan struct{}),
-		doneCh:  make(chan struct{}),
 	}, nil
 }
 
 // GetSupernodeBinary returns the path to the supernode binary
 func (m *Manager) GetSupernodeBinary() string {
-	// If a specific binary path is configured, use it
-	if m.config.SuperNode.BinaryPath != "" {
-		return m.config.SuperNode.BinaryPath
-	}
-
-	// Otherwise, use the current symlink
+	// Use the current symlink managed by sn-manager
 	currentLink := filepath.Join(m.homeDir, "current", "supernode")
 	if _, err := os.Stat(currentLink); err == nil {
 		return currentLink
 	}
 
-	// Fallback to system binary
+	// Fallback to system binary if no managed version exists
 	return "supernode"
 }
 
@@ -87,12 +79,8 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Prepare command
 	binary := m.GetSupernodeBinary()
-	args := []string{"start", "--home", m.config.SuperNode.Home}
-
-	// Add additional args if configured
-	if m.config.SuperNode.Args != "" {
-		args = append(args, m.config.SuperNode.Args)
-	}
+	// SuperNode will handle its own home directory and arguments
+	args := []string{"start"}
 
 	log.Printf("Starting SuperNode: %s %v", binary, args)
 
@@ -185,9 +173,8 @@ func (m *Manager) GetStatus() map[string]interface{} {
 	defer m.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"running":         m.IsRunning(),
-		"version":         m.config.Updates.CurrentVersion,
-		"manager_version": "dev",
+		"running": m.IsRunning(),
+		"version": m.config.Updates.CurrentVersion,
 	}
 
 	if m.process != nil {
@@ -218,11 +205,9 @@ func (m *Manager) monitor() {
 		// Expected shutdown
 		return
 	default:
-		// Unexpected exit - this is a crash
-		log.Printf("SuperNode crashed with exit code %d: %v", exitCode, err)
+		// Unexpected exit
+		log.Printf("SuperNode exited with code %d: %v", exitCode, err)
 
-		// TODO: Implement restart logic with backoff
-		// For now, just log the crash
 	}
 }
 
@@ -239,18 +224,4 @@ func (m *Manager) cleanup() {
 	// Remove PID file
 	pidPath := filepath.Join(m.homeDir, "supernode.pid")
 	os.Remove(pidPath)
-}
-
-// CheckSupernodeStatus queries the SuperNode's status endpoint
-func (m *Manager) CheckSupernodeStatus() (map[string]interface{}, error) {
-	// TODO: Call SuperNode's HTTP gateway API at port 8002
-	// GET http://localhost:8002/api/status or similar
-	return nil, fmt.Errorf("not implemented")
-}
-
-// WaitForGracefulShutdown checks if SuperNode has active tasks
-func (m *Manager) WaitForGracefulShutdown(timeout time.Duration) error {
-	// TODO: Query SuperNode API to check for active tasks
-	// Wait for tasks to complete or timeout
-	return nil
 }
