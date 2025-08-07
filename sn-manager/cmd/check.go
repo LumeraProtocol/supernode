@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
@@ -18,13 +17,15 @@ var checkCmd = &cobra.Command{
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
-	home := getHomeDir()
+	// Check if initialized
+	if err := checkInitialized(); err != nil {
+		return err
+	}
 
 	// Load config
-	configPath := filepath.Join(home, "config.yml")
-	cfg, err := config.Load(configPath)
+	cfg, err := loadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
 
 	fmt.Println("Checking for updates...")
@@ -53,7 +54,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			fmt.Println(release.Body)
 		}
 
-		fmt.Println("\nTo install this version, run: sn-manager install")
+		fmt.Println("\nTo download this version, run: sn-manager get")
 	} else if cmp == 0 {
 		fmt.Println("\n✓ You are running the latest version")
 	} else {

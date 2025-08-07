@@ -3,61 +3,130 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
+	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
 	"github.com/spf13/cobra"
-)
-
-var (
-	// Config flags
-	cfgCheckInterval      int
-	cfgAutoDownload       bool
-	cfgAutoUpgrade        bool
-	cfgCurrentVersion     string
-	cfgKeepVersions       int
-	cfgLogLevel           string
-	cfgMaxRestartAttempts int
-	cfgRestartDelay       int
-	cfgShutdownTimeout    int
-	forceInit             bool
 )
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize sn-manager configuration",
-	Long:  `Initialize the sn-manager configuration file and directory structure.`,
-	RunE:  runInit,
+	Short: "Initialize sn-manager and SuperNode",
+	Long: `Initialize both sn-manager and SuperNode in one step.
+
+This command will:
+1. Set up sn-manager configuration and directory structure
+2. Download the latest SuperNode binary
+3. Initialize SuperNode with your validator configuration
+
+All SuperNode init flags are passed through to the supernode init command.
+Use -y flag for non-interactive mode.`,
+	DisableFlagParsing: true, // Allow passing through flags to supernode init
+	RunE:               runInit,
 }
 
-func init() {
-	// Get default config for flag defaults
-	def := config.DefaultConfig()
+type initFlags struct {
+	force           bool
+	checkInterval   int
+	autoUpgrade     bool
+	nonInteractive  bool
+	supernodeArgs   []string
+}
 
-	// Force flag
-	initCmd.Flags().BoolVar(&forceInit, "force", false, "Force re-initialization by removing existing directory")
+func parseInitFlags(args []string) *initFlags {
+	flags := &initFlags{
+		checkInterval: 3600,
+		autoUpgrade:   true,
+	}
 
-	// Updates config
-	initCmd.Flags().IntVar(&cfgCheckInterval, "check-interval", def.Updates.CheckInterval, "Update check interval (seconds)")
-	initCmd.Flags().BoolVar(&cfgAutoDownload, "auto-download", def.Updates.AutoDownload, "Auto-download new versions")
-	initCmd.Flags().BoolVar(&cfgAutoUpgrade, "auto-upgrade", def.Updates.AutoUpgrade, "Auto-upgrade when available")
-	initCmd.Flags().StringVar(&cfgCurrentVersion, "current-version", def.Updates.CurrentVersion, "Current version")
-	initCmd.Flags().IntVar(&cfgKeepVersions, "keep-versions", def.Updates.KeepVersions, "Number of old versions to keep")
+	// Parse flags and filter out sn-manager specific ones
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--check-interval":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &flags.checkInterval)
+				i++ // Skip the value
+			}
+		case "--no-auto-upgrade":
+			flags.autoUpgrade = false
+		case "--force":
+			flags.force = true
+			// Also pass --force to supernode
+			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+		case "-y", "--yes":
+			flags.nonInteractive = true
+			// Also pass -y to supernode
+			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+		default:
+			// Pass all other args to supernode
+			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+		}
+	}
 
-	// Manager config
-	initCmd.Flags().StringVar(&cfgLogLevel, "log-level", def.Manager.LogLevel, "Log level (debug/info/warn/error)")
-	initCmd.Flags().IntVar(&cfgMaxRestartAttempts, "max-restart-attempts", def.Manager.MaxRestartAttempts, "Max restart attempts on crash")
-	initCmd.Flags().IntVar(&cfgRestartDelay, "restart-delay", def.Manager.RestartDelay, "Delay between restarts (seconds)")
-	initCmd.Flags().IntVar(&cfgShutdownTimeout, "shutdown-timeout", def.Manager.ShutdownTimeout, "Shutdown timeout (seconds)")
+	return flags
+}
+
+func promptForManagerConfig(flags *initFlags) error {
+	if flags.nonInteractive {
+		return nil
+	}
+
+	fmt.Println("\n=== sn-manager Configuration ===")
+
+	// Auto-upgrade prompt
+	autoUpgradeOptions := []string{"Yes (recommended)", "No"}
+	var autoUpgradeChoice string
+	prompt := &survey.Select{
+		Message: "Enable automatic updates?",
+		Options: autoUpgradeOptions,
+		Default: autoUpgradeOptions[0],
+		Help:    "Automatically download and apply updates when available",
+	}
+	if err := survey.AskOne(prompt, &autoUpgradeChoice); err != nil {
+		return err
+	}
+	flags.autoUpgrade = (autoUpgradeChoice == autoUpgradeOptions[0])
+
+	// Check interval prompt (only if auto-upgrade is enabled)
+	if flags.autoUpgrade {
+		var intervalStr string
+		inputPrompt := &survey.Input{
+			Message: "Update check interval (seconds):",
+			Default: "3600",
+			Help:    "How often to check for updates (3600 = 1 hour)",
+		}
+		if err := survey.AskOne(inputPrompt, &intervalStr); err != nil {
+			return err
+		}
+		interval, err := strconv.Atoi(intervalStr)
+		if err != nil || interval < 60 {
+			fmt.Println("Invalid interval, using default (3600)")
+			flags.checkInterval = 3600
+		} else {
+			flags.checkInterval = interval
+		}
+	}
+
+	return nil
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// Parse flags
+	flags := parseInitFlags(args)
+
+	// Step 1: Initialize sn-manager
+	fmt.Println("Step 1: Initializing sn-manager...")
 	managerHome := config.GetManagerHome()
 	configPath := filepath.Join(managerHome, "config.yml")
 
 	// Check if already initialized
 	if _, err := os.Stat(configPath); err == nil {
-		if !forceInit {
+		if !flags.force {
 			return fmt.Errorf("already initialized at %s. Use --force to re-initialize", managerHome)
 		}
 
@@ -82,42 +151,113 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Start with default config
-	cfg := config.DefaultConfig()
-
-	// Override with provided flags only
-	if cmd.Flags().Changed("check-interval") {
-		cfg.Updates.CheckInterval = cfgCheckInterval
-	}
-	if cmd.Flags().Changed("auto-download") {
-		cfg.Updates.AutoDownload = cfgAutoDownload
-	}
-	if cmd.Flags().Changed("auto-upgrade") {
-		cfg.Updates.AutoUpgrade = cfgAutoUpgrade
-	}
-	if cmd.Flags().Changed("current-version") {
-		cfg.Updates.CurrentVersion = cfgCurrentVersion
-	}
-	if cmd.Flags().Changed("keep-versions") {
-		cfg.Updates.KeepVersions = cfgKeepVersions
-	}
-	if cmd.Flags().Changed("log-level") {
-		cfg.Manager.LogLevel = cfgLogLevel
-	}
-	if cmd.Flags().Changed("max-restart-attempts") {
-		cfg.Manager.MaxRestartAttempts = cfgMaxRestartAttempts
-	}
-	if cmd.Flags().Changed("restart-delay") {
-		cfg.Manager.RestartDelay = cfgRestartDelay
-	}
-	if cmd.Flags().Changed("shutdown-timeout") {
-		cfg.Manager.ShutdownTimeout = cfgShutdownTimeout
+	// Prompt for sn-manager configuration in interactive mode
+	if err := promptForManagerConfig(flags); err != nil {
+		return fmt.Errorf("configuration prompt failed: %w", err)
 	}
 
-	// Save config
+	// Create config with values
+	cfg := &config.Config{
+		Updates: config.UpdateConfig{
+			CheckInterval:  flags.checkInterval,
+			AutoUpgrade:    flags.autoUpgrade,
+			CurrentVersion: "",
+		},
+	}
+
+	// Save initial config
 	if err := config.Save(cfg, configPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
+
+	fmt.Printf("  sn-manager initialized\n")
+	fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
+	fmt.Printf("  Check interval: %d seconds\n", cfg.Updates.CheckInterval)
+
+	// Step 2: Download latest SuperNode binary
+	fmt.Println("\nStep 2: Downloading latest SuperNode binary...")
+
+	versionMgr := version.NewManager(managerHome)
+	client := github.NewClient(config.GitHubRepo)
+
+	// Get latest release
+	release, err := client.GetLatestRelease()
+	if err != nil {
+		return fmt.Errorf("failed to get latest release: %w", err)
+	}
+
+	targetVersion := release.TagName
+	fmt.Printf("Latest version: %s\n", targetVersion)
+
+	// Check if already installed
+	if !versionMgr.IsVersionInstalled(targetVersion) {
+		// Get download URL
+		downloadURL, err := client.GetSupernodeDownloadURL(targetVersion)
+		if err != nil {
+			return fmt.Errorf("failed to get download URL: %w", err)
+		}
+
+		// Download to temp file
+		tempFile := filepath.Join(managerHome, "downloads", fmt.Sprintf("supernode-%s.tmp", targetVersion))
+
+		// Download with progress
+		var lastPercent int
+		progress := func(downloaded, total int64) {
+			if total > 0 {
+				percent := int(downloaded * 100 / total)
+				if percent != lastPercent && percent%10 == 0 {
+					fmt.Printf("\rProgress: %d%%", percent)
+					lastPercent = percent
+				}
+			}
+		}
+
+		if err := client.DownloadBinary(downloadURL, tempFile, progress); err != nil {
+			return fmt.Errorf("failed to download binary: %w", err)
+		}
+		fmt.Println() // New line after progress
+
+		// Install the version
+		if err := versionMgr.InstallVersion(targetVersion, tempFile); err != nil {
+			return fmt.Errorf("failed to install version: %w", err)
+		}
+
+		// Clean up temp file
+		os.Remove(tempFile)
+	}
+
+	// Set as current version
+	if err := versionMgr.SetCurrentVersion(targetVersion); err != nil {
+		return fmt.Errorf("failed to set current version: %w", err)
+	}
+
+	// Update config with current version
+	cfg.Updates.CurrentVersion = targetVersion
+	if err := config.Save(cfg, configPath); err != nil {
+		return fmt.Errorf("failed to update config: %w", err)
+	}
+
+	fmt.Printf("✓ SuperNode %s installed\n", targetVersion)
+
+	// Step 3: Initialize SuperNode
+	fmt.Println("\nStep 3: Initializing SuperNode...")
+
+	// Get the managed supernode binary path
+	supernodeBinary := filepath.Join(managerHome, "current", "supernode")
+
+	// Build the supernode init command with all passed arguments
+	supernodeCmd := exec.Command(supernodeBinary, append([]string{"init"}, flags.supernodeArgs...)...)
+	supernodeCmd.Stdout = os.Stdout
+	supernodeCmd.Stderr = os.Stderr
+	supernodeCmd.Stdin = os.Stdin
+
+	// Run supernode init
+	if err := supernodeCmd.Run(); err != nil {
+		return fmt.Errorf("supernode init failed: %w", err)
+	}
+
+	fmt.Println("\n✅ Complete! Both sn-manager and SuperNode have been initialized.")
+	fmt.Println("\nYou can now start SuperNode with: sn-manager start")
 
 	return nil
 }

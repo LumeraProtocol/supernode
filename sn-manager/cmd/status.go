@@ -5,10 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
 	"syscall"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -23,16 +21,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	home := getHomeDir()
 
 	// Check if initialized
-	configPath := filepath.Join(home, "config.yml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if err := checkInitialized(); err != nil {
 		fmt.Println("SuperNode Status: Not initialized")
 		return nil
 	}
 
 	// Load config to get version info
-	cfg, err := config.Load(configPath)
+	cfg, err := loadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
 
 	// Check PID file
@@ -78,7 +75,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Status: Running (PID %d)\n", pid)
 	fmt.Printf("  Current Version: %s\n", cfg.Updates.CurrentVersion)
 	fmt.Printf("  Manager Version: %s\n", appVersion)
-	fmt.Printf("  Auto-download: %v\n", cfg.Updates.AutoDownload)
 	fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
 
 	return nil

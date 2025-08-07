@@ -48,7 +48,7 @@ func (m *Manager) IsVersionInstalled(version string) bool {
 	return err == nil
 }
 
-// InstallVersion installs a binary to the version directory
+// InstallVersion installs a binary to the version directory atomically
 func (m *Manager) InstallVersion(version string, binaryPath string) error {
 	// Create version directory
 	versionDir := m.GetVersionDir(version)
@@ -58,21 +58,28 @@ func (m *Manager) InstallVersion(version string, binaryPath string) error {
 
 	// Destination binary path
 	destBinary := m.GetVersionBinary(version)
+	tempBinary := destBinary + ".tmp"
 
-	// Copy binary to version directory
+	// Copy binary to temp location first
 	input, err := os.ReadFile(binaryPath)
 	if err != nil {
 		return fmt.Errorf("failed to read binary: %w", err)
 	}
 
-	if err := os.WriteFile(destBinary, input, 0755); err != nil {
+	if err := os.WriteFile(tempBinary, input, 0755); err != nil {
 		return fmt.Errorf("failed to write binary: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempBinary, destBinary); err != nil {
+		os.Remove(tempBinary)
+		return fmt.Errorf("failed to install binary: %w", err)
 	}
 
 	return nil
 }
 
-// SetCurrentVersion updates the current symlink to point to a version
+// SetCurrentVersion updates the current symlink to point to a version atomically
 func (m *Manager) SetCurrentVersion(version string) error {
 	// Verify version exists
 	if !m.IsVersionInstalled(version) {
@@ -82,14 +89,18 @@ func (m *Manager) SetCurrentVersion(version string) error {
 	currentLink := m.GetCurrentLink()
 	targetDir := m.GetVersionDir(version)
 
-	// Remove existing symlink if it exists
-	if err := os.RemoveAll(currentLink); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove existing symlink: %w", err)
+	// Create new symlink with temp name
+	tempLink := currentLink + ".tmp"
+	os.Remove(tempLink) // cleanup any leftover
+	
+	if err := os.Symlink(targetDir, tempLink); err != nil {
+		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
-	// Create new symlink
-	if err := os.Symlink(targetDir, currentLink); err != nil {
-		return fmt.Errorf("failed to create symlink: %w", err)
+	// Atomic rename
+	if err := os.Rename(tempLink, currentLink); err != nil {
+		os.Remove(tempLink)
+		return fmt.Errorf("failed to update symlink: %w", err)
 	}
 
 	return nil
@@ -144,39 +155,3 @@ func (m *Manager) ListVersions() ([]string, error) {
 	return versions, nil
 }
 
-// CleanupOldVersions removes old versions, keeping the specified number
-func (m *Manager) CleanupOldVersions(keepCount int) error {
-	if keepCount < 1 {
-		keepCount = 1
-	}
-
-	versions, err := m.ListVersions()
-	if err != nil {
-		return fmt.Errorf("failed to list versions: %w", err)
-	}
-
-	if len(versions) <= keepCount {
-		return nil // Nothing to clean up
-	}
-
-	// Get current version to avoid deleting it
-	current, _ := m.GetCurrentVersion()
-
-	// Versions are already sorted (newest first)
-	kept := 0
-	for _, version := range versions {
-		if version == current || kept < keepCount {
-			kept++
-			continue
-		}
-
-		// Remove this version
-		versionDir := m.GetVersionDir(version)
-		if err := os.RemoveAll(versionDir); err != nil {
-			return fmt.Errorf("failed to remove version %s: %w", version, err)
-		}
-		fmt.Printf("Removed old version: %s\n", version)
-	}
-
-	return nil
-}

@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 
 It manages the SuperNode binary lifecycle, including:
 - Starting and stopping the SuperNode process
-- Monitoring process health and automatic restarts
+- Monitoring process health
 - Checking for and downloading new versions
 - Performing zero-downtime updates
 
@@ -42,15 +42,13 @@ func Execute(ver, commit, built string) error {
 func init() {
 	// Add all subcommands
 	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(initSupernodeCmd)
-	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(useCmd)
 	rootCmd.AddCommand(lsCmd)
 	rootCmd.AddCommand(lsRemoteCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(restartCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(versionCmd)
 }
