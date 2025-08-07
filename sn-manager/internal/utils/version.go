@@ -1,37 +1,40 @@
 package utils
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
-// CompareVersions compares two semantic versions
-// Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+// CompareVersions compares two version strings
+// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
 func CompareVersions(v1, v2 string) int {
-	// Remove 'v' prefix if present
 	v1 = strings.TrimPrefix(v1, "v")
 	v2 = strings.TrimPrefix(v2, "v")
 
-	// Split into parts
 	parts1 := strings.Split(v1, ".")
 	parts2 := strings.Split(v2, ".")
 
-	// Compare major, minor, patch
-	for i := 0; i < 3; i++ {
-		var p1, p2 int
-		if i < len(parts1) {
-			fmt.Sscanf(parts1[i], "%d", &p1)
-		}
-		if i < len(parts2) {
-			fmt.Sscanf(parts2[i], "%d", &p2)
+	for i := 0; i < len(parts1) && i < len(parts2); i++ {
+		n1, err1 := strconv.Atoi(parts1[i])
+		n2, err2 := strconv.Atoi(parts2[i])
+		
+		if err1 != nil || err2 != nil {
+			return 0
 		}
 
-		if p1 < p2 {
+		if n1 < n2 {
 			return -1
 		}
-		if p1 > p2 {
+		if n1 > n2 {
 			return 1
 		}
+	}
+
+	if len(parts1) < len(parts2) {
+		return -1
+	}
+	if len(parts1) > len(parts2) {
+		return 1
 	}
 
 	return 0

@@ -23,8 +23,6 @@ type Manager struct {
 	mu        sync.RWMutex
 	logFile   *os.File
 	startTime time.Time
-
-	stopCh chan struct{}
 }
 
 // New creates a new Manager instance
@@ -44,7 +42,6 @@ func New(homeDir string) (*Manager, error) {
 	return &Manager{
 		config:  cfg,
 		homeDir: homeDir,
-		stopCh:  make(chan struct{}),
 	}, nil
 }
 
@@ -103,9 +100,6 @@ func (m *Manager) Start(ctx context.Context) error {
 		log.Printf("Warning: failed to save PID file: %v", err)
 	}
 
-	// Start monitoring goroutine
-	go m.monitor()
-
 	log.Printf("SuperNode started with PID %d", m.process.Pid)
 	return nil
 }
@@ -133,7 +127,7 @@ func (m *Manager) Stop() error {
 		done <- err
 	}()
 
-	timeout := time.Duration(m.config.Manager.ShutdownTimeout) * time.Second
+	timeout := 30 * time.Second // Default shutdown timeout
 	select {
 	case <-time.After(timeout):
 		log.Printf("Graceful shutdown timeout, forcing kill...")
@@ -165,50 +159,6 @@ func (m *Manager) IsRunning() bool {
 	// Check if process still exists
 	err := m.process.Signal(syscall.Signal(0))
 	return err == nil
-}
-
-// GetStatus returns the current status information
-func (m *Manager) GetStatus() map[string]interface{} {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	status := map[string]interface{}{
-		"running": m.IsRunning(),
-		"version": m.config.Updates.CurrentVersion,
-	}
-
-	if m.process != nil {
-		status["pid"] = m.process.Pid
-		status["uptime"] = time.Since(m.startTime).String()
-	}
-
-	return status
-}
-
-// monitor watches the process and handles crashes
-func (m *Manager) monitor() {
-	if m.cmd == nil {
-		return
-	}
-
-	// Wait for process to exit
-	err := m.cmd.Wait()
-
-	m.mu.Lock()
-	exitCode := m.cmd.ProcessState.ExitCode()
-	m.cleanup()
-	m.mu.Unlock()
-
-	// Check if this was an expected shutdown
-	select {
-	case <-m.stopCh:
-		// Expected shutdown
-		return
-	default:
-		// Unexpected exit
-		log.Printf("SuperNode exited with code %d: %v", exitCode, err)
-
-	}
 }
 
 // cleanup performs cleanup after process stops

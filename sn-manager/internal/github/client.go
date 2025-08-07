@@ -79,8 +79,8 @@ func (c *Client) GetLatestRelease() (*Release, error) {
 	return &release, nil
 }
 
-// GetAllReleases fetches all releases from GitHub
-func (c *Client) GetAllReleases() ([]Release, error) {
+// ListReleases fetches all releases from GitHub
+func (c *Client) ListReleases() ([]*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases", c.repo)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -102,13 +102,14 @@ func (c *Client) GetAllReleases() ([]Release, error) {
 		return nil, fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	var releases []Release
+	var releases []*Release
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return releases, nil
 }
+
 
 // GetRelease fetches a specific release by tag
 func (c *Client) GetRelease(tag string) (*Release, error) {
@@ -183,16 +184,17 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpPath)
-	defer tmpFile.Close()
 
 	// Download file
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
+		tmpFile.Close()
 		return fmt.Errorf("failed to download: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		tmpFile.Close()
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
@@ -205,6 +207,7 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := tmpFile.Write(buf[:n]); writeErr != nil {
+				tmpFile.Close()
 				return fmt.Errorf("failed to write file: %w", writeErr)
 			}
 			written += int64(n)
@@ -216,12 +219,15 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 			break
 		}
 		if err != nil {
+			tmpFile.Close()
 			return fmt.Errorf("download error: %w", err)
 		}
 	}
 
 	// Close temp file before moving
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close file: %w", err)
+	}
 
 	// Move temp file to final destination
 	if err := os.Rename(tmpPath, destPath); err != nil {
