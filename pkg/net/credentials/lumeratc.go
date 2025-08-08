@@ -100,7 +100,10 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 	keyExMutex.Lock()
 	defer keyExMutex.Unlock()
 
-	keyExchanger, exists := keyExchangers[optsCommon.LocalIdentity]
+	// Create unique cache key that includes both identity and side (client/server)
+	// This ensures client and server credentials get separate KeyExchanger instances
+	cacheKey := fmt.Sprintf("%s-%d", optsCommon.LocalIdentity, side)
+	keyExchanger, exists := keyExchangers[cacheKey]
 	if !exists {
 		keyExchanger, err = securekeyx.NewSecureKeyExchange(
 			optsCommon.Keyring,
@@ -112,7 +115,7 @@ func NewTransportCredentials(side Side, opts interface{}) (credentials.Transport
 		if err != nil {
 			return nil, fmt.Errorf("failed to create secure key exchange: %w", err)
 		}
-		keyExchangers[optsCommon.LocalIdentity] = keyExchanger
+		keyExchangers[cacheKey] = keyExchanger
 	}
 
 	return &LumeraTC{
