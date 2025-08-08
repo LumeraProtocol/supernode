@@ -427,7 +427,7 @@ func recoverExistingKey(kr consmoskeyring.Keyring, keyName, mnemonic string) (st
 // createNewKey handles the creation of a new key
 func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, error) {
 	// Generate mnemonic and create new account
-	keyMnemonic, info, err := keyring.CreateNewAccount(kr, keyName)
+	keyMnemonic, _, err := keyring.CreateNewAccount(kr, keyName)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create new account: %w", err)
 	}
@@ -437,11 +437,6 @@ func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, er
 		return "", "", fmt.Errorf("failed to get address: %w", err)
 	}
 	address := addr.String()
-
-	fmt.Printf("Key generated successfully! Name: %s, Address: %s\n", info.Name, address)
-	fmt.Println("\nIMPORTANT: Write down the mnemonic and keep it in a safe place.")
-	fmt.Println("The mnemonic is the only way to recover your account if you forget your password.")
-	fmt.Printf("Mnemonic: %s\n", keyMnemonic)
 
 	return address, keyMnemonic, nil
 }

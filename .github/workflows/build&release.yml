@@ -46,10 +46,11 @@ jobs:
           echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
 
-      - name: Build binary
+      - name: Build binaries
         run: |
           mkdir -p release
           
+          # Build supernode
           CGO_ENABLED=1 \
           GOOS=linux \
           GOARCH=amd64 \
@@ -59,10 +60,33 @@ jobs:
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }}" \
-          -o release/${{ steps.vars.outputs.binary_name }} \
+          -o release/supernode \
           ./supernode
           
-          chmod +x release/${{ steps.vars.outputs.binary_name }}
+          # Build sn-manager
+          CGO_ENABLED=0 \
+          GOOS=linux \
+          GOARCH=amd64 \
+          go build \
+          -trimpath \
+          -ldflags="-s -w \
+                    -X main.Version=${{ steps.vars.outputs.version }} \
+                    -X main.GitCommit=${{ steps.vars.outputs.git_commit }} \
+                    -X main.BuildTime=${{ steps.vars.outputs.build_time }}" \
+          -o release/sn-manager \
+          ./sn-manager
+          
+          # Make executables
+          chmod +x release/supernode
+          chmod +x release/sn-manager
+          
+          # Create tar archive with both binaries
+          cd release
+          tar -czf ${{ steps.vars.outputs.binary_name }}.tar.gz supernode sn-manager
+          cd ..
+          
+          # Keep individual binary for backward compatibility
+          cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
       - name: Fix Release Directory Permissions
         run: |
@@ -118,6 +142,7 @@ jobs:
         run: |
           mkdir -p release
           
+          # Build supernode
           CGO_ENABLED=1 \
           GOOS=linux \
           GOARCH=amd64 \
@@ -127,10 +152,33 @@ jobs:
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
                     -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }}" \
-          -o release/${{ steps.vars.outputs.binary_name }} \
+          -o release/supernode \
           ./supernode
           
-          chmod +x release/${{ steps.vars.outputs.binary_name }}
+          # Build sn-manager
+          CGO_ENABLED=0 \
+          GOOS=linux \
+          GOARCH=amd64 \
+          go build \
+          -trimpath \
+          -ldflags="-s -w \
+                    -X main.Version=${{ steps.vars.outputs.version }} \
+                    -X main.GitCommit=${{ steps.vars.outputs.git_commit }} \
+                    -X main.BuildTime=${{ steps.vars.outputs.build_time }}" \
+          -o release/sn-manager \
+          ./sn-manager
+          
+          # Make executables
+          chmod +x release/supernode
+          chmod +x release/sn-manager
+          
+          # Create tar archive with both binaries
+          cd release
+          tar -czf ${{ steps.vars.outputs.binary_name }}.tar.gz supernode sn-manager
+          cd ..
+          
+          # Keep individual binary for backward compatibility
+          cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
       - name: Fix Release Directory Permissions
         run: |
