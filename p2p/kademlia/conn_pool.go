@@ -203,21 +203,21 @@ func (conn *connWrapper) RemoteAddr() net.Addr {
 func (conn *connWrapper) SetDeadline(t time.Time) error {
 	conn.mtx.Lock()
 	defer conn.mtx.Unlock()
-	return conn.rawConn.SetDeadline(t)
+	return conn.secureConn.SetDeadline(t)
 }
 
 // SetReadDeadline implements net.Conn's SetReadDeadline interface
 func (conn *connWrapper) SetReadDeadline(t time.Time) error {
 	conn.mtx.Lock()
 	defer conn.mtx.Unlock()
-	return conn.rawConn.SetReadDeadline(t)
+	return conn.secureConn.SetReadDeadline(t)
 }
 
 // SetWriteDeadline implements net.Conn's SetWriteDeadline interface
 func (conn *connWrapper) SetWriteDeadline(t time.Time) error {
 	conn.mtx.Lock()
 	defer conn.mtx.Unlock()
-	return conn.rawConn.SetWriteDeadline(t)
+	return conn.secureConn.SetWriteDeadline(t)
 }
 
 // StartConnEviction starts a goroutine that periodically evicts idle connections.

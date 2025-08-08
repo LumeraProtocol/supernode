@@ -55,19 +55,21 @@ type Network struct {
 	done     chan struct{}     // network is stopped
 
 	// For secure connection
-	tc          credentials.TransportCredentials
+	clientTC    credentials.TransportCredentials // outgoing
+	serverTC    credentials.TransportCredentials // incoming
 	connPool    *ConnPool
 	connPoolMtx sync.Mutex
 	sem         *semaphore.Weighted
 }
 
 // NewNetwork returns a network service
-func NewNetwork(ctx context.Context, dht *DHT, self *Node, tc credentials.TransportCredentials) (*Network, error) {
+func NewNetwork(ctx context.Context, dht *DHT, self *Node, clientTC, serverTC credentials.TransportCredentials) (*Network, error) {
 	s := &Network{
 		dht:      dht,
 		self:     self,
 		done:     make(chan struct{}),
-		tc:       tc,
+		clientTC: clientTC,
+		serverTC: serverTC,
 		connPool: NewConnPool(ctx),
 		sem:      semaphore.NewWeighted(maxConcurrentFindBatchValsRequests),
 	}
@@ -103,7 +105,7 @@ func (s *Network) Start(ctx context.Context) error {
 
 // Stop the network
 func (s *Network) Stop(ctx context.Context) {
-	if s.tc != nil {
+	if s.clientTC != nil || s.serverTC != nil {
 		s.connPool.Release()
 	}
 	// close the socket
@@ -344,8 +346,8 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		"remote-addr":        rawConn.RemoteAddr().String(),
 	})
 	// do secure handshaking
-	if s.tc != nil {
-		conn, err = NewSecureServerConn(ctx, s.tc, rawConn)
+	if s.serverTC != nil {
+		conn, err = NewSecureServerConn(ctx, s.serverTC, rawConn)
 		if err != nil {
 			rawConn.Close()
 			logtrace.Warn(ctx, "Server secure handshake failed", logtrace.Fields{
@@ -607,7 +609,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 
 	remoteAddr := fmt.Sprintf("%s@%s:%d", string(request.Receiver.ID), request.Receiver.IP, request.Receiver.Port)
 
-	if s.tc == nil {
+	if s.clientTC == nil {
 		return nil, errors.New("secure transport credentials are not set")
 	}
 
@@ -615,7 +617,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	s.connPoolMtx.Lock()
 	conn, err := s.connPool.Get(remoteAddr)
 	if err != nil {
-		conn, err = NewSecureClientConn(ctx, s.tc, remoteAddr)
+		conn, err = NewSecureClientConn(ctx, s.clientTC, remoteAddr)
 		if err != nil {
 			s.connPoolMtx.Unlock()
 			return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
@@ -625,7 +627,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	s.connPoolMtx.Unlock()
 
 	defer func() {
-		if err != nil && s.tc != nil {
+		if err != nil && s.clientTC != nil {
 			s.connPoolMtx.Lock()
 			defer s.connPoolMtx.Unlock()
 
@@ -633,6 +635,12 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 			s.connPool.Del(remoteAddr)
 		}
 	}()
+
+	// refresh deadline for pooled connections
+	operationDeadline := time.Now().Add(timeout)
+	if err := conn.SetDeadline(operationDeadline); err != nil {
+		return nil, errors.Errorf("failed to set connection deadline: %w", err)
+	}
 
 	// encode and send the request message
 	data, err := encode(request)

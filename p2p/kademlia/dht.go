@@ -128,6 +128,19 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 		return nil, fmt.Errorf("failed to create client credentials: %w", err)
 	}
 
+	// server creds for incoming
+	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
+		CommonOptions: ltc.CommonOptions{
+			Keyring:       options.Keyring,
+			LocalIdentity: string(options.ID),
+			PeerType:      securekeyx.Supernode,
+			Validator:     lumera.NewSecureKeyExchangeValidator(options.LumeraClient),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create server credentials: %w", err)
+	}
+
 	// new a hashtable with options
 	ht, err := NewHashTable(options)
 	if err != nil {
@@ -139,7 +152,7 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	s.skipBadBootstrapAddrs()
 
 	// new network service for dht
-	network, err := NewNetwork(ctx, s, ht.self, clientCreds)
+	network, err := NewNetwork(ctx, s, ht.self, clientCreds, serverCreds)
 	if err != nil {
 		return nil, fmt.Errorf("new network: %v", err)
 	}
