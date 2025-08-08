@@ -35,19 +35,40 @@ type ServiceTasks struct {
 	TaskCount   int32
 }
 
+// StorageInfo contains storage metrics for a specific path
+type StorageInfo struct {
+	Path           string
+	TotalBytes     uint64
+	UsedBytes      uint64
+	AvailableBytes uint64
+	UsagePercent   float64
+}
+
 type SupernodeStatusresponse struct {
-	CPU struct {
-		Usage     string
-		Remaining string
+	Version           string         // Supernode version
+	UptimeSeconds     uint64         // Uptime in seconds
+	Resources struct {
+		CPU struct {
+			UsagePercent float64
+			Cores        int32
+		}
+		Memory struct {
+			TotalGB      float64
+			UsedGB       float64
+			AvailableGB  float64
+			UsagePercent float64
+		}
+		Storage []StorageInfo
+		HardwareSummary string // Formatted hardware summary
 	}
-	Memory struct {
-		Total     uint64
-		Used      uint64
-		Available uint64
-		UsedPerc  float64
+	RunningTasks      []ServiceTasks // Services with running tasks
+	RegisteredServices []string       // All available service names
+	Network struct {
+		PeersCount    int32    // Number of connected peers
+		PeerAddresses []string // List of peer addresses
 	}
-	Services          []ServiceTasks
-	AvailableServices []string
+	Rank      int32  // Rank in top supernodes list (0 if not in top list)
+	IPAddress string // Supernode IP address with port
 }
 type CascadeSupernodeDownloadRequest struct {
 	ActionID    string

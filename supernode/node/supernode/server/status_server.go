@@ -60,18 +60,42 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 
 	// Convert to protobuf response
 	response := &pb.StatusResponse{
-		Cpu: &pb.StatusResponse_CPU{
-			Usage:     status.CPU.Usage,
-			Remaining: status.CPU.Remaining,
-		},
-		Memory: &pb.StatusResponse_Memory{
-			Total:     status.Memory.Total,
-			Used:      status.Memory.Used,
-			Available: status.Memory.Available,
-			UsedPerc:  status.Memory.UsedPerc,
+		Version:       status.Version,
+		UptimeSeconds: status.UptimeSeconds,
+		Resources: &pb.StatusResponse_Resources{
+			Cpu: &pb.StatusResponse_Resources_CPU{
+				UsagePercent: status.Resources.CPU.UsagePercent,
+				Cores:        status.Resources.CPU.Cores,
+			},
+			Memory: &pb.StatusResponse_Resources_Memory{
+				TotalGb:      status.Resources.Memory.TotalGB,
+				UsedGb:       status.Resources.Memory.UsedGB,
+				AvailableGb:  status.Resources.Memory.AvailableGB,
+				UsagePercent: status.Resources.Memory.UsagePercent,
+			},
+			StorageVolumes:  make([]*pb.StatusResponse_Resources_Storage, 0, len(status.Resources.Storage)),
+			HardwareSummary: status.Resources.HardwareSummary,
 		},
 		RunningTasks:       make([]*pb.StatusResponse_ServiceTasks, 0, len(status.RunningTasks)),
 		RegisteredServices: status.RegisteredServices,
+		Network: &pb.StatusResponse_Network{
+			PeersCount:    status.Network.PeersCount,
+			PeerAddresses: status.Network.PeerAddresses,
+		},
+		Rank:      status.Rank,
+		IpAddress: status.IPAddress,
+	}
+
+	// Convert storage information
+	for _, storage := range status.Resources.Storage {
+		storageInfo := &pb.StatusResponse_Resources_Storage{
+			Path:           storage.Path,
+			TotalBytes:     storage.TotalBytes,
+			UsedBytes:      storage.UsedBytes,
+			AvailableBytes: storage.AvailableBytes,
+			UsagePercent:   storage.UsagePercent,
+		}
+		response.Resources.StorageVolumes = append(response.Resources.StorageVolumes, storageInfo)
 	}
 
 	// Convert service tasks

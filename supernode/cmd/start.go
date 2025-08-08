@@ -101,8 +101,11 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create cascade action server
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
 
+		// Set the version in the status service package
+		supernodeService.Version = Version
+		
 		// Create supernode status service
-		statusService := supernodeService.NewSupernodeStatusService()
+		statusService := supernodeService.NewSupernodeStatusService(*p2pService, lumeraClient, appConfig)
 		statusService.RegisterTaskProvider(cService)
 
 		// Create supernode server

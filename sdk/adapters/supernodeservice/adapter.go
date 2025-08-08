@@ -343,25 +343,45 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
 	result := &SupernodeStatusresponse{}
+	result.Version = resp.Version
+	result.UptimeSeconds = resp.UptimeSeconds
 
-	// Convert CPU data
-	if resp.Cpu != nil {
-		result.CPU.Usage = resp.Cpu.Usage
-		result.CPU.Remaining = resp.Cpu.Remaining
-	}
+	// Convert Resources data
+	if resp.Resources != nil {
+		// Convert CPU data
+		if resp.Resources.Cpu != nil {
+			result.Resources.CPU.UsagePercent = resp.Resources.Cpu.UsagePercent
+			result.Resources.CPU.Cores = resp.Resources.Cpu.Cores
+		}
 
-	// Convert Memory data
-	if resp.Memory != nil {
-		result.Memory.Total = resp.Memory.Total
-		result.Memory.Used = resp.Memory.Used
-		result.Memory.Available = resp.Memory.Available
-		result.Memory.UsedPerc = resp.Memory.UsedPerc
+		// Convert Memory data
+		if resp.Resources.Memory != nil {
+			result.Resources.Memory.TotalGB = resp.Resources.Memory.TotalGb
+			result.Resources.Memory.UsedGB = resp.Resources.Memory.UsedGb
+			result.Resources.Memory.AvailableGB = resp.Resources.Memory.AvailableGb
+			result.Resources.Memory.UsagePercent = resp.Resources.Memory.UsagePercent
+		}
+
+		// Convert Storage data
+		result.Resources.Storage = make([]StorageInfo, 0, len(resp.Resources.StorageVolumes))
+		for _, storage := range resp.Resources.StorageVolumes {
+			result.Resources.Storage = append(result.Resources.Storage, StorageInfo{
+				Path:           storage.Path,
+				TotalBytes:     storage.TotalBytes,
+				UsedBytes:      storage.UsedBytes,
+				AvailableBytes: storage.AvailableBytes,
+				UsagePercent:   storage.UsagePercent,
+			})
+		}
+		
+		// Copy hardware summary
+		result.Resources.HardwareSummary = resp.Resources.HardwareSummary
 	}
 
 	// Convert RunningTasks data
-	result.Services = make([]ServiceTasks, 0, len(resp.RunningTasks))
+	result.RunningTasks = make([]ServiceTasks, 0, len(resp.RunningTasks))
 	for _, service := range resp.RunningTasks {
-		result.Services = append(result.Services, ServiceTasks{
+		result.RunningTasks = append(result.RunningTasks, ServiceTasks{
 			ServiceName: service.ServiceName,
 			TaskIDs:     service.TaskIds,
 			TaskCount:   service.TaskCount,
@@ -369,8 +389,19 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 	}
 
 	// Convert RegisteredServices data
-	result.AvailableServices = make([]string, len(resp.RegisteredServices))
-	copy(result.AvailableServices, resp.RegisteredServices)
+	result.RegisteredServices = make([]string, len(resp.RegisteredServices))
+	copy(result.RegisteredServices, resp.RegisteredServices)
+
+	// Convert Network data
+	if resp.Network != nil {
+		result.Network.PeersCount = resp.Network.PeersCount
+		result.Network.PeerAddresses = make([]string, len(resp.Network.PeerAddresses))
+		copy(result.Network.PeerAddresses, resp.Network.PeerAddresses)
+	}
+
+	// Copy rank and IP address
+	result.Rank = resp.Rank
+	result.IPAddress = resp.IpAddress
 
 	return result
 }

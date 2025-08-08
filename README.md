@@ -18,28 +18,53 @@ service SupernodeService {
 message StatusRequest {}
 
 message StatusResponse {
-  message CPU {
-    string usage = 1;
-    string remaining = 2;
+  string version = 1;                        // Supernode version
+  uint64 uptime_seconds = 2;                 // Uptime in seconds
+  
+  message Resources {
+    message CPU {
+      double usage_percent = 1;  // CPU usage percentage (0-100)
+      int32 cores = 2;          // Number of CPU cores
+    }
+    
+    message Memory {
+      double total_gb = 1;       // Total memory in GB
+      double used_gb = 2;        // Used memory in GB
+      double available_gb = 3;   // Available memory in GB
+      double usage_percent = 4;  // Memory usage percentage (0-100)
+    }
+    
+    message Storage {
+      string path = 1;           // Storage path being monitored
+      uint64 total_bytes = 2;
+      uint64 used_bytes = 3;
+      uint64 available_bytes = 4;
+      double usage_percent = 5;  // Storage usage percentage (0-100)
+    }
+    
+    CPU cpu = 1;
+    Memory memory = 2;
+    repeated Storage storage_volumes = 3;
+    string hardware_summary = 4;  // Formatted hardware summary (e.g., "8 cores / 32GB RAM")
   }
-
-  message Memory {
-    uint64 total = 1;
-    uint64 used = 2;
-    uint64 available = 3;
-    double used_perc = 4;
-  }
-
+  
   message ServiceTasks {
     string service_name = 1;
     repeated string task_ids = 2;
     int32 task_count = 3;
   }
-
-  CPU cpu = 1;
-  Memory memory = 2;
-  repeated ServiceTasks services = 3;
-  repeated string available_services = 4;
+  
+  message Network {
+    int32 peers_count = 1;               // Number of connected peers in P2P network
+    repeated string peer_addresses = 2;  // List of connected peer addresses (format: "ID@IP:Port")
+  }
+  
+  Resources resources = 3;
+  repeated ServiceTasks running_tasks = 4;  // Services with currently running tasks
+  repeated string registered_services = 5;   // All registered/available services
+  Network network = 6;                      // P2P network information
+  int32 rank = 7;                           // Rank in the top supernodes list (0 if not in top list)
+  string ip_address = 8;                    // Supernode IP address with port (e.g., "192.168.1.1:4445")
 }
 ```
 
@@ -115,42 +140,65 @@ The supernode provides an HTTP gateway that exposes the gRPC services via REST A
 
 ### Endpoints
 
-#### GET /status
-Returns the current supernode status including CPU, memory usage and active services.
+#### GET /api/v1/status
+Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
 ```bash
-curl http://localhost:8002/status
+curl http://localhost:8002/api/v1/status
 ```
 
 Response:
 ```json
 {
-  "cpu": {
-    "usage": "15.2%",
-    "remaining": "84.8%"
+  "version": "1.0.0",
+  "uptime_seconds": "3600",
+  "resources": {
+    "cpu": {
+      "usage_percent": 15.2,
+      "cores": 8
+    },
+    "memory": {
+      "total_gb": 32.0,
+      "used_gb": 16.0,
+      "available_gb": 16.0,
+      "usage_percent": 50.0
+    },
+    "storage_volumes": [
+      {
+        "path": "/",
+        "total_bytes": "500000000000",
+        "used_bytes": "250000000000",
+        "available_bytes": "250000000000",
+        "usage_percent": 50.0
+      }
+    ],
+    "hardware_summary": "8 cores / 32GB RAM"
   },
-  "memory": {
-    "total": "16777216000",
-    "used": "8388608000",
-    "available": "8388608000",
-    "usedPerc": 50.0
-  },
-  "services": [
+  "running_tasks": [
     {
-      "serviceName": "cascade",
-      "taskIds": ["task1", "task2"],
-      "taskCount": 2
+      "service_name": "cascade",
+      "task_ids": ["task1", "task2"],
+      "task_count": 2
     }
   ],
-  "availableServices": ["cascade", "sense"]
+  "registered_services": ["cascade", "sense"],
+  "network": {
+    "peers_count": 11,
+    "peer_addresses": [
+      "lumera13z4pkmgkr587sg6lkqnmqmqkkfpsau3rmjd5kx@156.67.29.226:4445",
+      "lumera1s55nzsyqsuwxsl3es0v7rxux7rypsa7zpzlqg5@18.216.80.56:4445"
+    ]
+  },
+  "rank": 6,
+  "ip_address": "192.168.1.100:4445"
 }
 ```
 
-#### GET /services
+#### GET /api/v1/services
 Returns the list of available services on the supernode.
 
 ```bash
-curl http://localhost:8002/services
+curl http://localhost:8002/api/v1/services
 ```
 
 Response:
