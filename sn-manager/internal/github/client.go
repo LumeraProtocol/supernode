@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=client_mock.go -package=github -source=client.go
+
 package github
 
 import (
@@ -10,6 +12,14 @@ import (
 	"strings"
 	"time"
 )
+
+type GithubClient interface {
+	GetLatestRelease() (*Release, error)
+	ListReleases() ([]*Release, error)
+	GetRelease(tag string) (*Release, error)
+	GetSupernodeDownloadURL(version string) (string, error)
+	DownloadBinary(url, destPath string, progress func(downloaded, total int64)) error
+}
 
 // Release represents a GitHub release
 type Release struct {
@@ -38,7 +48,7 @@ type Client struct {
 }
 
 // NewClient creates a new GitHub API client
-func NewClient(repo string) *Client {
+func NewClient(repo string) GithubClient {
 	return &Client{
 		repo: repo,
 		httpClient: &http.Client{
@@ -109,7 +119,6 @@ func (c *Client) ListReleases() ([]*Release, error) {
 
 	return releases, nil
 }
-
 
 // GetRelease fetches a specific release by tag
 func (c *Client) GetRelease(tag string) (*Release, error) {
