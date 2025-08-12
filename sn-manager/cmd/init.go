@@ -24,18 +24,17 @@ This command will:
 2. Download the latest SuperNode binary
 3. Initialize SuperNode with your validator configuration
 
-All SuperNode init flags are passed through to the supernode init command.
-Use -y flag for non-interactive mode.`,
+All unrecognized flags are passed through to the supernode init command.`,
 	DisableFlagParsing: true, // Allow passing through flags to supernode init
 	RunE:               runInit,
 }
 
 type initFlags struct {
-	force           bool
-	checkInterval   int
-	autoUpgrade     bool
-	nonInteractive  bool
-	supernodeArgs   []string
+	force          bool
+	checkInterval  int
+	autoUpgrade    bool
+	nonInteractive bool
+	supernodeArgs  []string
 }
 
 func parseInitFlags(args []string) *initFlags {
@@ -52,16 +51,13 @@ func parseInitFlags(args []string) *initFlags {
 				fmt.Sscanf(args[i+1], "%d", &flags.checkInterval)
 				i++ // Skip the value
 			}
-		case "--no-auto-upgrade":
-			flags.autoUpgrade = false
+		case "--auto-upgrade":
+			flags.autoUpgrade = true
 		case "--force":
 			flags.force = true
-			// Also pass --force to supernode
-			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
 		case "-y", "--yes":
 			flags.nonInteractive = true
-			// Also pass -y to supernode
-			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+
 		default:
 			// Pass all other args to supernode
 			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
@@ -78,14 +74,14 @@ func promptForManagerConfig(flags *initFlags) error {
 
 	fmt.Println("\n=== sn-manager Configuration ===")
 
-	// Auto-upgrade prompt
+	// Auto-upgrade prompt (defaults to true if skipped)
 	autoUpgradeOptions := []string{"Yes (recommended)", "No"}
 	var autoUpgradeChoice string
 	prompt := &survey.Select{
 		Message: "Enable automatic updates?",
 		Options: autoUpgradeOptions,
 		Default: autoUpgradeOptions[0],
-		Help:    "Automatically download and apply updates when available",
+		Help:    "Automatically download and apply updates",
 	}
 	if err := survey.AskOne(prompt, &autoUpgradeChoice); err != nil {
 		return err
@@ -159,9 +155,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Create config with values
 	cfg := &config.Config{
 		Updates: config.UpdateConfig{
-			CheckInterval:  flags.checkInterval,
-			AutoUpgrade:    flags.autoUpgrade,
-			CurrentVersion: "",
+			CheckInterval: flags.checkInterval,
+			AutoUpgrade:   flags.autoUpgrade,
 		},
 	}
 
@@ -170,9 +165,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("  sn-manager initialized\n")
-	fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
-	fmt.Printf("  Check interval: %d seconds\n", cfg.Updates.CheckInterval)
+	fmt.Printf("✓ sn-manager initialized\n")
+	if cfg.Updates.AutoUpgrade {
+		fmt.Printf("  Auto-upgrade: enabled (every %d seconds)\n", cfg.Updates.CheckInterval)
+	}
 
 	// Step 2: Download latest SuperNode binary
 	fmt.Println("\nStep 2: Downloading latest SuperNode binary...")
@@ -237,7 +233,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update config: %w", err)
 	}
 
-	fmt.Printf("✓ SuperNode %s installed\n", targetVersion)
+	fmt.Printf("✓ SuperNode %s ready\n", targetVersion)
 
 	// Step 3: Initialize SuperNode
 	fmt.Println("\nStep 3: Initializing SuperNode...")
@@ -245,8 +241,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Get the managed supernode binary path
 	supernodeBinary := filepath.Join(managerHome, "current", "supernode")
 
-	// Build the supernode init command with all passed arguments
-	supernodeCmd := exec.Command(supernodeBinary, append([]string{"init"}, flags.supernodeArgs...)...)
+	// Always include -y flag for non-interactive mode since sn-manager runs programmatically
+	supernodeArgs := append([]string{"init", "-y"}, flags.supernodeArgs...)
+	supernodeCmd := exec.Command(supernodeBinary, supernodeArgs...)
 	supernodeCmd.Stdout = os.Stdout
 	supernodeCmd.Stderr = os.Stderr
 	supernodeCmd.Stdin = os.Stdin

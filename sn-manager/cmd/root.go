@@ -24,10 +24,7 @@ It manages the SuperNode binary lifecycle, including:
 - Monitoring process health
 - Checking for and downloading new versions
 - Performing zero-downtime updates
-
-You can run SuperNode in two ways:
-1. Direct: 'supernode start' (no automatic updates)
-2. Managed: 'sn-manager start' (with automatic updates)`,
+`,
 }
 
 // Execute adds all child commands and executes the root command

@@ -39,13 +39,13 @@ var (
 
 // Default configuration values
 const (
-	DefaultKeyringBackend = "os"
-	DefaultKeyName        = ""
+	DefaultKeyringBackend = "test"
+	DefaultKeyName        = "test-key"
 	DefaultSupernodeAddr  = "0.0.0.0"
 	DefaultSupernodePort  = 4444
 	DefaultGatewayPort    = 8002
 	DefaultLumeraGRPC     = "localhost:9090"
-	DefaultChainID        = "lumera-mainnet-1"
+	DefaultChainID        = "testing"
 )
 
 // InitInputs holds all user inputs for initialization
@@ -70,11 +70,6 @@ var initCmd = &cobra.Command{
 	Short: "Initialize a new supernode",
 	Long: `Initialize a new supernode by creating a configuration file and setting up keys.
 
-This command will guide you through an interactive setup process to:
-1. Create a config.yml file at ~/.supernode
-2. Select keyring backend (test, file, or os)
-3. Recover an existing key from mnemonic
-4. Configure network settings (GRPC address, port, chain ID)
 
 Example:
   supernode init
@@ -195,99 +190,124 @@ func passphraseFlagCount() int {
 
 // gatherUserInputs collects all user inputs through interactive prompts or uses defaults/flags
 func gatherUserInputs() (InitInputs, error) {
+	// Step 1: Validate that only one passphrase method is specified (plain text, env var, or file)
 	if count := passphraseFlagCount(); count > 1 {
 		return InitInputs{}, fmt.Errorf("specify only one of --keyring-passphrase, --keyring-passphrase-env, or --keyring-passphrase-file")
 	}
 
-	// Check if all required parameters are provided via flags
+	// Step 2: Check if all required parameters are provided via command-line flags
+	// This allows for fully automated/scripted initialization without prompts
 	allFlagsProvided := keyNameFlag != "" &&
-		(supernodeAddrFlag != "" && supernodePortFlag != 0 && lumeraGrpcFlag != "" && chainIDFlag != "") &&
-		(!shouldRecoverFlag && mnemonicFlag == "" || shouldRecoverFlag && mnemonicFlag != "") &&
-		keyringBackendFlag != ""
+		keyringBackendFlag != "" &&
+		supernodeAddrFlag != "" &&
+		supernodePortFlag != 0 &&
+		gatewayPortFlag != 0 &&
+		lumeraGrpcFlag != "" &&
+		chainIDFlag != "" &&
+		((!shouldRecoverFlag && mnemonicFlag == "") || (shouldRecoverFlag && mnemonicFlag != ""))
 
+	// Step 3: Validate mnemonic requirements for non-interactive mode
+	// When recovering a key in non-interactive mode, mnemonic must be provided
 	if skipInteractive && shouldRecoverFlag && mnemonicFlag == "" {
 		return InitInputs{}, fmt.Errorf("--mnemonic flag is required when --recover flag is set for non-interactive mode")
 	}
 
+	// Step 4: Ensure mnemonic is only provided when recovering
+	// Prevents accidental exposure of mnemonic when creating new keys
 	if !shouldRecoverFlag && mnemonicFlag != "" {
 		return InitInputs{}, fmt.Errorf("--mnemonic flag should not be set when not recovering a key")
 	}
 
-	// If -y flag is set or all flags are provided, use flags or defaults
+	// Step 5: Handle non-interactive mode (-y flag) or when all flags are provided
+	// Uses command-line flags or defaults without prompting the user
 	if skipInteractive || allFlagsProvided {
 		fmt.Println("Using provided flags or default configuration values...")
 
-		// Use flags if provided, otherwise use defaults
+		// Step 5a: Determine keyring backend (how keys are stored securely)
+		// Options: 'test' (unencrypted), 'file' (encrypted file), 'os' (system keyring)
 		backend := DefaultKeyringBackend
 		if keyringBackendFlag != "" {
 			backend = keyringBackendFlag
 		}
 
-		// Validate keyring backend
+		// Validate keyring backend is one of the allowed options
 		if err := validateKeyringBackend(backend); err != nil {
 			return InitInputs{}, err
 		}
 
+		// Step 5b: Set the name for the cryptographic key
+		// This name is used to reference the key in the keyring
 		keyName := DefaultKeyName
 		if keyNameFlag != "" {
 			keyName = keyNameFlag
 
-			// Validate key name only if provided (default empty string is allowed)
+			// Validate key name only if provided (alphanumeric and underscores only)
 			if err := validateKeyName(keyName); err != nil {
 				return InitInputs{}, err
 			}
 		}
 
+		// Step 5c: Configure the supernode's network binding address
+		// Determines which network interface the supernode will listen on
 		supernodeAddr := DefaultSupernodeAddr
 		if supernodeAddrFlag != "" {
 			supernodeAddr = supernodeAddrFlag
 
-			// Validate supernode IP address
+			// Validate supernode IP address format
 			if err := validateIPAddress(supernodeAddr); err != nil {
 				return InitInputs{}, err
 			}
 		}
 
+		// Step 5d: Set the port for supernode peer-to-peer communication
 		supernodePort := DefaultSupernodePort
 		if supernodePortFlag != 0 {
 			supernodePort = supernodePortFlag
 
-			// Port validation is handled by the flag type (int)
+			// Ensure port is within valid range (1-65535)
 			if supernodePort < 1 || supernodePort > 65535 {
 				return InitInputs{}, fmt.Errorf("invalid supernode port: %d, must be between 1 and 65535", supernodePort)
 			}
 		}
 
+		// Step 5e: Set the HTTP gateway port for API access
 		gatewayPort := DefaultGatewayPort
 		if gatewayPortFlag != 0 {
 			gatewayPort = gatewayPortFlag
 
-			// Port validation
+			// Validate gateway port is within valid range
 			if gatewayPort < 1 || gatewayPort > 65535 {
 				return InitInputs{}, fmt.Errorf("invalid gateway port: %d, must be between 1 and 65535", gatewayPort)
 			}
 		}
 
+		// Step 5f: Configure connection to the Lumera blockchain node
+		// This is the GRPC endpoint for blockchain interactions
 		lumeraGRPC := DefaultLumeraGRPC
 		if lumeraGrpcFlag != "" {
 			lumeraGRPC = lumeraGrpcFlag
 
-			// Validate GRPC address
+			// Validate GRPC address format (host:port or schema://host:port)
 			if err := validateGRPCAddress(lumeraGRPC); err != nil {
 				return InitInputs{}, err
 			}
 		}
 
+		// Step 5g: Set the blockchain network identifier
+		// Must match the chain ID of the Lumera network you're connecting to
 		chainID := DefaultChainID
 		if chainIDFlag != "" {
 			chainID = chainIDFlag
 		}
 
-		// Check if mnemonic is provided when recover flag is set
+		// Step 5h: Final validation for key recovery mode
+		// Ensure mnemonic is provided when attempting to recover an existing key
 		if shouldRecoverFlag && mnemonicFlag == "" {
 			return InitInputs{}, fmt.Errorf("--mnemonic flag is required when --recover flag is set")
 		}
 
+		// Step 5i: Return all collected configuration values
+		// These will be used to initialize the supernode
 		return InitInputs{
 			KeyringBackend:  backend,
 			PassphrasePlain: passphrasePlain,
@@ -304,20 +324,28 @@ func gatherUserInputs() (InitInputs, error) {
 		}, nil
 	}
 
+	// Step 6: Interactive mode - prompt user for each configuration value
+	// This path is taken when -y flag is NOT provided AND not all required flags are specified
+	// Even if some flags are provided, missing values will be prompted interactively
 	var inputs InitInputs
 	var err error
 
-	// Interactive setup
+	// Step 6a: Prompt for keyring backend selection
+	// User chooses how to securely store their cryptographic keys
 	inputs.KeyringBackend, err = promptKeyringBackend(keyringBackendFlag)
 	if err != nil {
 		return InitInputs{}, fmt.Errorf("failed to select keyring backend: %w", err)
 	}
 
+	// Step 6b: Handle passphrase requirements for secure keyring backends
+	// 'file' and 'os' backends require a passphrase for encryption
 	backend := strings.ToLower(inputs.KeyringBackend)
 	switch backend {
 	case "file", "os":
+		// These backends require encryption passphrase
 		switch passphraseFlagCount() {
 		case 0:
+			// No passphrase provided via flags, prompt user interactively
 			prompt := &survey.Password{
 				Message: "Enter keyring passphrase:",
 				Help:    "Required for 'file' or 'os' keyring back-ends – Ctrl-C to abort.",
@@ -326,24 +354,31 @@ func gatherUserInputs() (InitInputs, error) {
 				return InitInputs{}, fmt.Errorf("failed to get keyring passphrase: %w", err)
 			}
 		case 1:
+			// Passphrase provided via one of the flag methods
 			inputs.PassphrasePlain = passphrasePlain
 			inputs.PassphraseEnv = passphraseEnv
 			inputs.PassphraseFile = passphraseFile
 		default:
+			// Multiple passphrase methods specified (error case)
 			return InitInputs{}, fmt.Errorf("specify only one of --keyring-passphrase, --keyring-passphrase-env, or --keyring-passphrase-file")
 		}
 
 	default:
+		// 'test' backend doesn't require passphrase (unencrypted - dev only)
 		inputs.PassphrasePlain = passphrasePlain
 		inputs.PassphraseEnv = passphraseEnv
 		inputs.PassphraseFile = passphraseFile
 	}
 
+	// Step 6c: Prompt for key management settings
+	// User chooses to create new key or recover existing one
 	inputs.KeyName, inputs.ShouldRecover, inputs.Mnemonic, err = promptKeyManagement(keyNameFlag, shouldRecoverFlag, mnemonicFlag)
 	if err != nil {
 		return InitInputs{}, fmt.Errorf("failed to configure key management: %w", err)
 	}
 
+	// Step 6d: Prompt for network configuration
+	// Collect all network-related settings (ports, addresses, chain ID)
 	inputs.SupernodeAddr, inputs.SupernodePort, inputs.GatewayPort, inputs.LumeraGRPC, inputs.ChainID, err =
 		promptNetworkConfig(supernodeAddrFlag, supernodePortFlag, gatewayPortFlag, lumeraGrpcFlag, chainIDFlag)
 	if err != nil {
