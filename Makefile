@@ -115,3 +115,13 @@ system-test-setup: install-lumera setup-supernodes
 test-e2e:
 	@echo "Running system tests..."
 	@cd tests/system && go test -tags=system_test -v .
+
+# Run cascade e2e tests only
+test-cascade:
+	@echo "Running cascade e2e tests..."
+	@cd tests/system && go test -tags=system_test -v -run TestCascadeE2E .
+
+# Run sn-manager e2e tests only
+test-sn-manager:
+	@echo "Running sn-manager e2e tests..."
+	@cd tests/system && go test -tags=system_test -v -run '^TestSNManager' .
