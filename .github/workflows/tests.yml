@@ -54,4 +54,4 @@ jobs:
         run: make setup-supernodes
       
       - name: Run system tests
-        run: test-e2e
+        run: make test-e2e
