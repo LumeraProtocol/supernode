@@ -18,13 +18,13 @@ import (
 )
 
 type AutoUpdater struct {
-	config      *config.Config
-	homeDir     string
-	githubClient *github.Client
-	versionMgr  *version.Manager
-	gatewayURL  string
-	ticker      *time.Ticker
-	stopCh      chan struct{}
+	config       *config.Config
+	homeDir      string
+	githubClient github.GithubClient
+	versionMgr   *version.Manager
+	gatewayURL   string
+	ticker       *time.Ticker
+	stopCh       chan struct{}
 }
 
 type StatusResponse struct {
@@ -54,7 +54,7 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 
 	interval := time.Duration(u.config.Updates.CheckInterval) * time.Second
 	u.ticker = time.NewTicker(interval)
-	
+
 	log.Printf("Starting auto-updater (checking every %v)", interval)
 
 	u.checkAndUpdate(ctx)
@@ -140,7 +140,7 @@ func (u *AutoUpdater) shouldUpdate(current, latest string) bool {
 
 func (u *AutoUpdater) isGatewayIdle() bool {
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	resp, err := client.Get(u.gatewayURL)
 	if err != nil {
 		log.Printf("Failed to check gateway status: %v", err)
@@ -181,7 +181,7 @@ func (u *AutoUpdater) performUpdate(targetVersion string) error {
 	}
 
 	tempFile := filepath.Join(u.homeDir, "downloads", fmt.Sprintf("supernode-%s.tmp", targetVersion))
-	
+
 	progress := func(downloaded, total int64) {
 		if total > 0 {
 			percent := int(downloaded * 100 / total)
@@ -215,6 +215,6 @@ func (u *AutoUpdater) performUpdate(targetVersion string) error {
 	if err := os.WriteFile(markerPath, []byte(targetVersion), 0644); err != nil {
 		log.Printf("Failed to create restart marker: %v", err)
 	}
-	
+
 	return nil
 }
