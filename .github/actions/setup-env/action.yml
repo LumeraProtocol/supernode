@@ -27,9 +27,14 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y libwebp-dev
+        sudo apt-get install -y libwebp-dev make 
 
     - name: Set Go Private Modules
       shell: bash
       run: |
         go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
+
+    - name: Download Go dependencies
+      shell: bash
+      run: |
+        go mod download

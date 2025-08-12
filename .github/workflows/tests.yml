@@ -18,11 +18,6 @@ jobs:
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
 
-      - name: Install dependencies
-        run: |
-          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
-          go mod download
-
       - name: Run unit tests
         run: go test $(go list ./... | grep -v '/tests') -v
 
@@ -37,11 +32,6 @@ jobs:
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
       
-      - name: Install dependencies
-        run: |
-          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
-          go mod download
-
       - name: Run integration tests
         run: go test -v ./tests/integration/...
 
@@ -56,33 +46,12 @@ jobs:
       - name: Setup Go and system deps
         uses: ./.github/actions/setup-env  
  
-      - name: Install dependencies
-        run: |
-          go env -w GOPRIVATE=github.com/LumeraProtocol/lumera
-          go mod download
-          cd tests/system && go env -w GOPRIVATE=github.com/LumeraProtocol/lumera && go mod download
-
-      - name: Install Lumera
-        run: |
-          cd tests/scripts
-          chmod +x ./install-lumera.sh
-          sudo ./install-lumera.sh latest-tag
-        
-      - name: Setup Supernode environments
-        run: |
-          cd tests/scripts
-          chmod +x ./setup-supernodes.sh
-          ./setup-supernodes.sh all \
-            ../../supernode/main.go \
-            ../system/supernode-data1 \
-            ../system/config.test-1.yml \
-            ../system/supernode-data2 \
-            ../system/config.test-2.yml \
-            ../system/supernode-data3 \
-            ../system/config.test-3.yml
-      
-      - name: Copy CSV file to home directory
-        run: cp claims.csv ~/
  
+      - name: Install Lumera
+        run: make install-lumera
+
+      - name: Setup Supernode environments
+        run: make setup-supernodes
+      
       - name: Run system tests
-        run: cd tests/system && go test -v .
+        run: test-e2e
