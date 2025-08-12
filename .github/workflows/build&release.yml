@@ -64,6 +64,7 @@ jobs:
           ./supernode
           
           # Build sn-manager
+          cd sn-manager
           CGO_ENABLED=0 \
           GOOS=linux \
           GOARCH=amd64 \
@@ -73,19 +74,17 @@ jobs:
                     -X main.Version=${{ steps.vars.outputs.version }} \
                     -X main.GitCommit=${{ steps.vars.outputs.git_commit }} \
                     -X main.BuildTime=${{ steps.vars.outputs.build_time }}" \
-          -o release/sn-manager \
-          ./sn-manager
+          -o ../release/sn-manager \
+          .
+          cd ..
           
-          # Make executables
-          chmod +x release/supernode
-          chmod +x release/sn-manager
+          chmod +x release/supernode release/sn-manager
           
-          # Create tar archive with both binaries
+          # Create tarball
           cd release
           tar -czf ${{ steps.vars.outputs.binary_name }}.tar.gz supernode sn-manager
           cd ..
           
-          # Keep individual binary for backward compatibility
           cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
       - name: Fix Release Directory Permissions
@@ -156,6 +155,7 @@ jobs:
           ./supernode
           
           # Build sn-manager
+          cd sn-manager
           CGO_ENABLED=0 \
           GOOS=linux \
           GOARCH=amd64 \
@@ -165,19 +165,17 @@ jobs:
                     -X main.Version=${{ steps.vars.outputs.version }} \
                     -X main.GitCommit=${{ steps.vars.outputs.git_commit }} \
                     -X main.BuildTime=${{ steps.vars.outputs.build_time }}" \
-          -o release/sn-manager \
-          ./sn-manager
+          -o ../release/sn-manager \
+          .
+          cd ..
           
-          # Make executables
-          chmod +x release/supernode
-          chmod +x release/sn-manager
+          chmod +x release/supernode release/sn-manager
           
-          # Create tar archive with both binaries
+          # Create tarball
           cd release
           tar -czf ${{ steps.vars.outputs.binary_name }}.tar.gz supernode sn-manager
           cd ..
           
-          # Keep individual binary for backward compatibility
           cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
       - name: Fix Release Directory Permissions
@@ -199,7 +197,16 @@ jobs:
             Git Commit: ${{ steps.vars.outputs.git_commit }}
             Build Time: ${{ steps.vars.outputs.build_time }}
             
-            Installation:
+            ## Installation
+            
+            ### Option 1: Download the tarball (includes both binaries)
+            1. Download: `supernode-linux-amd64.tar.gz`
+            2. Extract: `tar -xzf supernode-linux-amd64.tar.gz`
+            3. Make executable: `chmod +x supernode sn-manager`
+            4. Run supernode: `./supernode`
+            5. Run sn-manager: `./sn-manager`
+            
+            ### Option 2: Download supernode binary only
             1. Download: `supernode-linux-amd64`
             2. Make executable: `chmod +x supernode-linux-amd64`
             3. Run: `./supernode-linux-amd64`
