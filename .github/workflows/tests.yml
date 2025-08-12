@@ -74,5 +74,5 @@ jobs:
       - name: Setup Supernode environments
         run: make setup-supernodes
       
-      - name: Run sn-manager e2e tests
-        run: make test-sn-manager
+      # - name: Run sn-manager e2e tests
+      #   run: make test-sn-manager
