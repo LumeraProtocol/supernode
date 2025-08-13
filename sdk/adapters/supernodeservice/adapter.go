@@ -75,6 +75,8 @@ func calculateOptimalChunkSize(fileSize int64) int {
 	return chunkSize
 }
 
+const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
+
 func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
 	// Create the client stream
 	ctx = net.AddCorrelationID(ctx)
@@ -101,6 +103,15 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		return nil, fmt.Errorf("failed to get file stats: %w", err)
 	}
 	totalBytes := fileInfo.Size()
+
+	// Validate file size before starting upload
+	if totalBytes > maxFileSize {
+		a.logger.Error(ctx, "File exceeds maximum size limit", 
+			"filePath", in.FilePath, 
+			"fileSize", totalBytes, 
+			"maxSize", maxFileSize)
+		return nil, fmt.Errorf("file size %d bytes exceeds maximum allowed size of 1GB", totalBytes)
+	}
 
 	// Define adaptive chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(totalBytes)

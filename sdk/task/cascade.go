@@ -33,8 +33,13 @@ func NewCascadeTask(base BaseTask, filePath string, actionId string) *CascadeTas
 
 // Run executes the full cascade‐task lifecycle.
 func (t *CascadeTask) Run(ctx context.Context) error {
-
 	t.LogEvent(ctx, event.SDKTaskStarted, "Running cascade task", nil)
+
+	// Validate file size before proceeding
+	if err := ValidateFileSize(t.filePath); err != nil {
+		t.LogEvent(ctx, event.SDKTaskFailed, "File validation failed", event.EventData{event.KeyError: err.Error()})
+		return err
+	}
 
 	// 1 - Fetch the supernodes
 	supernodes, err := t.fetchSupernodes(ctx, t.Action.Height)

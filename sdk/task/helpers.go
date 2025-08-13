@@ -4,11 +4,28 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
 )
+
+const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
+
+// ValidateFileSize checks if a file size is within the allowed 1GB limit
+func ValidateFileSize(filePath string) error {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to check file: %w", err)
+	}
+
+	if fileInfo.Size() > maxFileSize {
+		return fmt.Errorf("file size %d bytes exceeds maximum allowed size of 1GB", fileInfo.Size())
+	}
+
+	return nil
+}
 
 func (m *ManagerImpl) validateAction(ctx context.Context, actionID string) (lumera.Action, error) {
 	action, err := m.lumeraClient.GetAction(ctx, actionID)

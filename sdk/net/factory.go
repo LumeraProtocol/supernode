@@ -36,10 +36,17 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 	logger.Debug(ctx, "Creating supernode client factory",
 		"localAddress", config.LocalCosmosAddress)
 
+	// Optimized for streaming 1GB files with 4MB chunks (10 concurrent streams)
+	opts := client.DefaultClientOptions()
+	opts.MaxRecvMsgSize = 16 * 1024 * 1024         // 16MB to match server
+	opts.MaxSendMsgSize = 16 * 1024 * 1024         // 16MB to match server
+	opts.InitialWindowSize = 16 * 1024 * 1024      // 16MB per stream (4x chunk size)
+	opts.InitialConnWindowSize = 160 * 1024 * 1024 // 160MB (16MB x 10 streams)
+
 	return &ClientFactory{
 		logger:        logger,
 		keyring:       keyring,
-		clientOptions: client.DefaultClientOptions(),
+		clientOptions: opts,
 		config:        config,
 		lumeraClient:  lumeraClient,
 	}

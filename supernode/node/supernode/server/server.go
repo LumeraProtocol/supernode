@@ -58,15 +58,16 @@ func (server *Server) Run(ctx context.Context) error {
 		logtrace.Fatal(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
 	}
 
-	// Custom server options
+	// Optimized for streaming 1GB files with 4MB chunks (10 concurrent streams)
 	opts := grpcserver.DefaultServerOptions()
 
-	opts.MaxRecvMsgSize = 2 * 1024 * 1024 * 1024  // 2 GB
-	opts.MaxSendMsgSize = 2 * 1024 * 1024 * 1024  // 2 GB
-	opts.InitialWindowSize = 32 * 1024 * 1024     // 32 MB
-	opts.InitialConnWindowSize = 32 * 1024 * 1024 // 32 MB
-	opts.WriteBufferSize = 1024 * 1024            // 1 MB
-	opts.ReadBufferSize = 1024 * 1024             // 1 MB
+	opts.MaxRecvMsgSize = (16 * 1024 * 1024)         // 16MB (supports 4MB chunks + overhead)
+	opts.MaxSendMsgSize = (16 * 1024 * 1024)         // 16MB for download streaming
+	opts.InitialWindowSize = (16 * 1024 * 1024)      // 16MB per stream (4x chunk size)
+	opts.InitialConnWindowSize = (160 * 1024 * 1024) // 160MB (16MB x 10 streams)
+	opts.MaxConcurrentStreams = 20                   // Limit to prevent resource exhaustion
+	opts.ReadBufferSize = (8 * 1024 * 1024)          // 8MB TCP buffer
+	opts.WriteBufferSize = (8 * 1024 * 1024)         // 8MB TCP buffer
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
@@ -110,20 +111,20 @@ func (server *Server) setupGRPCServer() error {
 	for _, service := range server.services {
 		server.grpcServer.RegisterService(service.Desc(), service)
 		server.healthServer.SetServingStatus(service.Desc().ServiceName, healthpb.HealthCheckResponse_SERVING)
-		
+
 		// Keep reference to SupernodeServer
 		if ss, ok := service.(*SupernodeServer); ok {
 			supernodeServer = ss
 		}
 	}
-	
+
 	// After all services are registered, update SupernodeServer with the list
 	if supernodeServer != nil {
 		// Register all custom services
 		for _, svc := range server.services {
 			supernodeServer.RegisterService(svc.Desc().ServiceName, svc.Desc())
 		}
-		
+
 		// Also register the health service
 		healthDesc := healthpb.Health_ServiceDesc
 		supernodeServer.RegisterService(healthDesc.ServiceName, &healthDesc)

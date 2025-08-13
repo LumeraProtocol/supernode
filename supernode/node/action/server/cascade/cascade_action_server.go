@@ -76,6 +76,8 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	ctx := stream.Context()
 	logtrace.Info(ctx, "client streaming request to upload cascade input data received", fields)
 
+	const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
+
 	var (
 		metadata  *pb.Metadata
 		totalSize int
@@ -129,6 +131,14 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 					return fmt.Errorf("file write error: %w", err)
 				}
 				totalSize += len(x.Chunk.Data)
+
+				// Validate total size doesn't exceed limit
+				if totalSize > maxFileSize {
+					fields[logtrace.FieldError] = "file size exceeds 1GB limit"
+					fields["total_size"] = totalSize
+					logtrace.Error(ctx, "upload rejected: file too large", fields)
+					return fmt.Errorf("file size %d exceeds maximum allowed size of 1GB", totalSize)
+				}
 
 				logtrace.Info(ctx, "received data chunk", logtrace.Fields{
 					"chunk_size":        len(x.Chunk.Data),
