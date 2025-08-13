@@ -3,7 +3,7 @@
 supernode:
   key_name: "testkey3"
   identity: "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp"
-  ip_address: "0.0.0.0"
+  host: "0.0.0.0"
   port: 4448
   gateway_port: 8004
 
@@ -15,7 +15,6 @@ keyring:
 
 # P2P Network Configuration
 p2p:
-  listen_address: "0.0.0.0"
   port: 4449
   data_dir: "data/p2p"
 

@@ -355,7 +355,7 @@ The configuration file is located at `~/.supernode/config.yml` and contains the 
 supernode:
   key_name: "mykey"                    # Name of the key for signing transactions
   identity: "lumera15t2e8gjgmuqtj..."  # Lumera address for this supernode  
-  ip_address: "0.0.0.0"               # IP address to bind the service
+  host: "0.0.0.0"                     # Host address to bind the service (IP or hostname)
   port: 4444                          # Port for the supernode service
   gateway_port: 8002                   # Port for the HTTP gateway service
 ```
@@ -373,7 +373,6 @@ keyring:
 ### P2P Configuration
 ```yaml
 p2p:
-  listen_address: "0.0.0.0"  # IP address for P2P networking
   port: 4445                 # P2P communication port (do not change)
   data_dir: "data/p2p"       # Directory for P2P data storage
 ```

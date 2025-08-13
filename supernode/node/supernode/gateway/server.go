@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
@@ -14,18 +16,20 @@ import (
 
 // Server represents the HTTP gateway server
 type Server struct {
+	ipAddress       string
 	port            int
 	server          *http.Server
 	supernodeServer pb.SupernodeServiceServer
 }
 
 // NewServer creates a new HTTP gateway server that directly calls the service
-func NewServer(port int, supernodeServer pb.SupernodeServiceServer) (*Server, error) {
+func NewServer(ipAddress string, port int, supernodeServer pb.SupernodeServiceServer) (*Server, error) {
 	if supernodeServer == nil {
 		return nil, fmt.Errorf("supernode server is required")
 	}
 
 	return &Server{
+		ipAddress:       ipAddress,
 		port:            port,
 		supernodeServer: supernodeServer,
 	}, nil
@@ -66,7 +70,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// Create HTTP server
 	s.server = &http.Server{
-		Addr:         fmt.Sprintf(":%d", s.port),
+		Addr:         net.JoinHostPort(s.ipAddress, strconv.Itoa(s.port)),
 		Handler:      s.corsMiddleware(httpMux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -74,7 +78,8 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	logtrace.Info(ctx, "Starting HTTP gateway server", logtrace.Fields{
-		"port": s.port,
+		"address": s.ipAddress,
+		"port":    s.port,
 	})
 
 	// Start server

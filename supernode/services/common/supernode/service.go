@@ -178,7 +178,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 
 	// Set IP address from config
 	if s.config != nil {
-		resp.IPAddress = fmt.Sprintf("%s:%d", s.config.SupernodeConfig.IpAddress, s.config.P2PConfig.Port)
+		resp.IPAddress = fmt.Sprintf("%s:%d", s.config.SupernodeConfig.Host, s.config.P2PConfig.Port)
 	}
 
 	// Log summary statistics

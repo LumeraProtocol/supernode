@@ -480,7 +480,7 @@ func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, er
 func updateAndSaveConfig(address, supernodeAddr string, supernodePort int, gatewayPort int, lumeraGrpcAddr string, chainID string) error {
 	// Update config with address and network settings
 	appConfig.SupernodeConfig.Identity = address
-	appConfig.SupernodeConfig.IpAddress = supernodeAddr
+	appConfig.SupernodeConfig.Host = supernodeAddr
 	appConfig.SupernodeConfig.Port = uint16(supernodePort)
 	appConfig.SupernodeConfig.GatewayPort = uint16(gatewayPort)
 	appConfig.LumeraClientConfig.GRPCAddr = lumeraGrpcAddr

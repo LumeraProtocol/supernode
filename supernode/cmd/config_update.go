@@ -65,14 +65,14 @@ func promptParameterSelection() (string, error) {
 func updateSupernodeIP() error {
 	var newIP string
 	prompt := &survey.Input{
-		Message: "Enter new supernode IP address:",
-		Default: appConfig.SupernodeConfig.IpAddress,
+		Message: "Enter new supernode host address:",
+		Default: appConfig.SupernodeConfig.Host,
 	}
 	if err := survey.AskOne(prompt, &newIP); err != nil {
 		return err
 	}
 
-	appConfig.SupernodeConfig.IpAddress = newIP
+	appConfig.SupernodeConfig.Host = newIP
 	return saveConfig()
 }
 

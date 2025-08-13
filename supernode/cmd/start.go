@@ -27,16 +27,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// createP2PConfig creates a P2P config from the app config and address
-func createP2PConfig(config *config.Config, address string) *p2p.Config {
-	return &p2p.Config{
-		ListenAddress: config.P2PConfig.ListenAddress,
-		Port:          config.P2PConfig.Port,
-		DataDir:       config.GetP2PDataDir(),
-		ID:            address,
-	}
-}
-
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -103,7 +93,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Set the version in the status service package
 		supernodeService.Version = Version
-		
+
 		// Create supernode status service
 		statusService := supernodeService.NewSupernodeStatusService(*p2pService, lumeraClient, appConfig)
 		statusService.RegisterTaskProvider(cService)
@@ -114,7 +104,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Configure server
 		serverConfig := &server.Config{
 			Identity:        appConfig.SupernodeConfig.Identity,
-			ListenAddresses: appConfig.SupernodeConfig.IpAddress,
+			ListenAddresses: appConfig.SupernodeConfig.Host,
 			Port:            int(appConfig.SupernodeConfig.Port),
 		}
 
@@ -129,7 +119,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if gatewayPort == 0 {
 			gatewayPort = 8002 // Default fallback
 		}
-		gatewayServer, err := gateway.NewServer(int(gatewayPort), supernodeServer)
+		gatewayServer, err := gateway.NewServer(appConfig.SupernodeConfig.Host, int(gatewayPort), supernodeServer)
 		if err != nil {
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}
@@ -177,7 +167,7 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 	// Create P2P config using helper function
 	p2pConfig := createP2PConfig(config, address.String())
 
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"listen_address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
+	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
 	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
 	if err != nil {

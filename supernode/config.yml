@@ -2,7 +2,7 @@
 supernode:
   key_name: "mykey"  # Account name for the supernode in keyring
   identity: "lumera1ccmw5plzuldntum2rz6kq6uq346vtrhrvwfzsa"  # Identity of the supernode, lumera address
-  ip_address: "0.0.0.0"
+  host: "0.0.0.0"
   port: 4444
   gateway_port: 8002  # Port for the HTTP gateway
 
@@ -13,7 +13,6 @@ keyring:
 
 # P2P Network Configuration
 p2p:
-  listen_address: "0.0.0.0"
   port: 4445
   data_dir: "data/p2p"  # P2P data directory in home folder
   

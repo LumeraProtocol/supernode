@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LumeraProtocol/supernode/p2p"
 	"github.com/LumeraProtocol/supernode/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/supernode/config"
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -57,4 +58,14 @@ func isValidBIP39WordCount(wordCount int) bool {
 		}
 	}
 	return false
+}
+
+// createP2PConfig creates a P2P config from the app config and address
+func createP2PConfig(config *config.Config, address string) *p2p.Config {
+	return &p2p.Config{
+		ListenAddress: config.SupernodeConfig.Host,
+		Port:          config.P2PConfig.Port,
+		DataDir:       config.GetP2PDataDir(),
+		ID:            address,
+	}
 }

@@ -31,6 +31,7 @@ func TestNewServer_WithValidConfig(t *testing.T) {
 	mockLumeraClient := lumera.NewMockClient(ctl)
 
 	cfg := NewConfig()
+	cfg.ListenAddresses = "127.0.0.1"
 	s, err := New(cfg, "supernode-test", mockKeyring, mockLumeraClient, &mockService{})
 	assert.NoError(t, err)
 	assert.NotNil(t, s)
@@ -56,6 +57,7 @@ func TestSetServiceStatusAndClose(t *testing.T) {
 	mockLumeraClient := lumera.NewMockClient(ctl)
 
 	cfg := NewConfig()
+	cfg.ListenAddresses = "127.0.0.1"
 	s, _ := New(cfg, "test", mockKeyring, mockLumeraClient, &mockService{})
 	_ = s.setupGRPCServer()
 

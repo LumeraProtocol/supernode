@@ -1,8 +1,7 @@
 package server
 
 const (
-	defaultListenAddresses = "0.0.0.0"
-	defaultPort            = 4444
+	defaultPort = 4444
 )
 
 // Config contains settings of the supernode server.
@@ -15,7 +14,6 @@ type Config struct {
 // NewConfig returns a new Config instance.
 func NewConfig() *Config {
 	return &Config{
-		ListenAddresses: defaultListenAddresses,
-		Port:            defaultPort,
+		Port: defaultPort,
 	}
 }

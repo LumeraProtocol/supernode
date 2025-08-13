@@ -44,7 +44,7 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 		SupernodeConfig: SupernodeConfig{
 			KeyName:     keyName,
 			Identity:    identity,
-			IpAddress:   "0.0.0.0",
+			Host:        "0.0.0.0",
 			Port:        4444,
 			GatewayPort: 8002,
 		},
@@ -56,9 +56,8 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			PassFile:  passFile,
 		},
 		P2PConfig: P2PConfig{
-			ListenAddress: "0.0.0.0",
-			Port:          4445,
-			DataDir:       "data/p2p",
+			Port:    4445,
+			DataDir: "data/p2p",
 		},
 		LumeraClientConfig: LumeraClientConfig{
 			GRPCAddr: "localhost:9090",

@@ -13,7 +13,7 @@ import (
 type SupernodeConfig struct {
 	KeyName     string `yaml:"key_name"`
 	Identity    string `yaml:"identity"`
-	IpAddress   string `yaml:"ip_address"`
+	Host        string `yaml:"host"`
 	Port        uint16 `yaml:"port"`
 	GatewayPort uint16 `yaml:"gateway_port"`
 }
@@ -27,9 +27,8 @@ type KeyringConfig struct {
 }
 
 type P2PConfig struct {
-	ListenAddress string `yaml:"listen_address"`
-	Port          uint16 `yaml:"port"`
-	DataDir       string `yaml:"data_dir"`
+	Port    uint16 `yaml:"port"`
+	DataDir string `yaml:"data_dir"`
 }
 
 type LumeraClientConfig struct {

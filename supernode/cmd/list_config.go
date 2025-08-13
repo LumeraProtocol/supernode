@@ -22,7 +22,7 @@ var configListCmd = &cobra.Command{
 		// Display configuration parameters
 		fmt.Fprintf(w, "Key Name\t%s\n", appConfig.SupernodeConfig.KeyName)
 		fmt.Fprintf(w, "Address\t%s\n", appConfig.SupernodeConfig.Identity)
-		fmt.Fprintf(w, "Supernode Address\t%s\n", appConfig.SupernodeConfig.IpAddress)
+		fmt.Fprintf(w, "Supernode Address\t%s\n", appConfig.SupernodeConfig.Host)
 		fmt.Fprintf(w, "Supernode Port\t%d\n", appConfig.SupernodeConfig.Port)
 		fmt.Fprintf(w, "Keyring Backend\t%s\n", appConfig.KeyringConfig.Backend)
 		fmt.Fprintf(w, "Lumera GRPC Address\t%s\n", appConfig.LumeraClientConfig.GRPCAddr)
