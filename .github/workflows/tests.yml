@@ -56,23 +56,23 @@ jobs:
       - name: Run cascade e2e tests
         run: make test-cascade
 
-  sn-manager-e2e-tests:
-    name: sn-manager-e2e-tests
-    runs-on: ubuntu-latest
+  # sn-manager-e2e-tests:
+  #   name: sn-manager-e2e-tests
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Setup Go and system deps
-        uses: ./.github/actions/setup-env  
+  #     - name: Setup Go and system deps
+  #       uses: ./.github/actions/setup-env  
  
  
-      - name: Install Lumera
-        run: make install-lumera
+  #     - name: Install Lumera
+  #       run: make install-lumera
 
-      - name: Setup Supernode environments
-        run: make setup-supernodes
+  #     - name: Setup Supernode environments
+  #       run: make setup-supernodes
       
-      # - name: Run sn-manager e2e tests
-      #   run: make test-sn-manager
+  #     - name: Run sn-manager e2e tests
+  #       run: make test-sn-manager
