@@ -23,6 +23,7 @@ type TaskEntry struct {
 	Events        []event.Event
 	CreatedAt     time.Time
 	LastUpdatedAt time.Time
+	Cancel        context.CancelFunc // For cancelling long-running tasks
 }
 
 type TaskCache struct {
@@ -64,8 +65,8 @@ func (tc *TaskCache) getOrCreateMutex(taskID string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
-// Set stores a task in the cache with initial metadata
-func (tc *TaskCache) Set(ctx context.Context, taskID string, task Task, taskType TaskType, actionID string) bool {
+// Set stores a task in the cache with initial metadata and optional cancel function
+func (tc *TaskCache) Set(ctx context.Context, taskID string, task Task, taskType TaskType, actionID string, cancel context.CancelFunc) bool {
 	mu := tc.getOrCreateMutex(taskID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -82,6 +83,7 @@ func (tc *TaskCache) Set(ctx context.Context, taskID string, task Task, taskType
 		Events:        make([]event.Event, 0),
 		CreatedAt:     now,
 		LastUpdatedAt: now,
+		Cancel:        cancel,
 	}
 
 	success := tc.cache.Set(taskID, entry, 1)

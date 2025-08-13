@@ -92,20 +92,25 @@ func NewManagerWithLumeraClient(ctx context.Context, config config.Config, logge
 
 // CreateCascadeTask creates and starts a Cascade task using the new pattern
 func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, actionID, signature string) (string, error) {
+	// Create a detached context immediately to prevent HTTP request cancellation
+	taskCtx, cancel := context.WithCancel(context.Background())
+	
 	// First validate the action before creating the task
-	action, err := m.validateAction(ctx, actionID)
+	action, err := m.validateAction(taskCtx, actionID)
 	if err != nil {
+		cancel() // Clean up if validation fails
 		return "", err
 	}
 
 	// verify signature
-	if err := m.validateSignature(ctx, action, signature); err != nil {
+	if err := m.validateSignature(taskCtx, action, signature); err != nil {
+		cancel() // Clean up if signature validation fails
 		return "", err
 	}
 
 	taskID := uuid.New().String()[:8]
 
-	m.logger.Debug(ctx, "Generated task ID", "taskID", taskID)
+	m.logger.Debug(taskCtx, "Generated task ID", "taskID", taskID)
 
 	baseTask := BaseTask{
 		TaskID:   taskID,
@@ -122,23 +127,23 @@ func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, ac
 	// Create cascade-specific task
 	task := NewCascadeTask(baseTask, filePath, actionID)
 
-	// Store task in cache
-	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)
+	// Store task in cache with cancel function
+	m.taskCache.Set(taskCtx, taskID, task, TaskTypeCascade, actionID, cancel)
 
 	// Ensure task is stored before returning
 	m.taskCache.Wait()
 
 	go func() {
-		m.logger.Debug(ctx, "Starting cascade task asynchronously", "taskID", taskID)
-		err := task.Run(ctx)
+		m.logger.Debug(taskCtx, "Starting cascade task asynchronously", "taskID", taskID)
+		err := task.Run(taskCtx)
 		if err != nil {
 			// Error handling is done via events in the task.Run method
 			// This is just a failsafe in case something goes wrong
-			m.logger.Error(ctx, "Cascade task failed with error", "taskID", taskID, "error", err)
+			m.logger.Error(taskCtx, "Cascade task failed with error", "taskID", taskID, "error", err)
 		}
 	}()
 
-	m.logger.Info(ctx, "Cascade task created successfully", "taskID", taskID)
+	m.logger.Info(taskCtx, "Cascade task created successfully", "taskID", taskID)
 	return taskID, nil
 }
 
@@ -152,11 +157,17 @@ func (m *ManagerImpl) GetTask(ctx context.Context, taskID string) (*TaskEntry, b
 func (m *ManagerImpl) DeleteTask(ctx context.Context, taskID string) error {
 	m.logger.Info(ctx, "Deleting task", "taskID", taskID)
 
-	// First check if the task exists
-	_, exists := m.taskCache.Get(ctx, taskID)
+	// First check if the task exists and get its entry
+	taskEntry, exists := m.taskCache.Get(ctx, taskID)
 	if !exists {
 		m.logger.Warn(ctx, "Task not found for deletion", "taskID", taskID)
 		return fmt.Errorf("task not found: %s", taskID)
+	}
+
+	// Cancel the task if it has a cancel function
+	if taskEntry.Cancel != nil {
+		m.logger.Info(ctx, "Cancelling task before deletion", "taskID", taskID)
+		taskEntry.Cancel()
 	}
 
 	// Delete the task from the cache
@@ -242,19 +253,25 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 }
 
 func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string, signature string) (string, error) {
+	// Create a detached context immediately to prevent HTTP request cancellation
+	taskCtx, cancel := context.WithCancel(context.Background())
+	
 	// First validate the action before creating the task
-	action, err := m.validateDownloadAction(ctx, actionID)
+	action, err := m.validateDownloadAction(taskCtx, actionID)
 	if err != nil {
+		cancel() // Clean up if validation fails
 		return "", err
 	}
 	// Decode metadata to get the filename
-	metadata, err := m.lumeraClient.DecodeCascadeMetadata(ctx, action)
+	metadata, err := m.lumeraClient.DecodeCascadeMetadata(taskCtx, action)
 	if err != nil {
+		cancel() // Clean up if metadata decode fails
 		return "", fmt.Errorf("failed to decode cascade metadata: %w", err)
 	}
 
 	// Ensure we have a filename from metadata
 	if metadata.FileName == "" {
+		cancel() // Clean up if no filename
 		return "", fmt.Errorf("no filename found in cascade metadata")
 	}
 
@@ -263,7 +280,7 @@ func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, o
 
 	taskID := uuid.New().String()[:8]
 
-	m.logger.Debug(ctx, "Generated download task ID", "task_id", taskID, "final_output_path", finalOutputPath)
+	m.logger.Debug(taskCtx, "Generated download task ID", "task_id", taskID, "final_output_path", finalOutputPath)
 
 	baseTask := BaseTask{
 		TaskID:   taskID,
@@ -280,22 +297,22 @@ func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, o
 	// Use the final output path with the correct filename
 	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath, signature)
 
-	// Store task in cache
-	m.taskCache.Set(ctx, taskID, task, TaskTypeCascade, actionID)
+	// Store task in cache with cancel function
+	m.taskCache.Set(taskCtx, taskID, task, TaskTypeCascade, actionID, cancel)
 
 	// Ensure task is stored before returning
 	m.taskCache.Wait()
 
 	go func() {
-		m.logger.Debug(ctx, "Starting download cascade task asynchronously", "taskID", taskID)
-		err := task.Run(ctx)
+		m.logger.Debug(taskCtx, "Starting download cascade task asynchronously", "taskID", taskID)
+		err := task.Run(taskCtx)
 		if err != nil {
 			// Error handling is done via events in the task.Run method
 			// This is just a failsafe in case something goes wrong
-			m.logger.Error(ctx, "Download Cascade task failed with error", "taskID", taskID, "error", err)
+			m.logger.Error(taskCtx, "Download Cascade task failed with error", "taskID", taskID, "error", err)
 		}
 	}()
 
-	m.logger.Info(ctx, "Download Cascade task created successfully", "taskID", taskID, "outputPath", finalOutputPath)
+	m.logger.Info(taskCtx, "Download Cascade task created successfully", "taskID", taskID, "outputPath", finalOutputPath)
 	return taskID, nil
 }
