@@ -22,6 +22,7 @@ import (
 	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
 	"github.com/LumeraProtocol/supernode/supernode/services/common"
 	supernodeService "github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	"github.com/LumeraProtocol/supernode/supernode/services/verifier"
 
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
@@ -55,6 +56,24 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize Lumera client", logtrace.Fields{"error": err.Error()})
 		}
+
+		// Verify config matches chain registration before starting services
+		logtrace.Info(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
+		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
+		verificationResult, err := configVerifier.VerifyConfig(ctx)
+		if err != nil {
+			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"error": err.Error()})
+		}
+		
+		if !verificationResult.IsValid() {
+			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"summary": verificationResult.Summary()})
+		}
+		
+		if verificationResult.HasWarnings() {
+			logtrace.Warn(ctx, "Config verification warnings", logtrace.Fields{"summary": verificationResult.Summary()})
+		}
+		
+		logtrace.Info(ctx, "Configuration verification successful", logtrace.Fields{})
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
