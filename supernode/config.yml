@@ -4,7 +4,6 @@ supernode:
   identity: "lumera1ccmw5plzuldntum2rz6kq6uq346vtrhrvwfzsa"  # Identity of the supernode, lumera address
   host: "0.0.0.0"
   port: 4444
-  gateway_port: 8002  # Port for the HTTP gateway
 
 # Keyring Configuration
 keyring:

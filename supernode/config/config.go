@@ -15,7 +15,7 @@ type SupernodeConfig struct {
 	Identity    string `yaml:"identity"`
 	Host        string `yaml:"host"`
 	Port        uint16 `yaml:"port"`
-	GatewayPort uint16 `yaml:"gateway_port"`
+	GatewayPort uint16 `yaml:"gateway_port,omitempty"`
 }
 
 type KeyringConfig struct {

@@ -14,6 +14,9 @@ import (
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
 )
 
+// DefaultGatewayPort is an uncommon port for internal gateway use
+const DefaultGatewayPort = 8092
+
 // Server represents the HTTP gateway server
 type Server struct {
 	ipAddress       string
@@ -23,9 +26,15 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP gateway server that directly calls the service
+// If port is 0, it will use the default port
 func NewServer(ipAddress string, port int, supernodeServer pb.SupernodeServiceServer) (*Server, error) {
 	if supernodeServer == nil {
 		return nil, fmt.Errorf("supernode server is required")
+	}
+
+	// Use default port if not specified
+	if port == 0 {
+		port = DefaultGatewayPort
 	}
 
 	return &Server{

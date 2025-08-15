@@ -134,11 +134,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Create HTTP gateway server that directly calls the supernode server
-		gatewayPort := appConfig.SupernodeConfig.GatewayPort
-		if gatewayPort == 0 {
-			gatewayPort = 8002 // Default fallback
-		}
-		gatewayServer, err := gateway.NewServer(appConfig.SupernodeConfig.Host, int(gatewayPort), supernodeServer)
+		gatewayServer, err := gateway.NewServer(appConfig.SupernodeConfig.Host, int(appConfig.SupernodeConfig.GatewayPort), supernodeServer)
 		if err != nil {
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}

@@ -29,7 +29,6 @@ var (
 	mnemonicFlag       string
 	supernodeAddrFlag  string
 	supernodePortFlag  int
-	gatewayPortFlag    int
 	lumeraGrpcFlag     string
 	chainIDFlag        string
 	passphrasePlain    string
@@ -43,7 +42,6 @@ const (
 	DefaultKeyName        = "test-key"
 	DefaultSupernodeAddr  = "0.0.0.0"
 	DefaultSupernodePort  = 4444
-	DefaultGatewayPort    = 8002
 	DefaultLumeraGRPC     = "localhost:9090"
 	DefaultChainID        = "testing"
 )
@@ -59,7 +57,6 @@ type InitInputs struct {
 	Mnemonic        string
 	SupernodeAddr   string
 	SupernodePort   int
-	GatewayPort     int
 	LumeraGRPC      string
 	ChainID         string
 }
@@ -125,7 +122,7 @@ Example:
 		}
 
 		// Update config with gathered settings and save
-		if err := updateAndSaveConfig(address, inputs.SupernodeAddr, inputs.SupernodePort, inputs.GatewayPort, inputs.LumeraGRPC, inputs.ChainID); err != nil {
+		if err := updateAndSaveConfig(address, inputs.SupernodeAddr, inputs.SupernodePort, inputs.LumeraGRPC, inputs.ChainID); err != nil {
 			return err
 		}
 
@@ -201,7 +198,6 @@ func gatherUserInputs() (InitInputs, error) {
 		keyringBackendFlag != "" &&
 		supernodeAddrFlag != "" &&
 		supernodePortFlag != 0 &&
-		gatewayPortFlag != 0 &&
 		lumeraGrpcFlag != "" &&
 		chainIDFlag != "" &&
 		((!shouldRecoverFlag && mnemonicFlag == "") || (shouldRecoverFlag && mnemonicFlag != ""))
@@ -270,18 +266,7 @@ func gatherUserInputs() (InitInputs, error) {
 			}
 		}
 
-		// Step 5e: Set the HTTP gateway port for API access
-		gatewayPort := DefaultGatewayPort
-		if gatewayPortFlag != 0 {
-			gatewayPort = gatewayPortFlag
-
-			// Validate gateway port is within valid range
-			if gatewayPort < 1 || gatewayPort > 65535 {
-				return InitInputs{}, fmt.Errorf("invalid gateway port: %d, must be between 1 and 65535", gatewayPort)
-			}
-		}
-
-		// Step 5f: Configure connection to the Lumera blockchain node
+		// Step 5e: Configure connection to the Lumera blockchain node
 		// This is the GRPC endpoint for blockchain interactions
 		lumeraGRPC := DefaultLumeraGRPC
 		if lumeraGrpcFlag != "" {
@@ -293,20 +278,20 @@ func gatherUserInputs() (InitInputs, error) {
 			}
 		}
 
-		// Step 5g: Set the blockchain network identifier
+		// Step 5f: Set the blockchain network identifier
 		// Must match the chain ID of the Lumera network you're connecting to
 		chainID := DefaultChainID
 		if chainIDFlag != "" {
 			chainID = chainIDFlag
 		}
 
-		// Step 5h: Final validation for key recovery mode
+		// Step 5g: Final validation for key recovery mode
 		// Ensure mnemonic is provided when attempting to recover an existing key
 		if shouldRecoverFlag && mnemonicFlag == "" {
 			return InitInputs{}, fmt.Errorf("--mnemonic flag is required when --recover flag is set")
 		}
 
-		// Step 5i: Return all collected configuration values
+		// Step 5h: Return all collected configuration values
 		// These will be used to initialize the supernode
 		return InitInputs{
 			KeyringBackend:  backend,
@@ -318,7 +303,6 @@ func gatherUserInputs() (InitInputs, error) {
 			Mnemonic:        mnemonicFlag,
 			SupernodeAddr:   supernodeAddr,
 			SupernodePort:   supernodePort,
-			GatewayPort:     gatewayPort,
 			LumeraGRPC:      lumeraGRPC,
 			ChainID:         chainID,
 		}, nil
@@ -379,8 +363,8 @@ func gatherUserInputs() (InitInputs, error) {
 
 	// Step 6d: Prompt for network configuration
 	// Collect all network-related settings (ports, addresses, chain ID)
-	inputs.SupernodeAddr, inputs.SupernodePort, inputs.GatewayPort, inputs.LumeraGRPC, inputs.ChainID, err =
-		promptNetworkConfig(supernodeAddrFlag, supernodePortFlag, gatewayPortFlag, lumeraGrpcFlag, chainIDFlag)
+	inputs.SupernodeAddr, inputs.SupernodePort, inputs.LumeraGRPC, inputs.ChainID, err =
+		promptNetworkConfig(supernodeAddrFlag, supernodePortFlag, lumeraGrpcFlag, chainIDFlag)
 	if err != nil {
 		return InitInputs{}, fmt.Errorf("failed to configure network settings: %w", err)
 	}
@@ -477,12 +461,11 @@ func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, er
 }
 
 // updateAndSaveConfig updates the configuration with network settings and saves it
-func updateAndSaveConfig(address, supernodeAddr string, supernodePort int, gatewayPort int, lumeraGrpcAddr string, chainID string) error {
+func updateAndSaveConfig(address, supernodeAddr string, supernodePort int, lumeraGrpcAddr string, chainID string) error {
 	// Update config with address and network settings
 	appConfig.SupernodeConfig.Identity = address
 	appConfig.SupernodeConfig.Host = supernodeAddr
 	appConfig.SupernodeConfig.Port = uint16(supernodePort)
-	appConfig.SupernodeConfig.GatewayPort = uint16(gatewayPort)
 	appConfig.LumeraClientConfig.GRPCAddr = lumeraGrpcAddr
 	appConfig.LumeraClientConfig.ChainID = chainID
 
@@ -583,7 +566,7 @@ func promptKeyManagement(passedKeyName string, recover bool, passedMnemonic stri
 	return keyName, shouldRecover, mnemonic, nil
 }
 
-func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort int, passedGRPC, passedChainID string) (supernodeAddr string, supernodePort int, gatewayPort int, lumeraGrpcAddr string, chainID string, err error) {
+func promptNetworkConfig(passedAddrs string, passedPort int, passedGRPC, passedChainID string) (supernodeAddr string, supernodePort int, lumeraGrpcAddr string, chainID string, err error) {
 	if passedAddrs != "" {
 		supernodeAddr = passedAddrs
 	} else {
@@ -596,12 +579,6 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 		port = fmt.Sprintf("%d", DefaultSupernodePort)
 	}
 
-	var gPort string
-	if passedGatewayPort != 0 {
-		gPort = fmt.Sprintf("%d", passedGatewayPort)
-	} else {
-		gPort = fmt.Sprintf("%d", DefaultGatewayPort)
-	}
 	if passedGRPC != "" {
 		lumeraGrpcAddr = passedGRPC
 	} else {
@@ -621,12 +598,12 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	}
 	err = survey.AskOne(supernodePrompt, &supernodeAddr)
 	if err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
 	// Validate IP address format
 	if err := validateIPAddress(supernodeAddr); err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
 	// Supernode port
@@ -638,30 +615,14 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	}
 	err = survey.AskOne(supernodePortPrompt, &portStr)
 	if err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
 	supernodePort, err = strconv.Atoi(portStr)
 	if err != nil || supernodePort < 1 || supernodePort > 65535 {
-		return "", 0, 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
+		return "", 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
 	}
 
-	// Gateway port
-	var gatewayPortStr string
-	gatewayPortPrompt := &survey.Input{
-		Message: "Enter HTTP gateway port:",
-		Default: gPort,
-		Help:    "Port for the HTTP gateway to listen on (1-65535), Ctrl-C for exit",
-	}
-	err = survey.AskOne(gatewayPortPrompt, &gatewayPortStr)
-	if err != nil {
-		return "", 0, 0, "", "", err
-	}
-
-	gatewayPort, err = strconv.Atoi(gatewayPortStr)
-	if err != nil || gatewayPort < 1 || gatewayPort > 65535 {
-		return "", 0, 0, "", "", fmt.Errorf("invalid gateway port: %s", gatewayPortStr)
-	}
 
 	// Lumera GRPC address (full address with port)
 	lumeraPrompt := &survey.Input{
@@ -671,12 +632,12 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	}
 	err = survey.AskOne(lumeraPrompt, &lumeraGrpcAddr)
 	if err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
 	// Validate GRPC address format
 	if err := validateGRPCAddress(lumeraGrpcAddr); err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
 	// Chain ID
@@ -687,10 +648,10 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGatewayPort i
 	}
 	err = survey.AskOne(chainPrompt, &chainID, survey.WithValidator(survey.Required))
 	if err != nil {
-		return "", 0, 0, "", "", err
+		return "", 0, "", "", err
 	}
 
-	return supernodeAddr, supernodePort, gatewayPort, lumeraGrpcAddr, chainID, nil
+	return supernodeAddr, supernodePort, lumeraGrpcAddr, chainID, nil
 }
 
 // validateKeyringBackend checks if the provided keyring backend is valid
@@ -796,7 +757,6 @@ func init() {
 	initCmd.Flags().StringVar(&mnemonicFlag, "mnemonic", "", "Mnemonic phrase for key recovery (only used with --recover)")
 	initCmd.Flags().StringVar(&supernodeAddrFlag, "supernode-addr", "", "IP address for the supernode to listen on")
 	initCmd.Flags().IntVar(&supernodePortFlag, "supernode-port", 0, "Port for the supernode to listen on")
-	initCmd.Flags().IntVar(&gatewayPortFlag, "gateway-port", 0, "Port for the HTTP gateway to listen on")
 	initCmd.Flags().StringVar(&lumeraGrpcFlag, "lumera-grpc", "", "GRPC address of the Lumera node (host:port)")
 	initCmd.Flags().StringVar(&chainIDFlag, "chain-id", "", "Chain ID of the Lumera network")
 	initCmd.Flags().StringVar(&passphrasePlain, "keyring-passphrase", "", "Keyring passphrase for non-interactive mode")

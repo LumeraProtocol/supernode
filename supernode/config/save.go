@@ -42,11 +42,10 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 
 	return &Config{
 		SupernodeConfig: SupernodeConfig{
-			KeyName:     keyName,
-			Identity:    identity,
-			Host:        "0.0.0.0",
-			Port:        4444,
-			GatewayPort: 8002,
+			KeyName:  keyName,
+			Identity: identity,
+			Host:     "0.0.0.0",
+			Port:     4444,
 		},
 		KeyringConfig: KeyringConfig{
 			Backend:   keyringBackend,
