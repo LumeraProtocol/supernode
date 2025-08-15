@@ -193,8 +193,8 @@ func (cv *ConfigVerifier) checkSupernodePortAlignment(result *VerificationResult
 			result.Valid = false
 			result.Errors = append(result.Errors, ConfigError{
 				Field:    "supernode_port",
-				Expected: configPort,
-				Actual:   chainPort,
+				Expected: chainPort,
+				Actual:   configPort,
 				Message:  fmt.Sprintf("Supernode port mismatch: config=%s, chain=%s", configPort, chainPort),
 			})
 		}
