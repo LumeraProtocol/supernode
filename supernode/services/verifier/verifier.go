@@ -3,6 +3,7 @@ package verifier
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/LumeraProtocol/supernode/pkg/lumera"
@@ -80,6 +81,9 @@ func (cv *ConfigVerifier) VerifyConfig(ctx context.Context) (*VerificationResult
 
 	// Check 7: Check host alignment with on-chain registration (warning only - may differ due to load balancer)
 	cv.checkHostAlignment(result, supernode)
+
+	// Check 8: Verify all required ports are available
+	cv.checkPortsAvailable(result)
 
 	logtrace.Info(ctx, "Config verification completed", logtrace.Fields{
 		"valid":    result.IsValid(),
@@ -221,4 +225,57 @@ func (cv *ConfigVerifier) checkHostAlignment(result *VerificationResult, superno
 			})
 		}
 	}
+}
+
+// checkPortsAvailable verifies that all required ports are available for binding
+func (cv *ConfigVerifier) checkPortsAvailable(result *VerificationResult) {
+	// Check supernode port
+	if !cv.isPortAvailable(cv.config.SupernodeConfig.Host, int(cv.config.SupernodeConfig.Port)) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ConfigError{
+			Field:   "supernode_port",
+			Actual:  fmt.Sprintf("%d", cv.config.SupernodeConfig.Port),
+			Message: fmt.Sprintf("Port %d is already in use. Please stop the conflicting service or choose a different port", cv.config.SupernodeConfig.Port),
+		})
+	}
+
+	// Check P2P port
+	if !cv.isPortAvailable(cv.config.SupernodeConfig.Host, int(cv.config.P2PConfig.Port)) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ConfigError{
+			Field:   "p2p_port",
+			Actual:  fmt.Sprintf("%d", cv.config.P2PConfig.Port),
+			Message: fmt.Sprintf("Port %d is already in use. Please stop the conflicting service or choose a different port", cv.config.P2PConfig.Port),
+		})
+	}
+
+	// Check gateway port (use configured port or default port 8092)
+	gatewayPort := int(cv.config.SupernodeConfig.GatewayPort)
+	if gatewayPort == 0 {
+		gatewayPort = 8092 // Default gateway port (same as gateway.DefaultGatewayPort)
+	}
+	
+	if !cv.isPortAvailable(cv.config.SupernodeConfig.Host, gatewayPort) {
+		result.Valid = false
+		result.Errors = append(result.Errors, ConfigError{
+			Field:   "gateway_port",
+			Actual:  fmt.Sprintf("%d", gatewayPort),
+			Message: fmt.Sprintf("Port %d is already in use. Please stop the conflicting service or choose a different port", gatewayPort),
+		})
+	}
+}
+
+// isPortAvailable checks if a port is available for binding
+func (cv *ConfigVerifier) isPortAvailable(host string, port int) bool {
+	address := fmt.Sprintf("%s:%d", host, port)
+	
+	// Try to listen on the port
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return false // Port is not available
+	}
+	
+	// Close the listener immediately since we're just checking availability
+	listener.Close()
+	return true // Port is available
 }
