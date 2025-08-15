@@ -2,6 +2,7 @@ package verifier
 
 import (
 	"context"
+	"strings"
 )
 
 // ConfigVerifierService defines the interface for config verification service
@@ -50,5 +51,5 @@ func (vr *VerificationResult) Summary() string {
 		summary += "⚠ " + warn.Message + "\n"
 	}
 
-	return summary
+	return strings.TrimSuffix(summary, "\n")
 }
