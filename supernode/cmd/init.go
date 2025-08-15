@@ -457,6 +457,7 @@ func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, er
 	}
 	address := addr.String()
 
+	fmt.Printf("Key generated successfully! Name: %s, Address: %s\n", keyName, address)
 	return address, keyMnemonic, nil
 }
 
@@ -482,12 +483,6 @@ func updateAndSaveConfig(address, supernodeAddr string, supernodePort int, lumer
 // printSuccessMessage displays the final success message
 func printSuccessMessage(mnemonic string) {
 	fmt.Println("\nYour supernode has been initialized successfully!")
-
-	// If a mnemonic was generated, display it again
-	if mnemonic != "" {
-		fmt.Println("\nIMPORTANT: Make sure you have saved your mnemonic:")
-		fmt.Printf("Mnemonic: %s\n", mnemonic)
-	}
 
 	fmt.Println("\nYou can now start your supernode with:")
 	fmt.Println("  supernode start")

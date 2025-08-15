@@ -136,7 +136,7 @@ enum SupernodeEventType {
 
 ## HTTP Gateway
 
-The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port (default: 8002) and provides:
+The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port  8092
 
 ### Endpoints
 
@@ -144,7 +144,7 @@ The supernode provides an HTTP gateway that exposes the gRPC services via REST A
 Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
 ```bash
-curl http://localhost:8002/api/v1/status
+curl http://localhost:8092/api/v1/status
 ```
 
 Response:
@@ -198,7 +198,7 @@ Response:
 Returns the list of available services on the supernode.
 
 ```bash
-curl http://localhost:8002/api/v1/services
+curl http://localhost:8092/api/v1/services
 ```
 
 Response:
@@ -214,8 +214,8 @@ The gateway automatically translates between HTTP/JSON and gRPC/protobuf formats
 
 The gateway provides interactive API documentation via Swagger UI:
 
-- **Swagger UI**: http://localhost:8002/swagger-ui/
-- **OpenAPI Spec**: http://localhost:8002/swagger.json
+- **Swagger UI**: http://localhost:8092/swagger-ui/
+- **OpenAPI Spec**: http://localhost:8092/swagger.json
 
 The Swagger UI provides an interactive interface to explore and test all available API endpoints.
 
@@ -239,7 +239,6 @@ supernode init -y \
   --mnemonic "word1 word2 word3 ... word24" \
   --supernode-addr 0.0.0.0 \
   --supernode-port 4444 \
-  --gateway-port 8002 \
   --lumera-grpc https://grpc.testnet.lumera.io \
   --chain-id lumera-testnet-1
 
@@ -253,7 +252,6 @@ supernode init -y \
   --mnemonic "word1 word2 word3 ... word24" \
   --supernode-addr 0.0.0.0 \
   --supernode-port 4444 \
-  --gateway-port 8002 \
   --lumera-grpc https://grpc.testnet.lumera.io \
   --chain-id lumera-testnet-1
 
@@ -267,7 +265,6 @@ supernode init -y \
   --mnemonic "word1 word2 word3 ... word24" \
   --supernode-addr 0.0.0.0 \
   --supernode-port 4444 \
-  --gateway-port 8002 \
   --lumera-grpc https://grpc.testnet.lumera.io \
   --chain-id lumera-testnet-1
 ```
@@ -281,7 +278,6 @@ supernode init -y \
 - `--mnemonic` - Mnemonic phrase for recovery (use with --recover)
 - `--supernode-addr` - IP address for supernode service
 - `--supernode-port` - Port for supernode service
-- `--gateway-port` - Port for the HTTP gateway to listen on
 - `--lumera-grpc` - Lumera gRPC address (host:port)
 - `--chain-id` - Lumera blockchain chain ID
 - `--keyring-passphrase` - Keyring passphrase for non-interactive mode (plain text)
@@ -357,7 +353,6 @@ supernode:
   identity: "lumera15t2e8gjgmuqtj..."  # Lumera address for this supernode  
   host: "0.0.0.0"                     # Host address to bind the service (IP or hostname)
   port: 4444                          # Port for the supernode service
-  gateway_port: 8002                   # Port for the HTTP gateway service
 ```
 
 ### Keyring Configuration

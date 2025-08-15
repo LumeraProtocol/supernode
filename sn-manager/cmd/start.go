@@ -80,7 +80,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 		autoUpdater.Start(ctx)
 	}
 
-	fmt.Println("SuperNode started. Press Ctrl+C to stop.")
+	// Monitor SuperNode process exit
+	processExitCh := make(chan error, 1)
+	go func() {
+		err := mgr.Wait()
+		processExitCh <- err
+	}()
 
 	// Main loop - monitor for updates if auto-upgrade is enabled
 	ticker := time.NewTicker(5 * time.Second)
@@ -88,6 +93,17 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	for {
 		select {
+		case err := <-processExitCh:
+			// SuperNode process exited
+			if autoUpdater != nil {
+				autoUpdater.Stop()
+			}
+			if err != nil {
+				return fmt.Errorf("supernode exited with error: %w", err)
+			}
+			fmt.Println("SuperNode exited")
+			return nil
+
 		case <-sigChan:
 			fmt.Println("\nShutting down...")
 

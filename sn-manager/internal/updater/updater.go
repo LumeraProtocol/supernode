@@ -15,6 +15,7 @@ import (
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
+	"github.com/LumeraProtocol/supernode/supernode/node/supernode/gateway"
 )
 
 type AutoUpdater struct {
@@ -36,12 +37,15 @@ type StatusResponse struct {
 }
 
 func New(homeDir string, cfg *config.Config) *AutoUpdater {
+	// Use the correct gateway endpoint with imported constants
+	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", gateway.DefaultGatewayPort)
+	
 	return &AutoUpdater{
 		config:       cfg,
 		homeDir:      homeDir,
 		githubClient: github.NewClient(config.GitHubRepo),
 		versionMgr:   version.NewManager(homeDir),
-		gatewayURL:   "http://localhost:8002/api/supernode/status",
+		gatewayURL:   gatewayURL,
 		stopCh:       make(chan struct{}),
 	}
 }
@@ -54,8 +58,6 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 
 	interval := time.Duration(u.config.Updates.CheckInterval) * time.Second
 	u.ticker = time.NewTicker(interval)
-
-	log.Printf("Starting auto-updater (checking every %v)", interval)
 
 	u.checkAndUpdate(ctx)
 
@@ -82,7 +84,7 @@ func (u *AutoUpdater) Stop() {
 
 func (u *AutoUpdater) checkAndUpdate(ctx context.Context) {
 	log.Println("Checking for updates...")
-
+	
 	release, err := u.githubClient.GetLatestRelease()
 	if err != nil {
 		log.Printf("Failed to check for updates: %v", err)
@@ -92,49 +94,67 @@ func (u *AutoUpdater) checkAndUpdate(ctx context.Context) {
 	latestVersion := release.TagName
 	currentVersion := u.config.Updates.CurrentVersion
 
+	log.Printf("Version comparison: current=%s, latest=%s", currentVersion, latestVersion)
+
 	if !u.shouldUpdate(currentVersion, latestVersion) {
 		log.Printf("Current version %s is up to date", currentVersion)
 		return
 	}
 
-	log.Printf("New version available: %s -> %s", currentVersion, latestVersion)
+	log.Printf("Update available: %s -> %s", currentVersion, latestVersion)
 
 	if !u.isGatewayIdle() {
-		log.Println("Gateway has running tasks, skipping update")
+		log.Println("Gateway busy, skipping update")
 		return
 	}
 
 	if err := u.performUpdate(latestVersion); err != nil {
-		log.Printf("Failed to perform update: %v", err)
+		log.Printf("Update failed: %v", err)
 		return
 	}
 
-	log.Printf("Successfully updated to version %s", latestVersion)
+	log.Printf("Updated to %s", latestVersion)
 }
 
 func (u *AutoUpdater) shouldUpdate(current, latest string) bool {
 	current = strings.TrimPrefix(current, "v")
 	latest = strings.TrimPrefix(latest, "v")
 
-	currentParts := strings.Split(current, ".")
-	latestParts := strings.Split(latest, ".")
+	// Skip pre-release versions (beta, alpha, rc, etc.)
+	if strings.Contains(latest, "-") {
+		log.Printf("Skipping pre-release version: %s", latest)
+		return false
+	}
+
+	// Handle pre-release versions (e.g., "1.7.1-beta" -> "1.7.1")
+	currentBase := strings.Split(current, "-")[0]
+	latestBase := strings.Split(latest, "-")[0]
+
+	log.Printf("Comparing base versions: current=%s, latest=%s", currentBase, latestBase)
+
+	currentParts := strings.Split(currentBase, ".")
+	latestParts := strings.Split(latestBase, ".")
 
 	if len(currentParts) < 3 || len(latestParts) < 3 {
+		log.Printf("Invalid version format: current=%s, latest=%s", currentBase, latestBase)
 		return false
 	}
 
+	// Only update within same major.minor version
 	if currentParts[0] != latestParts[0] || currentParts[1] != latestParts[1] {
+		log.Printf("Major/minor version mismatch, skipping update: %s.%s vs %s.%s", 
+			currentParts[0], currentParts[1], latestParts[0], latestParts[1])
 		return false
 	}
 
-	if currentParts[2] != latestParts[2] {
-		cmp := utils.CompareVersions(current, latest)
-		if cmp < 0 {
-			log.Printf("Update available (%s -> %s)", current, latest)
-			return true
-		}
+	// Compare base versions (stable releases only)
+	cmp := utils.CompareVersions(currentBase, latestBase)
+	if cmp < 0 {
+		log.Printf("Update needed: %s < %s", currentBase, latestBase)
+		return true
 	}
 
+	log.Printf("No update needed: %s >= %s", currentBase, latestBase)
 	return false
 }
 
@@ -165,7 +185,7 @@ func (u *AutoUpdater) isGatewayIdle() bool {
 	}
 
 	if totalTasks > 0 {
-		log.Printf("Gateway has %d running tasks", totalTasks)
+		log.Printf("Gateway busy: %d running tasks", totalTasks)
 		return false
 	}
 
@@ -173,8 +193,6 @@ func (u *AutoUpdater) isGatewayIdle() bool {
 }
 
 func (u *AutoUpdater) performUpdate(targetVersion string) error {
-	log.Printf("Downloading version %s...", targetVersion)
-
 	downloadURL, err := u.githubClient.GetSupernodeDownloadURL(targetVersion)
 	if err != nil {
 		return fmt.Errorf("failed to get download URL: %w", err)
@@ -182,16 +200,8 @@ func (u *AutoUpdater) performUpdate(targetVersion string) error {
 
 	tempFile := filepath.Join(u.homeDir, "downloads", fmt.Sprintf("supernode-%s.tmp", targetVersion))
 
-	progress := func(downloaded, total int64) {
-		if total > 0 {
-			percent := int(downloaded * 100 / total)
-			if percent%20 == 0 {
-				log.Printf("Download progress: %d%%", percent)
-			}
-		}
-	}
-
-	if err := u.githubClient.DownloadBinary(downloadURL, tempFile, progress); err != nil {
+	// Silent download - no progress reporting
+	if err := u.githubClient.DownloadBinary(downloadURL, tempFile, nil); err != nil {
 		return fmt.Errorf("failed to download binary: %w", err)
 	}
 

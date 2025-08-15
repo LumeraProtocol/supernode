@@ -57,7 +57,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 
 	var resp StatusResponse
 	resp.Version = Version
-	
+
 	// Calculate uptime
 	resp.UptimeSeconds = uint64(time.Since(s.startTime).Seconds())
 
@@ -67,7 +67,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 		return resp, err
 	}
 	resp.Resources.CPU.UsagePercent = cpuUsage
-	
+
 	// Get CPU cores
 	cpuCores, err := s.metrics.GetCPUCores(ctx)
 	if err != nil {
@@ -82,14 +82,14 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	if err != nil {
 		return resp, err
 	}
-	
+
 	// Convert to GB
 	const bytesToGB = 1024 * 1024 * 1024
 	resp.Resources.Memory.TotalGB = float64(memTotal) / bytesToGB
 	resp.Resources.Memory.UsedGB = float64(memUsed) / bytesToGB
 	resp.Resources.Memory.AvailableGB = float64(memAvailable) / bytesToGB
 	resp.Resources.Memory.UsagePercent = memUsedPerc
-	
+
 	// Generate hardware summary
 	if cpuCores > 0 && resp.Resources.Memory.TotalGB > 0 {
 		resp.Resources.HardwareSummary = fmt.Sprintf("%d cores / %.0fGB RAM", cpuCores, resp.Resources.Memory.TotalGB)
@@ -123,7 +123,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 		PeersCount:    0,
 		PeerAddresses: []string{},
 	}
-	
+
 	// Collect P2P network information
 	if s.p2pService != nil {
 		p2pStats, err := s.p2pService.Stats(ctx)
@@ -135,7 +135,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 				if peersCount, ok := dhtStats["peers_count"].(int); ok {
 					resp.Network.PeersCount = int32(peersCount)
 				}
-				
+
 				// Extract peer addresses
 				if peers, ok := dhtStats["peers"].([]*kademlia.Node); ok {
 					resp.Network.PeerAddresses = make([]string, 0, len(peers))
@@ -186,21 +186,6 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	for _, service := range resp.RunningTasks {
 		totalTasks += int(service.TaskCount)
 	}
-
-	logtrace.Info(ctx, "status data collected", logtrace.Fields{
-		"cpu_usage%":      cpuUsage,
-		"cpu_cores":       cpuCores,
-		"mem_total_gb":    resp.Resources.Memory.TotalGB,
-		"mem_used_gb":     resp.Resources.Memory.UsedGB,
-		"mem_usage%":      memUsedPerc,
-		"uptime_seconds":  resp.UptimeSeconds,
-		"storage_volumes": len(resp.Resources.Storage),
-		"service_count":   len(resp.RunningTasks),
-		"total_tasks":     totalTasks,
-		"network_peers":   resp.Network.PeersCount,
-		"rank":            resp.Rank,
-		"ip_address":      resp.IPAddress,
-	})
 
 	return resp, nil
 }

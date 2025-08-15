@@ -21,7 +21,6 @@ type Manager struct {
 	process   *os.Process
 	cmd       *exec.Cmd
 	mu        sync.RWMutex
-	logFile   *os.File
 	startTime time.Time
 }
 
@@ -66,28 +65,17 @@ func (m *Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("supernode is already running")
 	}
 
-	// Open log file
-	logPath := filepath.Join(m.homeDir, "logs", "supernode.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-	m.logFile = logFile
-
 	// Prepare command
 	binary := m.GetSupernodeBinary()
 	// SuperNode will handle its own home directory and arguments
 	args := []string{"start"}
 
-	log.Printf("Starting SuperNode: %s %v", binary, args)
-
 	m.cmd = exec.CommandContext(ctx, binary, args...)
-	m.cmd.Stdout = m.logFile
-	m.cmd.Stderr = m.logFile
+	m.cmd.Stdout = os.Stdout
+	m.cmd.Stderr = os.Stderr
 
 	// Start the process
 	if err := m.cmd.Start(); err != nil {
-		m.logFile.Close()
 		return fmt.Errorf("failed to start supernode: %w", err)
 	}
 
@@ -161,15 +149,23 @@ func (m *Manager) IsRunning() bool {
 	return err == nil
 }
 
+// Wait waits for the SuperNode process to exit and returns any error
+func (m *Manager) Wait() error {
+	m.mu.RLock()
+	cmd := m.cmd
+	m.mu.RUnlock()
+
+	if cmd == nil {
+		return fmt.Errorf("no process running")
+	}
+
+	return cmd.Wait()
+}
+
 // cleanup performs cleanup after process stops
 func (m *Manager) cleanup() {
 	m.process = nil
 	m.cmd = nil
-
-	if m.logFile != nil {
-		m.logFile.Close()
-		m.logFile = nil
-	}
 
 	// Remove PID file
 	pidPath := filepath.Join(m.homeDir, "supernode.pid")

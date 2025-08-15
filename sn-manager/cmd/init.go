@@ -57,6 +57,8 @@ func parseInitFlags(args []string) *initFlags {
 			flags.force = true
 		case "-y", "--yes":
 			flags.nonInteractive = true
+			// Pass through to supernode as well
+			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
 
 		default:
 			// Pass all other args to supernode
@@ -126,10 +128,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("already initialized at %s. Use --force to re-initialize", managerHome)
 		}
 
-		// Force mode: remove existing directory
-		fmt.Printf("Removing existing directory at %s...\n", managerHome)
-		if err := os.RemoveAll(managerHome); err != nil {
-			return fmt.Errorf("failed to remove existing directory: %w", err)
+		// Force mode: remove existing config file only
+		fmt.Printf("Removing existing config file at %s...\n", configPath)
+		if err := os.Remove(configPath); err != nil {
+			return fmt.Errorf("failed to remove existing config: %w", err)
 		}
 	}
 
@@ -138,7 +140,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		managerHome,
 		filepath.Join(managerHome, "binaries"),
 		filepath.Join(managerHome, "downloads"),
-		filepath.Join(managerHome, "logs"),
 	}
 
 	for _, dir := range dirs {
@@ -186,7 +187,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Latest version: %s\n", targetVersion)
 
 	// Check if already installed
-	if !versionMgr.IsVersionInstalled(targetVersion) {
+	if versionMgr.IsVersionInstalled(targetVersion) {
+		fmt.Printf("✓ SuperNode %s already installed, skipping download\n", targetVersion)
+	} else {
 		// Get download URL
 		downloadURL, err := client.GetSupernodeDownloadURL(targetVersion)
 		if err != nil {
@@ -238,19 +241,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Step 3: Initialize SuperNode
 	fmt.Println("\nStep 3: Initializing SuperNode...")
 
-	// Get the managed supernode binary path
-	supernodeBinary := filepath.Join(managerHome, "current", "supernode")
+	// Check if SuperNode is already initialized
+	supernodeConfigPath := filepath.Join(os.Getenv("HOME"), ".supernode", "config.yml")
+	if _, err := os.Stat(supernodeConfigPath); err == nil {
+		fmt.Println("✓ SuperNode already initialized, skipping initialization")
+	} else {
+		// Get the managed supernode binary path
+		supernodeBinary := filepath.Join(managerHome, "current", "supernode")
 
-	// Always include -y flag for non-interactive mode since sn-manager runs programmatically
-	supernodeArgs := append([]string{"init", "-y"}, flags.supernodeArgs...)
-	supernodeCmd := exec.Command(supernodeBinary, supernodeArgs...)
-	supernodeCmd.Stdout = os.Stdout
-	supernodeCmd.Stderr = os.Stderr
-	supernodeCmd.Stdin = os.Stdin
+		// Pass through user-provided arguments to supernode init
+		supernodeArgs := append([]string{"init"}, flags.supernodeArgs...)
+		
+		supernodeCmd := exec.Command(supernodeBinary, supernodeArgs...)
+		supernodeCmd.Stdout = os.Stdout
+		supernodeCmd.Stderr = os.Stderr
+		supernodeCmd.Stdin = os.Stdin
 
-	// Run supernode init
-	if err := supernodeCmd.Run(); err != nil {
-		return fmt.Errorf("supernode init failed: %w", err)
+		// Run supernode init
+		if err := supernodeCmd.Run(); err != nil {
+			return fmt.Errorf("supernode init failed: %w", err)
+		}
 	}
 
 	fmt.Println("\n✅ Complete! Both sn-manager and SuperNode have been initialized.")

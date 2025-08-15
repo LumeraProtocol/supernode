@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/supernode/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 )
 
 // ConfigVerifier implements ConfigVerifierService
@@ -76,13 +75,7 @@ func (cv *ConfigVerifier) VerifyConfig(ctx context.Context) (*VerificationResult
 	// Check 5: Verify supernode state is active
 	cv.checkSupernodeState(result, supernode)
 
-	// Check 6: Check supernode port alignment with on-chain registration
-	cv.checkSupernodePortAlignment(result, supernode)
-
-	// Check 7: Check host alignment with on-chain registration (warning only - may differ due to load balancer)
-	cv.checkHostAlignment(result, supernode)
-
-	// Check 8: Verify all required ports are available
+	// Check 6: Verify all required ports are available
 	cv.checkPortsAvailable(result)
 
 	logtrace.Info(ctx, "Config verification completed", logtrace.Fields{
@@ -153,7 +146,7 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 func (cv *ConfigVerifier) checkP2PPortMatches(result *VerificationResult, supernode *sntypes.SuperNode) {
 	configPort := fmt.Sprintf("%d", cv.config.P2PConfig.Port)
 	chainPort := supernode.P2PPort
-	
+
 	if chainPort != "" && chainPort != configPort {
 		result.Valid = false
 		result.Errors = append(result.Errors, ConfigError{
@@ -176,52 +169,6 @@ func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supern
 				Expected: "SUPERNODE_STATE_ACTIVE",
 				Actual:   lastState.State.String(),
 				Message:  fmt.Sprintf("Supernode state is %s (expected ACTIVE)", lastState.State.String()),
-			})
-		}
-	}
-}
-
-// checkSupernodePortAlignment compares supernode port with on-chain registered port (error if mismatch)
-func (cv *ConfigVerifier) checkSupernodePortAlignment(result *VerificationResult, supernode *sntypes.SuperNode) {
-	if len(supernode.PrevIpAddresses) > 0 {
-		chainAddress := supernode.PrevIpAddresses[len(supernode.PrevIpAddresses)-1].Address
-		
-		// Extract port from chain address
-		var chainPort string
-		if idx := strings.LastIndex(chainAddress, ":"); idx != -1 {
-			chainPort = chainAddress[idx+1:]
-		}
-		
-		configPort := fmt.Sprintf("%d", cv.config.SupernodeConfig.Port)
-		if chainPort != "" && chainPort != configPort {
-			result.Valid = false
-			result.Errors = append(result.Errors, ConfigError{
-				Field:    "supernode_port",
-				Expected: chainPort,
-				Actual:   configPort,
-				Message:  fmt.Sprintf("Supernode port mismatch: config=%s, chain=%s", configPort, chainPort),
-			})
-		}
-	}
-}
-
-// checkHostAlignment compares host with on-chain registered host (warning only - may differ due to load balancer)
-func (cv *ConfigVerifier) checkHostAlignment(result *VerificationResult, supernode *sntypes.SuperNode) {
-	if len(supernode.PrevIpAddresses) > 0 {
-		chainAddress := supernode.PrevIpAddresses[len(supernode.PrevIpAddresses)-1].Address
-		
-		// Extract host from chain address
-		chainHost := chainAddress
-		if idx := strings.LastIndex(chainAddress, ":"); idx != -1 {
-			chainHost = chainAddress[:idx]
-		}
-		
-		if chainHost != cv.config.SupernodeConfig.Host {
-			result.Warnings = append(result.Warnings, ConfigError{
-				Field:    "host",
-				Expected: cv.config.SupernodeConfig.Host,
-				Actual:   chainHost,
-				Message:  fmt.Sprintf("Host mismatch: config=%s, chain=%s", cv.config.SupernodeConfig.Host, chainHost),
 			})
 		}
 	}
@@ -254,7 +201,7 @@ func (cv *ConfigVerifier) checkPortsAvailable(result *VerificationResult) {
 	if gatewayPort == 0 {
 		gatewayPort = 8092 // Default gateway port (same as gateway.DefaultGatewayPort)
 	}
-	
+
 	if !cv.isPortAvailable(cv.config.SupernodeConfig.Host, gatewayPort) {
 		result.Valid = false
 		result.Errors = append(result.Errors, ConfigError{
@@ -268,13 +215,13 @@ func (cv *ConfigVerifier) checkPortsAvailable(result *VerificationResult) {
 // isPortAvailable checks if a port is available for binding
 func (cv *ConfigVerifier) isPortAvailable(host string, port int) bool {
 	address := fmt.Sprintf("%s:%d", host, port)
-	
+
 	// Try to listen on the port
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return false // Port is not available
 	}
-	
+
 	// Close the listener immediately since we're just checking availability
 	listener.Close()
 	return true // Port is available

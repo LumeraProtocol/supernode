@@ -43,8 +43,9 @@ type Asset struct {
 
 // Client handles GitHub API interactions
 type Client struct {
-	repo       string
-	httpClient *http.Client
+	repo           string
+	httpClient     *http.Client
+	downloadClient *http.Client
 }
 
 // NewClient creates a new GitHub API client
@@ -52,7 +53,10 @@ func NewClient(repo string) GithubClient {
 	return &Client{
 		repo: repo,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Minute, // Increased timeout for large binary downloads
+			Timeout: 30 * time.Second, // 30 second timeout for API calls
+		},
+		downloadClient: &http.Client{
+			Timeout: 5 * time.Minute, // 5 minute timeout for large binary downloads
 		},
 	}
 }
@@ -195,7 +199,7 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 	defer os.Remove(tmpPath)
 
 	// Download file
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.downloadClient.Get(url)
 	if err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("failed to download: %w", err)
