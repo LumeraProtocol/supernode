@@ -1,4 +1,4 @@
-.PHONY: build build-release build-sncli
+.PHONY: build build-release build-sncli build-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup 
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
@@ -12,6 +12,11 @@ BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS = -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=$(VERSION) \
           -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=$(GIT_COMMIT) \
           -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=$(BUILD_TIME)
+
+# Linker flags for sn-manager
+SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
+                     -X main.GitCommit=$(GIT_COMMIT) \
+                     -X main.BuildTime=$(BUILD_TIME)
 
 build:
 	@mkdir -p release
@@ -45,6 +50,21 @@ release/sncli: $(SNCLI_SRC) cmd/sncli/go.mod cmd/sncli/go.sum
 	echo "sncli built successfully at $$RELEASE_DIR/sncli"
 
 SNCLI_SRC=$(shell find cmd/sncli -name "*.go")
+
+build-sn-manager:
+	@mkdir -p release
+	@echo "Building sn-manager..."
+	@cd sn-manager && \
+	CGO_ENABLED=0 \
+	GOOS=linux \
+	GOARCH=amd64 \
+	go build \
+		-trimpath \
+		-ldflags="-s -w $(SN_MANAGER_LDFLAGS)" \
+		-o ../release/sn-manager \
+		.
+	@chmod +x release/sn-manager
+	@echo "sn-manager built successfully at release/sn-manager"
 
 test-unit:
 	go test -v ./...
