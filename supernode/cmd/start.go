@@ -54,7 +54,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Initialize Lumera client
 		lumeraClient, err := initLumeraClient(ctx, appConfig, kr)
 		if err != nil {
-			logtrace.Fatal(ctx, "Failed to initialize Lumera client", logtrace.Fields{"error": err.Error()})
+			logtrace.Fatal(ctx, "Failed to connect Lumera, please check your configuration", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Verify config matches chain registration before starting services
@@ -64,15 +64,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if err != nil {
 			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"error": err.Error()})
 		}
-		
+
 		if !verificationResult.IsValid() {
 			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
-		
+
 		if verificationResult.HasWarnings() {
 			logtrace.Warn(ctx, "Config verification warnings", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
-		
+
 		logtrace.Info(ctx, "Configuration verification successful", logtrace.Fields{})
 
 		// Initialize RaptorQ store for Cascade processing
