@@ -196,10 +196,10 @@ func (cv *ConfigVerifier) checkPortsAvailable(result *VerificationResult) {
 		})
 	}
 
-	// Check gateway port (use configured port or default port 8092)
+	// Check gateway port (use configured port or default port 8002)
 	gatewayPort := int(cv.config.SupernodeConfig.GatewayPort)
 	if gatewayPort == 0 {
-		gatewayPort = 8092 // Default gateway port (same as gateway.DefaultGatewayPort)
+		gatewayPort = 8002 // Default gateway port (same as gateway.DefaultGatewayPort)
 	}
 
 	if !cv.isPortAvailable(cv.config.SupernodeConfig.Host, gatewayPort) {

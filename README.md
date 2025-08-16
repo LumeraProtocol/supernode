@@ -136,7 +136,7 @@ enum SupernodeEventType {
 
 ## HTTP Gateway
 
-The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port  8092
+The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port  8002
 
 ### Endpoints
 
@@ -144,7 +144,7 @@ The supernode provides an HTTP gateway that exposes the gRPC services via REST A
 Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
 ```bash
-curl http://localhost:8092/api/v1/status
+curl http://localhost:8002/api/v1/status
 ```
 
 Response:
@@ -198,7 +198,7 @@ Response:
 Returns the list of available services on the supernode.
 
 ```bash
-curl http://localhost:8092/api/v1/services
+curl http://localhost:8002/api/v1/services
 ```
 
 Response:
@@ -214,8 +214,8 @@ The gateway automatically translates between HTTP/JSON and gRPC/protobuf formats
 
 The gateway provides interactive API documentation via Swagger UI:
 
-- **Swagger UI**: http://localhost:8092/swagger-ui/
-- **OpenAPI Spec**: http://localhost:8092/swagger.json
+- **Swagger UI**: http://localhost:8002/swagger-ui/
+- **OpenAPI Spec**: http://localhost:8002/swagger.json
 
 The Swagger UI provides an interactive interface to explore and test all available API endpoints.
 

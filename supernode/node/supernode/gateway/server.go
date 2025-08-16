@@ -15,7 +15,7 @@ import (
 )
 
 // DefaultGatewayPort is an uncommon port for internal gateway use
-const DefaultGatewayPort = 8092
+const DefaultGatewayPort = 8002
 
 // Server represents the HTTP gateway server
 type Server struct {
@@ -49,8 +49,8 @@ func (s *Server) Run(ctx context.Context) error {
 	// Create gRPC-Gateway mux with custom JSON marshaler options
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
-			EmitDefaults: true,     // This ensures zero values are included
-			OrigName:     true,     // Use original proto field names
+			EmitDefaults: true, // This ensures zero values are included
+			OrigName:     true, // Use original proto field names
 		}),
 	)
 

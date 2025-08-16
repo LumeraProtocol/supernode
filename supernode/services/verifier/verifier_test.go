@@ -131,7 +131,7 @@ func TestVerificationResult_Summary(t *testing.T) {
 		{
 			name: "warning message",
 			result: &VerificationResult{
-				Valid: true,
+				Valid:  true,
 				Errors: []ConfigError{},
 				Warnings: []ConfigError{
 					{
@@ -161,7 +161,7 @@ func TestConfigVerifier_isPortAvailable(t *testing.T) {
 			Host:     "127.0.0.1",
 		},
 	}
-	
+
 	verifier := NewConfigVerifier(cfg, nil, nil).(*ConfigVerifier)
 
 	// Test available port
@@ -225,8 +225,8 @@ func TestConfigVerifier_checkPortsAvailable(t *testing.T) {
 }
 
 func TestConfigVerifier_checkPortsAvailable_DefaultGatewayPort(t *testing.T) {
-	// Create a listener to occupy the default gateway port 8092
-	listener, err := net.Listen("tcp", "127.0.0.1:8092")
+	// Create a listener to occupy the default gateway port 8002
+	listener, err := net.Listen("tcp", "127.0.0.1:8002")
 	assert.NoError(t, err)
 	defer listener.Close()
 
@@ -236,7 +236,7 @@ func TestConfigVerifier_checkPortsAvailable_DefaultGatewayPort(t *testing.T) {
 			KeyName:     "test-key",
 			Host:        "127.0.0.1",
 			Port:        4444, // Available port
-			GatewayPort: 0,    // Not configured, should use default 8092
+			GatewayPort: 0,    // Not configured, should use default 8002
 		},
 		P2PConfig: config.P2PConfig{
 			Port: 4445, // Available port
@@ -256,6 +256,6 @@ func TestConfigVerifier_checkPortsAvailable_DefaultGatewayPort(t *testing.T) {
 	assert.False(t, result.IsValid())
 	assert.Len(t, result.Errors, 1)
 	assert.Equal(t, "gateway_port", result.Errors[0].Field)
-	assert.Equal(t, "8092", result.Errors[0].Actual)
-	assert.Contains(t, result.Errors[0].Message, "Port 8092 is already in use")
+	assert.Equal(t, "8002", result.Errors[0].Actual)
+	assert.Contains(t, result.Errors[0].Message, "Port 8002 is already in use")
 }
