@@ -25,7 +25,7 @@ The SDK uses a structured configuration system with two main components: account
 
 ```go
 import (
-    "github.com/LumeraProtocol/supernode/sdk/config"
+    "github.com/LumeraProtocol/supernode/v2/sdk/config"
     "github.com/cosmos/cosmos-sdk/crypto/keyring"
     "github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 )
@@ -105,8 +105,8 @@ The SDK requires a Cosmos SDK keyring containing your cryptographic keys for sig
 ```go
 import (
     "context"
-    "github.com/LumeraProtocol/supernode/sdk/action"
-    "github.com/LumeraProtocol/supernode/sdk/config"
+    "github.com/LumeraProtocol/supernode/v2/sdk/action"
+    "github.com/LumeraProtocol/supernode/v2/sdk/config"
     "github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
@@ -173,7 +173,7 @@ import (
     "bytes"
     "encoding/base64"
     "lukechampine.com/blake3"
-    "github.com/LumeraProtocol/supernode/pkg/keyring"
+    "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 )
 
 // 1. Read the file content

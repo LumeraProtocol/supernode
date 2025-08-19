@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 // RegisterRequest contains parameters for upload request

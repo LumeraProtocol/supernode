@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
-	lumeraclient "github.com/LumeraProtocol/supernode/pkg/lumera"
+	lumeraclient "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/golang/protobuf/proto"

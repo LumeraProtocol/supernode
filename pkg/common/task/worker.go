@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 // Worker represents a pool of the task.

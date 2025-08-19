@@ -6,10 +6,10 @@ import (
 	"io"
 	"os"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	cascadeService "github.com/LumeraProtocol/supernode/supernode/services/cascade"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
 
 	"google.golang.org/grpc"
 )

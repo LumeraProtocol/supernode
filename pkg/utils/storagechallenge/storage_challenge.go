@@ -3,7 +3,7 @@ package storagechallenge
 import (
 	"encoding/json"
 
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // SCSummaryStatsRes is the struct for metrics

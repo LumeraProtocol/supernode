@@ -7,7 +7,7 @@ SuperNode Process Manager with Automatic Updates
 Download and install sn-manager:
 ```bash
 # Download and extract
-curl -L https://github.com/LumeraProtocol/supernode/releases/latest/download/supernode-linux-amd64.tar.gz | tar -xz
+curl -L https://github.com/LumeraProtocol/supernode/v2/releases/latest/download/supernode-linux-amd64.tar.gz | tar -xz
 
 # Install sn-manager only (supernode will be managed automatically)
 chmod +x sn-manager

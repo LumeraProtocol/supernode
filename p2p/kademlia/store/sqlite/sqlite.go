@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/store/cloud.go"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jmoiron/sqlx"

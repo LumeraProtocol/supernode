@@ -1,7 +1,7 @@
 package cascade
 
 import (
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 // Config contains settings for the cascade service

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/spf13/cobra"
 )
 

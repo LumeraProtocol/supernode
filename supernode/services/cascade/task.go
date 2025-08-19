@@ -3,9 +3,9 @@ package cascade
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/pkg/storage/files"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/base"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/storage"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/base"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/storage"
 )
 
 // CascadeRegistrationTask is the task for cascade registration

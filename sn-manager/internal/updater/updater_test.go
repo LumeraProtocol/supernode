@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
 )
 
 // setupTestEnvironment creates isolated test environment for updater tests

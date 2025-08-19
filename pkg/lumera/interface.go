@@ -4,12 +4,12 @@ package lumera
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 )
 
 // Client defines the main interface for interacting with Lumera blockchain

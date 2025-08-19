@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 // getChaCha20Poly1305RekeyCryptoPair outputs a client/server pair on xchacha20poly1305ietfReKey.

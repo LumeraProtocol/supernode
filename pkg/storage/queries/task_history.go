@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 
 	json "github.com/json-iterator/go"
 )

@@ -15,14 +15,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/storage"
-	"github.com/LumeraProtocol/supernode/pkg/storage/memory"
-	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/memory"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 const (

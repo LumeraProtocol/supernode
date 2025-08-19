@@ -12,12 +12,12 @@ package lumera
 import (
 	reflect "reflect"
 
-	action "github.com/LumeraProtocol/supernode/pkg/lumera/modules/action"
-	action_msg "github.com/LumeraProtocol/supernode/pkg/lumera/modules/action_msg"
-	auth "github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
-	node "github.com/LumeraProtocol/supernode/pkg/lumera/modules/node"
-	supernode "github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
-	tx "github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
+	action "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
+	action_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	auth "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	node "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
+	supernode "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	tx "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	gomock "go.uber.org/mock/gomock"
 )
 

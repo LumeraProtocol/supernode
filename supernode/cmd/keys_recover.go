@@ -9,7 +9,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 )
 
 // keysRecoverCmd represents the recover command for recovering a key from mnemonic

@@ -5,7 +5,7 @@ import (
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
 

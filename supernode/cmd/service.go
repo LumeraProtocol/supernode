@@ -4,8 +4,8 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 type service interface {

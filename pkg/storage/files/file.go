@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/storage"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
 
 	"github.com/disintegration/imaging"
 	"github.com/kolesa-team/go-webp/decoder"

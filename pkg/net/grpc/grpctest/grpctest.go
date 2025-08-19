@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/internal/leakcheck"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/internal/leakcheck"
 )
 
 var lcFailed uint32

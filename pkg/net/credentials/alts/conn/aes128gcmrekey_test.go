@@ -3,7 +3,7 @@ package conn
 import (
 	"testing"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 // getGCMCryptoPair outputs a client/server pair on aes128gcmRekey.

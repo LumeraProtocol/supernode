@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 // Stats is used to collect statistics about concurrent handshake calls.

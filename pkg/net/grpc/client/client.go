@@ -15,9 +15,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/random"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/random"
 )
 
 const (

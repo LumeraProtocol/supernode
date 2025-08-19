@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 )
 
 // Store is the interface for implementing the storage mechanism for the DHT

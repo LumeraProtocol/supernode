@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
 	"google.golang.org/grpc/metadata"
 )
 

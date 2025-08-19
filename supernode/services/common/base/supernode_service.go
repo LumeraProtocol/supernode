@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/common/task"
-	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/pkg/common/task"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 // SuperNodeServiceInterface common interface for Services

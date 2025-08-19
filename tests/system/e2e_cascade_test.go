@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 
-	"github.com/LumeraProtocol/supernode/sdk/action"
-	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/action"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 
 	"github.com/LumeraProtocol/lumera/x/action/v1/types"
-	sdkconfig "github.com/LumeraProtocol/supernode/sdk/config"
+	sdkconfig "github.com/LumeraProtocol/supernode/v2/sdk/config"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"

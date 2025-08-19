@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
-	"github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/net"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/net"
 )
 
 const (

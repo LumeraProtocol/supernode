@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/spf13/cobra"
 )
 

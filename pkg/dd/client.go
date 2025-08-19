@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/random"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/random"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 )

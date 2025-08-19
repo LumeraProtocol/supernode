@@ -338,9 +338,9 @@ import (
     "google.golang.org/grpc/health/grpc_health_v1"
 
     "github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-    "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-    "github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
-    "github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
+    "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+    "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+    "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
 )
 
 func main() {

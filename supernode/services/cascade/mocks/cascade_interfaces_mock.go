@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	cascade "github.com/LumeraProtocol/supernode/supernode/services/cascade"
+	cascade "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
 	gomock "go.uber.org/mock/gomock"
 )
 

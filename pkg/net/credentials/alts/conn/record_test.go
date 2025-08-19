@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/grpctest"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/grpctest"
 )
 
 type s struct {

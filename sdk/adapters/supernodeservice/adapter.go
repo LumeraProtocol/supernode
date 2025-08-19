@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LumeraProtocol/supernode/gen/supernode"
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/pkg/net"
-	"github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	"google.golang.org/grpc"
 )

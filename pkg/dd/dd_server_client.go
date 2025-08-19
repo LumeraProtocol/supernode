@@ -1,7 +1,7 @@
 package dd
 
 import (
-	dd "github.com/LumeraProtocol/supernode/gen/dupedetection"
+	dd "github.com/LumeraProtocol/supernode/v2/gen/dupedetection"
 )
 
 type ddServerClientImpl struct {

@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/spf13/cobra"
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

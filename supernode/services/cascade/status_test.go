@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/supernode/services/common/base"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/base"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 	"github.com/stretchr/testify/assert"
 )
 

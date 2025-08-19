@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/manager"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/updater"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/manager"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
 	"github.com/spf13/cobra"
 )
 

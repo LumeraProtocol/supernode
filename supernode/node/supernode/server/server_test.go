@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/stretchr/testify/assert"
 	gomock "go.uber.org/mock/gomock"
 

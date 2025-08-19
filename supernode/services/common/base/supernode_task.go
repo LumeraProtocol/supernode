@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/pkg/common/task"
-	"github.com/LumeraProtocol/supernode/pkg/common/task/state"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/storage/files"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/v2/pkg/common/task"
+	"github.com/LumeraProtocol/supernode/v2/pkg/common/task/state"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 // TaskCleanerFunc pointer to func that removes artefacts

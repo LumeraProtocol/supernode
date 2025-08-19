@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
 
 // Version is the supernode version, set by the main application

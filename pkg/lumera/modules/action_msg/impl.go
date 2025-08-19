@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
-	txmod "github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"

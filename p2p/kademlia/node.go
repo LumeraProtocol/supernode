@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // Node is the over-the-wire representation of a node

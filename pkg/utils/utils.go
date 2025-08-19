@@ -25,7 +25,7 @@ import (
 
 	"lukechampine.com/blake3"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/klauspost/compress/zstd"

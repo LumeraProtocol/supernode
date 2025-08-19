@@ -3,7 +3,7 @@ package adaptors
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 )
 
 // CodecService defines the interface for RaptorQ encoding of input data.

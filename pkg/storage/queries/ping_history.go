@@ -3,7 +3,7 @@ package queries
 import (
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 )
 
 type PingHistoryQueries interface {

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/utils"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/version"
-	"github.com/LumeraProtocol/supernode/supernode/node/supernode/gateway"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
+	"github.com/LumeraProtocol/supernode/v2/supernode/node/supernode/gateway"
 )
 
 type AutoUpdater struct {

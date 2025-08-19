@@ -1,16 +1,16 @@
-module github.com/LumeraProtocol/supernode/cmd/sncli
+module github.com/LumeraProtocol/supernode/v2/cmd/sncli
 
 go 1.24.1
 
 replace (
-	github.com/LumeraProtocol/supernode/supernode => ../../supernode
+	github.com/LumeraProtocol/supernode/v2/supernode => ../../supernode
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.14.0
 	github.com/bytedance/sonic/loader => github.com/bytedance/sonic/loader v0.3.0
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.0
-	github.com/LumeraProtocol/supernode v1.7.0
+	github.com/LumeraProtocol/supernode/v2 v1.7.0
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/spf13/pflag v1.0.7
 	google.golang.org/grpc v1.71.0

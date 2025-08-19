@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/internal"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/internal"
 )
 
 var bufferPoolingThreshold = 1 << 10

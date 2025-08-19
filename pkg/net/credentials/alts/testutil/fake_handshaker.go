@@ -7,7 +7,7 @@ import (
 	"time"
 
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 	"github.com/cosmos/gogoproto/proto"
 )
 

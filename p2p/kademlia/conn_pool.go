@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 	"google.golang.org/grpc/credentials"
 )
 

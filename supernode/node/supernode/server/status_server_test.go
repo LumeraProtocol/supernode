@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode"
-	"github.com/LumeraProtocol/supernode/supernode/services/common"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 )
 
 func TestSupernodeServer_GetStatus(t *testing.T) {

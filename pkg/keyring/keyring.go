@@ -18,7 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/go-bip39"
 
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
 
 const (
@@ -126,7 +126,6 @@ func normaliseBackend(b string) (string, error) {
 		return "", fmt.Errorf("unsupported keyring backend: %s", b)
 	}
 }
-
 
 func GenerateMnemonic() (string, error) {
 	entropy, err := bip39.NewEntropy(defaultEntropySize)

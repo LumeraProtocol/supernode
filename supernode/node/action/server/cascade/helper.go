@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 )
 
 func initializeHasherAndTempFile() (*blake3.Hasher, *os.File, string, error) {

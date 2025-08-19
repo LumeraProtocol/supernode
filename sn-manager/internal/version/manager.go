@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/utils"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 )
 
 // Manager handles version storage and symlink management

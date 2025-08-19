@@ -3,13 +3,13 @@ package cascade
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/base"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/base"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 )
 
 type CascadeService struct {

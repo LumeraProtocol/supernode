@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	lumeracodec "github.com/LumeraProtocol/supernode/pkg/lumera/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"

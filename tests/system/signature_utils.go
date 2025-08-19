@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
 	cosmoskeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"lukechampine.com/blake3"

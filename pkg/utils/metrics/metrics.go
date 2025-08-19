@@ -3,7 +3,7 @@ package metrics
 import (
 	"encoding/json"
 
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // Metrics is the struct for metrics

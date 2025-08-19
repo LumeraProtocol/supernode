@@ -10,12 +10,12 @@ import (
 
 	"cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
-	"github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/golang/protobuf/proto"

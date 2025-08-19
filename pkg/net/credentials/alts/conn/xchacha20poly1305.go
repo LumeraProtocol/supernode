@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/chacha20poly1305"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 const (

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/testutil"
+	"github.com/LumeraProtocol/supernode/v2/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"

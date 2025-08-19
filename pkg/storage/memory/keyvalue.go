@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/storage"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
 	cache "github.com/patrickmn/go-cache"
 )
 

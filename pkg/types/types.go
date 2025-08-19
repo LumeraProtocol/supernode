@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 
 	json "github.com/json-iterator/go"
 )

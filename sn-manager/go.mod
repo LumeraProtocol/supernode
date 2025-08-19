@@ -1,10 +1,10 @@
-module github.com/LumeraProtocol/supernode/sn-manager
+module github.com/LumeraProtocol/supernode/v2/sn-manager
 
 go 1.24.1
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/LumeraProtocol/supernode v0.0.0-00010101000000-000000000000
+	github.com/LumeraProtocol/supernode/v2 v0.0.0-00010101000000-000000000000
 	github.com/golang/mock v1.6.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
@@ -35,4 +35,4 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 )
 
-replace github.com/LumeraProtocol/supernode => ../
+replace github.com/LumeraProtocol/supernode/v2 => ../

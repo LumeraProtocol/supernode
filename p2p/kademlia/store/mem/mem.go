@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 )
 
 // Store is a simple in-memory key/value store used for unit testing

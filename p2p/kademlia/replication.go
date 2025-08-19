@@ -8,9 +8,9 @@ import (
 
 	"encoding/hex"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/cenkalti/backoff/v4"
 )
 

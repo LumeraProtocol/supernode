@@ -1,7 +1,7 @@
 package conn
 
 import (
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 // NewOutCounter returns an outgoing counter initialized to the starting sequence

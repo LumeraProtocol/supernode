@@ -1,6 +1,6 @@
 syntax = "proto3";
 package supernode;
-option go_package = "github.com/LumeraProtocol/supernode/gen/supernode";
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
 
 import "google/api/annotations.proto";
 

@@ -3,7 +3,7 @@ package cascade
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 )
 
 // StatusResponse represents the status response for cascade service

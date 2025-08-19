@@ -3,8 +3,8 @@ package supernodeservice
 import (
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/stretchr/testify/require"
 )
 

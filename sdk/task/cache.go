@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/sdk/event"
-	eventspkg "github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
+	eventspkg "github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 	"github.com/dgraph-io/ristretto/v2"
 )
 

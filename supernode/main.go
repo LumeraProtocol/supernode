@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/supernode/cmd"
+	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/supernode/cmd"
 )
 
 func main() {

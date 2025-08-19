@@ -12,13 +12,13 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	grpcserver "github.com/LumeraProtocol/supernode/pkg/net/grpc/server"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
+	grpcserver "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 

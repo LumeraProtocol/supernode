@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/p2p/kademlia/domain"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" // sqlite3 driver
 	"github.com/stretchr/testify/assert"

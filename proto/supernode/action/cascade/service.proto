@@ -1,6 +1,6 @@
 syntax = "proto3";
 package cascade;
-option go_package = "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade";
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade";
 
 service CascadeService {
   rpc Register (stream RegisterRequest) returns (stream RegisterResponse);

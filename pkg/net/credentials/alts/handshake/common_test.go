@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 	"github.com/stretchr/testify/assert"
 )
 

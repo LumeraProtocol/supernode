@@ -11,9 +11,9 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/handshake"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/handshake"
 )
 
 const RemoteIdentityKey = "remoteIdentity"

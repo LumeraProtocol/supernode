@@ -7,9 +7,9 @@ import (
 
 	"strconv"
 
-	"github.com/LumeraProtocol/supernode/pkg/codec"
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
 	json "github.com/json-iterator/go"
 )

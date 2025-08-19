@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/internal"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/mem"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/internal"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/mem"
 )
 
 // failTestsOnLeakedBuffers is a special flag that will cause tests to fail if

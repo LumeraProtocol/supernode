@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
 const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit

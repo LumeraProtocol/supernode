@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/stretchr/testify/assert"
 )
 

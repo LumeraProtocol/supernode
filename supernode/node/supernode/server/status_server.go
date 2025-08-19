@@ -5,8 +5,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode"
-	"github.com/LumeraProtocol/supernode/supernode/services/common/supernode"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 )
 
 // SupernodeServer implements the SupernodeService gRPC service
@@ -33,17 +33,17 @@ func NewSupernodeServer(statusService *supernode.SupernodeStatusService) *Supern
 // RegisterService adds a service to the known services list
 func (s *SupernodeServer) RegisterService(serviceName string, desc *grpc.ServiceDesc) {
 	methods := make([]string, 0, len(desc.Methods)+len(desc.Streams))
-	
+
 	// Add unary methods
 	for _, method := range desc.Methods {
 		methods = append(methods, method.MethodName)
 	}
-	
+
 	// Add streaming methods
 	for _, stream := range desc.Streams {
 		methods = append(methods, stream.StreamName)
 	}
-	
+
 	s.services = append(s.services, ServiceInfo{
 		Name:    serviceName,
 		Methods: methods,

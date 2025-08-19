@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/cmd"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/cmd"
 )
 
 var (

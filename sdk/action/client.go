@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
-	"github.com/LumeraProtocol/supernode/sdk/config"
-	"github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/log"
-	"github.com/LumeraProtocol/supernode/sdk/net"
-	"github.com/LumeraProtocol/supernode/sdk/task"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/v2/sdk/config"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/sdk/net"
+	"github.com/LumeraProtocol/supernode/v2/sdk/task"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

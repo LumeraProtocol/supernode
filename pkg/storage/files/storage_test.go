@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/pkg/storage/fs"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/fs"
 	"github.com/stretchr/testify/assert"
 )
 

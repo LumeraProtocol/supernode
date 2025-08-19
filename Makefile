@@ -9,9 +9,9 @@ GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
 # Linker flags for version information
-LDFLAGS = -X github.com/LumeraProtocol/supernode/supernode/cmd.Version=$(VERSION) \
-          -X github.com/LumeraProtocol/supernode/supernode/cmd.GitCommit=$(GIT_COMMIT) \
-          -X github.com/LumeraProtocol/supernode/supernode/cmd.BuildTime=$(BUILD_TIME)
+LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERSION) \
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=$(GIT_COMMIT) \
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME)
 
 # Linker flags for sn-manager
 SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \

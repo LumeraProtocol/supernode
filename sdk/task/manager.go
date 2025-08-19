@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/sdk/config"
-	"github.com/LumeraProtocol/supernode/sdk/event"
-	taskstatus "github.com/LumeraProtocol/supernode/sdk/event"
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/config"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
+	taskstatus "github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/google/uuid"
 )

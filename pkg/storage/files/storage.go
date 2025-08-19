@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/random"
-	"github.com/LumeraProtocol/supernode/pkg/storage"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/random"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
 )
 
 // Storage represents a file storage.

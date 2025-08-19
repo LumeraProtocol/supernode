@@ -1,9 +1,9 @@
-module github.com/LumeraProtocol/supernode
+module github.com/LumeraProtocol/supernode/v2
 
 go 1.24.1
 
 replace (
-	github.com/LumeraProtocol/supernode/supernode => ./supernode
+	github.com/LumeraProtocol/supernode/v2/supernode => ./supernode
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.14.0
 	github.com/bytedance/sonic/loader => github.com/bytedance/sonic/loader v0.3.0
 )

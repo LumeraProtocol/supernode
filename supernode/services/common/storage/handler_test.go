@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/p2p/mocks"
+	"github.com/LumeraProtocol/supernode/v2/p2p/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

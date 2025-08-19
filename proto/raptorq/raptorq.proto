@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 syntax = "proto3";
 
-option go_package = "github.com/LumeraProtocol/supernode/gen/raptorq";
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/raptorq";
 
 package raptorq;
 

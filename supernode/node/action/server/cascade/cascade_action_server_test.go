@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/supernode/services/cascade"
-	cascademocks "github.com/LumeraProtocol/supernode/supernode/services/cascade/mocks"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
+	cascademocks "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"

@@ -5,7 +5,7 @@ package storage
 import (
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 )
 
 var (

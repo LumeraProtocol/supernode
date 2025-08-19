@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/types"
-	"github.com/LumeraProtocol/supernode/pkg/utils/metrics"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils/metrics"
 	json "github.com/json-iterator/go"
 )
 

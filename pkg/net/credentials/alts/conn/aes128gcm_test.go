@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 // cryptoTestVector is struct for a GCM test vector

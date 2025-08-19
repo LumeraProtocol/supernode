@@ -10,8 +10,8 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 
-	pb "github.com/LumeraProtocol/supernode/gen/supernode"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 // DefaultGatewayPort is an uncommon port for internal gateway use

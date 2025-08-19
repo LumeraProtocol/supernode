@@ -14,14 +14,14 @@ import (
 	"github.com/cosmos/btcutil/base58"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/p2p/kademlia"
-	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/pkg/testutil"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
+	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/v2/pkg/testutil"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 func TestP2PBasicIntegration(t *testing.T) {

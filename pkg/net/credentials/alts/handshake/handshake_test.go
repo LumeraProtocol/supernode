@@ -18,10 +18,10 @@ import (
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	lumeraidtypes "github.com/LumeraProtocol/lumera/x/lumeraid/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
-	. "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/testutil"
-	. "github.com/LumeraProtocol/supernode/pkg/testutil"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/testutil"
+	. "github.com/LumeraProtocol/supernode/v2/pkg/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 

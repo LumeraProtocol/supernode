@@ -4,7 +4,7 @@
 
 syntax = "proto3";
 
-option go_package = "github.com/LumeraProtocol/supernode/gen/dupedetection";
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/dupedetection";
 
 package dupedetection;
 

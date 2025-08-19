@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )

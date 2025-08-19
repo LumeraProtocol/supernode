@@ -10,8 +10,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/reflect/protodesc"
 
-	grpcclient "github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	grpcclient "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 )
 
 func (c *CLI) listGRPCMethods() error {

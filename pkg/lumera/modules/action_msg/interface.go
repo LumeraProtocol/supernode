@@ -4,8 +4,8 @@ package action_msg
 import (
 	"context"
 
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/tx"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"

@@ -2,7 +2,7 @@ package cli
 
 import (
 	"context"
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,12 +11,12 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/pflag"
 
-	snkeyring "github.com/LumeraProtocol/supernode/pkg/keyring"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	sdkcfg "github.com/LumeraProtocol/supernode/sdk/config"
-	sdklog "github.com/LumeraProtocol/supernode/sdk/log"
-	sdknet "github.com/LumeraProtocol/supernode/sdk/net"
+	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	sdkcfg "github.com/LumeraProtocol/supernode/v2/sdk/config"
+	sdklog "github.com/LumeraProtocol/supernode/v2/sdk/log"
+	sdknet "github.com/LumeraProtocol/supernode/v2/sdk/net"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 

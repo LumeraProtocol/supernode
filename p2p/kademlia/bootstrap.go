@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	raptorq "github.com/LumeraProtocol/rq-go"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 type DecodeRequest struct {

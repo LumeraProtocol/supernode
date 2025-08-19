@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/pkg/lumera/modules/auth"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"

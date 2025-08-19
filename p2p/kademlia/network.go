@@ -14,13 +14,13 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	json "github.com/json-iterator/go"
 
-	"github.com/LumeraProtocol/supernode/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 
 	"github.com/google/uuid"
 	"go.uber.org/ratelimit"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/credentials"
 )

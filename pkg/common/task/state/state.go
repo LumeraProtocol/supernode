@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/pkg/errors"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/storage/queries"
-	"github.com/LumeraProtocol/supernode/pkg/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
+	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 )
 
 // State represents a state of the task.

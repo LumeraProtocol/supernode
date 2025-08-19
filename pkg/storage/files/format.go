@@ -1,7 +1,7 @@
 package files
 
 import (
-	"github.com/LumeraProtocol/supernode/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 )
 
 // ErrUnsupportedFormat means the given image format is not supported.

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	ddService "github.com/LumeraProtocol/supernode/gen/dupedetection"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/net"
+	ddService "github.com/LumeraProtocol/supernode/v2/gen/dupedetection"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net"
 )
 
 type GetStatusRequest struct {

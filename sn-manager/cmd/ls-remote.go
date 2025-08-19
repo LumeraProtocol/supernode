@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/sn-manager/internal/github"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/spf13/cobra"
 )
 

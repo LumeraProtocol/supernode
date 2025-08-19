@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	altscommon "github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/common"
+	altscommon "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/common"
 )
 
 const (

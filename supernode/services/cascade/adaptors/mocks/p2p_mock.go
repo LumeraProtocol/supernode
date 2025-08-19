@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	logtrace "github.com/LumeraProtocol/supernode/pkg/logtrace"
-	adaptors "github.com/LumeraProtocol/supernode/supernode/services/cascade/adaptors"
+	logtrace "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	adaptors "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	gomock "go.uber.org/mock/gomock"
 )
 

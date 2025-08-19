@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LumeraProtocol/supernode/p2p"
-	"github.com/LumeraProtocol/supernode/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/pkg/lumera"
-	"github.com/LumeraProtocol/supernode/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 

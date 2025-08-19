@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
 // EventType represents the type of event emitted by the system

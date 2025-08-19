@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
-	ltc "github.com/LumeraProtocol/supernode/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/pkg/net/credentials/alts/conn"
-	"github.com/LumeraProtocol/supernode/pkg/net/grpc/client"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/sdk/adapters/supernodeservice"
-	"github.com/LumeraProtocol/supernode/sdk/log"
+	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
+	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
