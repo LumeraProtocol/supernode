@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -134,25 +135,23 @@ func IsContextErr(err error) bool {
 
 // GetExternalIPAddress returns external IP address
 func GetExternalIPAddress() (externalIP string, err error) {
-	return "localhost", nil
-	/*
-		resp, err := http.Get("https://api.ipify.org")
-		if err != nil {
-			return "", err
-		}
+	resp, err := http.Get("https://api.ipify.org")
+	if err != nil {
+		return "", err
+	}
 
-		defer resp.Body.Close()
+	defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", err
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 
-		if net.ParseIP(string(body)) == nil {
-			return "", errors.Errorf("invalid IP response from %s", "ipconf.ip")
-		}
+	if net.ParseIP(string(body)) == nil {
+		return "", errors.Errorf("invalid IP response from %s", "api.ipify.org")
+	}
 
-		return string(body), nil */
+	return string(body), nil
 }
 
 // B64Encode base64 encodes
