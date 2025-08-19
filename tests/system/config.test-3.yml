@@ -3,7 +3,7 @@
 supernode:
   key_name: "testkey3"
   identity: "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp"
-  host: "localhost"
+  host: "0.0.0.0"
   port: 4448
   gateway_port: 8004
 
