@@ -34,7 +34,16 @@ func (task *SuperNodeTask) RunHelper(ctx context.Context, clean TaskCleanerFunc)
 
 	defer clean()
 
-	return task.RunAction(ctx)
+	err := task.RunAction(ctx)
+
+	// Update task status based on completion result
+	if err != nil {
+		task.UpdateStatus(common.StatusTaskCanceled)
+	} else {
+		task.UpdateStatus(common.StatusTaskCompleted)
+	}
+
+	return err
 }
 
 func (task *SuperNodeTask) context(ctx context.Context) context.Context {
