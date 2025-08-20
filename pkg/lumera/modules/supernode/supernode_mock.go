@@ -86,6 +86,21 @@ func (mr *MockModuleMockRecorder) GetSupernodeBySupernodeAddress(ctx, address an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSupernodeBySupernodeAddress", reflect.TypeOf((*MockModule)(nil).GetSupernodeBySupernodeAddress), ctx, address)
 }
 
+// GetSupernodeWithLatestAddress mocks base method.
+func (m *MockModule) GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSupernodeWithLatestAddress", ctx, address)
+	ret0, _ := ret[0].(*SuperNodeInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSupernodeWithLatestAddress indicates an expected call of GetSupernodeWithLatestAddress.
+func (mr *MockModuleMockRecorder) GetSupernodeWithLatestAddress(ctx, address any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSupernodeWithLatestAddress", reflect.TypeOf((*MockModule)(nil).GetSupernodeWithLatestAddress), ctx, address)
+}
+
 // GetTopSuperNodesForBlock mocks base method.
 func (m *MockModule) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
 	m.ctrl.T.Helper()

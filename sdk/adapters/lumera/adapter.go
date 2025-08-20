@@ -22,8 +22,18 @@ type Client interface {
 	GetAction(ctx context.Context, actionID string) (Action, error)
 	GetSupernodes(ctx context.Context, height int64) ([]Supernode, error)
 	GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*sntypes.SuperNode, error)
+	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)
 	DecodeCascadeMetadata(ctx context.Context, action Action) (actiontypes.CascadeMetadata, error)
 	VerifySignature(ctx context.Context, accountAddr string, data []byte, signature []byte) error
+}
+
+// SuperNodeInfo contains supernode information with latest address
+type SuperNodeInfo struct {
+	SupernodeAccount string `json:"supernode_account"`
+	ValidatorAddress string `json:"validator_address"`
+	P2PPort          string `json:"p2p_port"`
+	LatestAddress    string `json:"latest_address"`
+	CurrentState     string `json:"current_state"`
 }
 
 // ConfigParams holds configuration parameters from global config
@@ -79,6 +89,54 @@ func (a *Adapter) GetSupernodeBySupernodeAddress(ctx context.Context, address st
 	}
 	a.logger.Debug(ctx, "Successfully retrieved supernode", "address", address)
 	return resp, nil
+}
+
+func (a *Adapter) GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error) {
+	a.logger.Debug(ctx, "Getting supernode with latest address", "address", address)
+
+	resp, err := a.client.SuperNode().GetSupernodeBySupernodeAddress(ctx, address)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to get supernode", "address", address, "error", err)
+		return nil, fmt.Errorf("failed to get supernode: %w", err)
+	}
+	if resp == nil {
+		a.logger.Error(ctx, "Received nil response for supernode", "address", address)
+		return nil, fmt.Errorf("received nil response for supernode %s", address)
+	}
+
+	// Sort PrevIpAddresses by height in descending order
+	sort.Slice(resp.PrevIpAddresses, func(i, j int) bool {
+		return resp.PrevIpAddresses[i].Height > resp.PrevIpAddresses[j].Height
+	})
+
+	// Sort States by height in descending order
+	sort.Slice(resp.States, func(i, j int) bool {
+		return resp.States[i].Height > resp.States[j].Height
+	})
+
+	// Extract latest address
+	latestAddress := ""
+	if len(resp.PrevIpAddresses) > 0 {
+		latestAddress = resp.PrevIpAddresses[0].Address
+	}
+
+	// Extract current state
+	currentState := ""
+	if len(resp.States) > 0 {
+		currentState = resp.States[0].State.String()
+	}
+
+	info := &SuperNodeInfo{
+		SupernodeAccount: resp.SupernodeAccount,
+		ValidatorAddress: resp.ValidatorAddress,
+		P2PPort:          resp.P2PPort,
+		LatestAddress:    latestAddress,
+		CurrentState:     currentState,
+	}
+
+	a.logger.Debug(ctx, "Successfully retrieved supernode with latest address",
+		"address", address, "latestAddress", latestAddress, "currentState", currentState)
+	return info, nil
 }
 
 func (a *Adapter) AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error) {

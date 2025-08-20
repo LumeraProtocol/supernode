@@ -243,7 +243,7 @@ func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port ui
 func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to time.Time) domain.KeysWithTimestamp {
 	var results []domain.KeyWithTimestamp
 	query := `SELECT key, createdAt FROM data WHERE createdAt > ? AND createdAt < ? ORDER BY createdAt ASC`
-	
+
 	logtrace.Debug(ctx, "fetching keys for replication", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from_time":          from,

@@ -13,9 +13,9 @@ type ConfigVerifierService interface {
 
 // VerificationResult contains the results of config verification
 type VerificationResult struct {
-	Valid    bool           `json:"valid"`
-	Errors   []ConfigError  `json:"errors,omitempty"`
-	Warnings []ConfigError  `json:"warnings,omitempty"`
+	Valid    bool          `json:"valid"`
+	Errors   []ConfigError `json:"errors,omitempty"`
+	Warnings []ConfigError `json:"warnings,omitempty"`
 }
 
 // ConfigError represents a configuration validation error or warning

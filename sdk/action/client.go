@@ -159,24 +159,17 @@ func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress st
 
 	c.logger.Debug(ctx, "Getting supernode status", "address", supernodeAddress)
 
-	// Get supernode details from blockchain
-	supernode, err := c.lumeraClient.GetSupernodeBySupernodeAddress(ctx, supernodeAddress)
+	// Get supernode info including latest address
+	supernodeInfo, err := c.lumeraClient.GetSupernodeWithLatestAddress(ctx, supernodeAddress)
 	if err != nil {
-		c.logger.Error(ctx, "Failed to get supernode details", "address", supernodeAddress, "error", err)
-		return nil, fmt.Errorf("failed to get supernode details: %w", err)
+		c.logger.Error(ctx, "Failed to get supernode info", "address", supernodeAddress, "error", err)
+		return nil, fmt.Errorf("failed to get supernode info: %w", err)
 	}
-
-	// Get the latest IP address for the supernode
-	if len(supernode.PrevIpAddresses) == 0 {
-		return nil, fmt.Errorf("no IP addresses found for supernode %s", supernodeAddress)
-	}
-
-	ipAddress := supernode.PrevIpAddresses[0].Address
 
 	// Create lumera supernode object for network client
 	lumeraSupernode := lumera.Supernode{
 		CosmosAddress: supernodeAddress,
-		GrpcEndpoint:  ipAddress,
+		GrpcEndpoint:  supernodeInfo.LatestAddress,
 		State:         lumera.SUPERNODE_STATE_ACTIVE, // Assume active since we're querying
 	}
 

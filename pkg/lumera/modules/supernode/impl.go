@@ -91,3 +91,37 @@ func GetLatestIP(supernode *types.SuperNode) (string, error) {
 
 	return supernode.PrevIpAddresses[0].Address, nil
 }
+
+// GetSupernodeWithLatestAddress gets a supernode by account address and returns comprehensive info
+func (m *module) GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error) {
+	supernode, err := m.GetSupernodeBySupernodeAddress(ctx, address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supernode: %w", err)
+	}
+
+	// Get latest IP address
+	var latestAddress string
+	if len(supernode.PrevIpAddresses) > 0 {
+		sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
+			return supernode.PrevIpAddresses[i].GetHeight() > supernode.PrevIpAddresses[j].GetHeight()
+		})
+		latestAddress = supernode.PrevIpAddresses[0].Address
+	}
+
+	// Get latest state
+	var currentState string
+	if len(supernode.States) > 0 {
+		sort.Slice(supernode.States, func(i, j int) bool {
+			return supernode.States[i].Height > supernode.States[j].Height
+		})
+		currentState = supernode.States[0].State.String()
+	}
+
+	return &SuperNodeInfo{
+		SupernodeAccount: supernode.SupernodeAccount,
+		ValidatorAddress: supernode.ValidatorAddress,
+		P2PPort:          supernode.P2PPort,
+		LatestAddress:    latestAddress,
+		CurrentState:     currentState,
+	}, nil
+}

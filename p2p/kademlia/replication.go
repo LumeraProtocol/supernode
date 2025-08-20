@@ -166,7 +166,9 @@ func (s *DHT) Replicate(ctx context.Context) {
 	ignores := s.ignorelist.ToNodeList()
 	closestContactsMap := make(map[string][][]byte)
 
-	self := &Node{ID: s.ht.self.ID, IP: s.externalIP, Port: s.ht.self.Port}
+	supernodeAddr, _ := s.getSupernodeAddress(ctx)
+	hostIP := parseSupernodeAddress(supernodeAddr)
+	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
 	self.SetHashedID()
 
 	for i := 0; i < len(replicationKeys); i++ {

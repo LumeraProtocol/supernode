@@ -106,11 +106,11 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 		return s.setBootstrapNodesFromConfigVar(ctx, bootstrapNodes)
 	}
 
-	selfAddress, err := s.getExternalIP()
+	supernodeAddr, err := s.getSupernodeAddress(ctx)
 	if err != nil {
-		return fmt.Errorf("get external ip addr: %s", err)
+		return fmt.Errorf("get supernode address: %s", err)
 	}
-	selfAddress = fmt.Sprintf("%s:%d", selfAddress, s.options.Port)
+	selfAddress := fmt.Sprintf("%s:%d", parseSupernodeAddress(supernodeAddr), s.options.Port)
 
 	var boostrapNodes []*Node
 

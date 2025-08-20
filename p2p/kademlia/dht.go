@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,7 +55,7 @@ type DHT struct {
 	done           chan struct{}    // distributed hash table is done
 	cache          storage.KeyValue // store bad bootstrap addresses
 	bsConnected    map[string]bool  // map of connected bootstrap nodes [identity] -> connected
-	externalIP     string
+	supernodeAddr  string           // cached address from chain
 	mtx            sync.Mutex
 	ignorelist     *BanList
 	replicationMtx sync.RWMutex
@@ -81,8 +81,6 @@ type Options struct {
 
 	// Keyring for credentials
 	Keyring keyring.Keyring
-
-	ExternalIP string
 }
 
 // NewDHT returns a new DHT node
@@ -105,10 +103,6 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 		ignorelist:     NewBanList(ctx),
 		replicationMtx: sync.RWMutex{},
 		rqstore:        rqstore,
-	}
-
-	if options.ExternalIP != "" {
-		s.externalIP = options.ExternalIP
 	}
 
 	// Check that keyring is provided
@@ -166,28 +160,42 @@ func (s *DHT) NodesLen() int {
 	return len(s.ht.nodes())
 }
 
-func (s *DHT) getExternalIP() (string, error) {
+func (s *DHT) getSupernodeAddress(ctx context.Context) (string, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	// Return cached value if already determined
-	if s.externalIP != "" {
-		return s.externalIP, nil
+	if s.supernodeAddr != "" {
+		return s.supernodeAddr, nil
 	}
 
-	// Check environment variable to control IP behavior
-	if useExternal := os.Getenv("P2P_USE_EXTERNAL_IP"); useExternal == "false" || useExternal == "0" {
-		s.externalIP = s.ht.self.IP
-		return s.externalIP, nil
+	// Query chain for supernode info
+	supernodeInfo, err := s.options.LumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, string(s.options.ID))
+	if err != nil || supernodeInfo == nil {
+		// Fallback to local IP if chain query fails
+		s.supernodeAddr = s.ht.self.IP
+		return s.supernodeAddr, nil
 	}
 
-	externalIP, err := utils.GetExternalIPAddress()
-	if err != nil {
-		return "", fmt.Errorf("get external ip addr: %s", err)
+	s.supernodeAddr = supernodeInfo.LatestAddress
+	return supernodeInfo.LatestAddress, nil
+}
+
+// parseSupernodeAddress extracts the host from various address formats
+func parseSupernodeAddress(address string) string {
+	// Remove protocol prefixes
+	if strings.HasPrefix(address, "https://") {
+		address = strings.TrimPrefix(address, "https://")
+	} else if strings.HasPrefix(address, "http://") {
+		address = strings.TrimPrefix(address, "http://")
 	}
 
-	s.externalIP = externalIP
-	return externalIP, nil
+	// Extract host part (remove port if present)
+	if idx := strings.LastIndex(address, ":"); idx != -1 {
+		return address[:idx]
+	}
+
+	return address
 }
 
 // Start the distributed hash table
@@ -365,9 +373,11 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 
 // new a message
 func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Message {
-	externalIP, _ := s.getExternalIP()
+	ctx := context.Background()
+	supernodeAddr, _ := s.getSupernodeAddress(ctx)
+	hostIP := parseSupernodeAddress(supernodeAddr)
 	sender := &Node{
-		IP:   externalIP,
+		IP:   hostIP,
 		ID:   s.ht.self.ID,
 		Port: s.ht.self.Port,
 	}
@@ -574,7 +584,9 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		result[key] = nil
 	}
 
-	self := &Node{ID: s.ht.self.ID, IP: s.externalIP, Port: s.ht.self.Port}
+	supernodeAddr, _ := s.getSupernodeAddress(ctx)
+	hostIP := parseSupernodeAddress(supernodeAddr)
+	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
 	self.SetHashedID()
 
 	// populate hexKeys and hashes

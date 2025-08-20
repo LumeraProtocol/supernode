@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net"
 
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	snmodule "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -59,23 +59,20 @@ func (cv *ConfigVerifier) VerifyConfig(ctx context.Context) (*VerificationResult
 	}
 
 	// Check 3: Query chain for supernode registration
-	supernode, err := cv.checkSupernodeExists(ctx, result)
+	supernodeInfo, err := cv.checkSupernodeExists(ctx, result)
 	if err != nil {
 		return result, err
 	}
 
 	// If supernode doesn't exist, don't proceed with field comparisons
-	if supernode == nil {
+	if supernodeInfo == nil {
 		return result, nil
 	}
 
-	// Check 4: Verify P2P port matches
-	cv.checkP2PPortMatches(result, supernode)
+	// Check 4: Verify supernode state is active
+	cv.checkSupernodeState(result, supernodeInfo)
 
-	// Check 5: Verify supernode state is active
-	cv.checkSupernodeState(result, supernode)
-
-	// Check 6: Verify all required ports are available
+	// Check 5: Verify all required ports are available
 	cv.checkPortsAvailable(result)
 
 	logtrace.Info(ctx, "Config verification completed", logtrace.Fields{
@@ -128,8 +125,8 @@ func (cv *ConfigVerifier) checkIdentityMatches(result *VerificationResult) error
 }
 
 // checkSupernodeExists queries chain for supernode registration
-func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *VerificationResult) (*sntypes.SuperNode, error) {
-	sn, err := cv.lumeraClient.SuperNode().GetSupernodeBySupernodeAddress(ctx, cv.config.SupernodeConfig.Identity)
+func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *VerificationResult) (*snmodule.SuperNodeInfo, error) {
+	sn, err := cv.lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, cv.config.SupernodeConfig.Identity)
 	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, ConfigError{
@@ -143,9 +140,9 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 }
 
 // checkP2PPortMatches compares config P2P port with chain
-func (cv *ConfigVerifier) checkP2PPortMatches(result *VerificationResult, supernode *sntypes.SuperNode) {
+func (cv *ConfigVerifier) checkP2PPortMatches(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
 	configPort := fmt.Sprintf("%d", cv.config.P2PConfig.Port)
-	chainPort := supernode.P2PPort
+	chainPort := supernodeInfo.P2PPort
 
 	if chainPort != "" && chainPort != configPort {
 		result.Valid = false
@@ -159,18 +156,15 @@ func (cv *ConfigVerifier) checkP2PPortMatches(result *VerificationResult, supern
 }
 
 // checkSupernodeState verifies supernode is in active state
-func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernode *sntypes.SuperNode) {
-	if len(supernode.States) > 0 {
-		lastState := supernode.States[len(supernode.States)-1]
-		if lastState.State.String() != "SUPERNODE_STATE_ACTIVE" {
-			result.Valid = false
-			result.Errors = append(result.Errors, ConfigError{
-				Field:    "state",
-				Expected: "SUPERNODE_STATE_ACTIVE",
-				Actual:   lastState.State.String(),
-				Message:  fmt.Sprintf("Supernode state is %s (expected ACTIVE)", lastState.State.String()),
-			})
-		}
+func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
+	if supernodeInfo.CurrentState != "" && supernodeInfo.CurrentState != "SUPERNODE_STATE_ACTIVE" {
+		result.Valid = false
+		result.Errors = append(result.Errors, ConfigError{
+			Field:    "state",
+			Expected: "SUPERNODE_STATE_ACTIVE",
+			Actual:   supernodeInfo.CurrentState,
+			Message:  fmt.Sprintf("Supernode state is %s (expected ACTIVE)", supernodeInfo.CurrentState),
+		})
 	}
 }
 

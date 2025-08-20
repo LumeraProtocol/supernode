@@ -164,6 +164,16 @@ func (m *MockSupernodeModule) GetParams(ctx context.Context) (*supernodeTypes.Qu
 	return &supernodeTypes.QueryParamsResponse{}, nil
 }
 
+func (m *MockSupernodeModule) GetSupernodeWithLatestAddress(ctx context.Context, address string) (*supernode.SuperNodeInfo, error) {
+	return &supernode.SuperNodeInfo{
+		SupernodeAccount: address,
+		ValidatorAddress: "validator_" + address,
+		P2PPort:         "4445",
+		LatestAddress:   "127.0.0.1:9000",
+		CurrentState:    "SUPERNODE_STATE_ACTIVE",
+	}, nil
+}
+
 // MockTxModule implements the tx.Module interface for testing
 type MockTxModule struct{}
 

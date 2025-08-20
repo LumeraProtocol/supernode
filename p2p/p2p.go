@@ -238,10 +238,6 @@ func (s *p2p) configure(ctx context.Context) error {
 		errors.Errorf("node id is empty")
 	}
 
-	// We Set ExternalIP only for integration tests
-	if s.config.BootstrapNodes != "" && s.config.ExternalIP != "" {
-		kadOpts.ExternalIP = s.config.ExternalIP
-	}
 	// new a kademlia distributed hash table
 	dht, err := kademlia.NewDHT(ctx, s.store, s.metaStore, kadOpts, s.rqstore)
 

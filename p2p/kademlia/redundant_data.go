@@ -71,7 +71,9 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
 
 	ignores := s.ignorelist.ToNodeList()
-	self := &Node{ID: s.ht.self.ID, IP: s.externalIP, Port: s.ht.self.Port}
+	supernodeAddr, _ := s.getSupernodeAddress(ctx)
+	hostIP := parseSupernodeAddress(supernodeAddr)
+	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
 	self.SetHashedID()
 
 	closestContactsMap := make(map[string][][]byte)

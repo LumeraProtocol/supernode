@@ -14,7 +14,6 @@ import (
 	"math"
 	"math/big"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,41 +36,6 @@ const (
 	highCompressTimeout          = 30 * time.Minute
 	highCompressionLevel         = 4
 )
-
-var ipEndpoints = []string{
-	"https://api.ipify.org",
-	"https://ifconfig.co/ip",
-	"https://checkip.amazonaws.com",
-	"https://ipv4.icanhazip.com",
-}
-
-// GetExternalIPAddress returns the first valid public IP obtained
-// from a list of providers, or an error if none work.
-// func GetExternalIPAddress() (string, error) {
-// 	client := &http.Client{Timeout: 4 * time.Second}
-
-// 	for _, url := range ipEndpoints {
-// 		req, _ := http.NewRequest(http.MethodGet, url, nil)
-
-// 		resp, err := client.Do(req)
-// 		if err != nil {
-// 			continue // provider down? try next
-// 		}
-
-// 		body, err := io.ReadAll(resp.Body)
-// 		resp.Body.Close()
-// 		if err != nil {
-// 			continue
-// 		}
-
-// 		ip := strings.TrimSpace(string(body))
-// 		if net.ParseIP(ip) != nil {
-// 			return ip, nil
-// 		}
-// 	}
-
-// 	return "", errors.New("unable to determine external IP address from any provider")
-// }
 
 var sem = semaphore.NewWeighted(maxParallelHighCompressCalls)
 
@@ -131,27 +95,6 @@ func IsContextErr(err error) bool {
 	}
 
 	return false
-}
-
-// GetExternalIPAddress returns external IP address
-func GetExternalIPAddress() (externalIP string, err error) {
-	resp, err := http.Get("https://api.ipify.org")
-	if err != nil {
-		return "", err
-	}
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	if net.ParseIP(string(body)) == nil {
-		return "", errors.Errorf("invalid IP response from %s", "api.ipify.org")
-	}
-
-	return string(body), nil
 }
 
 // B64Encode base64 encodes

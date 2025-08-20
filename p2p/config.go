@@ -22,8 +22,6 @@ type Config struct {
 
 	// BootstrapNodes is ONLY used for integration testing to inject a Node's IP address
 	BootstrapNodes string `mapstructure:"bootstrap_nodes" json:"bootstrap_nodes,omitempty"`
-	// ExternalIP is ONLY used for integration testing to assign a fixed IP address
-	ExternalIP string `mapstructure:"external_ip" json:"external_ip,omitempty"`
 
 	// ID of supernode to be used in P2P - Supposed to be the PastelID
 	ID string `mapstructure:"id" json:"-"`
