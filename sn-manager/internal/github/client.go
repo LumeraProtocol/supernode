@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=client_mock.go -package=github -source=client.go
+//go:generate go run go.uber.org/mock/mockgen -destination=client_mock.go -package=github -source=client.go
 
 package github
 
@@ -15,6 +15,7 @@ import (
 
 type GithubClient interface {
 	GetLatestRelease() (*Release, error)
+	GetLatestStableRelease() (*Release, error)
 	ListReleases() ([]*Release, error)
 	GetRelease(tag string) (*Release, error)
 	GetSupernodeDownloadURL(version string) (string, error)
@@ -122,6 +123,23 @@ func (c *Client) ListReleases() ([]*Release, error) {
 	}
 
 	return releases, nil
+}
+
+// GetLatestStableRelease fetches the latest stable (non-prerelease, non-draft) release from GitHub
+func (c *Client) GetLatestStableRelease() (*Release, error) {
+	releases, err := c.ListReleases()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list releases: %w", err)
+	}
+
+	// Filter for stable releases (not draft, not prerelease)
+	for _, release := range releases {
+		if !release.Draft && !release.Prerelease {
+			return release, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no stable releases found")
 }
 
 // GetRelease fetches a specific release by tag

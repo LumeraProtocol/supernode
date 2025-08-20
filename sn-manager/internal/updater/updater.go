@@ -140,10 +140,10 @@ func (u *AutoUpdater) shouldUpdate(current, latest string) bool {
 		return false
 	}
 
-	// Only update within same major.minor version
-	if currentParts[0] != latestParts[0] || currentParts[1] != latestParts[1] {
-		log.Printf("Major/minor version mismatch, skipping update: %s.%s vs %s.%s", 
-			currentParts[0], currentParts[1], latestParts[0], latestParts[1])
+	// Only update within same major version (allow minor and patch updates)
+	if currentParts[0] != latestParts[0] {
+		log.Printf("Major version mismatch, skipping update: %s vs %s", 
+			currentParts[0], latestParts[0])
 		return false
 	}
 

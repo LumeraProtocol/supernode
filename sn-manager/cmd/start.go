@@ -183,9 +183,9 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 	fmt.Println("No SuperNode binary found. Downloading latest version...")
 
 	client := github.NewClient(config.GitHubRepo)
-	release, err := client.GetLatestRelease()
+	release, err := client.GetLatestStableRelease()
 	if err != nil {
-		return fmt.Errorf("failed to get latest release: %w", err)
+		return fmt.Errorf("failed to get latest stable release: %w", err)
 	}
 
 	targetVersion := release.TagName

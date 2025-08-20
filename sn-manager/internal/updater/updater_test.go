@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -91,8 +91,8 @@ func TestAutoUpdater_ShouldUpdate(t *testing.T) {
 		{"patch_update", "v1.0.0", "v1.0.1", true},
 		{"patch_update_no_prefix", "1.0.0", "1.0.1", true},
 
-		// Minor version updates (should NOT update based on current logic)
-		{"minor_update", "v1.0.0", "v1.1.0", false},
+		// Minor version updates (should update within same major version)
+		{"minor_update", "v1.0.0", "v1.1.0", true},
 		{"major_update", "v1.0.0", "v2.0.0", false},
 
 		// Same version (should not update)
@@ -288,11 +288,11 @@ func TestAutoUpdater_CheckAndUpdate(t *testing.T) {
 			expectUpdate:   false,
 		},
 		{
-			name:           "minor_version_update_should_skip",
+			name:           "minor_version_update_should_proceed",
 			currentVersion: "v1.0.0",
 			latestVersion:  "v1.1.0",
 			gatewayIdle:    true,
-			expectUpdate:   false,
+			expectUpdate:   true,
 		},
 	}
 
@@ -1198,11 +1198,11 @@ func TestAutoUpdater_UpdatePolicyLogic(t *testing.T) {
 			description:    "Patch updates (1.2.3 -> 1.2.4) should be allowed",
 		},
 		{
-			name:           "minor_update_blocked",
+			name:           "minor_update_allowed",
 			currentVersion: "v1.2.3",
 			latestVersion:  "v1.3.0",
-			shouldUpdate:   false,
-			description:    "Minor updates (1.2.x -> 1.3.x) should be blocked",
+			shouldUpdate:   true,
+			description:    "Minor updates (1.2.x -> 1.3.x) should be allowed within same major version",
 		},
 		{
 			name:           "major_update_blocked",

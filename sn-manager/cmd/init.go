@@ -177,10 +177,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	versionMgr := version.NewManager(managerHome)
 	client := github.NewClient(config.GitHubRepo)
 
-	// Get latest release
-	release, err := client.GetLatestRelease()
+	// Get latest stable release
+	release, err := client.GetLatestStableRelease()
 	if err != nil {
-		return fmt.Errorf("failed to get latest release: %w", err)
+		return fmt.Errorf("failed to get latest stable release: %w", err)
 	}
 
 	targetVersion := release.TagName
