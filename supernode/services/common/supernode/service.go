@@ -3,12 +3,16 @@ package supernode
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	snmodule "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
 
@@ -176,9 +180,20 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 		}
 	}
 
-	// Set IP address from config
-	if s.config != nil {
-		resp.IPAddress = fmt.Sprintf("%s:%d", s.config.SupernodeConfig.Host, s.config.P2PConfig.Port)
+	// Set IP address from chain, fallback to external IP
+	if s.config != nil && s.lumeraClient != nil {
+		supernode, err := s.lumeraClient.SuperNode().GetSupernodeBySupernodeAddress(ctx, s.config.SupernodeConfig.Identity)
+		if err == nil && supernode != nil {
+			if latestIP, err := snmodule.GetLatestIP(supernode); err == nil {
+				resp.IPAddress = latestIP
+			}
+		}
+
+		if resp.IPAddress == "" {
+			if externalIP, err := s.getExternalIP(ctx); err == nil {
+				resp.IPAddress = fmt.Sprintf("%s:%d", externalIP, s.config.SupernodeConfig.Port)
+			}
+		}
 	}
 
 	// Log summary statistics
@@ -188,4 +203,39 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context) (StatusResponse,
 	}
 
 	return resp, nil
+}
+
+// getExternalIP queries an external service to determine the public IP address
+func (s *SupernodeStatusService) getExternalIP(ctx context.Context) (string, error) {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	// Create request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.ipify.org", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Make the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get external IP: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Clean up the IP address
+	ip := strings.TrimSpace(string(body))
+	if ip == "" {
+		return "", fmt.Errorf("received empty IP address from external service")
+	}
+
+	return ip, nil
 }
