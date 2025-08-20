@@ -3,6 +3,7 @@ package lumera
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
@@ -194,13 +195,14 @@ func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supe
 			continue
 		}
 
-		// Check if States slice has at least one element
-		if len(sn.States) == 0 {
+		// Get the latest state based on height
+		latestState, err := getLatestState(sn)
+		if err != nil {
 			continue
 		}
 
-		// Check if the first state is active
-		if sn.States[0].State.String() != string(SUPERNODE_STATE_ACTIVE) {
+		// Check if the latest state is active
+		if latestState.State.String() != string(SUPERNODE_STATE_ACTIVE) {
 			continue
 		}
 
@@ -213,6 +215,29 @@ func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supe
 	return result
 }
 
+func getLatestState(supernode *sntypes.SuperNode) (*sntypes.SuperNodeStateRecord, error) {
+	if supernode == nil {
+		return nil, fmt.Errorf("supernode is nil")
+	}
+
+	// Check if the slice has elements before accessing it
+	if len(supernode.States) == 0 {
+		return nil, fmt.Errorf("no state history exists for the supernode")
+	}
+
+	// Sort by height in descending order to get the latest first
+	sort.Slice(supernode.States, func(i, j int) bool {
+		return supernode.States[i].Height > supernode.States[j].Height
+	})
+
+	// Access the latest state safely
+	if supernode.States[0] == nil {
+		return nil, fmt.Errorf("latest state in history is nil")
+	}
+
+	return supernode.States[0], nil
+}
+
 func getLatestIP(supernode *sntypes.SuperNode) (string, error) {
 	if supernode == nil {
 		return "", fmt.Errorf("supernode is nil")
@@ -223,9 +248,14 @@ func getLatestIP(supernode *sntypes.SuperNode) (string, error) {
 		return "", fmt.Errorf("no ip history exists for the supernode")
 	}
 
-	// Access the first element safely
+	// Sort by height in descending order to get the latest first
+	sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
+		return supernode.PrevIpAddresses[i].Height > supernode.PrevIpAddresses[j].Height
+	})
+
+	// Access the latest IP address safely
 	if supernode.PrevIpAddresses[0] == nil {
-		return "", fmt.Errorf("first IP address in history is nil")
+		return "", fmt.Errorf("latest IP address in history is nil")
 	}
 
 	return supernode.PrevIpAddresses[0].Address, nil

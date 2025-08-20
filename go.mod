@@ -11,7 +11,7 @@ replace (
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/LumeraProtocol/lumera v1.6.0
+	github.com/LumeraProtocol/lumera v1.7.0
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
