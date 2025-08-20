@@ -49,6 +49,8 @@ func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	os.Setenv("SYSTEM_TEST", "true")
 	defer os.Unsetenv("SYSTEM_TEST")
+	os.Setenv("P2P_USE_EXTERNAL_IP", "false")
+	defer os.Unsetenv("P2P_USE_EXTERNAL_IP")
 	// Test account credentials - these values are consistent across test runs
 	const testMnemonic = "odor kiss switch swarm spell make planet bundle skate ozone path planet exclude butter atom ahead angle royal shuffle door prevent merry alter robust"
 	const expectedAddress = "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4"

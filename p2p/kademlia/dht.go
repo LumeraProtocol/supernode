@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -168,12 +169,15 @@ func (s *DHT) NodesLen() int {
 func (s *DHT) getExternalIP() (string, error) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-	// if listen IP is localhost - then return itself
-	if s.ht.self.IP == "127.0.0.1" || s.ht.self.IP == "localhost" || s.ht.self.IP == "0.0.0.0" {
-		return s.ht.self.IP, nil
+
+	// Return cached value if already determined
+	if s.externalIP != "" {
+		return s.externalIP, nil
 	}
 
-	if s.externalIP != "" {
+	// Check environment variable to control IP behavior
+	if useExternal := os.Getenv("P2P_USE_EXTERNAL_IP"); useExternal == "false" || useExternal == "0" {
+		s.externalIP = s.ht.self.IP
 		return s.externalIP, nil
 	}
 
