@@ -109,7 +109,7 @@ func TestAutoUpdater_ShouldUpdate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := updater.shouldUpdate(tt.current, tt.latest)
+			result := updater.ShouldUpdate(tt.current, tt.latest)
 			assert.Equal(t, tt.expected, result, "shouldUpdate(%s, %s) = %v, want %v", tt.current, tt.latest, result, tt.expected)
 		})
 	}
@@ -1225,7 +1225,7 @@ func TestAutoUpdater_UpdatePolicyLogic(t *testing.T) {
 			cfg := createTestConfig(t, homeDir, scenario.currentVersion, true, 3600)
 			updater := New(homeDir, cfg)
 
-			result := updater.shouldUpdate(scenario.currentVersion, scenario.latestVersion)
+			result := updater.ShouldUpdate(scenario.currentVersion, scenario.latestVersion)
 			assert.Equal(t, scenario.shouldUpdate, result, scenario.description)
 		})
 	}

@@ -96,7 +96,7 @@ func (u *AutoUpdater) checkAndUpdate(ctx context.Context) {
 
 	log.Printf("Version comparison: current=%s, latest=%s", currentVersion, latestVersion)
 
-	if !u.shouldUpdate(currentVersion, latestVersion) {
+	if !u.ShouldUpdate(currentVersion, latestVersion) {
 		log.Printf("Current version %s is up to date", currentVersion)
 		return
 	}
@@ -116,7 +116,7 @@ func (u *AutoUpdater) checkAndUpdate(ctx context.Context) {
 	log.Printf("Updated to %s", latestVersion)
 }
 
-func (u *AutoUpdater) shouldUpdate(current, latest string) bool {
+func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	current = strings.TrimPrefix(current, "v")
 	latest = strings.TrimPrefix(latest, "v")
 
