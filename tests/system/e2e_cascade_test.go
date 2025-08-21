@@ -87,7 +87,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Registering multiple supernodes to process requests")
 
 	// Helper function to register a supernode
-	registerSupernode := func(nodeKey string, port string, addr string, p2pPort string) {
+	registerSupernode := func(nodeKey string, ipAddr string, addr string, p2pPort string) {
 		// Get account and validator addresses for registration
 		accountAddr := cli.GetKeyAddr(nodeKey)
 		valAddrOutput := cli.Keys("keys", "show", nodeKey, "--bech", "val", "-a")
@@ -99,7 +99,7 @@ func TestCascadeE2E(t *testing.T) {
 		registerCmd := []string{
 			"tx", "supernode", "register-supernode",
 			valAddr,
-			"localhost:" + port,
+			ipAddr,
 			addr,
 			"--p2p-port", p2pPort,
 			"--from", nodeKey,
@@ -112,10 +112,10 @@ func TestCascadeE2E(t *testing.T) {
 		sut.AwaitNextBlock(t)
 	}
 
-	// Register three supernodes with different ports
-	registerSupernode("node0", "4444", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "4445")
-	registerSupernode("node1", "4446", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "4447")
-	registerSupernode("node2", "4448", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "4449")
+	// Register three supernodes with different IP addresses
+	registerSupernode("node0", "127.0.0.1", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "4445")
+	registerSupernode("node1", "127.0.0.2", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "4447")
+	registerSupernode("node2", "127.0.0.3", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "4449")
 	t.Log("Successfully registered three supernodes")
 
 	// Fund Lume
