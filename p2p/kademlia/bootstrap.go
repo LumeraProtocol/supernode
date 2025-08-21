@@ -153,12 +153,7 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 			}
 
 			// Extract IP from the address (remove port if present)
-			var ip string
-			if idx := strings.LastIndex(latestIP, ":"); idx != -1 {
-				ip = latestIP[:idx]
-			} else {
-				ip = latestIP
-			}
+			ip := parseSupernodeAddress(latestIP)
 
 			// Use p2p_port from supernode record
 			p2pPort := defaultSuperNodeP2PPort
