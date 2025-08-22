@@ -10,7 +10,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
-	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -65,16 +64,13 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		return nil, fmt.Errorf("failed to create credentials: %w", err)
 	}
 
-	// Append default port to the IP address from blockchain
-	endpointWithPort := fmt.Sprintf("%s:%s", targetSupernode.GrpcEndpoint, config.DefaultSupernodePort)
-
 	// Format connection address with identity for secure connection
 	targetAddress := ltc.FormatAddressWithIdentity(
 		targetSupernode.CosmosAddress,
-		endpointWithPort,
+		targetSupernode.GrpcEndpoint,
 	)
 
-	logger.Info(ctx, "Connecting to supernode securely", "endpoint", endpointWithPort, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
+	logger.Info(ctx, "Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions
@@ -91,7 +87,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			targetSupernode.CosmosAddress, err)
 	}
 
-	logger.Info(ctx, "Connected to supernode securely", "address", targetSupernode.CosmosAddress, "endpoint", endpointWithPort)
+	logger.Info(ctx, "Connected to supernode securely", "address", targetSupernode.CosmosAddress, "endpoint", targetSupernode.GrpcEndpoint)
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(

@@ -3,9 +3,9 @@
 supernode:
   key_name: "testkey2"
   identity: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c"
-  host: "127.0.0.2"
-  port: 4444
-  gateway_port: 8002
+  host: "0.0.0.0"
+  port: 4446
+  gateway_port: 8003
 
 # Keyring Configuration
 keyring:
@@ -15,7 +15,7 @@ keyring:
 
 # P2P Network Configuration
 p2p:
-  port: 4445
+  port: 4447
   data_dir: "data/p2p"
 
 # Lumera Chain Configuration
