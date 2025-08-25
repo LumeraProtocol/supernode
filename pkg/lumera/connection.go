@@ -11,11 +11,18 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 )
 
 const (
-	defaultTimeout    = 30 * time.Second
 	defaultLumeraPort = "9090"
+
+	keepaliveTime    = 30 * time.Second
+	keepaliveTimeout = 10 * time.Second
+	retryDelay       = 2 * time.Second
+	maxRetryDelay    = 30 * time.Second
+	maxRetries       = 5
+	backoffFactor    = 2
 )
 
 // Connection defines the interface for a client connection.
@@ -45,15 +52,7 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 		creds = insecure.NewCredentials()
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	conn, err := grpc.DialContext(
-		dialCtx,
-		hostPort,
-		grpc.WithTransportCredentials(creds),
-		grpc.WithBlock(),
-	)
+	conn, err := createGRPCConnection(ctx, hostPort, creds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
 	}
@@ -107,6 +106,53 @@ func normaliseAddr(raw string) (hostPort string, useTLS bool, serverName string,
 		return net.JoinHostPort(host, port), true, host, nil
 	}
 	return net.JoinHostPort(host, port), false, host, nil
+}
+
+// createGRPCConnection creates a gRPC connection with keepalive and retry interceptor
+func createGRPCConnection(ctx context.Context, hostPort string, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
+	_ = ctx // Keeping this for api compatibility
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(creds),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                keepaliveTime,
+			Timeout:             keepaliveTimeout,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithUnaryInterceptor(retryInterceptor),
+	}
+
+	return grpc.NewClient(hostPort, opts...)
+}
+
+// retryInterceptor retries failed calls with exponential backoff
+func retryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	delay := retryDelay
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Don't wait after the last attempt
+		if attempt < maxRetries-1 {
+			select {
+			case <-time.After(delay):
+				// Exponential backoff: 2s → 4s → 8s → 16s → 30s (capped)
+				delay *= backoffFactor
+				if delay > maxRetryDelay {
+					delay = maxRetryDelay
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+
+	return lastErr // Return the last error after all retries exhausted
 }
 
 // Close closes the gRPC connection.
