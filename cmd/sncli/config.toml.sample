@@ -6,10 +6,12 @@ grpc_addr = "localhost:9090"
 # Chain ID of the Lumera network (used for signing and verification)
 chain_id = "lumera-devnet-1"
 
+
+# --------------------------------------------------
 # Keyring settings for managing keys and identities
 [keyring]
 
-# Backend for storing keys: "file", "test", or "os"
+# Backend for storing keys: "file", "test", or "os" (default: test)
 backend = "test"
 
 # Directory where the keyring files are stored
@@ -23,11 +25,25 @@ key_name = "sncli-account"
 # This is used as the "local peer" for secure key exchange and authentication
 local_address = "lumera1abc..."
 
+# Keyring passphrase in a plain text
+#passphrase_plain = "passphrase"
+
+# Keyring passphrase in a text file
+#passphrase_file = "~/.path_to_passphrase_file"
+
+# Keyring passphrase in an environment variable
+#passphrase_env = "passphrase_env_var"
+
+
+# --------------------------------------------------
 # Supernode connection settings
 [supernode]
 
 # gRPC endpoint of the Supernode you want to connect to
-grpc_endpoint = "127.0.0.1:4444"
+grpc_endpoint = "localhost:4444"
+
+# p2p endpoint of the Supernode you want to connect to
+p2p_endpoint = "localhost:4445"
 
 # Bech32-encoded Cosmos address of the Supernode peer
 # Used to authenticate the remote peer during secure key exchange

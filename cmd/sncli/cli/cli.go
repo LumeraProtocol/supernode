@@ -2,14 +2,12 @@ package cli
 
 import (
 	"context"
-	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
+	"fmt"
+	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/spf13/pflag"
 
 	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/conn"
@@ -17,33 +15,27 @@ import (
 	sdkcfg "github.com/LumeraProtocol/supernode/v2/sdk/config"
 	sdklog "github.com/LumeraProtocol/supernode/v2/sdk/log"
 	sdknet "github.com/LumeraProtocol/supernode/v2/sdk/net"
+	snconfig "github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
 const (
+	// defaultConfigFileName is the default path to the configuration file.
 	defaultConfigFileName = "config.toml"
+
+	// defaultConfigFolder is the default folder for configuration files.	
+	defaultConfigFolder = "~/.sncli"
 )
 
 type CLI struct {
-	opts         CLIOptions
-	cfg          *CLIConfig
+	cliOpts      CLIOptions
+	CfgOpts      *CLIConfig
+	ConfigPath   string
 	kr           keyring.Keyring
-	sdkConfig    sdkcfg.Config
+	SdkConfig    sdkcfg.Config
 	lumeraClient lumera.Client
 	snClient     sdknet.SupernodeClient
-}
-
-func (c *CLI) parseCLIOptions() {
-	pflag.StringVar(&c.opts.ConfigPath, "config", "", "Path to config file")
-	pflag.StringVar(&c.opts.GrpcEndpoint, "grpc_endpoint", "", "Supernode gRPC endpoint")
-	pflag.StringVar(&c.opts.SupernodeAddr, "address", "", "Supernode Lumera address")
-	pflag.Parse()
-
-	args := pflag.Args()
-	if len(args) > 0 {
-		c.opts.Command = args[0]
-		c.opts.CommandArgs = args[1:]
-	}
+	p2p          *P2P
 }
 
 func NewCLI() *CLI {
@@ -51,94 +43,97 @@ func NewCLI() *CLI {
 	return cli
 }
 
-func processConfigPath(path string) string {
-	// expand environment variables if any
-	path = os.ExpandEnv(path)
-	// replaces ~ with the user's home directory
-	if strings.HasPrefix(path, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("Unable to resolve home directory: %v", err)
-		}
-		path = filepath.Join(home, path[1:])
-	}
-	// check if path defines directory
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		path = filepath.Join(path, defaultConfigFileName)
-	}
-	path = filepath.Clean(path)
-	return path
+func (c *CLI) SetOptions(o CLIOptions) {
+	c.cliOpts = o
+}
+
+func (c *CLI) SetP2P(p *P2P) {
+	c.p2p = p
+}
+
+func (c *CLI) P2P() *P2P {
+	return c.p2p
 }
 
 // detectConfigPath resolves the configuration file path based on:
 // 1. CLI argument (--config) if provided
 // 2. SNCLI_CONFIG_PATH environment variable
-// 3. Default to ./config.toml
+// 3. Default to ~/.sncli/config.toml
 func (c *CLI) detectConfigPath() string {
-	if c.opts.ConfigPath != "" {
-		return processConfigPath(c.opts.ConfigPath)
+	if c.cliOpts.ConfigPath != "" {
+		return processConfigPath(c.cliOpts.ConfigPath)
 	}
 	if envPath := os.Getenv("SNCLI_CONFIG_PATH"); envPath != "" {
 		return processConfigPath(envPath)
 	}
-	return defaultConfigFileName
+	return processConfigPath(defaultConfigFolder)
 }
 
-func (c *CLI) loadCLIConfig() {
+func (c *CLI) loadCLIConfig() error {
 	path := c.detectConfigPath()
-	_, err := toml.DecodeFile(path, &c.cfg)
+	_, err := toml.DecodeFile(path, &c.CfgOpts)
 	if err != nil {
-		log.Fatalf("Failed to load config from %s: %v", path, err)
+		if os.IsNotExist(err) {
+			return fmt.Errorf("Config file not found at %s", path)
+		}
+		return fmt.Errorf("Failed to load config from %s: %v", path, err)
 	}
+	c.ConfigPath = path
+
+	// override Supernode GRPC endpoint and address if provided in CLI options
+	if c.cliOpts.GrpcEndpoint != "" {
+		c.CfgOpts.Supernode.GRPCEndpoint = c.cliOpts.GrpcEndpoint
+	}
+	if c.cliOpts.SupernodeAddr != "" {
+		c.CfgOpts.Supernode.Address = c.cliOpts.SupernodeAddr
+	}
+	if c.cliOpts.P2PEndpoint != "" {
+		c.CfgOpts.Supernode.P2PEndpoint = c.cliOpts.P2PEndpoint
+	}
+	return nil
 }
 
-func (c *CLI) validateCLIConfig() {
-	if c.opts.GrpcEndpoint != "" {
-		c.cfg.Supernode.GRPCEndpoint = c.opts.GrpcEndpoint
-	}
-	if c.opts.SupernodeAddr != "" {
-		c.cfg.Supernode.Address = c.opts.SupernodeAddr
-	}
-}
+func (c *CLI) Initialize() error {
+	var err error
 
-func (c *CLI) Initialize() {
-	// Parse command-line options
-	c.parseCLIOptions()
 	// Load options from toml configuration file
-	c.loadCLIConfig()
 	// Validate configuration & override with CLI options if provided
-	c.validateCLIConfig()
+	if err = c.loadCLIConfig(); err != nil {
+		return err
+	}
 
 	// Initialize Supernode SDK
 	snkeyring.InitSDKConfig()
 
 	// Initialize keyring
-	var err error
-	c.kr, err = snkeyring.InitKeyring(config.KeyringConfig{
-		Backend: c.cfg.Keyring.Backend,
-		Dir:     c.cfg.Keyring.Dir,
-	})
+	var krConfig snconfig.KeyringConfig
+	krConfig.Backend = c.CfgOpts.Keyring.Backend
+	krConfig.Dir = c.CfgOpts.Keyring.Dir
+	krConfig.PassPlain = c.CfgOpts.Keyring.PassPlain
+	krConfig.PassEnv = c.CfgOpts.Keyring.PassEnv
+	krConfig.PassFile = c.CfgOpts.Keyring.PassFile
+	c.kr, err = snkeyring.InitKeyring(krConfig)
 	if err != nil {
 		log.Fatalf("Keyring init failed: %v", err)
 	}
 
 	// Create Lumera client adapter
-	c.sdkConfig = sdkcfg.NewConfig(
+	c.SdkConfig = sdkcfg.NewConfig(
 		sdkcfg.AccountConfig{
-			LocalCosmosAddress: c.cfg.Keyring.LocalAddress,
-			KeyName:            c.cfg.Keyring.KeyName,
+			LocalCosmosAddress: c.CfgOpts.Keyring.LocalAddress,
+			KeyName:            c.CfgOpts.Keyring.KeyName,
 			Keyring:            c.kr,
 		},
 		sdkcfg.LumeraConfig{
-			GRPCAddr: c.cfg.Lumera.GRPCAddr,
-			ChainID:  c.cfg.Lumera.ChainID,
+			GRPCAddr: c.CfgOpts.Lumera.GRPCAddr,
+			ChainID:  c.CfgOpts.Lumera.ChainID,
 		},
 	)
 
 	c.lumeraClient, err = lumera.NewAdapter(context.Background(), lumera.ConfigParams{
-		GRPCAddr: c.sdkConfig.Lumera.GRPCAddr,
-		ChainID:  c.sdkConfig.Lumera.ChainID,
-		KeyName:  c.sdkConfig.Account.KeyName,
+		GRPCAddr: c.SdkConfig.Lumera.GRPCAddr,
+		ChainID:  c.SdkConfig.Lumera.ChainID,
+		KeyName:  c.SdkConfig.Account.KeyName,
 		Keyring:  c.kr,
 	}, sdklog.NewNoopLogger())
 	if err != nil {
@@ -146,6 +141,8 @@ func (c *CLI) Initialize() {
 	}
 
 	conn.RegisterALTSRecordProtocols()
+
+	return nil
 }
 
 func (c *CLI) Finalize() {
@@ -161,13 +158,13 @@ func (c *CLI) snClientInit() {
 		return // Already initialized
 	}
 
-	if c.cfg.Supernode.Address == "" || c.cfg.Supernode.GRPCEndpoint == "" {
+	if c.CfgOpts.Supernode.Address == "" || c.CfgOpts.Supernode.GRPCEndpoint == "" {
 		log.Fatal("Supernode address and gRPC endpoint must be configured")
 	}
 
 	supernode := lumera.Supernode{
-		CosmosAddress: c.cfg.Supernode.Address,
-		GrpcEndpoint:  c.cfg.Supernode.GRPCEndpoint,
+		CosmosAddress: c.CfgOpts.Supernode.Address,
+		GrpcEndpoint:  c.CfgOpts.Supernode.GRPCEndpoint,
 	}
 
 	clientFactory := sdknet.NewClientFactory(
@@ -176,7 +173,7 @@ func (c *CLI) snClientInit() {
 		c.kr,
 		c.lumeraClient,
 		sdknet.FactoryConfig{
-			LocalCosmosAddress: c.cfg.Keyring.LocalAddress,
+			LocalCosmosAddress: c.CfgOpts.Keyring.LocalAddress,
 			PeerType:           1, // Simplenode
 		},
 	)
@@ -186,4 +183,11 @@ func (c *CLI) snClientInit() {
 	if err != nil {
 		log.Fatalf("Supernode client init failed: %v", err)
 	}
+}
+
+func (c *CLI) P2PPing(timeout time.Duration) error {
+	if c.p2p == nil {
+		return fmt.Errorf("P2P: not initialized")
+	}
+	return c.p2p.Ping(timeout)
 }

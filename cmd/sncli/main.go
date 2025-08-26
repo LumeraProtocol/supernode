@@ -1,14 +1,9 @@
 package main
 
 import (
-	"github.com/LumeraProtocol/supernode/v2/cmd/sncli/cli"
+	"github.com/LumeraProtocol/supernode/v2/cmd/sncli/cmd"
 )
 
 func main() {
-	c := cli.NewCLI()
-
-	c.Initialize()
-	defer c.Finalize()
-
-	c.Run()
+	cmd.Execute()
 }

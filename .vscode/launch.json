@@ -13,6 +13,17 @@
             "showLog": true,
             "trace": "verbose"
         },
-        
+        {
+            "name": "sncli debug",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/sncli/main.go",
+            "cwd": "${workspaceFolder}/cmd/sncli",
+            "args": ["list"],
+            "env": {},
+            "showLog": true,
+            "trace": "verbose"
+        },        
     ]
 }

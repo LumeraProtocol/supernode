@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"net"
+	"net/url"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff/v4"
@@ -181,20 +182,24 @@ func (s *DHT) getSupernodeAddress(ctx context.Context) (string, error) {
 	return supernodeInfo.LatestAddress, nil
 }
 
-// parseSupernodeAddress extracts the host from various address formats
+// parseSupernodeAddress extracts the host part from a URL or address string.
+// It handles http/https prefixes, optional ports, and raw host:port formats.
 func parseSupernodeAddress(address string) string {
-	// Remove protocol prefixes
-	if strings.HasPrefix(address, "https://") {
-		address = strings.TrimPrefix(address, "https://")
-	} else if strings.HasPrefix(address, "http://") {
-		address = strings.TrimPrefix(address, "http://")
+	// If it looks like a URL, parse with net/url
+	if u, err := url.Parse(address); err == nil && u.Host != "" {
+		host, _, err := net.SplitHostPort(u.Host)
+		if err == nil {
+			return host
+		}
+		return u.Host // no port present
 	}
 
-	// Extract host part (remove port if present)
-	if idx := strings.LastIndex(address, ":"); idx != -1 {
-		return address[:idx]
+	// If it’s just host:port, handle with SplitHostPort
+	if host, _, err := net.SplitHostPort(address); err == nil {
+		return host
 	}
 
+	// Otherwise return as-is (probably just a bare host)
 	return address
 }
 
@@ -371,7 +376,7 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 	return dhtStats, nil
 }
 
-// new a message
+// newMessage creates a new message
 func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Message {
 	ctx := context.Background()
 	supernodeAddr, _ := s.getSupernodeAddress(ctx)
@@ -389,7 +394,7 @@ func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Mes
 	}
 }
 
-// GetValueFromNode get values from node
+// GetValueFromNode gets values from node
 func (s *DHT) GetValueFromNode(ctx context.Context, target []byte, n *Node) ([]byte, error) {
 	messageType := FindValue
 	data := &FindValueRequest{Target: target}

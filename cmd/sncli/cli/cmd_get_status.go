@@ -5,19 +5,8 @@ import (
 	"fmt"
 )
 
-func (c *CLI) healthCheck() error {
-	c.snClientInit()
-
-	resp, err := c.snClient.HealthCheck(context.Background())
-	if err != nil {
-		return fmt.Errorf("Supernode health check failed: %v", err)
-	}
-	fmt.Println("✅ Health status:", resp.Status)
-	return nil
-}
-
-// getSupernodeStatus retrieves and displays the status of the supernode
-func (c *CLI) getSupernodeStatus() error {
+// GetSupernodeStatus retrieves and displays the status of the supernode
+func (c *CLI) GetSupernodeStatus() error {
 	c.snClientInit()
 
 	resp, err := c.snClient.GetSupernodeStatus(context.Background())

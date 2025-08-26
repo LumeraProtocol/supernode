@@ -34,6 +34,9 @@ build:
 
 build-sncli: release/sncli
 
+SNCLI_SRC := $(wildcard cmd/sncli/*.go) \
+             $(wildcard cmd/sncli/**/*.go)
+
 release/sncli: $(SNCLI_SRC) cmd/sncli/go.mod cmd/sncli/go.sum
 	@mkdir -p release
 	@echo "Building sncli..."
@@ -48,8 +51,6 @@ release/sncli: $(SNCLI_SRC) cmd/sncli/go.mod cmd/sncli/go.sum
 		-o $$RELEASE_DIR/sncli && \
 	chmod +x $$RELEASE_DIR/sncli && \
 	echo "sncli built successfully at $$RELEASE_DIR/sncli"
-
-SNCLI_SRC=$(shell find cmd/sncli -name "*.go")
 
 build-sn-manager:
 	@mkdir -p release
