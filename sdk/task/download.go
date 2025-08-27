@@ -19,17 +19,19 @@ const (
 
 type CascadeDownloadTask struct {
 	BaseTask
-	actionId   string
-	outputPath string
-	signature  string
+	actionId         string
+	outputPath       string
+	signature        string
+	requesterAddress string
 }
 
-func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string, signature string) *CascadeDownloadTask {
+func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string, signature string, requesterAddress string) *CascadeDownloadTask {
 	return &CascadeDownloadTask{
-		BaseTask:   base,
-		actionId:   actionId,
-		outputPath: outputPath,
-		signature:  signature,
+		BaseTask:         base,
+		actionId:         actionId,
+		outputPath:       outputPath,
+		signature:        signature,
+		requesterAddress: requesterAddress,
 	}
 }
 
@@ -63,10 +65,11 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
 
 	req := &supernodeservice.CascadeSupernodeDownloadRequest{
-		ActionID:   t.actionId,
-		TaskID:     t.TaskID,
-		OutputPath: t.outputPath,
-		Signature:  t.signature,
+		ActionID:         t.actionId,
+		TaskID:           t.TaskID,
+		OutputPath:       t.outputPath,
+		Signature:        t.signature,
+		RequesterAddress: t.requesterAddress,
 	}
 
 	// Process supernodes in pairs
@@ -192,10 +195,11 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 		go func(sn lumera.Supernode, idx int, iter int) {
 			// Create a copy of the request for this goroutine
 			reqCopy := &supernodeservice.CascadeSupernodeDownloadRequest{
-				ActionID:   req.ActionID,
-				TaskID:     req.TaskID,
-				OutputPath: req.OutputPath,
-				Signature:  req.Signature,
+				ActionID:         req.ActionID,
+				TaskID:           req.TaskID,
+				OutputPath:       req.OutputPath,
+				Signature:        req.Signature,
+				RequesterAddress: req.RequesterAddress,
 			}
 
 			err := t.attemptDownload(batchCtx, sn, factory, reqCopy)

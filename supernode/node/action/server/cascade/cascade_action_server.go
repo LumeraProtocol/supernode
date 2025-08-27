@@ -233,7 +233,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	if req.GetSignature() != "" {
 		// Cast to concrete type to access helper method
 		if cascadeTask, ok := task.(*cascadeService.CascadeRegistrationTask); ok {
-			err := cascadeTask.VerifyDownloadSignature(ctx, req.GetActionId(), req.GetSignature())
+			err := cascadeTask.VerifyDownloadSignature(ctx, req.GetActionId(), req.GetSignature(), req.GetRequesterAddress())
 			if err != nil {
 				fields[logtrace.FieldError] = err.Error()
 				logtrace.Error(ctx, "signature verification failed", fields)

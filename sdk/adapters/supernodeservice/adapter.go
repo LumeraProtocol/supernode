@@ -40,15 +40,15 @@ func NewCascadeAdapter(ctx context.Context, conn *grpc.ClientConn, logger log.Lo
 // to balance throughput and memory usage
 func calculateOptimalChunkSize(fileSize int64) int {
 	const (
-		minChunkSize = 64 * 1024    // 64 KB minimum
-		maxChunkSize = 4 * 1024 * 1024  // 4 MB maximum for 1GB+ files
-		smallFileThreshold = 1024 * 1024  // 1 MB
+		minChunkSize        = 64 * 1024         // 64 KB minimum
+		maxChunkSize        = 4 * 1024 * 1024   // 4 MB maximum for 1GB+ files
+		smallFileThreshold  = 1024 * 1024       // 1 MB
 		mediumFileThreshold = 50 * 1024 * 1024  // 50 MB
-		largeFileThreshold = 500 * 1024 * 1024  // 500 MB
+		largeFileThreshold  = 500 * 1024 * 1024 // 500 MB
 	)
 
 	var chunkSize int
-	
+
 	switch {
 	case fileSize <= smallFileThreshold:
 		// For small files (up to 1MB), use 64KB chunks
@@ -63,7 +63,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 		// For very large files (500MB+), use 4MB chunks for optimal throughput
 		chunkSize = maxChunkSize
 	}
-	
+
 	// Ensure chunk size is within bounds
 	if chunkSize < minChunkSize {
 		chunkSize = minChunkSize
@@ -71,7 +71,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 	if chunkSize > maxChunkSize {
 		chunkSize = maxChunkSize
 	}
-	
+
 	return chunkSize
 }
 
@@ -106,16 +106,16 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	// Validate file size before starting upload
 	if totalBytes > maxFileSize {
-		a.logger.Error(ctx, "File exceeds maximum size limit", 
-			"filePath", in.FilePath, 
-			"fileSize", totalBytes, 
+		a.logger.Error(ctx, "File exceeds maximum size limit",
+			"filePath", in.FilePath,
+			"fileSize", totalBytes,
 			"maxSize", maxFileSize)
 		return nil, fmt.Errorf("file size %d bytes exceeds maximum allowed size of 1GB", totalBytes)
 	}
 
 	// Define adaptive chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(totalBytes)
-	
+
 	a.logger.Debug(ctx, "Calculated optimal chunk size", "fileSize", totalBytes, "chunkSize", chunkSize)
 
 	// Keep track of how much data we've processed
@@ -243,8 +243,9 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 	// 1. Open gRPC stream (server-stream)
 	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
-		ActionId:  in.ActionID,
-		Signature: in.Signature,
+		ActionId:         in.ActionID,
+		Signature:        in.Signature,
+		RequesterAddress: in.RequesterAddress,
 	}, opts...)
 	if err != nil {
 		a.logger.Error(ctx, "failed to create download stream", "action_id", in.ActionID, "error", err)
@@ -384,7 +385,7 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 				UsagePercent:   storage.UsagePercent,
 			})
 		}
-		
+
 		// Copy hardware summary
 		result.Resources.HardwareSummary = resp.Resources.HardwareSummary
 	}

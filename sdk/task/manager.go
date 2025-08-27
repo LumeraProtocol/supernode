@@ -26,7 +26,7 @@ type Manager interface {
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler)
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
 
-	CreateDownloadTask(ctx context.Context, actionID, outputPath, signature string) (string, error)
+	CreateDownloadTask(ctx context.Context, actionID, outputPath, signature, requesterAddress string) (string, error)
 }
 
 type ManagerImpl struct {
@@ -94,7 +94,7 @@ func NewManagerWithLumeraClient(ctx context.Context, config config.Config, logge
 func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, actionID, signature string) (string, error) {
 	// Create a detached context immediately to prevent HTTP request cancellation
 	taskCtx, cancel := context.WithCancel(context.Background())
-	
+
 	// First validate the action before creating the task
 	action, err := m.validateAction(taskCtx, actionID)
 	if err != nil {
@@ -252,10 +252,10 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 	}
 }
 
-func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string, signature string) (string, error) {
+func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string, signature, requesterAddress string) (string, error) {
 	// Create a detached context immediately to prevent HTTP request cancellation
 	taskCtx, cancel := context.WithCancel(context.Background())
-	
+
 	// First validate the action before creating the task
 	action, err := m.validateDownloadAction(taskCtx, actionID)
 	if err != nil {
@@ -295,7 +295,7 @@ func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, o
 	}
 
 	// Use the final output path with the correct filename
-	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath, signature)
+	task := NewCascadeDownloadTask(baseTask, actionID, finalOutputPath, signature, requesterAddress)
 
 	// Store task in cache with cancel function
 	m.taskCache.Set(taskCtx, taskID, task, TaskTypeCascade, actionID, cancel)

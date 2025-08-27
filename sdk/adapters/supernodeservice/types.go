@@ -45,9 +45,9 @@ type StorageInfo struct {
 }
 
 type SupernodeStatusresponse struct {
-	Version           string         // Supernode version
-	UptimeSeconds     uint64         // Uptime in seconds
-	Resources struct {
+	Version       string // Supernode version
+	UptimeSeconds uint64 // Uptime in seconds
+	Resources     struct {
 		CPU struct {
 			UsagePercent float64
 			Cores        int32
@@ -58,12 +58,12 @@ type SupernodeStatusresponse struct {
 			AvailableGB  float64
 			UsagePercent float64
 		}
-		Storage []StorageInfo
+		Storage         []StorageInfo
 		HardwareSummary string // Formatted hardware summary
 	}
-	RunningTasks      []ServiceTasks // Services with running tasks
+	RunningTasks       []ServiceTasks // Services with running tasks
 	RegisteredServices []string       // All available service names
-	Network struct {
+	Network            struct {
 		PeersCount    int32    // Number of connected peers
 		PeerAddresses []string // List of peer addresses
 	}
@@ -71,11 +71,12 @@ type SupernodeStatusresponse struct {
 	IPAddress string // Supernode IP address with port
 }
 type CascadeSupernodeDownloadRequest struct {
-	ActionID    string
-	TaskID      string
-	OutputPath  string
-	Signature   string
-	EventLogger LoggerFunc
+	ActionID         string
+	TaskID           string
+	OutputPath       string
+	Signature        string
+	RequesterAddress string
+	EventLogger      LoggerFunc
 }
 
 type CascadeSupernodeDownloadResponse struct {

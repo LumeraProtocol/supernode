@@ -561,7 +561,7 @@ func TestCascadeE2E(t *testing.T) {
 	// Base64 encode the signed signature
 	signature := base64.StdEncoding.EncodeToString(signedSignature)
 	// Try to download the file using the action ID and signature
-	dtaskID, err := actionClient.DownloadCascade(context.Background(), actionID, outputFileBaseDir, signature)
+	dtaskID, err := actionClient.DownloadCascade(context.Background(), actionID, outputFileBaseDir, signature, userAddress)
 
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")

@@ -6,6 +6,8 @@ replace (
 	github.com/LumeraProtocol/supernode/v2/supernode => ./supernode
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.14.0
 	github.com/bytedance/sonic/loader => github.com/bytedance/sonic/loader v0.3.0
+	github.com/LumeraProtocol/lumera => ../lumera
+
 )
 
 require (

@@ -32,6 +32,7 @@ message RegisterResponse {
 message DownloadRequest {
   string action_id = 1;
   string signature = 2;
+  string requester_address = 3;
 }
 
 message DownloadResponse {

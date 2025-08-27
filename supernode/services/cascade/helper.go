@@ -315,10 +315,11 @@ func decodeIndexFile(data string) (IndexFile, error) {
 }
 
 // VerifyDownloadSignature verifies the download signature for actionID.creatorAddress
-func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context, actionID, signature string) error {
+func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context, actionID, signature, requesterAddress string) error {
 	fields := logtrace.Fields{
 		logtrace.FieldActionID: actionID,
 		logtrace.FieldMethod:   "VerifyDownloadSignature",
+		"requester_address":    requesterAddress,
 	}
 
 	// Get action details to extract creator address
@@ -330,9 +331,14 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	creatorAddress := actionDetails.GetAction().Creator
 	fields["creator_address"] = creatorAddress
 
-	// Create the expected signature data: actionID.creatorAddress
-	signatureData := fmt.Sprintf("%s.%s", actionID, creatorAddress)
-	fields["signature_data"] = signatureData
+	// Get cascade metadata to check public field
+	cascadeMetadata, err := task.decodeCascadeMetadata(ctx, actionDetails.Action.Metadata, fields)
+	if err != nil {
+		return task.wrapErr(ctx, "failed to get cascade metadata", err, fields)
+	}
+	isPublic := cascadeMetadata.Public
+	fields["is_public"] = isPublic
+	logtrace.Info(ctx, "cascade metadata", fields)
 
 	// Decode the base64 signature
 	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
@@ -340,11 +346,28 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 		return task.wrapErr(ctx, "failed to decode signature from base64", err, fields)
 	}
 
-	// Verify the signature using Lumera client
-	if err := task.LumeraClient.Verify(ctx, creatorAddress, []byte(signatureData), signatureBytes); err != nil {
+	// Create the expected signature data: actionID.creatorAddress
+	signatureData := fmt.Sprintf("%s.%s", actionID, creatorAddress)
+	fields["signature_data"] = signatureData
+
+	// Verify the signature using requester's address (they signed actionID.creatorAddress with their key)
+	if err := task.LumeraClient.Verify(ctx, requesterAddress, []byte(signatureData), signatureBytes); err != nil {
 		return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 	}
 
-	logtrace.Info(ctx, "download signature successfully verified", fields)
+	// Apply access control based on public field
+	if !isPublic {
+		// Private cascade - only creator can download
+		if requesterAddress != creatorAddress {
+			fields["access_denied_reason"] = "private_cascade_non_owner_access"
+			return task.wrapErr(ctx, "access denied: private cascade can only be downloaded by creator",
+				fmt.Errorf("requester %s is not creator %s", requesterAddress, creatorAddress), fields)
+		}
+		logtrace.Info(ctx, "private cascade download authorized for creator", fields)
+	} else {
+		logtrace.Info(ctx, "public cascade download authorized", fields)
+	}
+
+	logtrace.Info(ctx, "download signature successfully verified and access authorized", fields)
 	return nil
 }

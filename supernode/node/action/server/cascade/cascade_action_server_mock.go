@@ -39,3 +39,24 @@ func (m *mockStream) SendHeader(md metadata.MD) error { return nil }
 func (m *mockStream) SetTrailer(md metadata.MD)       {}
 func (m *mockStream) SendMsg(_ any) error             { return nil }
 func (m *mockStream) RecvMsg(_ any) error             { return nil }
+
+// mockDownloadStream simulates pb.CascadeService_DownloadServer
+type mockDownloadStream struct {
+	ctx  context.Context
+	sent []*pb.DownloadResponse
+}
+
+func (m *mockDownloadStream) Context() context.Context {
+	return m.ctx
+}
+
+func (m *mockDownloadStream) Send(resp *pb.DownloadResponse) error {
+	m.sent = append(m.sent, resp)
+	return nil
+}
+
+func (m *mockDownloadStream) SetHeader(md metadata.MD) error  { return nil }
+func (m *mockDownloadStream) SendHeader(md metadata.MD) error { return nil }
+func (m *mockDownloadStream) SetTrailer(md metadata.MD)       {}
+func (m *mockDownloadStream) SendMsg(_ any) error             { return nil }
+func (m *mockDownloadStream) RecvMsg(_ any) error             { return nil }
