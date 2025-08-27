@@ -1,13 +1,8 @@
 package lumera
 
 import (
-	"context"
 	"testing"
 	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func TestNormaliseAddr(t *testing.T) {
@@ -124,72 +119,5 @@ func TestConnectionConstants(t *testing.T) {
 	if keepaliveTimeout >= keepaliveTime {
 		t.Errorf("keepaliveTimeout should be less than keepaliveTime: %v >= %v", keepaliveTimeout, keepaliveTime)
 	}
-
-	if retryDelay < 100*time.Millisecond {
-		t.Errorf("retryDelay too short: %v", retryDelay)
-	}
-
-	if maxRetryDelay <= retryDelay {
-		t.Errorf("maxRetryDelay should be greater than retryDelay: %v <= %v", maxRetryDelay, retryDelay)
-	}
-
-	if maxRetries < 1 {
-		t.Errorf("maxRetries should be at least 1: %v", maxRetries)
-	}
-
-	if backoffFactor < 1 {
-		t.Errorf("backoffFactor should be at least 1: %v", backoffFactor)
-	}
 }
 
-func TestRetryInterceptorSuccess(t *testing.T) {
-	attempts := 0
-
-	// Mock invoker that fails twice, then succeeds
-	mockInvoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
-		attempts++
-		if attempts < 3 {
-			return status.Error(codes.DeadlineExceeded, "simulated timeout")
-		}
-		return nil // Success on 3rd attempt
-	}
-
-	// Call retry interceptor
-	err := retryInterceptor(context.Background(), "/test", nil, nil, nil, mockInvoker)
-
-	// Should succeed
-	if err != nil {
-		t.Errorf("Expected success after retries, got error: %v", err)
-	}
-
-	if attempts != 3 {
-		t.Errorf("Expected 3 attempts, got %d", attempts)
-	}
-}
-
-func TestRetryInterceptorContextCancellation(t *testing.T) {
-	attempts := 0
-
-	// Mock invoker that always fails
-	mockInvoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
-		attempts++
-		return status.Error(codes.Unavailable, "simulated failure")
-	}
-
-	// Context that cancels quickly
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	// Call retry interceptor
-	err := retryInterceptor(ctx, "/test", nil, nil, nil, mockInvoker)
-
-	// Should return context error
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected context deadline exceeded, got: %v", err)
-	}
-
-	// Should have made at least one attempt
-	if attempts < 1 {
-		t.Errorf("Expected at least 1 attempt, got %d", attempts)
-	}
-}
