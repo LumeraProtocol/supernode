@@ -7,8 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
@@ -25,6 +26,7 @@ var startCmd = &cobra.Command{
 
 The manager will:
 - Launch the SuperNode process
+- Monitor the process and restart on crashes
 - Check for updates periodically (if auto-upgrade is enabled)
 - Perform automatic updates (if auto-upgrade is enabled)`,
 	RunE: runStart,
@@ -36,6 +38,23 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Check if initialized
 	if err := checkInitialized(); err != nil {
 		return err
+	}
+
+	// Check if sn-manager is already running
+	managerPidPath := filepath.Join(home, managerPIDFile)
+	if pidData, err := os.ReadFile(managerPidPath); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(pidData))); err == nil {
+			if process, err := os.FindProcess(pid); err == nil {
+				if err := process.Signal(syscall.Signal(0)); err == nil {
+					// Manager is already running
+					return fmt.Errorf("sn-manager is already running (PID %d)", pid)
+				}
+			}
+		}
+		// Stale PID file, remove it
+		if err := os.Remove(managerPidPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove stale manager PID file: %v", err)
+		}
 	}
 
 	// Load config
@@ -50,9 +69,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if SuperNode is initialized
-	supernodeConfigPath := filepath.Join(os.Getenv("HOME"), ".supernode", "config.yml")
-	if _, err := os.Stat(supernodeConfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("SuperNode not initialized. Please run 'sn-manager init' first to configure your validator keys and network settings")
+	if err := ensureSupernodeInitialized(); err != nil {
+		return err
 	}
 
 	// Create manager instance
@@ -68,82 +86,65 @@ func runStart(cmd *cobra.Command, args []string) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start SuperNode
-	if err := mgr.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start supernode: %w", err)
+	// Save sn-manager PID early to minimize race for multiple instances
+	managerPidPath = filepath.Join(home, managerPIDFile)
+	if err := os.WriteFile(managerPidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
+		log.Printf("Warning: failed to save sn-manager PID file: %v", err)
+	}
+	defer os.Remove(managerPidPath)
+
+	// If there was a previous explicit stop, clear it now since user called start
+	stopMarkerPath := filepath.Join(home, stopMarkerFile)
+	if _, err := os.Stat(stopMarkerPath); err == nil {
+		if err := os.Remove(stopMarkerPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove stop marker: %v", err)
+		}
 	}
 
 	// Start auto-updater if enabled
 	var autoUpdater *updater.AutoUpdater
 	if cfg.Updates.AutoUpgrade {
-		autoUpdater = updater.New(home, cfg)
+		autoUpdater = updater.New(home, cfg, appVersion)
 		autoUpdater.Start(ctx)
 	}
 
-	// Monitor SuperNode process exit
-	processExitCh := make(chan error, 1)
+	// Start monitoring in a goroutine
+	monitorDone := make(chan error, 1)
 	go func() {
-		err := mgr.Wait()
-		processExitCh <- err
+		monitorDone <- mgr.Monitor(ctx)
 	}()
 
-	// Main loop - monitor for updates if auto-upgrade is enabled
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	// Wait for shutdown signal or monitor exit
+	select {
+	case <-sigChan:
+		fmt.Println("\nShutting down...")
 
-	for {
-		select {
-		case err := <-processExitCh:
-			// SuperNode process exited
-			if autoUpdater != nil {
-				autoUpdater.Stop()
-			}
-			if err != nil {
-				return fmt.Errorf("supernode exited with error: %w", err)
-			}
-			fmt.Println("SuperNode exited")
-			return nil
+		// Stop auto-updater if running
+		if autoUpdater != nil {
+			autoUpdater.Stop()
+		}
 
-		case <-sigChan:
-			fmt.Println("\nShutting down...")
+		// Cancel context to stop monitoring
+		cancel()
 
-			// Stop auto-updater if running
-			if autoUpdater != nil {
-				autoUpdater.Stop()
-			}
+		// Wait for monitor to finish
+		<-monitorDone
 
-			// Stop SuperNode
+		// Stop SuperNode if still running
+		if mgr.IsRunning() {
 			if err := mgr.Stop(); err != nil {
-				return fmt.Errorf("failed to stop supernode: %w", err)
-			}
-
-			return nil
-
-		case <-ticker.C:
-			// Check if binary has been updated and restart if needed
-			if cfg.Updates.AutoUpgrade {
-				if shouldRestart(home, mgr) {
-					fmt.Println("Binary updated, restarting SuperNode...")
-
-					// Stop current process
-					if err := mgr.Stop(); err != nil {
-						log.Printf("Failed to stop for restart: %v", err)
-						continue
-					}
-
-					// Wait a moment
-					time.Sleep(2 * time.Second)
-
-					// Start with new binary
-					if err := mgr.Start(ctx); err != nil {
-						log.Printf("Failed to restart with new binary: %v", err)
-						continue
-					}
-
-					fmt.Println("SuperNode restarted with new version")
-				}
+				log.Printf("Failed to stop supernode: %v", err)
 			}
 		}
+
+		return nil
+
+	case err := <-monitorDone:
+		// Monitor exited unexpectedly
+		if err != nil {
+			return fmt.Errorf("monitor error: %w", err)
+		}
+		return nil
 	}
 }
 
@@ -202,20 +203,11 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 	os.MkdirAll(filepath.Dir(tempFile), 0755)
 
 	// Download with progress
-	var lastPercent int
-	progress := func(downloaded, total int64) {
-		if total > 0 {
-			percent := int(downloaded * 100 / total)
-			if percent != lastPercent && percent%10 == 0 {
-				fmt.Printf("\rProgress: %d%%", percent)
-				lastPercent = percent
-			}
-		}
-	}
-
+	progress, done := newDownloadProgressPrinter()
 	if err := client.DownloadBinary(downloadURL, tempFile, progress); err != nil {
 		return fmt.Errorf("failed to download binary: %w", err)
 	}
+	done()
 
 	fmt.Println("Download complete. Installing...")
 
@@ -225,7 +217,9 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 	}
 
 	// Clean up temp file
-	os.Remove(tempFile)
+	if err := os.Remove(tempFile); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove temp file: %v", err)
+	}
 
 	// Set as current version
 	if err := versionMgr.SetCurrentVersion(targetVersion); err != nil {
@@ -241,16 +235,4 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 
 	fmt.Printf("Successfully installed SuperNode %s\n", targetVersion)
 	return nil
-}
-
-// shouldRestart checks if the binary has been updated
-func shouldRestart(home string, mgr *manager.Manager) bool {
-	// Check for restart marker file
-	markerPath := filepath.Join(home, ".needs_restart")
-	if _, err := os.Stat(markerPath); err == nil {
-		// Remove the marker and return true
-		os.Remove(markerPath)
-		return true
-	}
-	return false
 }

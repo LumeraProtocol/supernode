@@ -48,6 +48,8 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(versionCmd)
+	// SuperNode group
+	rootCmd.AddCommand(supernodeCmd)
 }
 
 // versionCmd shows version information

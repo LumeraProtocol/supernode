@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -13,61 +13,54 @@ import (
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop the managed SuperNode",
-	Long:  `Stop the SuperNode process gracefully.`,
+	Short: "Stop sn-manager and SuperNode",
+	Long:  `Stop both the sn-manager daemon and the SuperNode process.`,
 	RunE:  runStop,
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
 	home := getHomeDir()
 
-	// Check PID file
-	pidPath := filepath.Join(home, "supernode.pid")
-	pidData, err := os.ReadFile(pidPath)
+	// Stop the manager (which will handle stopping SuperNode)
+	managerPidPath := filepath.Join(home, managerPIDFile)
+	mgrPid, err := readPIDFromFile(managerPidPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Println("SuperNode is not running")
+			fmt.Println("sn-manager is not running")
 			return nil
 		}
-		return fmt.Errorf("failed to read PID file: %w", err)
+		return fmt.Errorf("failed to read manager PID file: %w", err)
 	}
 
-	// Parse PID
-	pid, err := strconv.Atoi(string(pidData))
-	if err != nil {
-		return fmt.Errorf("invalid PID file: %w", err)
-	}
-
-	// Find process
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return fmt.Errorf("failed to find process: %w", err)
-	}
-
-	// Check if process is actually running
-	if err := process.Signal(syscall.Signal(0)); err != nil {
-		fmt.Println("SuperNode is not running (stale PID)")
-		os.Remove(pidPath)
+	// Find manager process and verify it's alive
+	mgrProcess, alive := getProcessIfAlive(mgrPid)
+	if !alive {
+		fmt.Println("sn-manager is not running (stale PID)")
+		if err := os.Remove(managerPidPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove stale manager PID file: %v", err)
+		}
 		return nil
 	}
 
-	fmt.Printf("Stopping SuperNode (PID %d)...\n", pid)
+	fmt.Printf("Stopping sn-manager (PID %d)...\n", mgrPid)
 
-	// Send SIGTERM for graceful shutdown
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("failed to send stop signal: %w", err)
+	// Send SIGTERM to manager for graceful shutdown
+	if err := mgrProcess.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("failed to send stop signal to manager: %w", err)
 	}
 
-	// Wait for process to exit (with timeout)
-	timeout := 30 * time.Second
+	// Wait for manager to exit (with timeout)
+	timeout := 10 * time.Second
 	checkInterval := 100 * time.Millisecond
 	elapsed := time.Duration(0)
 
 	for elapsed < timeout {
-		if err := process.Signal(syscall.Signal(0)); err != nil {
+		if err := mgrProcess.Signal(syscall.Signal(0)); err != nil {
 			// Process has exited
-			fmt.Println("SuperNode stopped successfully")
-			os.Remove(pidPath)
+			fmt.Println("sn-manager stopped")
+			if err := os.Remove(managerPidPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to remove manager PID file: %v", err)
+			}
 			return nil
 		}
 		time.Sleep(checkInterval)
@@ -75,12 +68,14 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	// Timeout reached, force kill
-	fmt.Println("Graceful shutdown timeout, forcing stop...")
-	if err := process.Kill(); err != nil {
-		return fmt.Errorf("failed to force stop: %w", err)
+	fmt.Println("Graceful shutdown timeout, forcing manager stop...")
+	if err := mgrProcess.Kill(); err != nil {
+		return fmt.Errorf("failed to force stop manager: %w", err)
 	}
 
-	os.Remove(pidPath)
-	fmt.Println("SuperNode stopped (forced)")
+	if err := os.Remove(managerPidPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove manager PID file: %v", err)
+	}
+	fmt.Println("sn-manager stopped (forced)")
 	return nil
 }

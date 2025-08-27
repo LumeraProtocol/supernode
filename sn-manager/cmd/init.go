@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,33 +39,39 @@ type initFlags struct {
 }
 
 func parseInitFlags(args []string) *initFlags {
-	flags := &initFlags{
-		checkInterval: 3600,
-		autoUpgrade:   true,
-	}
+    flags := &initFlags{
+        checkInterval: config.DefaultUpdateCheckInterval,
+        autoUpgrade:   true,
+    }
 
-	// Parse flags and filter out sn-manager specific ones
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--check-interval":
-			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &flags.checkInterval)
-				i++ // Skip the value
-			}
-		case "--auto-upgrade":
-			flags.autoUpgrade = true
-		case "--force":
-			flags.force = true
-		case "-y", "--yes":
-			flags.nonInteractive = true
-			// Pass through to supernode as well
-			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+    // Parse flags and filter out sn-manager specific ones
+    for i := 0; i < len(args); i++ {
+        switch args[i] {
+        case "--check-interval":
+            if i+1 < len(args) {
+                fmt.Sscanf(args[i+1], "%d", &flags.checkInterval)
+                i++ // Skip the value
+            }
+        case "--auto-upgrade":
+            // Allow --auto-upgrade or --auto-upgrade=true/false
+            if i+1 < len(args) && (args[i+1] == "true" || args[i+1] == "false") {
+                flags.autoUpgrade = (args[i+1] == "true")
+                i++
+            } else {
+                flags.autoUpgrade = true
+            }
+        case "--force":
+            flags.force = true
+        case "-y", "--yes":
+            flags.nonInteractive = true
+            // Pass through to supernode as well
+            flags.supernodeArgs = append(flags.supernodeArgs, args[i])
 
-		default:
-			// Pass all other args to supernode
-			flags.supernodeArgs = append(flags.supernodeArgs, args[i])
-		}
-	}
+        default:
+            // Pass all other args to supernode
+            flags.supernodeArgs = append(flags.supernodeArgs, args[i])
+        }
+    }
 
 	return flags
 }
@@ -95,16 +102,16 @@ func promptForManagerConfig(flags *initFlags) error {
 		var intervalStr string
 		inputPrompt := &survey.Input{
 			Message: "Update check interval (seconds):",
-			Default: "3600",
-			Help:    "How often to check for updates (3600 = 1 hour)",
+			Default: fmt.Sprintf("%d", config.DefaultUpdateCheckInterval),
+			Help:    fmt.Sprintf("How often to check for updates (%d = 1 hour)", config.DefaultUpdateCheckInterval),
 		}
 		if err := survey.AskOne(inputPrompt, &intervalStr); err != nil {
 			return err
 		}
 		interval, err := strconv.Atoi(intervalStr)
 		if err != nil || interval < 60 {
-			fmt.Println("Invalid interval, using default (3600)")
-			flags.checkInterval = 3600
+			fmt.Printf("Invalid interval, using default (%d)\n", config.DefaultUpdateCheckInterval)
+			flags.checkInterval = config.DefaultUpdateCheckInterval
 		} else {
 			flags.checkInterval = interval
 		}
@@ -199,22 +206,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Download to temp file
 		tempFile := filepath.Join(managerHome, "downloads", fmt.Sprintf("supernode-%s.tmp", targetVersion))
 
-		// Download with progress
-		var lastPercent int
-		progress := func(downloaded, total int64) {
-			if total > 0 {
-				percent := int(downloaded * 100 / total)
-				if percent != lastPercent && percent%10 == 0 {
-					fmt.Printf("\rProgress: %d%%", percent)
-					lastPercent = percent
-				}
-			}
-		}
-
-		if err := client.DownloadBinary(downloadURL, tempFile, progress); err != nil {
-			return fmt.Errorf("failed to download binary: %w", err)
-		}
-		fmt.Println() // New line after progress
+        // Download with progress
+        progress, done := newDownloadProgressPrinter()
+        if err := client.DownloadBinary(downloadURL, tempFile, progress); err != nil {
+            return fmt.Errorf("failed to download binary: %w", err)
+        }
+        done()
 
 		// Install the version
 		if err := versionMgr.InstallVersion(targetVersion, tempFile); err != nil {
@@ -222,7 +219,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Clean up temp file
-		os.Remove(tempFile)
+		if err := os.Remove(tempFile); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove temp file: %v", err)
+		}
 	}
 
 	// Set as current version

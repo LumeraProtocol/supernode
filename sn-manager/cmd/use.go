@@ -21,10 +21,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	targetVersion := args[0]
-	if targetVersion[0] != 'v' {
-		targetVersion = "v" + targetVersion
-	}
+    targetVersion := normalizeVersionTag(args[0])
 
 	managerHome := config.GetManagerHome()
 	versionMgr := version.NewManager(managerHome)

@@ -1,13 +1,14 @@
 package cmd
 
 import (
-	"fmt"
+    "fmt"
+    "strings"
 
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
-	"github.com/spf13/cobra"
+    "github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+    "github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
+    "github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
+    "github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
+    "github.com/spf13/cobra"
 )
 
 var checkCmd = &cobra.Command{
@@ -31,8 +32,8 @@ func runCheck(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Checking for updates...")
 
-	// Create GitHub client
-	client := github.NewClient(config.GitHubRepo)
+    // Create GitHub client
+    client := github.NewClient(config.GitHubRepo)
 
 	// Get latest stable release
 	release, err := client.GetLatestStableRelease()
@@ -40,17 +41,25 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to check for stable updates: %w", err)
 	}
 
-	fmt.Printf("\nLatest release: %s\n", release.TagName)
-	fmt.Printf("Current version: %s\n", cfg.Updates.CurrentVersion)
+    fmt.Printf("\nLatest release: %s\n", release.TagName)
+    fmt.Printf("Current version: %s\n", cfg.Updates.CurrentVersion)
+    // Report manager version and if it would update under the same policy
+    mv := strings.TrimSpace(appVersion)
+    if mv != "" && mv != "dev" && !strings.EqualFold(mv, "unknown") {
+        managerWould := utils.SameMajor(mv, release.TagName) && utils.CompareVersions(mv, release.TagName) < 0
+        fmt.Printf("Manager version: %s (would update: %v)\n", mv, managerWould)
+    } else {
+        fmt.Printf("Manager version: %s\n", appVersion)
+    }
 
-	// Compare versions
-	cmp := utils.CompareVersions(cfg.Updates.CurrentVersion, release.TagName)
+    // Compare versions
+    cmp := utils.CompareVersions(cfg.Updates.CurrentVersion, release.TagName)
 
 	if cmp < 0 {
 		// Use the same logic as auto-updater to determine update eligibility
-		managerHome := config.GetManagerHome()
-		autoUpdater := updater.New(managerHome, cfg)
-		wouldAutoUpdate := autoUpdater.ShouldUpdate(cfg.Updates.CurrentVersion, release.TagName)
+        managerHome := config.GetManagerHome()
+        autoUpdater := updater.New(managerHome, cfg, appVersion)
+        wouldAutoUpdate := autoUpdater.ShouldUpdate(cfg.Updates.CurrentVersion, release.TagName)
 		
 		if wouldAutoUpdate {
 			fmt.Printf("\n✓ Update available: %s → %s\n", cfg.Updates.CurrentVersion, release.TagName)
