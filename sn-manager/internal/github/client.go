@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ type GithubClient interface {
 	ListReleases() ([]*Release, error)
 	GetRelease(tag string) (*Release, error)
 	GetSupernodeDownloadURL(version string) (string, error)
+	GetReleaseTarballURL(version string) (string, error)
 	DownloadBinary(url, destPath string, progress func(downloaded, total int64)) error
 }
 
@@ -49,31 +51,47 @@ type Client struct {
 	downloadClient *http.Client
 }
 
+const (
+	// APITimeout is the timeout for GitHub API calls
+	APITimeout = 60 * time.Second // API request limit for unauthenticated calls
+	// DownloadTimeout is the timeout for binary downloads
+	DownloadTimeout = 5 * time.Minute
+	// GatewayTimeout is the timeout for gateway status checks
+	GatewayTimeout = 5 * time.Second
+)
+
 // NewClient creates a new GitHub API client
 func NewClient(repo string) GithubClient {
 	return &Client{
 		repo: repo,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second, // 30 second timeout for API calls
+			Timeout: APITimeout,
 		},
 		downloadClient: &http.Client{
-			Timeout: 5 * time.Minute, // 5 minute timeout for large binary downloads
+			Timeout: DownloadTimeout,
 		},
 	}
+}
+
+// newRequest sets common headers for GitHub API and asset requests
+func (c *Client) newRequest(method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "sn-manager")
+	return req, nil
 }
 
 // GetLatestRelease fetches the latest release from GitHub
 func (c *Client) GetLatestRelease() (*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", c.repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
-	// Add headers
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "sn-manager")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -98,13 +116,10 @@ func (c *Client) GetLatestRelease() (*Release, error) {
 func (c *Client) ListReleases() ([]*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases", c.repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "sn-manager")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -127,6 +142,13 @@ func (c *Client) ListReleases() ([]*Release, error) {
 
 // GetLatestStableRelease fetches the latest stable (non-prerelease, non-draft) release from GitHub
 func (c *Client) GetLatestStableRelease() (*Release, error) {
+	// Try the latest release endpoint first (single API call)
+	release, err := c.GetLatestRelease()
+	if err == nil && !release.Draft && !release.Prerelease {
+		return release, nil
+	}
+
+	// Fallback to listing all releases if latest is not stable
 	releases, err := c.ListReleases()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)
@@ -146,13 +168,10 @@ func (c *Client) GetLatestStableRelease() (*Release, error) {
 func (c *Client) GetRelease(tag string) (*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", c.repo, tag)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := c.newRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "sn-manager")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -178,10 +197,22 @@ func (c *Client) GetSupernodeDownloadURL(version string) (string, error) {
 	// First try the direct download URL (newer releases)
 	directURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/supernode-linux-amd64", c.repo, version)
 
-	// Check if this URL exists
-	resp, err := http.Head(directURL)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		return directURL, nil
+	// Check if this URL exists using our client (with timeout)
+	req, err := c.newRequest("HEAD", directURL, nil)
+	if err == nil {
+		if resp, herr := c.httpClient.Do(req); herr == nil {
+			// Accept 2xx and 3xx as existence (GitHub may redirect)
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				if err := resp.Body.Close(); err != nil {
+					log.Printf("Warning: failed to close response body: %v", err)
+				}
+				return directURL, nil
+			}
+			io.Copy(io.Discard, resp.Body)
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Warning: failed to close response body: %v", err)
+			}
+		}
 	}
 
 	// Fall back to checking release assets
@@ -200,6 +231,41 @@ func (c *Client) GetSupernodeDownloadURL(version string) (string, error) {
 	return "", fmt.Errorf("no Linux amd64 binary found for version %s", version)
 }
 
+// GetReleaseTarballURL returns the download URL for the combined release tarball
+// that includes both supernode and sn-manager binaries.
+func (c *Client) GetReleaseTarballURL(version string) (string, error) {
+	// Try direct URL first
+	tarName := "supernode-linux-amd64.tar.gz"
+	directURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", c.repo, version, tarName)
+
+	if req, err := c.newRequest("HEAD", directURL, nil); err == nil {
+		if resp, herr := c.httpClient.Do(req); herr == nil {
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				if err := resp.Body.Close(); err != nil {
+					log.Printf("Warning: failed to close response body: %v", err)
+				}
+				return directURL, nil
+			}
+			io.Copy(io.Discard, resp.Body)
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Warning: failed to close response body: %v", err)
+			}
+		}
+	}
+
+	// Fallback to release assets lookup
+	release, err := c.GetRelease(version)
+	if err != nil {
+		return "", err
+	}
+	for _, asset := range release.Assets {
+		if asset.Name == tarName || (strings.Contains(asset.Name, "linux") && strings.HasSuffix(asset.Name, ".tar.gz")) {
+			return asset.DownloadURL, nil
+		}
+	}
+	return "", fmt.Errorf("no suitable tarball asset found for version %s", version)
+}
+
 // DownloadBinary downloads a binary from the given URL
 func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, total int64)) error {
 	// Create destination directory
@@ -216,8 +282,13 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 	}
 	defer os.Remove(tmpPath)
 
-	// Download file
-	resp, err := c.downloadClient.Get(url)
+	// Download file using request with headers
+	req, err := c.newRequest("GET", url, nil)
+	if err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := c.downloadClient.Do(req)
 	if err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("failed to download: %w", err)
@@ -229,27 +300,17 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
-	// Copy with progress reporting
-	var written int64
-	buf := make([]byte, 32*1024) // 32KB buffer
+	// Copy with progress reporting using TeeReader
 	total := resp.ContentLength
-
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			if _, writeErr := tmpFile.Write(buf[:n]); writeErr != nil {
-				tmpFile.Close()
-				return fmt.Errorf("failed to write file: %w", writeErr)
-			}
-			written += int64(n)
-			if progress != nil {
-				progress(written, total)
-			}
+	if progress != nil {
+		pr := &progressReporter{cb: progress, total: total}
+		reader := io.TeeReader(resp.Body, pr)
+		if _, err := io.Copy(tmpFile, reader); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("download error: %w", err)
 		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
+	} else {
+		if _, err := io.Copy(tmpFile, resp.Body); err != nil {
 			tmpFile.Close()
 			return fmt.Errorf("download error: %w", err)
 		}
@@ -271,4 +332,20 @@ func (c *Client) DownloadBinary(url, destPath string, progress func(downloaded, 
 	}
 
 	return nil
+}
+
+// progressReporter reports progress to a callback while counting bytes
+type progressReporter struct {
+	cb      func(downloaded, total int64)
+	total   int64
+	written int64
+}
+
+func (p *progressReporter) Write(b []byte) (int, error) {
+	n := len(b)
+	p.written += int64(n)
+	if p.cb != nil {
+		p.cb(p.written, p.total)
+	}
+	return n, nil
 }

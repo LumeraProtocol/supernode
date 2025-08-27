@@ -14,6 +14,8 @@ const (
 	ManagerHomeDir = ".sn-manager"
 	// GitHubRepo is the constant GitHub repository for supernode
 	GitHubRepo = "LumeraProtocol/supernode"
+	// DefaultUpdateCheckInterval is the default interval between update checks
+	DefaultUpdateCheckInterval = 3600 // 1 hour in seconds
 )
 
 // Config represents the sn-manager configuration
@@ -32,7 +34,7 @@ type UpdateConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Updates: UpdateConfig{
-			CheckInterval:  3600, // 1 hour
+			CheckInterval:  DefaultUpdateCheckInterval,
 			AutoUpgrade:    true, // enabled by default for security
 			CurrentVersion: "",   // will be set when first binary is installed
 		},
@@ -62,7 +64,7 @@ func Load(path string) (*Config, error) {
 
 	// Apply defaults for missing values
 	if cfg.Updates.CheckInterval == 0 {
-		cfg.Updates.CheckInterval = 3600
+		cfg.Updates.CheckInterval = DefaultUpdateCheckInterval
 	}
 
 	return &cfg, nil

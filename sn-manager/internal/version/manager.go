@@ -2,6 +2,8 @@ package version
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,19 +62,37 @@ func (m *Manager) InstallVersion(version string, binaryPath string) error {
 	destBinary := m.GetVersionBinary(version)
 	tempBinary := destBinary + ".tmp"
 
-	// Copy binary to temp location first
-	input, err := os.ReadFile(binaryPath)
+	// Stream copy binary to temp location first to avoid high memory usage
+	src, err := os.Open(binaryPath)
 	if err != nil {
-		return fmt.Errorf("failed to read binary: %w", err)
+		return fmt.Errorf("failed to open binary: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(tempBinary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create temp binary: %w", err)
 	}
 
-	if err := os.WriteFile(tempBinary, input, 0755); err != nil {
-		return fmt.Errorf("failed to write binary: %w", err)
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		if rmErr := os.Remove(tempBinary); rmErr != nil && !os.IsNotExist(rmErr) {
+			log.Printf("Warning: failed to cleanup temp binary after copy error: %v", rmErr)
+		}
+		return fmt.Errorf("failed to copy binary: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		if rmErr := os.Remove(tempBinary); rmErr != nil && !os.IsNotExist(rmErr) {
+			log.Printf("Warning: failed to cleanup temp binary after close error: %v", rmErr)
+		}
+		return fmt.Errorf("failed to close temp binary: %w", err)
 	}
 
 	// Atomic rename
 	if err := os.Rename(tempBinary, destBinary); err != nil {
-		os.Remove(tempBinary)
+		if rmErr := os.Remove(tempBinary); rmErr != nil && !os.IsNotExist(rmErr) {
+			log.Printf("Warning: failed to cleanup temp binary after rename error: %v", rmErr)
+		}
 		return fmt.Errorf("failed to install binary: %w", err)
 	}
 
@@ -91,15 +111,19 @@ func (m *Manager) SetCurrentVersion(version string) error {
 
 	// Create new symlink with temp name
 	tempLink := currentLink + ".tmp"
-	os.Remove(tempLink) // cleanup any leftover
-	
+	if err := os.Remove(tempLink); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove existing temp link: %v", err)
+	}
+
 	if err := os.Symlink(targetDir, tempLink); err != nil {
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
 	// Atomic rename
 	if err := os.Rename(tempLink, currentLink); err != nil {
-		os.Remove(tempLink)
+		if rmErr := os.Remove(tempLink); rmErr != nil && !os.IsNotExist(rmErr) {
+			log.Printf("Warning: failed to cleanup temp link: %v", rmErr)
+		}
 		return fmt.Errorf("failed to update symlink: %w", err)
 	}
 
@@ -139,11 +163,7 @@ func (m *Manager) ListVersions() ([]string, error) {
 	var versions []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			// Check if it contains a supernode binary
-			binaryPath := filepath.Join(binariesDir, entry.Name(), "supernode")
-			if _, err := os.Stat(binaryPath); err == nil {
-				versions = append(versions, entry.Name())
-			}
+			versions = append(versions, entry.Name())
 		}
 	}
 
@@ -154,4 +174,3 @@ func (m *Manager) ListVersions() ([]string, error) {
 
 	return versions, nil
 }
-
