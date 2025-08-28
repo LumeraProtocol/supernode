@@ -183,18 +183,16 @@ The auto-updater follows stable-only, same-major update rules and defers updates
 |---|---|---|---|---|
 | v1.7.1 | v1.7.4 (stable) | Yes | ✅ | — |
 | v1.7.1-beta | v1.7.1 (stable) | Yes | ✅ | — |
-| v1.7.4 | v1.8.0 (stable) | Yes | ❌ | `sn-manager get v1.8.0 && sn-manager use v1.8.0` |
+| v1.7.4 | v1.8.0 (stable) | Yes | ✅ | — |
 | v1.7.4 | v1.8.0-rc1 (pre-release) | Yes | ❌ | `sn-manager get v1.8.0-rc1 && sn-manager use v1.8.0-rc1` |
 | v1.7.4 | v1.7.4 (stable) | Yes | ❌ | — |
 | v1.7.5 | v1.7.4 (stable) | Yes | ❌ | — |
 | Any | Any | No | ❌ | `sn-manager get [version] && sn-manager use [version]` |
 | Any | Any | Yes, but gateway busy | ❌ (deferred) | Manual allowed |
-| Manager v1.7.0 | Release v1.7.4 (contains sn-manager) | Yes | ✅ (self-update) | Reinstall if needed |
-| Manager v1.7.x | Release v1.8.0 | Yes | ❌ (self-update) | Reinstall new sn-manager |
 
 Mechanics and notes:
 - Stable-only: auto-updater targets latest stable GitHub release (non-draft, non-prerelease).
-- Same-major only: SuperNode and sn-manager auto-update only when the latest is the same major version as the current.
+- Same-major only: SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
 - Gateway-aware: updates are applied only when the gateway reports no running tasks; otherwise they are deferred.
 - Gateway errors: repeated check failures over a 5-minute window request a clean SuperNode restart (no version change) to recover.
 - Combined tarball: when updating, sn-manager downloads a single tarball once, then updates itself first (if eligible), then installs/activates the new SuperNode version.
@@ -246,6 +244,26 @@ sn-manager version
 4) Update or create the systemd unit
 - Use the unit from this README. Ensure `ExecStart` points to the intended binary path and set `Environment=HOME=...` and `WorkingDirectory=...` for your user.
 - With `Restart=on-failure`, `sn-manager stop` will cleanly exit and systemd will not restart it; start again with `sudo systemctl start sn-manager`.
+
+Update these lines exactly in `/etc/systemd/system/sn-manager.service` (replace `<YOUR_USER>`):
+```
+[Service]
+User=<YOUR_USER>
+ExecStart=/home/<YOUR_USER>/.sn-manager/bin/sn-manager start
+Environment="HOME=/home/<YOUR_USER>"
+WorkingDirectory=/home/<YOUR_USER>
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+```
+
+If your unit currently has `ExecStart=/usr/local/bin/sn-manager start`, change it to the exact `ExecStart` line above.
+
+After editing, reload and restart:
+```
+sudo systemctl daemon-reload
+sudo systemctl restart sn-manager
+```
 
 5) Verify and adopt
 - Manager status: `sn-manager status`
