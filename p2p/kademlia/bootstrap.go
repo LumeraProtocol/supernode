@@ -232,7 +232,9 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 	for _, node := range s.options.BootstrapNodes {
 		nodeId := string(node.ID)
 		// sync the bootstrap node only once
+		s.bsConnectedMtx.RLock()
 		isConnected, exists := s.bsConnected[nodeId]
+		s.bsConnectedMtx.RUnlock()
 		if exists && isConnected {
 			continue
 		}
@@ -247,7 +249,9 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 		}
 
 		node := node
+		s.bsConnectedMtx.Lock()
 		s.bsConnected[nodeId] = false
+		s.bsConnectedMtx.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -296,7 +300,9 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 					continue
 				}
 
+				s.bsConnectedMtx.Lock()
 				s.bsConnected[nodeId] = true
+				s.bsConnectedMtx.Unlock()
 				s.addNode(ctx, response.Sender)
 				break
 			}

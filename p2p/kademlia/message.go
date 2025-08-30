@@ -167,6 +167,12 @@ func encode(message *Message) ([]byte, error) {
 		return nil, err
 	}
 
+	// Check against absolute maximum first
+	const maxMessageSize = 500 * 1024 * 1024 // 500MB absolute max
+	if buf.Len() > maxMessageSize {
+		return nil, errors.New("message size exceeds absolute maximum")
+	}
+
 	if utils.BytesIntToMB(buf.Len()) > defaultMaxPayloadSize {
 		return nil, errors.New("payload too big")
 	}
@@ -194,6 +200,12 @@ func decode(conn io.Reader) (*Message, error) {
 	length, err := binary.ReadUvarint(bytes.NewBuffer(header))
 	if err != nil {
 		return nil, errors.Errorf("parse header length: %w", err)
+	}
+
+	// Check against absolute maximum first to prevent DoS
+	const maxMessageSize = 500 * 1024 * 1024 // 500MB absolute max
+	if length > maxMessageSize {
+		return nil, errors.New("message size exceeds absolute maximum")
 	}
 
 	if utils.BytesToMB(length) > defaultMaxPayloadSize {

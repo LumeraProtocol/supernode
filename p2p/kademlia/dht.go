@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
-	"net"
-	"net/url"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff/v4"
@@ -56,6 +56,7 @@ type DHT struct {
 	done           chan struct{}    // distributed hash table is done
 	cache          storage.KeyValue // store bad bootstrap addresses
 	bsConnected    map[string]bool  // map of connected bootstrap nodes [identity] -> connected
+	bsConnectedMtx sync.RWMutex     // mutex for bsConnected map
 	supernodeAddr  string           // cached address from chain
 	mtx            sync.Mutex
 	ignorelist     *BanList
@@ -1273,7 +1274,7 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 	}
 
 	if s.ht.hasBucketNode(index, node.ID) {
-		s.ht.refreshNode(node.HashedID)
+		s.ht.refreshNode(node.ID)
 		return nil
 	}
 
