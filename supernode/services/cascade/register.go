@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 // RegisterRequest contains parameters for upload request
@@ -42,10 +43,31 @@ func (task *CascadeRegistrationTask) Register(
 	ctx context.Context,
 	req *RegisterRequest,
 	send func(resp *RegisterResponse) error,
-) error {
+) (err error) {
 
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "cascade-action-registration request received", fields)
+
+	// Ensure task status and resources are finalized regardless of outcome
+	defer func() {
+		if err != nil {
+			task.UpdateStatus(common.StatusTaskCanceled)
+		} else {
+			task.UpdateStatus(common.StatusTaskCompleted)
+		}
+		task.Cancel()
+	}()
+
+	// Always attempt to remove the uploaded file path
+	defer func() {
+		if req != nil && req.FilePath != "" {
+			if remErr := os.RemoveAll(req.FilePath); remErr != nil {
+				logtrace.Warn(ctx, "error removing file", fields)
+			} else {
+				logtrace.Info(ctx, "input file has been cleaned up", fields)
+			}
+		}
+	}()
 
 	/* 1. Fetch & validate action -------------------------------------------------- */
 	action, err := task.fetchAction(ctx, req.ActionID, fields)
@@ -139,11 +161,6 @@ func (task *CascadeRegistrationTask) Register(
 	fields[logtrace.FieldTxHash] = txHash
 	logtrace.Info(ctx, "action has been finalized", fields)
 	task.streamEvent(SupernodeEventTypeActionFinalized, "action has been finalized", txHash, send)
-
-	err = os.RemoveAll(req.FilePath)
-	if err != nil {
-		logtrace.Warn(ctx, "error removing file", fields)
-	}
 
 	return nil
 }
