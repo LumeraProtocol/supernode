@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
-	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/sqlite"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
