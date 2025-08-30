@@ -14,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 const (
@@ -35,9 +36,19 @@ func (task *CascadeRegistrationTask) Download(
 	ctx context.Context,
 	req *DownloadRequest,
 	send func(resp *DownloadResponse) error,
-) error {
+) (err error) {
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "cascade-action-download request received", fields)
+
+	// Ensure task status is finalized regardless of outcome
+	defer func() {
+		if err != nil {
+			task.UpdateStatus(common.StatusTaskCanceled)
+		} else {
+			task.UpdateStatus(common.StatusTaskCompleted)
+		}
+		task.Cancel()
+	}()
 
 	actionDetails, err := task.LumeraClient.GetAction(ctx, req.ActionID)
 	if err != nil {

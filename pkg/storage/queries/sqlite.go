@@ -3,16 +3,12 @@ package queries
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/configurer"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" //go-sqlite3
-)
-
-var (
-	DefaulthPath = configurer.DefaultPath()
 )
 
 const minVerifications = 3
@@ -298,7 +294,19 @@ func (s *SQLiteStore) CloseHistoryDB(ctx context.Context) {
 
 // OpenHistoryDB opens history DB
 func OpenHistoryDB() (LocalStoreInterface, error) {
-	dbFile := filepath.Join(DefaulthPath, historyDBName)
+	// Always use ~/.supernode as the base directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get user home directory: %w", err)
+	}
+	historyBasePath := filepath.Join(homeDir, ".supernode")
+
+	// Ensure the base directory exists before opening the DB
+	if err := os.MkdirAll(historyBasePath, 0o755); err != nil {
+		return nil, fmt.Errorf("cannot create history db directory %q: %w", historyBasePath, err)
+	}
+
+	dbFile := filepath.Join(historyBasePath, historyDBName)
 	db, err := sqlx.Connect("sqlite3", dbFile)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open sqlite database: %w", err)
