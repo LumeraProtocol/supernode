@@ -63,7 +63,12 @@ func (pool *ConnPool) Add(addr string, conn net.Conn) {
 				}
 			}
 
-			delete(pool.conns, oldestAccessAddr)
+			if oldestAccessAddr != "" {
+				if item, ok := pool.conns[oldestAccessAddr]; ok {
+					_ = item.conn.Close()
+				}
+				delete(pool.conns, oldestAccessAddr)
+			}
 		}
 	}
 

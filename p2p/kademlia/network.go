@@ -362,12 +362,17 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 
 	defer conn.Close()
 
+	const serverReadTimeout = 60 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
+
+		// enforce a per-message read deadline so a slow peer can't hang us
+		_ = conn.SetReadDeadline(time.Now().Add(serverReadTimeout))
 
 		// read the request from connection
 		request, err := decode(conn)
@@ -493,6 +498,7 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		}
 
 		// write the response
+		_ = conn.SetWriteDeadline(time.Now().Add(serverReadTimeout))
 		if _, err := conn.Write(response); err != nil {
 			logtrace.Error(ctx, "Write failed", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
@@ -614,17 +620,25 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	}
 
 	// do secure handshaking
+	// Fast path: try get under lock
 	s.connPoolMtx.Lock()
 	conn, err := s.connPool.Get(remoteAddr)
+	s.connPoolMtx.Unlock()
 	if err != nil {
+		// Slow path: build without holding the lock
 		conn, err = NewSecureClientConn(ctx, s.clientTC, remoteAddr)
 		if err != nil {
-			s.connPoolMtx.Unlock()
 			return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
 		}
-		s.connPool.Add(remoteAddr, conn)
+		s.connPoolMtx.Lock()
+		// another goroutine may have added meanwhile; replace safely
+		if _, e := s.connPool.Get(remoteAddr); e == nil {
+			conn.Close()
+		} else {
+			s.connPool.Add(remoteAddr, conn)
+		}
+		s.connPoolMtx.Unlock()
 	}
-	s.connPoolMtx.Unlock()
 
 	defer func() {
 		if err != nil && s.clientTC != nil {

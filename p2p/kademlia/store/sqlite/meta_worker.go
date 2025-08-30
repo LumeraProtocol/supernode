@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud.go"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/jmoiron/sqlx"

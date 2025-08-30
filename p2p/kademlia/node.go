@@ -197,12 +197,12 @@ func (s *NodeList) NodeIDs() [][]byte {
 	s.Mux.RLock()
 	defer s.Mux.RUnlock()
 
-	toRet := make([][]byte, len(s.Nodes))
-	for i := 0; i < len(s.Nodes); i++ {
-		toRet = append(toRet, s.Nodes[i].ID)
+	out := make([][]byte, 0, len(s.Nodes))
+	for _, n := range s.Nodes {
+		out = append(out, n.ID)
 	}
 
-	return toRet
+	return out
 }
 
 // NodeIPs returns the dump information for node list
@@ -210,10 +210,10 @@ func (s *NodeList) NodeIPs() []string {
 	s.Mux.RLock()
 	defer s.Mux.RUnlock()
 
-	toRet := make([]string, len(s.Nodes))
-	for i := 0; i < len(s.Nodes); i++ {
-		toRet = append(toRet, s.Nodes[i].IP)
+	out := make([]string, 0, len(s.Nodes))
+	for _, n := range s.Nodes {
+		out = append(out, n.IP)
 	}
 
-	return toRet
+	return out
 }

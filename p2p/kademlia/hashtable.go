@@ -97,6 +97,7 @@ func (ht *HashTable) refreshNode(id []byte) {
 	bucket := ht.routeTable[index]
 
 	var offset int
+	offset = -1
 	// find the position of the node
 	for i, v := range bucket {
 		if bytes.Equal(v.ID, id) {
@@ -106,6 +107,11 @@ func (ht *HashTable) refreshNode(id []byte) {
 	}
 
 	// makes the node to the end
+
+	if offset < 0 {
+		return
+	} // nothing to refresh
+
 	current := bucket[offset]
 	bucket = append(bucket[:offset], bucket[offset+1:]...)
 	bucket = append(bucket, current)
@@ -307,7 +313,7 @@ func (ht *HashTable) closestContactsWithInlcudingNode(num int, target []byte, ig
 	// Flatten the routeTable and add nodes to nl if they're not in the ignoredMap
 	for _, bucket := range ht.routeTable {
 		for _, node := range bucket {
-			if !ignoredMap[string(node.ID)] {
+			if !ignoredMap[hex.EncodeToString(node.ID)] {
 				nl.AddNodes([]*Node{node})
 			}
 		}
