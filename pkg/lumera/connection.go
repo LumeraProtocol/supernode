@@ -17,7 +17,7 @@ import (
 const (
 	defaultLumeraPort = "9090"
 
-	keepaliveTime    = 30 * time.Second
+	keepaliveTime    = 6 * time.Minute
 	keepaliveTimeout = 10 * time.Second
 )
 
@@ -112,7 +112,7 @@ func createGRPCConnection(ctx context.Context, hostPort string, creds credential
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                keepaliveTime,
 			Timeout:             keepaliveTimeout,
-			PermitWithoutStream: true,
+			PermitWithoutStream: false,
 		}),
 	}
 

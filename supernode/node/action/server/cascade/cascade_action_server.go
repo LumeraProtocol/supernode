@@ -248,6 +248,17 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	var restoredFilePath string
 	var tmpDir string
 
+	// Ensure tmpDir is cleaned up even if errors occur after retrieval
+	defer func() {
+		if tmpDir != "" {
+			if err := task.CleanupDownload(ctx, tmpDir); err != nil {
+				logtrace.Error(ctx, "error cleaning up the tmp dir", logtrace.Fields{logtrace.FieldError: err.Error()})
+			} else {
+				logtrace.Info(ctx, "tmp dir has been cleaned up", logtrace.Fields{"tmp_dir": tmpDir})
+			}
+		}
+	}()
+
 	err := task.Download(ctx, &cascadeService.DownloadRequest{
 		ActionID: req.GetActionId(),
 	}, func(resp *cascadeService.DownloadResponse) error {
@@ -320,14 +331,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		}
 	}
 
-	err = task.CleanupDownload(ctx, tmpDir)
-	if err != nil {
-		logtrace.Error(ctx, "error cleaning up the tmp dir", logtrace.Fields{
-			logtrace.FieldError: err.Error(),
-		})
-	}
-	fields["tmp_dir"] = tmpDir
-	logtrace.Info(ctx, "tmp dir has been cleaned up", fields)
+	// Cleanup is handled in deferred block above
 
 	logtrace.Info(ctx, "completed streaming all chunks", fields)
 	return nil
