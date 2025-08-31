@@ -136,7 +136,7 @@ func (s *DHT) Replicate(ctx context.Context) {
 	for i := 0; i < B; i++ {
 		if time.Since(s.ht.refreshTime(i)) > defaultRefreshTime {
 			// refresh the bucket by iterative find node
-			id := s.ht.randomIDFromBucket(K)
+			id := s.ht.randomIDFromBucket(i)
 			if _, err := s.iterate(ctx, IterateFindNode, id, nil, 0); err != nil {
 				logtrace.Error(ctx, "replicate iterate find node failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
 			}

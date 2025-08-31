@@ -114,86 +114,84 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 	var boostrapNodes []*Node
 
-	if s.options.LumeraClient != nil {
-		// Get the latest block to determine height
-		latestBlockResp, err := s.options.LumeraClient.Node().GetLatestBlock(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get latest block: %w", err)
+	// Get the latest block to determine height
+	latestBlockResp, err := s.options.LumeraClient.Node().GetLatestBlock(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get latest block: %w", err)
+	}
+
+	// Get the block height
+	blockHeight := uint64(latestBlockResp.SdkBlock.Header.Height)
+
+	// Get top supernodes for this block
+	supernodeResp, err := s.options.LumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to get top supernodes: %w", err)
+	}
+
+	mapNodes := map[string]*Node{}
+
+	for _, supernode := range supernodeResp.Supernodes {
+		// Find the latest IP address (with highest block height)
+		var latestIP string
+		var maxHeight int64 = -1
+
+		for _, ipHistory := range supernode.PrevIpAddresses {
+			if ipHistory.Height > maxHeight {
+				maxHeight = ipHistory.Height
+				latestIP = ipHistory.Address
+			}
 		}
 
-		// Get the block height
-		blockHeight := uint64(latestBlockResp.SdkBlock.Header.Height)
-
-		// Get top supernodes for this block
-		supernodeResp, err := s.options.LumeraClient.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
-		if err != nil {
-			return fmt.Errorf("failed to get top supernodes: %w", err)
-		}
-
-		mapNodes := map[string]*Node{}
-
-		for _, supernode := range supernodeResp.Supernodes {
-			// Find the latest IP address (with highest block height)
-			var latestIP string
-			var maxHeight int64 = -1
-
-			for _, ipHistory := range supernode.PrevIpAddresses {
-				if ipHistory.Height > maxHeight {
-					maxHeight = ipHistory.Height
-					latestIP = ipHistory.Address
-				}
-			}
-
-			if latestIP == "" {
-				logtrace.Warn(ctx, "No valid IP address found for supernode", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					"supernode":          supernode.SupernodeAccount,
-				})
-				continue
-			}
-
-			// Extract IP from the address (remove port if present)
-			ip := parseSupernodeAddress(latestIP)
-
-			// Use p2p_port from supernode record
-			p2pPort := defaultSuperNodeP2PPort
-			if supernode.P2PPort != "" {
-				if port, err := strconv.ParseUint(supernode.P2PPort, 10, 16); err == nil {
-					p2pPort = int(port)
-				}
-			}
-
-			// Create full address with p2p port for validation
-			fullAddress := fmt.Sprintf("%s:%d", ip, p2pPort)
-
-			// Parse the node from the full address
-			node, err := s.parseNode(fullAddress, selfAddress)
-			if err != nil {
-				logtrace.Warn(ctx, "Skip Bad Bootstrap Address", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-					"address":            fullAddress,
-					"supernode":          supernode.SupernodeAccount,
-				})
-				continue
-			}
-
-			// Store the supernode account as the node ID
-			node.ID = []byte(supernode.SupernodeAccount)
-			mapNodes[fullAddress] = node
-		}
-
-		// Convert the map to a slice
-		for _, node := range mapNodes {
-			hID, _ := utils.Blake3Hash(node.ID)
-			node.HashedID = hID
-			logtrace.Debug(ctx, "node adding", logtrace.Fields{
+		if latestIP == "" {
+			logtrace.Warn(ctx, "No valid IP address found for supernode", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
-				"node":               node.String(),
-				"hashed_id":          string(node.HashedID),
+				"supernode":          supernode.SupernodeAccount,
 			})
-			boostrapNodes = append(boostrapNodes, node)
+			continue
 		}
+
+		// Extract IP from the address (remove port if present)
+		ip := parseSupernodeAddress(latestIP)
+
+		// Use p2p_port from supernode record
+		p2pPort := defaultSuperNodeP2PPort
+		if supernode.P2PPort != "" {
+			if port, err := strconv.ParseUint(supernode.P2PPort, 10, 16); err == nil {
+				p2pPort = int(port)
+			}
+		}
+
+		// Create full address with p2p port for validation
+		fullAddress := fmt.Sprintf("%s:%d", ip, p2pPort)
+
+		// Parse the node from the full address
+		node, err := s.parseNode(fullAddress, selfAddress)
+		if err != nil {
+			logtrace.Warn(ctx, "Skip Bad Bootstrap Address", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"address":            fullAddress,
+				"supernode":          supernode.SupernodeAccount,
+			})
+			continue
+		}
+
+		// Store the supernode account as the node ID
+		node.ID = []byte(supernode.SupernodeAccount)
+		mapNodes[fullAddress] = node
+	}
+
+	// Convert the map to a slice
+	for _, node := range mapNodes {
+		hID, _ := utils.Blake3Hash(node.ID)
+		node.HashedID = hID
+		logtrace.Debug(ctx, "node adding", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"node":               node.String(),
+			"hashed_id":          string(node.HashedID),
+		})
+		boostrapNodes = append(boostrapNodes, node)
 	}
 
 	if len(boostrapNodes) == 0 {
@@ -232,9 +230,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 	for _, node := range s.options.BootstrapNodes {
 		nodeId := string(node.ID)
 		// sync the bootstrap node only once
-		s.bsConnectedMtx.RLock()
 		isConnected, exists := s.bsConnected[nodeId]
-		s.bsConnectedMtx.RUnlock()
 		if exists && isConnected {
 			continue
 		}
@@ -249,9 +245,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 		}
 
 		node := node
-		s.bsConnectedMtx.Lock()
 		s.bsConnected[nodeId] = false
-		s.bsConnectedMtx.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -268,7 +262,8 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 				if err != nil {
 					// This happening in bootstrap - so potentially other nodes not yet started
 					// So if bootstrap failed, should try to connect to node again for next bootstrap retry
-					// s.cache.SetWithExpiry(addr, []byte("true"), badAddrExpiryHours*time.Hour)
+					// Mark this address as temporarily bad to avoid retrying immediately
+					s.cache.SetWithExpiry(addr, []byte("true"), badAddrExpiryHours*time.Hour)
 
 					logtrace.Debug(ctx, "network call failed, sleeping 3 seconds", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
@@ -300,9 +295,7 @@ func (s *DHT) Bootstrap(ctx context.Context, bootstrapNodes string) error {
 					continue
 				}
 
-				s.bsConnectedMtx.Lock()
 				s.bsConnected[nodeId] = true
-				s.bsConnectedMtx.Unlock()
 				s.addNode(ctx, response.Sender)
 				break
 			}

@@ -620,25 +620,17 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	}
 
 	// do secure handshaking
-	// Fast path: try get under lock
 	s.connPoolMtx.Lock()
 	conn, err := s.connPool.Get(remoteAddr)
-	s.connPoolMtx.Unlock()
 	if err != nil {
-		// Slow path: build without holding the lock
 		conn, err = NewSecureClientConn(ctx, s.clientTC, remoteAddr)
 		if err != nil {
+			s.connPoolMtx.Unlock()
 			return nil, errors.Errorf("client secure establish %q: %w", remoteAddr, err)
 		}
-		s.connPoolMtx.Lock()
-		// another goroutine may have added meanwhile; replace safely
-		if _, e := s.connPool.Get(remoteAddr); e == nil {
-			conn.Close()
-		} else {
-			s.connPool.Add(remoteAddr, conn)
-		}
-		s.connPoolMtx.Unlock()
+		s.connPool.Add(remoteAddr, conn)
 	}
+	s.connPoolMtx.Unlock()
 
 	defer func() {
 		if err != nil && s.clientTC != nil {
@@ -661,7 +653,8 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	if err != nil {
 		return nil, errors.Errorf("encode: %w", err)
 	}
-	if _, err := conn.Write(data); err != nil {
+	if _, werr := conn.Write(data); werr != nil {
+		err = werr
 		return nil, errors.Errorf("conn write: %w", err)
 	}
 

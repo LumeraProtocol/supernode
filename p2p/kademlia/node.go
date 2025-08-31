@@ -197,9 +197,9 @@ func (s *NodeList) NodeIDs() [][]byte {
 	s.Mux.RLock()
 	defer s.Mux.RUnlock()
 
-	out := make([][]byte, 0, len(s.Nodes))
-	for _, n := range s.Nodes {
-		out = append(out, n.ID)
+	out := make([][]byte, len(s.Nodes))
+	for i := 0; i < len(s.Nodes); i++ {
+		out[i] = s.Nodes[i].ID
 	}
 
 	return out
@@ -210,9 +210,9 @@ func (s *NodeList) NodeIPs() []string {
 	s.Mux.RLock()
 	defer s.Mux.RUnlock()
 
-	out := make([]string, 0, len(s.Nodes))
-	for _, n := range s.Nodes {
-		out = append(out, n.IP)
+	out := make([]string, len(s.Nodes))
+	for i := 0; i < len(s.Nodes); i++ {
+		out[i] = s.Nodes[i].IP
 	}
 
 	return out

@@ -56,9 +56,8 @@ type DHT struct {
 	done           chan struct{}    // distributed hash table is done
 	cache          storage.KeyValue // store bad bootstrap addresses
 	bsConnected    map[string]bool  // map of connected bootstrap nodes [identity] -> connected
-	bsConnectedMtx sync.RWMutex     // mutex for bsConnected map
 	supernodeAddr  string           // cached address from chain
-	mtx            sync.Mutex
+	mtx            sync.RWMutex
 	ignorelist     *BanList
 	replicationMtx sync.RWMutex
 	rqstore        rqstore.Store
@@ -173,14 +172,22 @@ func (s *DHT) getSupernodeAddress(ctx context.Context) (string, error) {
 
 	// Query chain for supernode info
 	supernodeInfo, err := s.options.LumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, string(s.options.ID))
-	if err != nil || supernodeInfo == nil {
-		// Fallback to local IP if chain query fails
-		s.supernodeAddr = s.ht.self.IP
-		return s.supernodeAddr, nil
+	if err != nil {
+		return "", fmt.Errorf("failed to get supernode address: %w", err)
 	}
-
 	s.supernodeAddr = supernodeInfo.LatestAddress
 	return supernodeInfo.LatestAddress, nil
+}
+
+// getCachedSupernodeAddress returns cached supernode address without chain queries
+func (s *DHT) getCachedSupernodeAddress() string {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	if s.supernodeAddr != "" {
+		return s.supernodeAddr
+	}
+	return s.ht.self.IP // fallback without chain query
 }
 
 // parseSupernodeAddress extracts the host part from a URL or address string.
@@ -209,6 +216,17 @@ func (s *DHT) Start(ctx context.Context) error {
 	// start the network
 	if err := s.network.Start(ctx); err != nil {
 		return fmt.Errorf("start network: %v", err)
+	}
+
+	// Pre-fetch supernode address with generous timeout to avoid chain queries during message creation
+	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if _, err := s.getSupernodeAddress(initCtx); err != nil {
+		logtrace.Warn(ctx, "Failed to pre-fetch supernode address, will use fallback", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
 	}
 
 	go s.StartReplicationWorker(ctx)
@@ -330,13 +348,13 @@ func (s *DHT) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 		return nil, errors.Errorf("retrieve from peer: %w", err)
 	}
 	if len(peerValue) > 0 {
-		logtrace.Debug(ctx, "Not found locally, retrieved from other nodes", logtrace.Fields{
+		logtrace.Info(ctx, "Not found locally, retrieved from other nodes", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"key":                dbKey,
 			"data_len":           len(peerValue),
 		})
 	} else {
-		logtrace.Debug(ctx, "Not found locally, not found in other nodes", logtrace.Fields{
+		logtrace.Info(ctx, "Not found locally, not found in other nodes", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"key":                dbKey,
 		})
@@ -379,8 +397,7 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 
 // newMessage creates a new message
 func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Message {
-	ctx := context.Background()
-	supernodeAddr, _ := s.getSupernodeAddress(ctx)
+	supernodeAddr := s.getCachedSupernodeAddress()
 	hostIP := parseSupernodeAddress(supernodeAddr)
 	sender := &Node{
 		IP:   hostIP,
@@ -407,7 +424,7 @@ func (s *DHT) GetValueFromNode(ctx context.Context, target []byte, n *Node) ([]b
 
 	response, err := s.network.Call(cctx, request, false)
 	if err != nil {
-		logtrace.Debug(ctx, "Network call request failed", logtrace.Fields{
+		logtrace.Info(ctx, "Network call request failed", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			logtrace.FieldError:  err.Error(),
 			"request":            request.String(),
@@ -449,7 +466,7 @@ func (s *DHT) doMultiWorkers(ctx context.Context, iterativeType int, target []by
 			// update the running goroutines
 			number++
 
-			logtrace.Debug(ctx, "Start work for node", logtrace.Fields{
+			logtrace.Info(ctx, "Start work for node", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"iterate_type":       iterativeType,
 				"node":               node.String(),
@@ -476,7 +493,7 @@ func (s *DHT) doMultiWorkers(ctx context.Context, iterativeType int, target []by
 				// send the request and receive the response
 				response, err := s.network.Call(ctx, request, false)
 				if err != nil {
-					logtrace.Debug(ctx, "Network call request failed", logtrace.Fields{
+					logtrace.Info(ctx, "Network call request failed", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 						logtrace.FieldError:  err.Error(),
 						"request":            request.String(),
@@ -660,7 +677,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	gctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	logtrace.Debug(ctx, "Begin iterate batch get values", logtrace.Fields{
+	logtrace.Info(ctx, "Begin iterate batch get values", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"txid":               txID,
 		"parallel_batches":   parallelBatches,
@@ -957,7 +974,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	if nl.Len() == 0 {
 		return nil, nil
 	}
-	logtrace.Debug(ctx, "Iterate start", logtrace.Fields{
+	logtrace.Info(ctx, "Iterate start", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"type":               iterativeType,
@@ -971,7 +988,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	if iterativeType == IterateFindNode {
 		hashedTargetID, _ := utils.Blake3Hash(target)
 		bucket := s.ht.bucketIndex(s.ht.self.HashedID, hashedTargetID)
-		logtrace.Debug(ctx, "Bucket for target", logtrace.Fields{
+		logtrace.Info(ctx, "Bucket for target", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"target":             sKey,
 		})
@@ -995,7 +1012,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	// Set a maximum number of iterations to prevent indefinite looping
 	maxIterations := 5 // Adjust the maximum iterations as needed
 
-	logtrace.Debug(ctx, "Begin iteration", logtrace.Fields{
+	logtrace.Info(ctx, "Begin iteration", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1006,7 +1023,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 		case <-ctx.Done():
 			return nil, fmt.Errorf("iterate cancelled: %w", ctx.Err())
 		case <-timeout:
-			logtrace.Debug(ctx, "Iteration timed out", logtrace.Fields{
+			logtrace.Info(ctx, "Iteration timed out", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 			})
 			return nil, nil
@@ -1050,7 +1067,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 			nl.Comparator = target
 			nl.Sort()
 
-			logtrace.Debug(ctx, "Iterate sorted nodes", logtrace.Fields{
+			logtrace.Info(ctx, "Iterate sorted nodes", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"id":                 base58.Encode(s.ht.self.ID),
 				"iterate":            iterativeType,
@@ -1107,7 +1124,7 @@ func (s *DHT) handleResponses(ctx context.Context, responses <-chan *Message, nl
 			v, ok := response.Data.(*FindValueResponse)
 			if ok {
 				if v.Status.Result == ResultOk && len(v.Value) > 0 {
-					logtrace.Debug(ctx, "Iterate found value from network", logtrace.Fields{
+					logtrace.Info(ctx, "Iterate found value from network", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 					})
 					return nl, v.Value
@@ -1152,7 +1169,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 	searchRest := false
 	// keep track of contacted nodes so that we don't hit them again
 	contacted := make(map[string]bool)
-	logtrace.Debug(ctx, "Begin iteration", logtrace.Fields{
+	logtrace.Info(ctx, "Begin iteration", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1161,7 +1178,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 	var closestNode *Node
 	var iterationCount int
 	for iterationCount = 0; iterationCount < maxIterations; iterationCount++ {
-		logtrace.Debug(ctx, "Begin find value", logtrace.Fields{
+		logtrace.Info(ctx, "Begin find value", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"task_id":            taskID,
 			"nl":                 nl.Len(),
@@ -1181,7 +1198,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 
 		// if the closest node is the same as the last iteration  and we don't want to search rest of nodes, we are done
 		if !searchRest && (closestNode != nil && bytes.Equal(nl.Nodes[0].ID, closestNode.ID)) {
-			logtrace.Debug(ctx, "Closest node is the same as the last iteration", logtrace.Fields{
+			logtrace.Info(ctx, "Closest node is the same as the last iteration", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"task_id":            taskID,
 				"key":                sKey,
@@ -1200,7 +1217,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 
 		nl.Sort()
 
-		logtrace.Debug(ctx, "Iteration progress", logtrace.Fields{
+		logtrace.Info(ctx, "Iteration progress", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"task_id":            taskID,
 			"key":                sKey,
@@ -1255,7 +1272,7 @@ func (s *DHT) sendStoreData(ctx context.Context, n *Node, request *StoreDataRequ
 func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 	// ensure this is not itself address
 	if bytes.Equal(node.ID, s.ht.self.ID) {
-		logtrace.Debug(ctx, "Trying to add itself", logtrace.Fields{
+		logtrace.Info(ctx, "Trying to add itself", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 		})
 		return nil
@@ -1456,7 +1473,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 	}
 
 	if finalStoreCount >= int32(Alpha) {
-		logtrace.Debug(ctx, "Store data to alpha nodes success", logtrace.Fields{
+		logtrace.Info(ctx, "Store data to alpha nodes success", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"task_id":            taskID,
 			"len_total_nodes":    nl.Len(),
@@ -1478,7 +1495,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 func (s *DHT) removeNode(ctx context.Context, node *Node) {
 	// ensure this is not itself address
 	if bytes.Equal(node.ID, s.ht.self.ID) {
-		logtrace.Debug(ctx, "Trying to remove itself", logtrace.Fields{
+		logtrace.Info(ctx, "Trying to remove itself", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 		})
 		return
@@ -1542,7 +1559,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	var i int
 	for {
 		i++
-		logtrace.Debug(ctx, "Iterate batch store begin", logtrace.Fields{
+		logtrace.Info(ctx, "Iterate batch store begin", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"task_id":            id,
 			"iter":               i,
@@ -1710,7 +1727,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 			"port":               node.String(),
 		})
 		if s.ignorelist.Banned(node) {
-			logtrace.Debug(ctx, "Ignoring banned node in batch store network call", logtrace.Fields{
+			logtrace.Info(ctx, "Ignoring banned node in batch store network call", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"node":               node.String(),
 			})
@@ -1736,7 +1753,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					totalBytes += len(values[idx])
 				}
 
-				logtrace.Debug(ctx, "Batch store to node", logtrace.Fields{
+				logtrace.Info(ctx, "Batch store to node", logtrace.Fields{
 					logtrace.FieldModule:   "dht",
 					"keys":                 len(toStore),
 					"size_before_compress": utils.BytesIntToMB(totalBytes),
@@ -1747,7 +1764,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 				response, err := s.network.Call(ctx, request, false)
 				if err != nil {
 					s.ignorelist.IncrementCount(receiver)
-					logtrace.Debug(ctx, "Network call batch store request failed", logtrace.Fields{
+					logtrace.Info(ctx, "Network call batch store request failed", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 						logtrace.FieldError:  err.Error(),
 						"request":            request.String(),
@@ -1768,7 +1785,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 }
 
 func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[string]*Node, contacted map[string]bool, txid string) (chan *MessageWithError, bool) {
-	logtrace.Debug(ctx, "Batch find node begin", logtrace.Fields{
+	logtrace.Info(ctx, "Batch find node begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"task_id":            txid,
 		"nodes_count":        len(nodes),
@@ -1827,7 +1844,7 @@ func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[str
 	}
 	wg.Wait()
 	close(responses)
-	logtrace.Debug(ctx, "Batch find node done", logtrace.Fields{
+	logtrace.Info(ctx, "Batch find node done", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"nodes_count":        len(nodes),
 		"len_resp":           len(responses),
