@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -183,11 +184,16 @@ func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
 
 // ProcessTransaction handles the complete flow: simulate, build, sign, and broadcast
 func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig) (*sdktx.BroadcastTxResponse, error) {
-	// Step 1: Simulate transaction to get gas estimate
-	simRes, err := m.SimulateTransaction(ctx, msgs, accountInfo, config)
-	if err != nil {
-		return nil, fmt.Errorf("simulation failed: %w", err)
-	}
+    // Step 1: Simulate transaction to get gas estimate
+    simRes, err := m.SimulateTransaction(ctx, msgs, accountInfo, config)
+    if err != nil {
+        // If simulation panicked (recovered by baseapp), try broadcasting with a conservative gas.
+        if isSimulationPanic(err) {
+            return m.broadcastWithFallbackGas(ctx, msgs, accountInfo, config, err)
+        }
+        // Non-panic simulation errors: return as-is
+        return nil, fmt.Errorf("simulation failed: %w", err)
+    }
 
 	// Step 2: Calculate gas with adjustment and padding
 	simulatedGasUsed := simRes.GasInfo.GasUsed
@@ -212,4 +218,39 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	}
 
 	return result, nil
+}
+
+// isSimulationPanic detects common recovered panic markers from Cosmos baseapp recovery.
+func isSimulationPanic(err error) bool {
+    if err == nil {
+        return false
+    }
+    emsg := err.Error()
+    return strings.Contains(emsg, "recovered: runtime error") || strings.Contains(emsg, "panic")
+}
+
+// broadcastWithFallbackGas attempts to proceed when simulation panics by using a conservative gas budget.
+func (m *module) broadcastWithFallbackGas(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig, simErr error) (*sdktx.BroadcastTxResponse, error) {
+    logtrace.Warn(ctx, "simulation panicked; falling back to fixed gas", logtrace.Fields{"error": simErr.Error()})
+
+    // Choose a conservative gas: 3x default (or config limit if higher) + padding
+    gasToUse := DefaultGasLimit * 3
+    if config.GasLimit > gasToUse {
+        gasToUse = config.GasLimit
+    }
+    gasToUse = gasToUse + config.GasPadding
+
+    fee := m.CalculateFee(gasToUse, config)
+
+    // Build, sign, and broadcast with the fallback gas
+    txBytes, buildErr := m.BuildAndSignTransaction(ctx, msgs, accountInfo, gasToUse, fee, config)
+    if buildErr != nil {
+        return nil, fmt.Errorf("failed to build and sign transaction (fallback): %w", buildErr)
+    }
+
+    result, bErr := m.BroadcastTransaction(ctx, txBytes)
+    if bErr != nil {
+        return result, fmt.Errorf("failed to broadcast transaction (fallback): %w", bErr)
+    }
+    return result, nil
 }
