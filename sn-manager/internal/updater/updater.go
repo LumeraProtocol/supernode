@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const gatewayTimeout = 5 * time.Second
+const gatewayTimeout = 15 * time.Second
 
 type AutoUpdater struct {
 	config         *config.Config
