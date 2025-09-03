@@ -60,7 +60,7 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 	}
 
 	// Fixed update check interval: 10 minutes
-	interval := 1 * time.Minute
+	interval := 10 * time.Minute
 	u.ticker = time.NewTicker(interval)
 
 	// Run an immediate check on startup so restarts don't wait a full interval
