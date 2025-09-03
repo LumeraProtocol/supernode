@@ -135,16 +135,43 @@ func (h *TxHelper) GetAccountInfo(ctx context.Context) (*authtypes.BaseAccount, 
 
 // UpdateConfig allows updating the transaction configuration
 func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
-	h.config = &TxConfig{
-		ChainID:       config.ChainID,
-		Keyring:       config.Keyring,
-		KeyName:       config.KeyName,
-		GasLimit:      config.GasLimit,
-		GasAdjustment: config.GasAdjustment,
-		GasPadding:    config.GasPadding,
-		FeeDenom:      config.FeeDenom,
-		GasPrice:      config.GasPrice,
-	}
+    // Merge provided fields with existing config to avoid zeroing defaults
+    if h.config == nil {
+        h.config = &TxConfig{}
+    }
+
+    // ChainID
+    if config.ChainID != "" {
+        h.config.ChainID = config.ChainID
+    }
+    // Keyring
+    if config.Keyring != nil {
+        h.config.Keyring = config.Keyring
+    }
+    // KeyName
+    if config.KeyName != "" {
+        h.config.KeyName = config.KeyName
+    }
+    // GasLimit
+    if config.GasLimit != 0 {
+        h.config.GasLimit = config.GasLimit
+    }
+    // GasAdjustment
+    if config.GasAdjustment != 0 {
+        h.config.GasAdjustment = config.GasAdjustment
+    }
+    // GasPadding
+    if config.GasPadding != 0 {
+        h.config.GasPadding = config.GasPadding
+    }
+    // FeeDenom
+    if config.FeeDenom != "" {
+        h.config.FeeDenom = config.FeeDenom
+    }
+    // GasPrice
+    if config.GasPrice != "" {
+        h.config.GasPrice = config.GasPrice
+    }
 }
 
 // GetConfig returns the current transaction configuration

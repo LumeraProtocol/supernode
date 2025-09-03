@@ -65,6 +65,9 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 }
 
 func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
+	if config == nil {
+		return
+	}
 	m.txHelper.UpdateConfig(config)
 }
 

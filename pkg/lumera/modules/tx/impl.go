@@ -23,7 +23,9 @@ const (
 	DefaultGasAdjustment = float64(1.5)
 	DefaultGasPadding    = uint64(50000)
 	DefaultFeeDenom      = "ulume"
-	DefaultGasPrice      = "0.000001"
+	// DefaultGasPrice is the default min gas price in denom units (e.g., ulume)
+	// Set to 0.025 to match chain defaults where applicable.
+	DefaultGasPrice = "0.025"
 )
 
 // module implements the Module interface
@@ -165,28 +167,86 @@ func (m *module) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdk
 		return nil, fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
+	// If the chain returns a non-zero code, surface it as an error with context
+	if resp != nil && resp.TxResponse != nil && resp.TxResponse.Code != 0 {
+		return resp, fmt.Errorf(
+			"tx failed: code=%d codespace=%s height=%d gas_wanted=%d gas_used=%d raw_log=%s",
+			resp.TxResponse.Code,
+			resp.TxResponse.Codespace,
+			resp.TxResponse.Height,
+			resp.TxResponse.GasWanted,
+			resp.TxResponse.GasUsed,
+			resp.TxResponse.RawLog,
+		)
+	}
+
 	return resp, nil
 }
 
 // CalculateFee calculates the transaction fee based on gas usage and config
 func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
-	gasPrice, _ := strconv.ParseFloat(config.GasPrice, 64)
-	feeAmount := gasPrice * float64(gasAmount)
+	// Determine gas price (numeric) and denom. Accept both plain number (e.g., "0.025")
+	// and dec-coin format (e.g., "0.025ulume").
+	var (
+		gasPriceF float64
+		denom     = config.FeeDenom
+	)
 
-	// Ensure we have at least 1 token as fee to meet minimum requirements
+	gp := config.GasPrice
+
+	// First try: parse as decimal coin if suffix present
+	if gp != "" {
+		// Attempt dec-coin parse (handles "0.025ulume")
+		if decCoin, err := types.ParseDecCoin(gp); err == nil {
+			// Amount is a decimal string; convert to float64 for calculation
+			if f, errf := strconv.ParseFloat(decCoin.Amount.String(), 64); errf == nil {
+				gasPriceF = f
+			}
+			if denom == "" {
+				denom = decCoin.Denom
+			}
+		} else {
+			// Fallback: parse as plain float (e.g., "0.025")
+			if f, err2 := strconv.ParseFloat(gp, 64); err2 == nil {
+				gasPriceF = f
+			}
+		}
+	}
+
+	// Fallbacks if not provided or parsing failed
+	if gasPriceF <= 0 {
+		if f, err := strconv.ParseFloat(DefaultGasPrice, 64); err == nil {
+			gasPriceF = f
+		} else {
+			gasPriceF = 0.0
+		}
+	}
+	if denom == "" {
+		denom = DefaultFeeDenom
+	}
+
+	feeAmount := gasPriceF * float64(gasAmount)
+
+	// Ensure we have at least 1 unit of fee to meet minimal requirements
 	if feeAmount < 1 {
 		feeAmount = 1
 	}
 
-	return fmt.Sprintf("%.0f%s", feeAmount, config.FeeDenom)
+	return fmt.Sprintf("%.0f%s", feeAmount, denom)
 }
 
 // ProcessTransaction handles the complete flow: simulate, build, sign, and broadcast
 func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig) (*sdktx.BroadcastTxResponse, error) {
+	if err := validateTxConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid tx config: %w", err)
+	}
 	// Step 1: Simulate transaction to get gas estimate
 	simRes, err := m.SimulateTransaction(ctx, msgs, accountInfo, config)
 	if err != nil {
 		return nil, fmt.Errorf("simulation failed: %w", err)
+	}
+	if simRes == nil || simRes.GasInfo == nil || simRes.GasInfo.GasUsed == 0 {
+		return nil, fmt.Errorf("invalid simulation result: empty or zero gas used")
 	}
 
 	// Step 2: Calculate gas with adjustment and padding
@@ -212,4 +272,34 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	}
 
 	return result, nil
+}
+
+// validateTxConfig validates critical fields of TxConfig for safe processing.
+func validateTxConfig(config *TxConfig) error {
+	if config == nil {
+		return fmt.Errorf("tx config cannot be nil")
+	}
+	if config.ChainID == "" {
+		return fmt.Errorf("chainID cannot be empty")
+	}
+	if config.Keyring == nil {
+		return fmt.Errorf("keyring cannot be nil")
+	}
+	if config.KeyName == "" {
+		return fmt.Errorf("key name cannot be empty")
+	}
+	if config.GasAdjustment <= 0 {
+		return fmt.Errorf("gas adjustment must be > 0 (got %v)", config.GasAdjustment)
+	}
+	// If a gas price is provided, validate its format. Accept dec-coin or plain decimal.
+	if gp := config.GasPrice; gp != "" {
+		if decCoin, err := types.ParseDecCoin(gp); err == nil {
+			if config.FeeDenom != "" && config.FeeDenom != decCoin.Denom {
+				return fmt.Errorf("fee denom %q does not match gas price denom %q", config.FeeDenom, decCoin.Denom)
+			}
+		} else if _, err2 := strconv.ParseFloat(gp, 64); err2 != nil {
+			return fmt.Errorf("invalid gas price format %q; use '0.025' or '0.025ulume'", gp)
+		}
+	}
+	return nil
 }

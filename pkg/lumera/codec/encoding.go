@@ -1,6 +1,8 @@
 package codec
 
 import (
+	"sync"
+
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -17,6 +19,11 @@ type EncodingConfig struct {
 	TxConfig          client.TxConfig
 	Amino             *codec.LegacyAmino
 }
+
+var (
+	encOnce sync.Once
+	encCfg  EncodingConfig
+)
 
 // NewEncodingConfig creates a new EncodingConfig with all required interfaces registered
 func NewEncodingConfig() EncodingConfig {
@@ -47,5 +54,8 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 
 // GetEncodingConfig returns the standard encoding config for Lumera client
 func GetEncodingConfig() EncodingConfig {
-	return NewEncodingConfig()
+	// Cache the encoding config to avoid repeated allocations and registrations
+	// across transactions and simulations.
+	encOnce.Do(func() { encCfg = NewEncodingConfig() })
+	return encCfg
 }

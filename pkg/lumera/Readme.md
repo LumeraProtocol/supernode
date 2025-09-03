@@ -1,153 +1,77 @@
-# Lumera Client
+## Lumera Client (Slim Guide)
 
-A Go client for interacting with the Lumera blockchain.
+A minimal guide to the Lumera client
 
-## Features
+What it is
 
-- Connect to Lumera nodes via gRPC
-- Interact with all Lumera modules:
-  - Action module - manage and query action data
-  - SuperNode module - interact with supernodes
-  - Transaction module - broadcast and query transactions
-  - Node module - query node status and blockchain info
-- Configurable connection options
-- Clean, modular API design with clear separation of interfaces and implementations
+- Lightweight client over gRPC with small modules: `Auth`, `Action`, `ActionMsg`, `SuperNode`, `Tx`, `Node`.
+- Shared tx pipeline for building, simulating, signing, and broadcasting messages.
 
-## Installation
-
-```bash
-go get github.com/LumeraProtocol/lumera-client
-```
-
-## Quick Start
+Create a client
 
 ```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-
-	"github.com/LumeraProtocol/lumera-client/client"
+cfg, _ := lumera.NewConfig(
+  "https://grpc.testnet.lumera.io", // or host:port
+  "chain-id",
+  keyName,   // key name in your keyring
+  keyring,   // cosmos-sdk keyring
 )
-
-func main() {
-	// Create a context
-	ctx := context.Background()
-
-	// Initialize the client with options
-	lumeraClient, err := client.NewClient(
-		ctx,
-		client.WithGRPCAddr("localhost:9090"),
-		client.WithChainID("lumera-mainnet"),
-		client.WithTimeout(30),
-	)
-	if err != nil {
-		log.Fatalf("Failed to create Lumera client: %v", err)
-	}
-	defer lumeraClient.Close()
-
-	// Get the latest block height
-	latestBlock, err := lumeraClient.Node().GetLatestBlock(ctx)
-	if err != nil {
-		log.Fatalf("Failed to get latest block: %v", err)
-	}
-	
-	fmt.Printf("Latest block height: %d\n", latestBlock.Block.Header.Height)
-}
+cli, _ := lumera.NewClient(ctx, cfg)
+defer cli.Close()
 ```
 
-## Examples
+Using modules
 
-The repository includes example applications demonstrating how to use the client:
+- `cli.Action()` – query actions (GetAction, GetActionFee, GetParams)
+- `cli.ActionMsg()` – send action messages (see below)
+- `cli.Auth()` – accounts/verify
+- `cli.SuperNode()` – supernode queries
+- `cli.Tx()` – tx internals (shared by helpers)
+- `cli.Node()` – chain/node info
 
-- **Basic Example**: Shows simple queries and interactions with the Lumera blockchain
-- **Advanced Example**: Demonstrates a complete transaction flow with error handling and retries
+Gas and fees (tx module)
 
-To run the examples:
+- Default gas price: `0.025 ulume`.
+- Accepts gas price as `"0.025"` or `"0.025ulume"`.
+- Validate config and surface broadcast errors automatically.
 
-```bash
-# Build and run the basic example
-make run-basic
-
-# Build and run the advanced example
-make run-advanced
-```
-
-## Project Structure
-
-```
-lumera-client/
-│    				  # Core client package
-│   interface.go      # Client interface definitions
-│   client.go         # Client implementation
-│   config.go         # Configuration types
-│   options.go        # Option functions
-│   connection.go     # Connection handling
-├── modules/              # Module-specific packages
-│   ├── action/           # Action module
-│   ├── node/             # Node module
-│   ├── supernode/        # SuperNode module
-│   └── tx/               # Transaction module
-└── examples/             # Example applications
-    └── main.go           # Basic usage example
-
-```
-
-## Module Documentation
-
-### Action Module
-
-The Action module allows you to interact with Lumera actions, which are the core data processing units in the Lumera blockchain.
+Override gas price at runtime (keeps other defaults):
 
 ```go
-// Get action by ID
-action, err := client.Action().GetAction(ctx, "action-id-123")
-
-// Calculate fee for action with specific data size
-fee, err := client.Action().GetActionFee(ctx, "1024") // 1KB data
+am := cli.ActionMsg()
+am.SetTxHelperConfig(&tx.TxHelperConfig{ GasPrice: "0.025ulume" })
 ```
 
-### Node Module
+Send actions (ActionMsg)
 
-The Node module provides information about the blockchain and node status.
+RequestAction:
 
 ```go
-// Get latest block
-block, err := client.Node().GetLatestBlock(ctx)
-
-// Get specific block by height
-block, err := client.Node().GetBlockByHeight(ctx, 1000)
-
-// Get node information
-nodeInfo, err := client.Node().GetNodeInfo(ctx)
+resp, err := cli.ActionMsg().RequesAction(
+  ctx,
+  "CASCADE",
+  metadataJSON,              // stringified JSON
+  "23800ulume",             // positive integer ulume amount
+  fmt.Sprintf("%d", time.Now().Add(25*time.Hour).Unix()), // future expiry
+)
 ```
 
-### SuperNode Module
-
-The SuperNode module allows you to interact with Lumera supernodes.
+FinalizeCascadeAction:
 
 ```go
-// Get top supernodes for a specific block
-topNodes, err := client.SuperNode().GetTopSuperNodesForBlock(ctx, 1000)
-
-// Get specific supernode by address
-node, err := client.SuperNode().GetSuperNode(ctx, "validator-address")
+resp, err := cli.ActionMsg().FinalizeCascadeAction(ctx, actionID, []string{"rqid-1", "rqid-2"})
 ```
 
-### Transaction Module
+Validation rules (built-in)
 
-The Transaction module handles transaction broadcasting and querying.
+- RequestAction:
+  - `actionType`, `metadata`, `price`, `expirationTime` required.
+  - `price`: must be `<positive-int>ulume`.
+  - `expirationTime`: future Unix seconds.
+- FinalizeCascadeAction:
+  - `actionId` required; `rqIdsIds` must have non-empty entries.
 
-```go
-// Broadcast a signed transaction
-resp, err := client.Tx().BroadcastTx(ctx, txBytes, sdktx.BroadcastMode_BROADCAST_MODE_SYNC)
+Notes
 
-// Simulate a transaction
-sim, err := client.Tx().SimulateTx(ctx, txBytes)
-
-// Get transaction by hash
-tx, err := client.Tx().GetTx(ctx, "tx-hash")
-```
-
+- Method name is currently `RequesAction` (typo kept for compatibility).
+- Tx uses simulation + adjustment + padding before sign/broadcast.
