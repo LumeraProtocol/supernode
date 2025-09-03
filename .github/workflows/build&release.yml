@@ -60,10 +60,11 @@ jobs:
           if [ -z "$TAG_MESSAGE" ]; then
             TAG_MESSAGE="Release $TAG_NAME"
           fi
-          TAG_MESSAGE="${TAG_MESSAGE//'%'/'%25'}"
-          TAG_MESSAGE="${TAG_MESSAGE//$'\n'/'%0A'}"
-          TAG_MESSAGE="${TAG_MESSAGE//$'\r'/'%0D'}"
-          echo "tag_message=$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          {
+            echo "tag_message<<GHOEOF"
+            echo "$TAG_MESSAGE"
+            echo "GHOEOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup Go and dependencies
         uses: ./.github/actions/setup-env
