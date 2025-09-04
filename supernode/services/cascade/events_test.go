@@ -20,8 +20,9 @@ func TestSupernodeEventTypeValues(t *testing.T) {
 		{"SignatureVerified", SupernodeEventTypeSignatureVerified, 7},
 		{"RQIDsGenerated", SupernodeEventTypeRQIDsGenerated, 8},
 		{"RqIDsVerified", SupernodeEventTypeRqIDsVerified, 9},
-		{"ArtefactsStored", SupernodeEventTypeArtefactsStored, 10},
-		{"ActionFinalized", SupernodeEventTypeActionFinalized, 11},
+		{"FinalizeSimulated", SupernodeEventTypeFinalizeSimulated, 10},
+		{"ArtefactsStored", SupernodeEventTypeArtefactsStored, 11},
+		{"ActionFinalized", SupernodeEventTypeActionFinalized, 12},
 	}
 
 	for _, tt := range tests {

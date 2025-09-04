@@ -83,15 +83,20 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 					Return(nil).
 					Times(2)
 
-				// 4. Finalize
+				// 4. Simulate finalize should pass
+				lc.EXPECT().
+					SimulateFinalizeAction(gomock.Any(), "action123", gomock.Any()).
+					Return(&sdktx.SimulateResponse{}, nil)
+
+				// 5. Finalize
 				lc.EXPECT().
 					FinalizeAction(gomock.Any(), "action123", gomock.Any()).
 					Return(&sdktx.BroadcastTxResponse{TxResponse: &sdk.TxResponse{TxHash: "tx123"}}, nil)
 
-				// 5. Params (if used in fee check)
+				// 6. Params (if used in fee check)
 				lc.EXPECT().GetActionFee(gomock.Any(), "10").Return(&actiontypes.QueryGetActionFeeResponse{Amount: "1000"}, nil)
 
-				// 6. Encode input
+				// 7. Encode input
 				codec.EXPECT().
 					EncodeInput(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(adaptors.EncodeResult{
@@ -99,13 +104,13 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 						Metadata:   codecpkg.Layout{Blocks: []codecpkg.Block{{BlockID: 1, Hash: "abc"}}},
 					}, nil)
 
-				// 7. Store artefacts
+				// 8. Store artefacts
 				p2p.EXPECT().
 					StoreArtefacts(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil)
 			},
 			expectedError:  "",
-			expectedEvents: 11,
+			expectedEvents: 12,
 		},
 		{
 			name: "get-action fails",

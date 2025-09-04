@@ -58,6 +58,21 @@ func (mr *MockLumeraClientMockRecorder) FinalizeAction(ctx, actionID, rqids any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizeAction", reflect.TypeOf((*MockLumeraClient)(nil).FinalizeAction), ctx, actionID, rqids)
 }
 
+// SimulateFinalizeAction mocks base method.
+func (m *MockLumeraClient) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*tx.SimulateResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SimulateFinalizeAction", ctx, actionID, rqids)
+	ret0, _ := ret[0].(*tx.SimulateResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SimulateFinalizeAction indicates an expected call of SimulateFinalizeAction.
+func (mr *MockLumeraClientMockRecorder) SimulateFinalizeAction(ctx, actionID, rqids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateFinalizeAction", reflect.TypeOf((*MockLumeraClient)(nil).SimulateFinalizeAction), ctx, actionID, rqids)
+}
+
 // GetAction mocks base method.
 func (m *MockLumeraClient) GetAction(ctx context.Context, actionID string) (*types.QueryGetActionResponse, error) {
 	m.ctrl.T.Helper()

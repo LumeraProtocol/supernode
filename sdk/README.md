@@ -379,10 +379,13 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SupernodeSignatureVerified`: Signature verification passed
 - `SupernodeRQIDGenerated`: RaptorQ ID generated
 - `SupernodeRQIDVerified`: RaptorQ ID verified
+- `SupernodeFinalizeSimulated`: Finalize transaction simulated successfully (pre-storage)
 - `SupernodeArtefactsStored`: Artifacts stored successfully
 - `SupernodeActionFinalized`: Action processing finalized
 - `SupernodeArtefactsDownloaded`: Artifacts downloaded
 - `SupernodeUnknown`: Unknown supernode event
+
+Note: For backward compatibility, older supernodes may emit the finalize simulation as an `RQID_VERIFIED` event with the message `"finalize action simulation passed"`. The SDK adapter maps this to `SupernodeFinalizeSimulated` automatically.
 
 ### Event Data Keys
 
@@ -415,4 +418,3 @@ err := client.SubscribeToEvents(ctx, event.SDKTaskCompleted, func(ctx context.Co
 err := client.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
     fmt.Printf("Event: %s for task %s\n", e.Type, e.TaskID)
 })
-

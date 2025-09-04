@@ -141,6 +141,12 @@ func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionI
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
+// SimulateFinalizeCascadeAction mocks simulation of finalize action.
+func (m *MockActionMsgModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.SimulateResponse, error) {
+	// Mock implementation returns empty simulation response
+	return &sdktx.SimulateResponse{}, nil
+}
+
 // MockSupernodeModule implements the supernode.Module interface for testing
 type MockSupernodeModule struct {
 	addresses []string
