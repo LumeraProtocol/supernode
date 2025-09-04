@@ -175,6 +175,10 @@ func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
 	}
 
 	retStats["disk-info"] = &diskUse
+	retStats["ban-list"] = s.dht.BanListSnapshot()
+	retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
+	dhtStats["dht_metrics"] = s.dht.MetricsSnapshot()
+
 	return retStats, nil
 }
 
