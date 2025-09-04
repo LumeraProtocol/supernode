@@ -102,6 +102,25 @@ func runStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Sanity check: if auto-upgrade is enabled and sn-manager binary dir is not writable, error and exit with guidance
+	if exePath, err := os.Executable(); err == nil {
+		if exeReal, err := filepath.EvalSymlinks(exePath); err == nil {
+			exeDir := filepath.Dir(exeReal)
+			if ok, _ := utils.IsDirWritable(exeDir); !ok {
+				if cfg.Updates.AutoUpgrade {
+					return fmt.Errorf(
+						"auto-upgrade is enabled but sn-manager binary directory is not writable (%s).\nInstall sn-manager to a user-writable path and update your systemd unit as per the README: %s\nRecommended path: %s",
+						exeDir,
+						"https://github.com/LumeraProtocol/supernode/blob/master/sn-manager/README.md#fix-non-writable-install",
+						filepath.Join(home, "bin", "sn-manager"),
+					)
+				}
+				// If auto-upgrade is disabled, warn but continue
+				log.Printf("Warning: sn-manager binary directory is not writable (%s). Self-update is disabled.", exeDir)
+			}
+		}
+	}
+
 	// Start auto-updater if enabled
 	var autoUpdater *updater.AutoUpdater
 	if cfg.Updates.AutoUpgrade {

@@ -2,6 +2,21 @@
 
 SuperNode Process Manager with Automatic Updates
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Systemd Service Setup](#systemd-service-setup)
+- [Ensure PATH points to user install](#ensure-path-points-to-user-install-required-for-self-update)
+- [Initialization](#initialization)
+- [Commands](#commands)
+- [Version Update Scenarios](#version-update-scenarios)
+- [Start/Stop Behavior](#startstop-behavior)
+- [Migration for Existing sn-manager Users](#migration-for-existing-sn-manager-users)
+- [Troubleshooting](#troubleshooting)
+  - [Fix non-writable install](#fix-non-writable-install)
+- [Configuration](#configuration)
+- [Notes](#notes)
+
 ## Installation
 
 Download and install sn-manager:
@@ -85,6 +100,14 @@ readlink -f "$(command -v sn-manager)"
 ```
 
 The systemd unit uses an absolute `ExecStart` pointing to your home directory, so the service will always run the intended binary regardless of PATH.
+
+Note: Auto-upgrade requires the sn-manager binary directory to be writable by the service user. If you encounter an error like:
+
+```
+auto-upgrade is enabled but sn-manager binary directory is not writable (...)
+```
+
+follow the steps in [Fix non-writable install](#fix-non-writable-install).
 
 ## Initialization
 
@@ -268,6 +291,49 @@ sudo systemctl restart sn-manager
 5) Verify and adopt
 - Manager status: `sn-manager status`
 - Check updates: `sn-manager check`
+
+
+## Troubleshooting
+
+### Fix non-writable install
+
+Symptom:
+
+```
+auto-upgrade is enabled but sn-manager binary directory is not writable (...)
+```
+
+Cause: `sn-manager` is installed in a root-owned directory such as `/usr/local/bin`, so the auto-updater cannot write `sn-manager.new` during self-update.
+
+Fix:
+
+1. Reinstall `sn-manager` to a user-writable path:
+   ```bash
+   curl -L https://github.com/LumeraProtocol/supernode/releases/latest/download/supernode-linux-amd64.tar.gz | tar -xz
+   install -D -m 0755 sn-manager "$HOME/.sn-manager/bin/sn-manager"
+   echo 'export PATH="$HOME/.sn-manager/bin:$PATH"' >> ~/.bashrc
+   source ~/.bashrc && hash -r
+   sn-manager version
+   ```
+2. Update the systemd unit to point to the user install and set HOME/workdir:
+   ```ini
+   [Service]
+   User=<YOUR_USER>
+   ExecStart=/home/<YOUR_USER>/.sn-manager/bin/sn-manager start
+   Environment="HOME=/home/<YOUR_USER>"
+   WorkingDirectory=/home/<YOUR_USER>
+   Restart=on-failure
+   RestartSec=10
+   ```
+3. Remove the global copy so PATH doesn’t pick it:
+   ```bash
+   sudo rm -f /usr/local/bin/sn-manager && hash -r
+   ```
+4. Restart the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart sn-manager
+   ```
 
 
 ## Configuration

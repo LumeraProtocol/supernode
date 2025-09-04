@@ -122,6 +122,41 @@ jobs:
           
           cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
+      - name: Generate auto release notes
+        id: auto_notes
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ steps.tag_info.outputs.tag_name }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag_name = process.env.TAG_NAME;
+            const res = await github.request('POST /repos/{owner}/{repo}/releases/generate-notes', {
+              owner,
+              repo,
+              tag_name
+            });
+            core.setOutput('body', res.data.body || '');
+
+      - name: Prepare Release Body
+        id: rel_body
+        run: |
+          cat > /tmp/REL_BODY <<'EOT'
+          IMPORTANT: sn-manager setup and auto-update guide:
+          https://github.com/LumeraProtocol/supernode/blob/master/sn-manager/README.md
+
+          ${{ steps.tag_info.outputs.tag_message }}
+
+          ---
+          Auto-generated release notes:
+          ${{ steps.auto_notes.outputs.body }}
+          EOT
+          {
+            echo "body<<GHOEOF"
+            cat /tmp/REL_BODY
+            echo "GHOEOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish the Release
         uses: softprops/action-gh-release@v0.1.15
         if: success()
@@ -130,11 +165,5 @@ jobs:
           files: |
             release/${{ steps.vars.outputs.binary_name }}.tar.gz
             release/${{ steps.vars.outputs.binary_name }}
-          generate_release_notes: true
-          body: |
-            ${{ steps.tag_info.outputs.tag_message }}
-            
-            Version: ${{ steps.vars.outputs.version }}
-            Git Commit: ${{ steps.vars.outputs.git_commit }}
-            Build Time: ${{ steps.vars.outputs.build_time }}
+          body: ${{ steps.rel_body.outputs.body }}
           token: ${{ secrets.GITHUB_TOKEN }}
