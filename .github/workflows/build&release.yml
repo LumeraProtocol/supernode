@@ -122,9 +122,31 @@ jobs:
           
           cp release/supernode release/${{ steps.vars.outputs.binary_name }}
 
+      - name: Check if release already exists
+        id: rel_check
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ steps.tag_info.outputs.tag_name }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag_name = process.env.TAG_NAME;
+            try {
+              await github.request('GET /repos/{owner}/{repo}/releases/tags/{tag}', {
+                owner,
+                repo,
+                tag: tag_name,
+              });
+              core.setOutput('exists', 'true');
+            } catch (e) {
+              // 404 means not found => will be created
+              core.setOutput('exists', 'false');
+            }
+
       - name: Generate auto release notes
         id: auto_notes
         uses: actions/github-script@v7
+        if: steps.rel_check.outputs.exists != 'true'
         env:
           TAG_NAME: ${{ steps.tag_info.outputs.tag_name }}
         with:
@@ -140,6 +162,7 @@ jobs:
 
       - name: Prepare Release Body
         id: rel_body
+        if: steps.rel_check.outputs.exists != 'true'
         run: |
           cat > /tmp/REL_BODY <<'EOT'
           IMPORTANT: sn-manager setup and auto-update guide:
@@ -157,9 +180,9 @@ jobs:
             echo "GHOEOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish the Release
+      - name: Create release with composed body (no existing release)
         uses: softprops/action-gh-release@v0.1.15
-        if: success()
+        if: success() && steps.rel_check.outputs.exists != 'true'
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}
           files: |
@@ -167,3 +190,45 @@ jobs:
             release/${{ steps.vars.outputs.binary_name }}
           body: ${{ steps.rel_body.outputs.body }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload assets to existing release (preserve manual notes)
+        uses: softprops/action-gh-release@v0.1.15
+        if: success() && steps.rel_check.outputs.exists == 'true'
+        with:
+          tag_name: ${{ steps.tag_info.outputs.tag_name }}
+          files: |
+            release/${{ steps.vars.outputs.binary_name }}.tar.gz
+            release/${{ steps.vars.outputs.binary_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure guide link present in existing release body
+        if: success() && steps.rel_check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ steps.tag_info.outputs.tag_name }}
+          GUIDE_URL: https://github.com/LumeraProtocol/supernode/blob/master/sn-manager/README.md
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag_name = process.env.TAG_NAME;
+            const guide = `IMPORTANT: sn-manager setup and auto-update guide:\n${process.env.GUIDE_URL}`;
+            // Fetch release
+            const rel = await github.request('GET /repos/{owner}/{repo}/releases/tags/{tag}', {
+              owner,
+              repo,
+              tag: tag_name,
+            });
+            const release = rel.data;
+            const body = release.body || '';
+            if (body.includes(process.env.GUIDE_URL)) {
+              core.info('Guide link already present; not modifying release body.');
+            } else {
+              const newBody = `${guide}\n\n${body}`;
+              await github.request('PATCH /repos/{owner}/{repo}/releases/{release_id}', {
+                owner,
+                repo,
+                release_id: release.id,
+                body: newBody,
+              });
+              core.info('Prepended guide link to existing release body.');
+            }
