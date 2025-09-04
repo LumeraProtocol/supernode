@@ -3,6 +3,7 @@ package tx
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
@@ -225,14 +226,14 @@ func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
 		denom = DefaultFeeDenom
 	}
 
-	feeAmount := gasPriceF * float64(gasAmount)
+	// Calculate fee and always round up to meet chain minimums
+	feeFloat := gasPriceF * float64(gasAmount)
+	feeInt := uint64(math.Ceil(feeFloat))
 
 	// Ensure we have at least 1 unit of fee to meet minimal requirements
-	if feeAmount < 1 {
-		feeAmount = 1
-	}
+	feeInt = max(feeInt, 1)
 
-	return fmt.Sprintf("%.0f%s", feeAmount, denom)
+	return fmt.Sprintf("%d%s", feeInt, denom)
 }
 
 // ProcessTransaction handles the complete flow: simulate, build, sign, and broadcast
