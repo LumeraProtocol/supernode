@@ -3,51 +3,52 @@ package updater
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
-	"github.com/LumeraProtocol/supernode/v2/supernode/node/supernode/gateway"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const gatewayTimeout = 15 * time.Second
+// Package updater coordinates update checks and installs for both sn-manager
+// and SuperNode. It aims to keep nodes current while minimizing disruption and
+// breaking out of stuck scenarios (e.g., gateway unresponsive/busy indefinitely).
+//
+// Core principles:
+// - Stable-only, same-major updates are eligible automatically.
+// - sn-manager updates first; then SuperNode; manager restarts itself last.
+// - Gateway-aware timing with bounded deferral: proceed after a hard 1h cap.
+// - On unresponsive gateway and available update, proceed to avoid deadlock.
+// - On unresponsive gateway with no update, request a clean restart.
 
 type AutoUpdater struct {
-	config         *config.Config
-	homeDir        string
-	githubClient   github.GithubClient
-	versionMgr     *version.Manager
-	gatewayURL     string
-	ticker         *time.Ticker
-	stopCh         chan struct{}
-	managerVersion string
-	// Gateway error backoff state
-	gwErrCount       int
-	gwErrWindowStart time.Time
+	config          *config.Config
+	homeDir         string
+	githubClient    github.GithubClient
+	versionMgr      *version.Manager
+	guard           gatewayGuardIface
+	ticker          *time.Ticker
+	stopCh          chan struct{}
+	managerVersion  string
+	skipGatewayOnce bool
+	busyDeferStart  time.Time
+	busyDeferFor    string
 }
 
 // Use protobuf JSON decoding for gateway responses (int64s encoded as strings)
 
 func New(homeDir string, cfg *config.Config, managerVersion string) *AutoUpdater {
-	// Use the correct gateway endpoint with imported constants
-	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", gateway.DefaultGatewayPort)
-
 	return &AutoUpdater{
 		config:         cfg,
 		homeDir:        homeDir,
 		githubClient:   github.NewClient(config.GitHubRepo),
 		versionMgr:     version.NewManager(homeDir),
-		gatewayURL:     gatewayURL,
+		guard:          newGatewayGuard(homeDir),
 		stopCh:         make(chan struct{}),
 		managerVersion: managerVersion,
 	}
@@ -64,13 +65,13 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 	u.ticker = time.NewTicker(interval)
 
 	// Run an immediate check on startup so restarts don't wait a full interval
-	u.checkAndUpdateCombined()
+	u.checkAndUpdate()
 
 	go func() {
 		for {
 			select {
 			case <-u.ticker.C:
-				u.checkAndUpdateCombined()
+				u.checkAndUpdate()
 			case <-u.stopCh:
 				return
 			case <-ctx.Done():
@@ -78,6 +79,12 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// SkipGatewayCheckOnce requests the next update cycle to bypass the gateway
+// idleness check (useful on first start before the gateway is up).
+func (u *AutoUpdater) SkipGatewayCheckOnce() {
+	u.skipGatewayOnce = true
 }
 
 func (u *AutoUpdater) Stop() {
@@ -125,245 +132,256 @@ func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	return false
 }
 
-// isGatewayIdle returns (idle, isError). When isError is true,
-// the gateway could not be reliably checked (network/error/invalid).
-// When isError is false and idle is false, the gateway is busy.
-func (u *AutoUpdater) isGatewayIdle() (bool, bool) {
-	client := &http.Client{Timeout: gatewayTimeout}
-
-	resp, err := client.Get(u.gatewayURL)
-	if err != nil {
-		log.Printf("Failed to check gateway status: %v", err)
-		// Error contacting gateway
-		return false, true
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Gateway returned status %d, not safe to update", resp.StatusCode)
-		return false, true
+// checkAndUpdate performs an update check and applies any eligible updates.
+// Steps:
+// 1) Fetch latest stable version from GitHub
+// 2) Determine if sn-manager and/or SuperNode need updates (stable-only, same major)
+// 3) Ensure update window (gateway policy + defer window)
+// 4) Download release tarball (once)
+// 5) Extract required binaries
+// 6) Apply sn-manager update first (prepare self-restart)
+// 7) Apply SuperNode update (write restart marker)
+// 8) Restart sn-manager if it was updated
+func (u *AutoUpdater) checkAndUpdate() {
+	latest, ok := u.fetchLatestVersion()
+	if !ok {
+		return
 	}
 
-	var status pb.StatusResponse
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Failed to read gateway response: %v", err)
-		return false, true
-	}
-	if err := protojson.Unmarshal(body, &status); err != nil {
-		log.Printf("Failed to decode gateway response: %v", err)
-		return false, true
+	managerNeeds, supernodeNeeds := u.computeUpdateNeeds(latest)
+	if !managerNeeds && !supernodeNeeds {
+		return
 	}
 
-	totalTasks := 0
-	for _, service := range status.RunningTasks {
-		totalTasks += int(service.TaskCount)
+	if !u.ensureUpdateWindow(managerNeeds, supernodeNeeds, latest) {
+		return
 	}
 
-	if totalTasks > 0 {
-		log.Printf("Gateway busy: %d running tasks", totalTasks)
-		return false, false
+	tarPath, cleanup, ok := u.downloadRelease(latest)
+	if !ok {
+		return
+	}
+	defer cleanup()
+
+	exePath, tmpManager, tmpSN, ok := u.prepareTempPaths(latest)
+	if !ok {
+		return
 	}
 
-	return true, false
+	extractedManager, extractedSN := u.extractTargets(tarPath, managerNeeds, supernodeNeeds, tmpManager, tmpSN)
+
+	managerUpdated := u.applyManagerUpdate(extractedManager, tmpManager, exePath, latest)
+	u.applySupernodeUpdate(extractedSN, tmpSN, latest)
+
+	u.maybeRestartSelf(managerUpdated)
 }
 
-// checkAndUpdateCombined performs a single release check and, if needed,
-// downloads the release tarball once to update sn-manager and SuperNode.
-// Order: update sn-manager first (prepare new binary), then SuperNode, then
-// trigger restart if manager was updated.
-func (u *AutoUpdater) checkAndUpdateCombined() {
-
-	// Fetch latest stable release once
+// fetchLatestVersion gets the tag for the latest stable release from GitHub.
+func (u *AutoUpdater) fetchLatestVersion() (string, bool) {
 	release, err := u.githubClient.GetLatestStableRelease()
 	if err != nil {
 		log.Printf("Failed to check releases: %v", err)
-		return
+		return "", false
 	}
-
 	latest := strings.TrimSpace(release.TagName)
 	if latest == "" {
-		return
+		return "", false
 	}
+	return latest, true
+}
 
-	// Determine if sn-manager should update (same criteria: stable, same major)
-	managerNeedsUpdate := false
+// computeUpdateNeeds decides whether manager or SuperNode should update
+// under the stable-only, same-major policy.
+func (u *AutoUpdater) computeUpdateNeeds(latest string) (managerNeeds, supernodeNeeds bool) {
 	ver := strings.TrimSpace(u.managerVersion)
 	if ver != "" && ver != "dev" && !strings.EqualFold(ver, "unknown") {
 		if utils.SameMajor(ver, latest) && utils.CompareVersions(ver, latest) < 0 {
-			managerNeedsUpdate = true
+			managerNeeds = true
 		}
 	}
-
-	// Determine if SuperNode should update using existing policy
 	currentSN := u.config.Updates.CurrentVersion
-	supernodeNeedsUpdate := u.ShouldUpdate(currentSN, latest)
+	supernodeNeeds = u.ShouldUpdate(currentSN, latest)
+	return
+}
 
-	if !managerNeedsUpdate && !supernodeNeedsUpdate {
-		return
+// maxBusyDefer is a hard limit for how long we defer
+// updates when the gateway reports running tasks.
+// Do not make this configurable; fixed to 1 hour.
+const maxBusyDefer = 1 * time.Hour
+
+// ensureUpdateWindow applies the gateway policy and defer window.
+// Behavior summary (hard 1h defer limit when busy):
+// - One-time bypass per manager start (first cycle).
+// - Gateway unresponsive: proceed if updates exist; else request a restart.
+// - Gateway busy: defer up to maxBusyDefer (1h) for the target version; then proceed.
+// - Gateway idle: proceed immediately.
+func (u *AutoUpdater) ensureUpdateWindow(managerNeeds, supernodeNeeds bool, latest string) bool {
+	if u.skipGatewayOnce {
+		log.Println("Bypassing gateway check for initial update in this session")
+		u.skipGatewayOnce = false
+		// clear any prior defer state
+		u.busyDeferStart = time.Time{}
+		u.busyDeferFor = ""
+		return true
 	}
-
-	// Gate all updates (manager + SuperNode) on gateway idleness
-	// to avoid disrupting traffic during a self-update.
-	if idle, isErr := u.isGatewayIdle(); !idle {
+	if idle, isErr := u.guard.isIdle(); !idle {
 		if isErr {
-			// Track errors and possibly request a clean SuperNode restart
-			u.handleGatewayError()
+			// If gateway is not responding and an update is available, proceed.
+			if managerNeeds || supernodeNeeds {
+				log.Println("Gateway not responding; proceeding with update since one is available")
+				u.busyDeferStart = time.Time{}
+				u.busyDeferFor = ""
+				return true
+			}
+			// No update available: request immediate restart.
+			u.guard.requestRestartNow("gateway-unresponsive-no-update")
 		} else {
-			log.Println("Gateway busy, deferring updates")
+			// Gateway is responding but busy with tasks
+			if managerNeeds || supernodeNeeds {
+				// Track deferral time per target version
+				if u.busyDeferFor != latest {
+					u.busyDeferFor = latest
+					u.busyDeferStart = time.Now()
+					log.Printf("Gateway busy; deferring update to %s (max %s)", latest, maxBusyDefer)
+					return false
+				}
+				// Same version still pending; check if defer window exceeded
+				elapsed := time.Since(u.busyDeferStart)
+				if elapsed >= maxBusyDefer {
+					log.Printf("Gateway busy for %s; exceeding max defer window, proceeding with update to %s", elapsed.Round(time.Second), latest)
+					u.busyDeferStart = time.Time{}
+					u.busyDeferFor = ""
+					return true
+				}
+				// Continue deferring until max window reached
+				remaining := (maxBusyDefer - elapsed).Round(time.Second)
+				log.Printf("Gateway busy; deferring update to %s. Remaining defer window: %s", latest, remaining)
+				return false
+			}
+			log.Println("Gateway busy, no updates available; nothing to do")
 		}
-		return
+		return false
 	}
+	// Idle: clear any prior defer state
+	if !u.busyDeferStart.IsZero() {
+		u.busyDeferStart = time.Time{}
+		u.busyDeferFor = ""
+	}
+	return true
+}
 
-	// Download the combined release tarball once
+// downloadRelease downloads the single release tarball for the given version.
+// The returned cleanup removes the tarball after use.
+func (u *AutoUpdater) downloadRelease(latest string) (string, func(), bool) {
 	tarURL, err := u.githubClient.GetReleaseTarballURL(latest)
 	if err != nil {
 		log.Printf("Failed to get tarball URL: %v", err)
-		return
+		return "", func() {}, false
 	}
-	// Ensure downloads directory exists
 	downloadsDir := filepath.Join(u.homeDir, "downloads")
 	if err := os.MkdirAll(downloadsDir, 0755); err != nil {
 		log.Printf("Failed to create downloads directory: %v", err)
-		return
+		return "", func() {}, false
 	}
-
 	tarPath := filepath.Join(downloadsDir, fmt.Sprintf("release-%s.tar.gz", latest))
 	if err := utils.DownloadFile(tarURL, tarPath, nil); err != nil {
 		log.Printf("Failed to download tarball: %v", err)
-		return
+		return "", func() {}, false
 	}
-	defer func() {
+	cleanup := func() {
 		if err := os.Remove(tarPath); err != nil && !os.IsNotExist(err) {
 			log.Printf("Warning: failed to remove tarball: %v", err)
 		}
-	}()
+	}
+	return tarPath, cleanup, true
+}
 
-	// Prepare paths for extraction targets
-	exePath, err := os.Executable()
+// prepareTempPaths computes the absolute path to the running sn-manager
+// executable and temp paths where extracted binaries are staged.
+func (u *AutoUpdater) prepareTempPaths(latest string) (exePath, tmpManager, tmpSN string, ok bool) {
+	exe, err := os.Executable()
 	if err != nil {
 		log.Printf("Cannot determine executable path: %v", err)
-		return
+		return "", "", "", false
 	}
-	exePath, _ = filepath.EvalSymlinks(exePath)
-	tmpManager := exePath + ".new"
-	tmpSN := filepath.Join(u.homeDir, "downloads", fmt.Sprintf("supernode-%s.tmp", latest))
+	exe, _ = filepath.EvalSymlinks(exe)
+	tmpManager = exe + ".new"
+	tmpSN = filepath.Join(u.homeDir, "downloads", fmt.Sprintf("supernode-%s.tmp", latest))
+	return exe, tmpManager, tmpSN, true
+}
 
-	// Build extraction targets by base name
+// extractTargets extracts requested binaries from the tarball to the given
+// temp paths. Returns which targets were found and extracted.
+func (u *AutoUpdater) extractTargets(tarPath string, managerNeeds, supernodeNeeds bool, tmpManager, tmpSN string) (extractedManager, extractedSN bool) {
 	targets := map[string]string{}
-	if managerNeedsUpdate {
+	if managerNeeds {
 		targets["sn-manager"] = tmpManager
 	}
-	if supernodeNeedsUpdate {
+	if supernodeNeeds {
 		targets["supernode"] = tmpSN
 	}
-
 	found, err := utils.ExtractMultipleFromTarGz(tarPath, targets)
 	if err != nil {
 		log.Printf("Extraction error: %v", err)
+		return false, false
+	}
+	return managerNeeds && found["sn-manager"], supernodeNeeds && found["supernode"]
+}
+
+// applyManagerUpdate replaces the current sn-manager binary if it was
+// extracted from the tarball. Returns true if an update was applied.
+func (u *AutoUpdater) applyManagerUpdate(extracted bool, tmpManager, exePath, latest string) bool {
+	if !extracted {
+		return false
+	}
+	if err := os.Rename(tmpManager, exePath); err != nil {
+		_ = os.Remove(tmpManager)
+		log.Printf("Cannot replace sn-manager (%s). Update manually: %v", exePath, err)
+		return false
+	}
+	if dirF, err := os.Open(filepath.Dir(exePath)); err == nil {
+		_ = dirF.Sync()
+		dirF.Close()
+	}
+	log.Printf("sn-manager updated to %s", latest)
+	return true
+}
+
+// applySupernodeUpdate installs and activates the new SuperNode binary if
+// extracted, updates config and writes a restart marker for the manager loop.
+func (u *AutoUpdater) applySupernodeUpdate(extracted bool, tmpSN, latest string) {
+	if !extracted {
 		return
 	}
-
-	extractedManager := managerNeedsUpdate && found["sn-manager"]
-	extractedSN := supernodeNeedsUpdate && found["supernode"]
-
-	// Apply sn-manager update first
-	managerUpdated := false
-	if managerNeedsUpdate {
-		if extractedManager {
-			if err := os.Rename(tmpManager, exePath); err != nil {
-				os.Remove(tmpManager)
-				log.Printf("Cannot replace sn-manager (%s). Update manually: %v", exePath, err)
-			} else {
-				if dirF, err := os.Open(filepath.Dir(exePath)); err == nil {
-					_ = dirF.Sync()
-					dirF.Close()
-				}
-				managerUpdated = true
-				log.Printf("sn-manager updated to %s", latest)
-			}
+	if err := u.versionMgr.InstallVersion(latest, tmpSN); err != nil {
+		log.Printf("Failed to install SuperNode: %v", err)
+	} else {
+		if err := u.versionMgr.SetCurrentVersion(latest); err != nil {
+			log.Printf("Failed to activate SuperNode %s: %v", latest, err)
 		} else {
-			log.Printf("sn-manager binary not found in tarball; skipping")
+			u.config.Updates.CurrentVersion = latest
+			if err := config.Save(u.config, filepath.Join(u.homeDir, "config.yml")); err != nil {
+				log.Printf("Failed to save config: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(u.homeDir, ".needs_restart"), []byte(latest), 0644); err != nil {
+				log.Printf("Failed to write restart marker: %v", err)
+			}
+			log.Printf("SuperNode updated to %s", latest)
 		}
 	}
-
-	// Apply SuperNode update (idle already verified) and extracted
-	if supernodeNeedsUpdate {
-		if extractedSN {
-			if err := u.versionMgr.InstallVersion(latest, tmpSN); err != nil {
-				log.Printf("Failed to install SuperNode: %v", err)
-			} else {
-				if err := u.versionMgr.SetCurrentVersion(latest); err != nil {
-					log.Printf("Failed to activate SuperNode %s: %v", latest, err)
-				} else {
-					u.config.Updates.CurrentVersion = latest
-					if err := config.Save(u.config, filepath.Join(u.homeDir, "config.yml")); err != nil {
-						log.Printf("Failed to save config: %v", err)
-					}
-					if err := os.WriteFile(filepath.Join(u.homeDir, ".needs_restart"), []byte(latest), 0644); err != nil {
-						log.Printf("Failed to write restart marker: %v", err)
-					}
-					log.Printf("SuperNode updated to %s", latest)
-				}
-			}
-			if err := os.Remove(tmpSN); err != nil && !os.IsNotExist(err) {
-				log.Printf("Warning: failed to remove temp supernode: %v", err)
-			}
-		} else {
-			log.Printf("supernode binary not found in tarball; skipping")
-		}
-	}
-
-	// If manager updated, restart service after completing all work
-	if managerUpdated {
-		log.Printf("Self-update applied, restarting service...")
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			os.Exit(3)
-		}()
+	if err := os.Remove(tmpSN); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove temp supernode: %v", err)
 	}
 }
 
-// handleGatewayError increments an error counter in a rolling 5-minute window
-// and when the threshold is reached, requests a clean SuperNode restart by
-// writing the standard restart marker consumed by the manager monitor.
-func (u *AutoUpdater) handleGatewayError() {
-	const (
-		window  = 5 * time.Minute
-		retries = 3 // attempts within window before restart
-	)
-	now := time.Now()
-	if u.gwErrWindowStart.IsZero() {
-		u.gwErrWindowStart = now
-		u.gwErrCount = 1
-		log.Printf("Gateway check error (1/%d); starting 5m observation window", retries)
+// maybeRestartSelf restarts the process when the manager was updated.
+func (u *AutoUpdater) maybeRestartSelf(managerUpdated bool) {
+	if !managerUpdated {
 		return
 	}
-
-	elapsed := now.Sub(u.gwErrWindowStart)
-	if elapsed >= window {
-		// Window elapsed; decide based on accumulated errors
-		if u.gwErrCount >= retries {
-			marker := filepath.Join(u.homeDir, ".needs_restart")
-			if err := os.WriteFile(marker, []byte("gateway-error-recover"), 0644); err != nil {
-				log.Printf("Failed to write restart marker after gateway errors: %v", err)
-			} else {
-				log.Printf("Gateway errors persisted (%d/%d) over >=5m; requesting SuperNode restart to recover gateway", u.gwErrCount, retries)
-			}
-		}
-		// Start a new window beginning now, with this error as the first hit
-		u.gwErrWindowStart = now
-		u.gwErrCount = 1
-		return
-	}
-
-	// Still within the window; increment and possibly announce threshold reached
-	u.gwErrCount++
-	if u.gwErrCount < retries {
-		log.Printf("Gateway check error (%d/%d) within 5m; will retry", u.gwErrCount, retries)
-		return
-	}
-	// Threshold reached but do not restart until full window elapses
-	remaining := window - elapsed
-	log.Printf("Gateway error threshold reached; waiting %s before requesting SuperNode restart", remaining.Truncate(time.Second))
+	log.Printf("Self-update applied, restarting service...")
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(3)
+	}()
 }
