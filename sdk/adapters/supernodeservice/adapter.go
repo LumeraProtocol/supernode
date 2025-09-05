@@ -90,6 +90,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	if err != nil {
 		a.logger.Error(ctx, "Failed to create register stream",
 			"error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=stream_open", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, err
 	}
 
@@ -97,6 +103,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	file, err := os.Open(in.FilePath)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to open file", "filePath", in.FilePath, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=file_open", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
@@ -105,6 +117,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	fileInfo, err := file.Stat()
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get file stats", "filePath", in.FilePath, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=file_stat", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to get file stats: %w", err)
 	}
 	totalBytes := fileInfo.Size()
@@ -128,14 +146,21 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	chunkIndex := 0
 	buffer := make([]byte, chunkSize)
 
+	// Emit upload started event
+	if in.EventLogger != nil {
+		estChunks := (totalBytes + int64(chunkSize) - 1) / int64(chunkSize)
+		in.EventLogger(baseCtx, event.SDKUploadStarted,
+			fmt.Sprintf("upload started | size=%dB chunk_size=%dB est_chunks=%d", totalBytes, chunkSize, estChunks),
+			event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+	}
+
+	uploadStart := time.Now()
+
 	// Start upload phase timer
 	uploadTimer := time.AfterFunc(cascadeUploadTimeout, func() {
 		a.logger.Error(baseCtx, "Upload phase timeout reached; cancelling stream")
 		if in.EventLogger != nil {
-			in.EventLogger(baseCtx, event.SDKUploadTimeout, "upload phase timeout", event.EventData{
-				event.KeyTaskID:   in.TaskId,
-				event.KeyActionID: in.ActionID,
-			})
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=timeout", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
 		}
 		cancel()
 	})
@@ -149,6 +174,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		}
 		if err != nil {
 			a.logger.Error(ctx, "Failed to read file chunk", "chunkIndex", chunkIndex, "error", err)
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKUploadFailed, fmt.Sprintf("upload failed | reason=read_error chunk=%d", chunkIndex), event.EventData{
+					event.KeyTaskID:   in.TaskId,
+					event.KeyActionID: in.ActionID,
+				})
+			}
 			return nil, fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
@@ -163,6 +194,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 		if err := stream.Send(chunk); err != nil {
 			a.logger.Error(ctx, "Failed to send data chunk", "chunkIndex", chunkIndex, "error", err)
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKUploadFailed, fmt.Sprintf("upload failed | reason=send_error chunk=%d", chunkIndex), event.EventData{
+					event.KeyTaskID:   in.TaskId,
+					event.KeyActionID: in.ActionID,
+				})
+			}
 			return nil, fmt.Errorf("failed to send chunk: %w", err)
 		}
 
@@ -186,6 +223,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	if err := stream.Send(metadata); err != nil {
 		a.logger.Error(ctx, "Failed to send metadata", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=send_metadata", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to send metadata: %w", err)
 	}
 
@@ -193,6 +236,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	if err := stream.CloseSend(); err != nil {
 		a.logger.Error(ctx, "Failed to close stream and receive response", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=close_send", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to receive response: %w", err)
 	}
 
@@ -201,14 +250,24 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		uploadTimer.Stop()
 	}
 
+	// Emit upload completed with throughput metrics
+	if in.EventLogger != nil {
+		elapsed := time.Since(uploadStart).Seconds()
+		mb := float64(bytesRead) / (1024.0 * 1024.0)
+		avg := 0.0
+		if elapsed > 0 {
+			avg = mb / elapsed
+		}
+		in.EventLogger(baseCtx, event.SDKUploadCompleted,
+			fmt.Sprintf("upload complete | size=%dB chunks=%d elapsed=%.2fs avg=%.2fMB/s", totalBytes, chunkIndex, elapsed, avg),
+			event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+	}
+
 	// Processing phase timer starts now (waiting for server streamed responses)
 	processingTimer := time.AfterFunc(cascadeProcessingTimeout, func() {
 		a.logger.Error(baseCtx, "Processing phase timeout reached; cancelling stream")
 		if in.EventLogger != nil {
-			in.EventLogger(baseCtx, event.SDKProcessingTimeout, "processing phase timeout", event.EventData{
-				event.KeyTaskID:   in.TaskId,
-				event.KeyActionID: in.ActionID,
-			})
+			in.EventLogger(baseCtx, event.SDKProcessingTimeout, "processing timeout", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
 		}
 		cancel()
 	})
@@ -217,6 +276,11 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 			processingTimer.Stop()
 		}
 	}()
+
+	// Emit processing started
+	if in.EventLogger != nil {
+		in.EventLogger(baseCtx, event.SDKProcessingStarted, "processing started | awaiting server progress", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+	}
 
 	// Handle streaming responses from supernode
 	var finalResp *cascade.RegisterResponse
@@ -228,11 +292,15 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		if err != nil {
 			// Distinguish timeout phase for clearer error messages
 			if phaseCtx.Err() != nil {
-				// Determine which phase we were in by whether upload finished
 				// At this point, upload is finished; classify as processing timeout/cancel
 				if phaseCtx.Err() == context.DeadlineExceeded || phaseCtx.Err() == context.Canceled {
 					return nil, fmt.Errorf("processing timed out or cancelled: %w", phaseCtx.Err())
 				}
+			}
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKProcessingFailed,
+					fmt.Sprintf("processing failed | reason=stream_recv error=%v", err),
+					event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
 			}
 			return nil, fmt.Errorf("failed to receive server response: %w", err)
 		}
@@ -267,6 +335,9 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		// If context was cancelled due to timer, surface a more specific error
 		if phaseCtx.Err() != nil {
 			return nil, fmt.Errorf("processing timed out or cancelled before final response: %w", phaseCtx.Err())
+		}
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKProcessingFailed, "processing failed | reason=missing_final_response", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
 		}
 		return nil, fmt.Errorf("no final response with tx_hash received")
 	}
@@ -380,7 +451,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
-	switch e {
+    switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
 		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:
@@ -405,8 +476,10 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeActionFinalized
 	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
 		return event.SupernodeArtefactsDownloaded
-	case cascade.SupernodeEventType_FINALIZE_SIMULATED:
-		return event.SupernodeFinalizeSimulated
+    case cascade.SupernodeEventType_FINALIZE_SIMULATED:
+        return event.SupernodeFinalizeSimulated
+    case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
+        return event.SupernodeFinalizeSimulationFailed
 	default:
 		return event.SupernodeUnknown
 	}

@@ -365,8 +365,13 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SDKTaskTxHashReceived`: Transaction hash received from supernode
 - `SDKTaskCompleted`: Task completed successfully
 - `SDKTaskFailed`: Task failed with error
- - `SDKUploadTimeout`: Upload phase exceeded time budget and was cancelled
-- `SDKProcessingTimeout`: Post-upload processing exceeded time budget and was cancelled
+ - `SDKConnectionEstablished`: Connection to supernode established
+ - `SDKUploadStarted`: Upload started (size, chunk size, est chunks)
+ - `SDKUploadCompleted`: Upload completed (size, chunks, elapsed, avg throughput)
+ - `SDKUploadFailed`: Upload failed (reason=timeout|send_error|read_error|file_open|file_stat|close_send)
+ - `SDKProcessingStarted`: Waiting for server progress/final tx hash
+ - `SDKProcessingFailed`: Processing failed (reason=stream_recv|missing_final_response)
+ - `SDKProcessingTimeout`: Processing exceeded time budget and was cancelled
 - `SDKDownloadAttempt`: Attempting to download from supernode
 - `SDKDownloadFailure`: Download attempt failed
 - `SDKOutputPathReceived`: File download path received
@@ -384,9 +389,10 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SupernodeRQIDVerified`: RaptorQ ID verified
 - `SupernodeFinalizeSimulated`: Finalize transaction simulated successfully (pre-storage)
 - `SupernodeArtefactsStored`: Artifacts stored successfully
-- `SupernodeActionFinalized`: Action processing finalized
-- `SupernodeArtefactsDownloaded`: Artifacts downloaded
-- `SupernodeUnknown`: Unknown supernode event
+ - `SupernodeActionFinalized`: Action processing finalized
+ - `SupernodeArtefactsDownloaded`: Artifacts downloaded
+ - `SupernodeFinalizeSimulationFailed`: Finalize action simulation failed
+ - `SupernodeUnknown`: Unknown supernode event
 
 Note: For backward compatibility, older supernodes may emit the finalize simulation as an `RQID_VERIFIED` event with the message `"finalize action simulation passed"`. The SDK adapter maps this to `SupernodeFinalizeSimulated` automatically.
 

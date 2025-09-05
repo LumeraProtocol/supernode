@@ -145,11 +145,13 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeRqIDsVerified, "rq-ids have been verified", "", send)
 
 	/* 10. Simulate finalize to avoid storing artefacts if it would fail ---------- */
-	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Info(ctx, "finalize action simulation failed", fields)
-		return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
-	}
+    if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
+        fields[logtrace.FieldError] = err.Error()
+        logtrace.Info(ctx, "finalize action simulation failed", fields)
+        // Emit explicit simulation failure event for client visibility
+        task.streamEvent(SupernodeEventTypeFinalizeSimulationFailed, "finalize action simulation failed", "", send)
+        return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
+    }
 	logtrace.Info(ctx, "finalize action simulation passed", fields)
 	// Transmit as a standard event so SDK can propagate it (dedicated type)
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "finalize action simulation passed", "", send)
