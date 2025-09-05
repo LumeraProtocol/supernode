@@ -65,7 +65,11 @@ func (h *StorageHandler) StoreBytesIntoP2P(ctx context.Context, data []byte, typ
 	return h.P2PClient.Store(ctx, data, typ)
 }
 
-// StoreBatch stores into P2P array of bytes arrays
+// StoreBatch stores into P2P an array of byte slices.
+//
+// Note: The underlying P2P client returns (successRatePct, requests, err).
+// This handler intentionally ignores the metrics and only propagates error,
+// as callers of this common storage path historically consumed only errors.
 func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int) error {
 	val := ctx.Value(logtrace.CorrelationIDKey)
 	taskID := ""
@@ -75,7 +79,8 @@ func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int)
 
 	logtrace.Info(ctx, "task_id in storeList", logtrace.Fields{logtrace.FieldTaskID: taskID})
 
-	return h.P2PClient.StoreBatch(ctx, list, typ, taskID)
+	_, _, err := h.P2PClient.StoreBatch(ctx, list, typ, taskID)
+	return err
 }
 
 // StoreRaptorQSymbolsIntoP2P stores RaptorQ symbols into P2P
@@ -83,6 +88,9 @@ func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int)
 // under the specified directory. If the number of keys exceeds a certain threshold,
 // it randomly samples a percentage of them. Finally, it streams the symbols in
 // fixed-size batches to the P2P network.
+//
+// Note: P2P client returns (ratePct, requests, err) for each batch; we ignore
+// the metrics here and only validate error semantics.
 func (h *StorageHandler) StoreRaptorQSymbolsIntoP2P(ctx context.Context, taskID, symbolsDir string) error {
 	/* record directory in DB */
 	if err := h.store.StoreSymbolDirectory(taskID, symbolsDir); err != nil {
@@ -162,7 +170,7 @@ func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root str
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
+	if _, _, err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 

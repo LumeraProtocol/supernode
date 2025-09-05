@@ -96,7 +96,9 @@ func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, keys []string) 
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if err := s.StoreBatch(ctx, loaded, 1, dir); err != nil {
+	// Intentionally ignore (ratePct, requests) here; a non-nil error will already
+	// reflect whether the network store met the configured success threshold.
+	if _, _, err := s.StoreBatch(ctx, loaded, 1, dir); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 

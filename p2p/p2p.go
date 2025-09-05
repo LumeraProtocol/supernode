@@ -117,11 +117,16 @@ func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
 	return s.dht.Store(ctx, data, typ)
 }
 
-// StoreBatch will store a batch of values with their Blake3 hash as the key
-func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) error {
+// StoreBatch will store a batch of values with their Blake3 hash as the key.
+//
+// It proxies to DHT.StoreBatch and returns:
+// - successRatePct: percentage of successful node RPCs during the network store
+// - requests: total node RPCs attempted for the batch
+// - error: error if persistence or network store did not meet minimum success criteria
+func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) (float64, int, error) {
 
 	if !s.running {
-		return errors.New("p2p service is not running")
+		return 0, 0, errors.New("p2p service is not running")
 	}
 
 	return s.dht.StoreBatch(ctx, data, typ, taskID)
