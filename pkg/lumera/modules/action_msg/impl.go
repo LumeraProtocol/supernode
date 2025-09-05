@@ -44,7 +44,7 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 	}, nil
 }
 
-func (m *module) RequesAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
+func (m *module) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
 	if err := validateRequestActionParams(actionType, metadata, price, expirationTime); err != nil {
 		return nil, err
 	}
@@ -73,4 +73,32 @@ func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
 
 func (m *module) GetTxHelper() *txmod.TxHelper {
 	return m.txHelper
+}
+
+// SimulateFinalizeCascadeAction builds the finalize message and performs a simulation
+// without broadcasting the transaction. This is useful to ensure the transaction
+// would pass ante/ValidateBasic before doing irreversible work.
+func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.SimulateResponse, error) {
+	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
+		return nil, err
+	}
+
+	// Gather account info and creator address
+	accountInfo, err := m.txHelper.GetAccountInfo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+	creator, err := m.txHelper.GetCreatorAddress()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get creator address: %w", err)
+	}
+
+	// Build the finalize message
+	msg, err := createFinalizeActionMessage(creator, actionId, rqIdsIds)
+	if err != nil {
+		return nil, err
+	}
+
+	// Run simulation using tx helper
+	return m.txHelper.Simulate(ctx, []types.Msg{msg}, accountInfo)
 }

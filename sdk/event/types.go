@@ -40,6 +40,7 @@ const (
 	SupernodeSignatureVerified   EventType = "supernode:signature_verified"
 	SupernodeRQIDGenerated       EventType = "supernode:rqid_generated"
 	SupernodeRQIDVerified        EventType = "supernode:rqid_verified"
+	SupernodeFinalizeSimulated   EventType = "supernode:finalize_simulated"
 	SupernodeArtefactsStored     EventType = "supernode:artefacts_stored"
 	SupernodeActionFinalized     EventType = "supernode:action_finalized"
 	SupernodeArtefactsDownloaded EventType = "supernode:artefacts_downloaded"

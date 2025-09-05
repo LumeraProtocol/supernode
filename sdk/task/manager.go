@@ -8,7 +8,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
-	taskstatus "github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/google/uuid"
@@ -94,7 +93,7 @@ func NewManagerWithLumeraClient(ctx context.Context, config config.Config, logge
 func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, actionID, signature string) (string, error) {
 	// Create a detached context immediately to prevent HTTP request cancellation
 	taskCtx, cancel := context.WithCancel(context.Background())
-	
+
 	// First validate the action before creating the task
 	action, err := m.validateAction(taskCtx, actionID)
 	if err != nil {
@@ -214,10 +213,10 @@ func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 	switch e.Type {
 	case event.SDKTaskStarted:
 		m.logger.Info(ctx, "Task started", "taskID", e.TaskID, "taskType", e.TaskType)
-		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusActive, nil)
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusActive, nil)
 	case event.SDKTaskCompleted:
 		m.logger.Info(ctx, "Task completed", "taskID", e.TaskID, "taskType", e.TaskType)
-		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusCompleted, nil)
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusCompleted, nil)
 	case event.SDKTaskFailed:
 		var err error
 		if errMsg, ok := e.Data[event.KeyError].(string); ok {
@@ -226,7 +225,7 @@ func (m *ManagerImpl) handleEvent(ctx context.Context, e event.Event) {
 		} else {
 			m.logger.Error(ctx, "Task failed with unknown error", "taskID", e.TaskID, "taskType", e.TaskType)
 		}
-		m.taskCache.UpdateStatus(ctx, e.TaskID, taskstatus.StatusFailed, err)
+		m.taskCache.UpdateStatus(ctx, e.TaskID, StatusFailed, err)
 	case event.SDKTaskTxHashReceived:
 		// Capture and store transaction hash from event
 		if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
@@ -261,7 +260,7 @@ func (m *ManagerImpl) Close(ctx context.Context) {
 func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, outputDir string, signature string) (string, error) {
 	// Create a detached context immediately to prevent HTTP request cancellation
 	taskCtx, cancel := context.WithCancel(context.Background())
-	
+
 	// First validate the action before creating the task
 	action, err := m.validateDownloadAction(taskCtx, actionID)
 	if err != nil {

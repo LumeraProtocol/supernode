@@ -135,46 +135,52 @@ func (h *TxHelper) GetAccountInfo(ctx context.Context) (*authtypes.BaseAccount, 
 
 // UpdateConfig allows updating the transaction configuration
 func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
-    // Merge provided fields with existing config to avoid zeroing defaults
-    if h.config == nil {
-        h.config = &TxConfig{}
-    }
+	// Merge provided fields with existing config to avoid zeroing defaults
+	if h.config == nil {
+		h.config = &TxConfig{}
+	}
 
-    // ChainID
-    if config.ChainID != "" {
-        h.config.ChainID = config.ChainID
-    }
-    // Keyring
-    if config.Keyring != nil {
-        h.config.Keyring = config.Keyring
-    }
-    // KeyName
-    if config.KeyName != "" {
-        h.config.KeyName = config.KeyName
-    }
-    // GasLimit
-    if config.GasLimit != 0 {
-        h.config.GasLimit = config.GasLimit
-    }
-    // GasAdjustment
-    if config.GasAdjustment != 0 {
-        h.config.GasAdjustment = config.GasAdjustment
-    }
-    // GasPadding
-    if config.GasPadding != 0 {
-        h.config.GasPadding = config.GasPadding
-    }
-    // FeeDenom
-    if config.FeeDenom != "" {
-        h.config.FeeDenom = config.FeeDenom
-    }
-    // GasPrice
-    if config.GasPrice != "" {
-        h.config.GasPrice = config.GasPrice
-    }
+	// ChainID
+	if config.ChainID != "" {
+		h.config.ChainID = config.ChainID
+	}
+	// Keyring
+	if config.Keyring != nil {
+		h.config.Keyring = config.Keyring
+	}
+	// KeyName
+	if config.KeyName != "" {
+		h.config.KeyName = config.KeyName
+	}
+	// GasLimit
+	if config.GasLimit != 0 {
+		h.config.GasLimit = config.GasLimit
+	}
+	// GasAdjustment
+	if config.GasAdjustment != 0 {
+		h.config.GasAdjustment = config.GasAdjustment
+	}
+	// GasPadding
+	if config.GasPadding != 0 {
+		h.config.GasPadding = config.GasPadding
+	}
+	// FeeDenom
+	if config.FeeDenom != "" {
+		h.config.FeeDenom = config.FeeDenom
+	}
+	// GasPrice
+	if config.GasPrice != "" {
+		h.config.GasPrice = config.GasPrice
+	}
 }
 
 // GetConfig returns the current transaction configuration
 func (h *TxHelper) GetConfig() *TxConfig {
 	return h.config
+}
+
+// Simulate runs an offline simulation for the provided messages using the
+// configured tx settings and given account info. Useful for pre-flight checks.
+func (h *TxHelper) Simulate(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount) (*sdktx.SimulateResponse, error) {
+	return h.txmod.SimulateTransaction(ctx, msgs, accountInfo, h.config)
 }

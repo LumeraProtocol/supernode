@@ -123,22 +123,21 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsRes
 type MockActionMsgModule struct{}
 
 // RequestAction mocks the behavior of requesting an action.
-// Adjust the signature and return values as needed to match the actual interface.
-func (m *MockActionMsgModule) RequestAction(ctx context.Context, req *types.MsgRequestAction) (*sdktx.BroadcastTxResponse, error) {
-	// Mock implementation returns success with empty result
-	return &sdktx.BroadcastTxResponse{}, nil
-}
-
-// RequesAction is a stub to satisfy the action_msg.Module interface in case of typo in interface definition.
-func (m *MockActionMsgModule) RequesAction(ctx context.Context, arg1, arg2, arg3, arg4 string) (*sdktx.BroadcastTxResponse, error) {
-	// Mock implementation returns success with empty result
-	return &sdktx.BroadcastTxResponse{}, nil
+func (m *MockActionMsgModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
+    // Mock implementation returns success with empty result
+    return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface
 func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.BroadcastTxResponse, error) {
 	// Mock implementation returns success with empty result
 	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+// SimulateFinalizeCascadeAction mocks simulation of finalize action.
+func (m *MockActionMsgModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.SimulateResponse, error) {
+	// Mock implementation returns empty simulation response
+	return &sdktx.SimulateResponse{}, nil
 }
 
 // MockSupernodeModule implements the supernode.Module interface for testing

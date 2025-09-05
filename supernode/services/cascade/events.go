@@ -13,7 +13,8 @@ const (
 	SupernodeEventTypeSignatureVerified       SupernodeEventType = 7
 	SupernodeEventTypeRQIDsGenerated          SupernodeEventType = 8
 	SupernodeEventTypeRqIDsVerified           SupernodeEventType = 9
-	SupernodeEventTypeArtefactsStored         SupernodeEventType = 10
-	SupernodeEventTypeActionFinalized         SupernodeEventType = 11
-	SupernodeEventTypeArtefactsDownloaded     SupernodeEventType = 12
+	SupernodeEventTypeFinalizeSimulated       SupernodeEventType = 10
+	SupernodeEventTypeArtefactsStored         SupernodeEventType = 11
+	SupernodeEventTypeActionFinalized         SupernodeEventType = 12
+	SupernodeEventTypeArtefactsDownloaded     SupernodeEventType = 13
 )

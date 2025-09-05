@@ -1,4 +1,4 @@
-## Lumera Client (Slim Guide)
+## Lumera Client 
 
 A minimal guide to the Lumera client
 
@@ -47,7 +47,7 @@ Send actions (ActionMsg)
 RequestAction:
 
 ```go
-resp, err := cli.ActionMsg().RequesAction(
+resp, err := cli.ActionMsg().RequestAction(
   ctx,
   "CASCADE",
   metadataJSON,              // stringified JSON
@@ -73,5 +73,4 @@ Validation rules (built-in)
 
 Notes
 
-- Method name is currently `RequesAction` (typo kept for compatibility).
 - Tx uses simulation + adjustment + padding before sign/broadcast.

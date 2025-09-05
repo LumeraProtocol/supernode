@@ -20,6 +20,7 @@ type LumeraClient interface {
 	// Action Module
 	GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error)
 	FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error)
+	SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error)
 	GetActionFee(ctx context.Context, dataSize string) (*actiontypes.QueryGetActionFeeResponse, error)
 	// Auth
 	Verify(ctx context.Context, creator string, file []byte, sigBytes []byte) error
@@ -65,6 +66,10 @@ func (c *Client) FinalizeAction(ctx context.Context, actionID string, rqids []st
 	}
 
 	return resp, nil
+}
+
+func (c *Client) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error) {
+	return c.lc.ActionMsg().SimulateFinalizeCascadeAction(ctx, actionID, rqids)
 }
 
 func (c *Client) GetTopSupernodes(ctx context.Context, height uint64) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error) {

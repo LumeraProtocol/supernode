@@ -25,6 +25,7 @@ func TestTranslateSupernodeEvent(t *testing.T) {
 		{"RQID_VERIFIED", cascade.SupernodeEventType_RQID_VERIFIED, event.SupernodeRQIDVerified},
 		{"ARTEFACTS_STORED", cascade.SupernodeEventType_ARTEFACTS_STORED, event.SupernodeArtefactsStored},
 		{"ACTION_FINALIZED", cascade.SupernodeEventType_ACTION_FINALIZED, event.SupernodeActionFinalized},
+		{"FINALIZE_SIMULATED", cascade.SupernodeEventType_FINALIZE_SIMULATED, event.SupernodeFinalizeSimulated},
 	}
 
 	for _, tt := range tests {

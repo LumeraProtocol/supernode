@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	registrationTimeout = 120 * time.Second // Timeout for registration requests
-	connectionTimeout   = 10 * time.Second  // Timeout for connection requests
+	registrationTimeout = 5 * time.Minute  // Timeout for registration requests
+	connectionTimeout   = 10 * time.Second // Timeout for connection requests
 )
 
 type CascadeTask struct {
@@ -95,7 +95,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			lastErr = err
 			continue
 		}
-		t.LogEvent(ctx, event.SDKRegistrationSuccessful, "successfully registratered with supernode", event.EventData{
+		t.LogEvent(ctx, event.SDKRegistrationSuccessful, "successfully registered with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
 			event.KeySupernodeAddress: sn.CosmosAddress,
 			event.KeyIteration:        idx + 1,

@@ -15,6 +15,7 @@ const (
 	KeyProgress         EventDataKey = "progress"
 	KeyEventType        EventDataKey = "event_type"
 	KeyOutputPath       EventDataKey = "output_path"
+	KeySuccessRate      EventDataKey = "success_rate"
 
 	// Task specific keys
 	KeyTaskID   EventDataKey = "task_id"

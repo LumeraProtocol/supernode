@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
@@ -40,15 +42,15 @@ func NewCascadeAdapter(ctx context.Context, conn *grpc.ClientConn, logger log.Lo
 // to balance throughput and memory usage
 func calculateOptimalChunkSize(fileSize int64) int {
 	const (
-		minChunkSize = 64 * 1024    // 64 KB minimum
-		maxChunkSize = 4 * 1024 * 1024  // 4 MB maximum for 1GB+ files
-		smallFileThreshold = 1024 * 1024  // 1 MB
+		minChunkSize        = 64 * 1024         // 64 KB minimum
+		maxChunkSize        = 4 * 1024 * 1024   // 4 MB maximum for 1GB+ files
+		smallFileThreshold  = 1024 * 1024       // 1 MB
 		mediumFileThreshold = 50 * 1024 * 1024  // 50 MB
-		largeFileThreshold = 500 * 1024 * 1024  // 500 MB
+		largeFileThreshold  = 500 * 1024 * 1024 // 500 MB
 	)
 
 	var chunkSize int
-	
+
 	switch {
 	case fileSize <= smallFileThreshold:
 		// For small files (up to 1MB), use 64KB chunks
@@ -63,7 +65,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 		// For very large files (500MB+), use 4MB chunks for optimal throughput
 		chunkSize = maxChunkSize
 	}
-	
+
 	// Ensure chunk size is within bounds
 	if chunkSize < minChunkSize {
 		chunkSize = minChunkSize
@@ -71,7 +73,7 @@ func calculateOptimalChunkSize(fileSize int64) int {
 	if chunkSize > maxChunkSize {
 		chunkSize = maxChunkSize
 	}
-	
+
 	return chunkSize
 }
 
@@ -106,16 +108,16 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	// Validate file size before starting upload
 	if totalBytes > maxFileSize {
-		a.logger.Error(ctx, "File exceeds maximum size limit", 
-			"filePath", in.FilePath, 
-			"fileSize", totalBytes, 
+		a.logger.Error(ctx, "File exceeds maximum size limit",
+			"filePath", in.FilePath,
+			"fileSize", totalBytes,
 			"maxSize", maxFileSize)
 		return nil, fmt.Errorf("file size %d bytes exceeds maximum allowed size of 1GB", totalBytes)
 	}
 
 	// Define adaptive chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(totalBytes)
-	
+
 	a.logger.Debug(ctx, "Calculated optimal chunk size", "fileSize", totalBytes, "chunkSize", chunkSize)
 
 	// Keep track of how much data we've processed
@@ -194,13 +196,20 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		a.logger.Info(ctx, "Supernode progress update received", "event_type", resp.EventType, "message", resp.Message, "tx_hash", resp.TxHash, "task_id", in.TaskId, "action_id", in.ActionID)
 
 		if in.EventLogger != nil {
-			in.EventLogger(ctx, toSdkEvent(resp.EventType), resp.Message, event.EventData{
+			edata := event.EventData{
 				event.KeyEventType: resp.EventType,
 				event.KeyMessage:   resp.Message,
 				event.KeyTxHash:    resp.TxHash,
 				event.KeyTaskID:    in.TaskId,
 				event.KeyActionID:  in.ActionID,
-			})
+			}
+			// Extract success rate if provided in message format: "... success_rate=NN.NN%"
+			if resp.EventType == cascade.SupernodeEventType_ARTEFACTS_STORED {
+				if rate, ok := parseSuccessRate(resp.Message); ok {
+					edata[event.KeySuccessRate] = rate
+				}
+			}
+			in.EventLogger(ctx, toSdkEventWithMessage(resp.EventType, resp.Message), resp.Message, edata)
 		}
 
 		// Optionally capture the final response
@@ -347,9 +356,34 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeActionFinalized
 	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
 		return event.SupernodeArtefactsDownloaded
+	case cascade.SupernodeEventType_FINALIZE_SIMULATED:
+		return event.SupernodeFinalizeSimulated
 	default:
 		return event.SupernodeUnknown
 	}
+}
+
+// toSdkEventWithMessage extends event mapping using message content for finer granularity
+func toSdkEventWithMessage(e cascade.SupernodeEventType, msg string) event.EventType {
+	// Detect finalize simulation pass piggybacked on RQID_VERIFIED
+	if e == cascade.SupernodeEventType_RQID_VERIFIED && msg == "finalize action simulation passed" {
+		return event.SupernodeFinalizeSimulated
+	}
+	return toSdkEvent(e)
+}
+
+var rateRe = regexp.MustCompile(`success_rate=([0-9]+(?:\.[0-9]+)?)%`)
+
+func parseSuccessRate(msg string) (float64, bool) {
+	m := rateRe.FindStringSubmatch(msg)
+	if len(m) != 2 {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
 }
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
@@ -384,7 +418,7 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 				UsagePercent:   storage.UsagePercent,
 			})
 		}
-		
+
 		// Copy hardware summary
 		result.Resources.HardwareSummary = resp.Resources.HardwareSummary
 	}

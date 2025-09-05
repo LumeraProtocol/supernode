@@ -345,7 +345,7 @@ func TestCascadeE2E(t *testing.T) {
 	// 	"--gas-adjustment", "1.5",
 	// )
 
-	response, err := lumeraClinet.ActionMsg().RequesAction(ctx, actionType, metadata, price, expirationTime)
+	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, price, expirationTime)
 
 	txresp := response.TxResponse
 
