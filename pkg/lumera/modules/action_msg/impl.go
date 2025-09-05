@@ -44,7 +44,7 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 	}, nil
 }
 
-func (m *module) RequesAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
+func (m *module) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
 	if err := validateRequestActionParams(actionType, metadata, price, expirationTime); err != nil {
 		return nil, err
 	}
