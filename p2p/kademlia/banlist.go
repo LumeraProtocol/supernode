@@ -3,6 +3,7 @@ package kademlia
 import (
 	"bytes"
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -231,4 +232,47 @@ func NewBanList(ctx context.Context) *BanList {
 	go list.schedulePurge(ctx)
 
 	return list
+}
+
+type BanSnapshot struct {
+	ID        string        `json:"id"`         // printable id
+	IP        string        `json:"ip"`         // last seen ip
+	Port      uint16        `json:"port"`       // last seen port
+	Count     int           `json:"count"`      // failure count
+	CreatedAt time.Time     `json:"created_at"` // first ban time
+	Age       time.Duration `json:"age"`        // time since CreatedAt
+}
+
+func (s *BanList) Snapshot(limit int) []BanSnapshot {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	n := len(s.Nodes)
+	if n == 0 {
+		return nil
+	}
+	out := make([]BanSnapshot, 0, n)
+	for _, b := range s.Nodes {
+		idPrintable := string(b.ID)
+		// If your IDs are binary, switch to base58:
+		// idPrintable = base58.Encode(b.ID)
+		out = append(out, BanSnapshot{
+			ID:        idPrintable,
+			IP:        b.IP,
+			Port:      b.Port,
+			Count:     b.count,
+			CreatedAt: b.CreatedAt,
+			Age:       time.Since(b.CreatedAt).Round(time.Second),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].Count > out[j].Count
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }

@@ -91,7 +91,7 @@ func (s *DHT) handlePingFailure(ctx context.Context, wasActive bool, n *Node, er
 	// increment soft-fail counter; only evict when past threshold
 	s.ignorelist.IncrementCount(n)
 	if wasActive && s.ignorelist.Banned(n) {
-		logtrace.Warn(ctx, "setting node to inactive", logtrace.Fields{
+		logtrace.Error(ctx, "setting node to inactive", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			logtrace.FieldError:  err.Error(),
 			"ip":                 n.IP,

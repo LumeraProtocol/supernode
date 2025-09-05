@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -40,20 +41,15 @@ var execTimeouts map[int]time.Duration
 func init() {
 	// Initialize the request execution timeout values
 	execTimeouts = map[int]time.Duration{
-		// Lightweight
-		Ping:          5 * time.Second,
-		FindNode:      15 * time.Second,
-		BatchFindNode: 15 * time.Second,
-
-		// Value lookups
-		FindValue:       20 * time.Second,
-		BatchFindValues: 90 * time.Second,
-		BatchGetValues:  90 * time.Second,
-
-		// Data movement
-		StoreData:      5 * time.Second,
-		BatchStoreData: 90 * time.Second,
-		Replicate:      90 * time.Second,
+		Ping:            5 * time.Second,
+		FindNode:        10 * time.Second,
+		BatchFindNode:   5 * time.Second, // small requests, quick
+		FindValue:       5 * time.Second,
+		BatchFindValues: 60 * time.Second, // responder compresses
+		BatchGetValues:  75 * time.Second, // large, sometimes cloud fetch then send back
+		StoreData:       10 * time.Second,
+		BatchStoreData:  75 * time.Second, // large uncompressed payloads
+		Replicate:       90 * time.Second,
 	}
 }
 
@@ -71,6 +67,8 @@ type Network struct {
 	connPool    *ConnPool
 	connPoolMtx sync.Mutex
 	sem         *semaphore.Weighted
+
+	metrics sync.Map
 }
 
 // NewNetwork returns a network service
@@ -83,6 +81,7 @@ func NewNetwork(ctx context.Context, dht *DHT, self *Node, clientTC, serverTC cr
 		serverTC: serverTC,
 		connPool: NewConnPool(ctx),
 		sem:      semaphore.NewWeighted(maxConcurrentFindBatchValsRequests),
+		metrics:  sync.Map{},
 	}
 	// init the rate limiter
 	s.limiter = ratelimit.New(defaultConnRate)
@@ -360,11 +359,11 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		"local-addr":         rawConn.LocalAddr().String(),
 		"remote-addr":        rawConn.RemoteAddr().String(),
 	})
-	// do secure handshaking
+	// secure handshake
 	if s.serverTC != nil {
 		conn, err = NewSecureServerConn(ctx, s.serverTC, rawConn)
 		if err != nil {
-			rawConn.Close()
+			_ = rawConn.Close()
 			logtrace.Warn(ctx, "Server secure handshake failed", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				logtrace.FieldError:  err.Error(),
@@ -374,7 +373,6 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 	} else {
 		conn = rawConn
 	}
-
 	defer conn.Close()
 
 	const serverReadTimeout = 90 * time.Second
@@ -386,16 +384,15 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		default:
 		}
 
-		// enforce a per-message read deadline so a slow peer can't hang us
+		// per-message read deadline
 		_ = conn.SetReadDeadline(time.Now().Add(serverReadTimeout))
 
-		// read the request from connection
+		// read request
 		request, err := decode(conn)
 		if err != nil {
 			if err == io.EOF {
 				return
 			}
-			// downgrade pure timeouts to debug to reduce noise
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				logtrace.Debug(ctx, "Read and decode timed out, keeping connection open", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
@@ -410,124 +407,75 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			return
 		}
 		reqID := uuid.New().String()
+		mt := request.MessageType
 
+		// invoke handler with metrics
 		var response []byte
-		switch request.MessageType {
-		case FindNode:
-			encoded, err := s.handleFindNode(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle find node request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
+		var hErr error
 
-				return
-			}
-			response = encoded
+		switch mt {
+		case FindNode:
+			response, hErr = s.withMetrics(FindNode, func() ([]byte, error) {
+				return s.handleFindNode(ctx, request)
+			})
 		case BatchFindNode:
-			encoded, err := s.handleBatchFindNode(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle batch find node request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(BatchFindNode, func() ([]byte, error) {
+				return s.handleBatchFindNode(ctx, request)
+			})
 		case FindValue:
-			// handle the request for finding value
-			encoded, err := s.handleFindValue(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle find value request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(FindValue, func() ([]byte, error) {
+				return s.handleFindValue(ctx, request)
+			})
 		case Ping:
-			encoded, err := s.handlePing(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle ping request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(Ping, func() ([]byte, error) {
+				return s.handlePing(ctx, request)
+			})
 		case StoreData:
-			// handle the request for storing data
-			encoded, err := s.handleStoreData(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle store data request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(StoreData, func() ([]byte, error) {
+				return s.handleStoreData(ctx, request)
+			})
 		case Replicate:
-			// handle the request for replicate request
-			encoded, err := s.handleReplicate(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle replicate request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(Replicate, func() ([]byte, error) {
+				return s.handleReplicate(ctx, request)
+			})
 		case BatchFindValues:
-			// handle the request for finding value
-			encoded, err := s.handleBatchFindValues(ctx, request, reqID)
-			if err != nil {
-				logtrace.Error(ctx, "Handle batch find values request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-					"p2p-req-id":         reqID,
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(BatchFindValues, func() ([]byte, error) {
+				return s.handleBatchFindValues(ctx, request, reqID)
+			})
 		case BatchStoreData:
-			// handle the request for storing data
-			encoded, err := s.handleBatchStoreData(ctx, request)
-			if err != nil {
-				logtrace.Error(ctx, "Handle batch store data request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(BatchStoreData, func() ([]byte, error) {
+				return s.handleBatchStoreData(ctx, request)
+			})
 		case BatchGetValues:
-			// handle the request for finding value
-			encoded, err := s.handleGetValuesRequest(ctx, request, reqID)
-			if err != nil {
-				logtrace.Error(ctx, "Handle batch get values request failed", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-					"p2p-req-id":         reqID,
-				})
-				return
-			}
-			response = encoded
+			response, hErr = s.withMetrics(BatchGetValues, func() ([]byte, error) {
+				return s.handleGetValuesRequest(ctx, request, reqID)
+			})
 		default:
+			// count unknown types as failure and return
+			m := s.metricsFor(mt)
+			m.Total.Add(1)
+			m.Failure.Add(1)
 			logtrace.Error(ctx, "Invalid message type", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
-				"message-type":       request.MessageType,
+				"message-type":       mt,
 			})
 			return
 		}
 
-		// write the response
+		if hErr != nil {
+			// handler already logged; keep connection open for next request
+			continue
+		}
+
+		// write the response (transport write failures counted as well)
 		_ = conn.SetWriteDeadline(time.Now().Add(serverReadTimeout))
 		if _, err := conn.Write(response); err != nil {
+			s.markTransportWrite(mt, err)
 			logtrace.Error(ctx, "Write failed", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				logtrace.FieldError:  err.Error(),
 				"p2p-req-id":         reqID,
-				"message-type":       request.MessageType,
+				"message-type":       mt,
 			})
 			return
 		}
@@ -1349,19 +1297,6 @@ func (s *Network) handlePanic(ctx context.Context, sender *Node, messageType int
 	return nil, nil
 }
 
-func readDeadlineFor(msgType int, overall time.Duration) time.Duration {
-	small := 10 * time.Second
-	switch msgType {
-	case Ping, FindNode, BatchFindNode, FindValue, StoreData, BatchStoreData:
-		if overall > small+1*time.Second {
-			return small
-		}
-		return overall - 1*time.Second
-	default:
-		return overall // Bulk responses keep full budget
-	}
-}
-
 func isLocalCancel(err error) bool {
 	if err == nil {
 		return false
@@ -1376,4 +1311,122 @@ func isLocalCancel(err error) bool {
 		return true
 	}
 	return false
+}
+
+// Per-handler counters
+type HandleMetrics struct {
+	Total   atomic.Int64
+	Success atomic.Int64
+	Failure atomic.Int64
+	Timeout atomic.Int64
+}
+
+// Get-or-create metrics bucket for a message type.
+func (s *Network) metricsFor(t int) *HandleMetrics {
+	if v, ok := s.metrics.Load(t); ok {
+		if m, ok := v.(*HandleMetrics); ok && m != nil {
+			return m
+		}
+	}
+	m := &HandleMetrics{}
+	actual, _ := s.metrics.LoadOrStore(t, m)
+	return actual.(*HandleMetrics)
+}
+
+// Wrap a handler so we consistently count total / success / failure / timeout.
+func (s *Network) withMetrics(t int, fn func() ([]byte, error)) ([]byte, error) {
+	m := s.metricsFor(t)
+	m.Total.Add(1)
+
+	res, err := fn()
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			m.Timeout.Add(1)
+		} else {
+			m.Failure.Add(1)
+		}
+		return res, err
+	}
+
+	m.Success.Add(1)
+	return res, nil
+}
+
+// After a successful handler, if the write to the socket fails we also count that.
+func (s *Network) markTransportWrite(t int, err error) {
+	if err == nil {
+		return
+	}
+	m := s.metricsFor(t)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		m.Timeout.Add(1)
+	} else {
+		m.Failure.Add(1)
+	}
+}
+
+// Optional: export a snapshot (e.g., in DHT metrics or /debug handler)
+type HandleCounters struct {
+	Total   int64 `json:"total"`
+	Success int64 `json:"success"`
+	Failure int64 `json:"failure"`
+	Timeout int64 `json:"timeout"`
+}
+
+func msgName(t int) string {
+	switch t {
+	case Ping:
+		return "Ping"
+	case StoreData:
+		return "StoreData"
+	case FindNode:
+		return "FindNode"
+	case BatchFindNode:
+		return "BatchFindNode"
+	case FindValue:
+		return "FindValue"
+	case BatchFindValues:
+		return "BatchFindValues"
+	case BatchGetValues:
+		return "BatchGetValues"
+	case BatchStoreData:
+		return "BatchStoreData"
+	case Replicate:
+		return "Replicate"
+	default:
+		return fmt.Sprintf("Type_%d", t)
+	}
+}
+
+func (s *Network) HandleMetricsSnapshot() map[string]HandleCounters {
+	out := make(map[string]HandleCounters)
+	s.metrics.Range(func(k, v any) bool {
+		t, _ := k.(int)
+		m, _ := v.(*HandleMetrics)
+		if m == nil {
+			return true
+		}
+		out[msgName(t)] = HandleCounters{
+			Total:   m.Total.Load(),
+			Success: m.Success.Load(),
+			Failure: m.Failure.Load(),
+			Timeout: m.Timeout.Load(),
+		}
+		return true
+	})
+	return out
+}
+
+// Reuse your calibrated read deadline chooser from client RPC side.
+func readDeadlineFor(msgType int, overall time.Duration) time.Duration {
+	small := 10 * time.Second
+	switch msgType {
+	case Ping, FindNode, BatchFindNode, FindValue, StoreData, BatchStoreData:
+		if overall > small+1*time.Second {
+			return small
+		}
+		return overall - 1*time.Second
+	default:
+		return overall // Bulk responses keep full budget
+	}
 }

@@ -63,6 +63,7 @@ type DHT struct {
 	ignorelist     *BanList
 	replicationMtx sync.RWMutex
 	rqstore        rqstore.Store
+	metrics        DHTMetrics
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -106,6 +107,17 @@ func (s *DHT) bootstrapIgnoreList(ctx context.Context) error {
 		})
 	}
 	return nil
+}
+func (s *DHT) MetricsSnapshot() DHTMetricsSnapshot {
+	return s.metrics.Snapshot()
+}
+
+func (s *DHT) BanListSnapshot() []BanSnapshot {
+	return s.ignorelist.Snapshot(0)
+}
+
+func (s *DHT) ConnPoolSnapshot() map[string]int64 {
+	return s.network.connPool.metrics.Snapshot()
 }
 
 // Options contains configuration options for the queries node
@@ -451,10 +463,11 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	dhtStats := map[string]interface{}{}
+	dhtStats := map[string]any{}
 	dhtStats["self"] = s.ht.self
 	dhtStats["peers_count"] = len(s.ht.nodes())
 	dhtStats["peers"] = s.ht.nodes()
+	dhtStats["network"] = s.network.HandleMetricsSnapshot()
 	dhtStats["database"] = dbStats
 
 	return dhtStats, nil
@@ -645,6 +658,7 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 }
 
 func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
+	start := time.Now()
 	result = make(map[string][]byte)
 	var resMap sync.Map
 	var foundLocalCount int32
@@ -759,6 +773,10 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	}
 
 	wg.Wait()
+
+	netFound := int(atomic.LoadInt32(&networkFound))
+	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Duration(time.Since(start).Milliseconds())) // NEW
+
 	return result, nil
 }
 
@@ -1586,7 +1604,6 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) (float64, int, error) {
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
-	// contacted := make(map[string]bool)
 	hashes := make([][]byte, len(values))
 
 	logtrace.Info(ctx, "Iterate batch store begin", logtrace.Fields{
@@ -1654,6 +1671,8 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	}
 
 	if requests > 0 {
+		s.metrics.RecordStoreSuccess(requests, successful)
+
 		successRate := float64(successful) / float64(requests) * 100
 		if successRate >= minimumDataStoreSuccessRate {
 			logtrace.Info(ctx, "Successful store operations", logtrace.Fields{
@@ -1670,6 +1689,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 			})
 			return successRate, requests, fmt.Errorf("failed to achieve desired success rate, only: %.2f%% successful", successRate)
 		}
+
 	}
 
 	return 0, 0, fmt.Errorf("no store operations were performed")
@@ -1698,6 +1718,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 				logtrace.FieldModule: "dht",
 				"node":               node.String(),
 			})
+			s.metrics.IncHotPathBannedSkip()
 			continue
 		}
 
@@ -1732,6 +1753,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 				if err != nil {
 					if !isLocalCancel(err) {
 						s.ignorelist.IncrementCount(receiver)
+						s.metrics.IncHotPathBanIncr()
 					}
 
 					logtrace.Info(ctx, "Network call batch store request failed", logtrace.Fields{
@@ -1783,6 +1805,7 @@ func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[str
 				"node":               node.String(),
 				"txid":               txid,
 			})
+			s.metrics.IncHotPathBannedSkip()
 			continue
 		}
 
@@ -1806,6 +1829,7 @@ func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[str
 				if err != nil {
 					if !isLocalCancel(err) {
 						s.ignorelist.IncrementCount(receiver)
+						s.metrics.IncHotPathBanIncr()
 					}
 
 					logtrace.Warn(ctx, "Batch find node network call request failed", logtrace.Fields{
@@ -1839,4 +1863,114 @@ func (s *DHT) addKnownNodesSafe(ctx context.Context, nodes []*Node, knownNodes m
 	mu.Lock()
 	s.addKnownNodes(ctx, nodes, knownNodes)
 	mu.Unlock()
+}
+
+// ---- DHT metrics -----------------------------------------------------------
+
+type StoreSuccessPoint struct {
+	Time        time.Time `json:"time"`
+	Requests    int       `json:"requests"`
+	Successful  int       `json:"successful"`
+	SuccessRate float64   `json:"success_rate"`
+}
+
+type BatchRetrievePoint struct {
+	Time       time.Time     `json:"time"`
+	Keys       int           `json:"keys"`
+	Required   int           `json:"required"`
+	FoundLocal int           `json:"found_local"`
+	FoundNet   int           `json:"found_network"`
+	Duration   time.Duration `json:"duration"`
+}
+
+type DHTMetricsSnapshot struct {
+	// rolling windows
+	StoreSuccessRecent  []StoreSuccessPoint  `json:"store_success_recent"`
+	BatchRetrieveRecent []BatchRetrievePoint `json:"batch_retrieve_recent"`
+
+	// hot path counters
+	HotPathBannedSkips   int64 `json:"hot_path_banned_skips"`
+	HotPathBanIncrements int64 `json:"hot_path_ban_increments"`
+}
+
+type DHTMetrics struct {
+	mu sync.Mutex
+
+	// bounded windows (most recent first)
+	storeSuccess  []StoreSuccessPoint
+	batchRetrieve []BatchRetrievePoint
+	maxWindow     int
+
+	// hot path counters
+	hotPathBannedSkips   atomic.Int64
+	hotPathBanIncrements atomic.Int64
+}
+
+func (m *DHTMetrics) init() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.maxWindow == 0 {
+		m.maxWindow = 48 // e.g. last 48 events (~several hours)
+	}
+}
+
+func (m *DHTMetrics) trimStore() {
+	if len(m.storeSuccess) > m.maxWindow {
+		m.storeSuccess = m.storeSuccess[:m.maxWindow]
+	}
+}
+func (m *DHTMetrics) trimRetrieve() {
+	if len(m.batchRetrieve) > m.maxWindow {
+		m.batchRetrieve = m.batchRetrieve[:m.maxWindow]
+	}
+}
+
+func (m *DHTMetrics) RecordStoreSuccess(req, succ int) {
+	m.init()
+	rate := 0.0
+	if req > 0 {
+		rate = (float64(succ) / float64(req)) * 100.0
+	}
+	m.mu.Lock()
+	m.storeSuccess = append([]StoreSuccessPoint{{
+		Time:        time.Now().UTC(),
+		Requests:    req,
+		Successful:  succ,
+		SuccessRate: rate,
+	}}, m.storeSuccess...)
+	m.trimStore()
+	m.mu.Unlock()
+}
+
+func (m *DHTMetrics) RecordBatchRetrieve(keys, required, foundLocal, foundNet int, dur time.Duration) {
+	m.init()
+	m.mu.Lock()
+	m.batchRetrieve = append([]BatchRetrievePoint{{
+		Time:       time.Now().UTC(),
+		Keys:       keys,
+		Required:   required,
+		FoundLocal: foundLocal,
+		FoundNet:   foundNet,
+		Duration:   dur,
+	}}, m.batchRetrieve...)
+	m.trimRetrieve()
+	m.mu.Unlock()
+}
+
+func (m *DHTMetrics) IncHotPathBannedSkip() { m.hotPathBannedSkips.Add(1) }
+func (m *DHTMetrics) IncHotPathBanIncr()    { m.hotPathBanIncrements.Add(1) }
+
+func (m *DHTMetrics) Snapshot() DHTMetricsSnapshot {
+	m.init()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// shallow copies of bounded windows
+	storeCopy := append([]StoreSuccessPoint(nil), m.storeSuccess...)
+	retrCopy := append([]BatchRetrievePoint(nil), m.batchRetrieve...)
+	return DHTMetricsSnapshot{
+		StoreSuccessRecent:   storeCopy,
+		BatchRetrieveRecent:  retrCopy,
+		HotPathBannedSkips:   m.hotPathBannedSkips.Load(),
+		HotPathBanIncrements: m.hotPathBanIncrements.Load(),
+	}
 }
