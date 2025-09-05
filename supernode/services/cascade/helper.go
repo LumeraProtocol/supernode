@@ -169,13 +169,21 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 	}, nil
 }
 
-func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) error {
-	return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
-		IDFiles:    idFiles,
-		SymbolsDir: symbolsDir,
-		TaskID:     task.ID(),
-		ActionID:   actionID,
-	}, f)
+// storeArtefacts persists cascade artefacts (ID files + RaptorQ symbols) via the
+// P2P adaptor and returns an aggregated network success rate percentage and total
+// node requests used to compute it.
+//
+// Aggregation details:
+//   - Underlying batches return (ratePct, requests) where `requests` is the number
+//     of node RPCs attempted. The adaptor computes a weighted average by requests
+//     across all batches, reflecting the overall network success rate.
+func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) (float64, int, error) {
+    return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
+        IDFiles:    idFiles,
+        SymbolsDir: symbolsDir,
+        TaskID:     task.ID(),
+        ActionID:   actionID,
+    }, f)
 }
 
 func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, err error, f logtrace.Fields) error {

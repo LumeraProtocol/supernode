@@ -104,10 +104,10 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 						Metadata:   codecpkg.Layout{Blocks: []codecpkg.Block{{BlockID: 1, Hash: "abc"}}},
 					}, nil)
 
-				// 8. Store artefacts
+				// 8. Store artefacts (returns success rate, requests)
 				p2p.EXPECT().
 					StoreArtefacts(gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(nil)
+					Return(95.0, 120, nil)
 			},
 			expectedError:  "",
 			expectedEvents: 12,

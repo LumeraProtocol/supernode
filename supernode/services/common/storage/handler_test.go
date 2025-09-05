@@ -49,7 +49,7 @@ func TestStoreBatch(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), "task_id", "123")
 	list := [][]byte{[]byte("a"), []byte("b")}
-	p2pClient.On("StoreBatch", mock.Anything, list, 3, "").Return(nil)
+	p2pClient.On("StoreBatch", mock.Anything, list, 3, "").Return(0.0, 0, nil)
 
 	err := handler.StoreBatch(ctx, list, 3)
 	assert.NoError(t, err)

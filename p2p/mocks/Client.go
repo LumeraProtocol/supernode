@@ -245,17 +245,35 @@ func (_m *Client) Store(ctx context.Context, data []byte, typ int) (string, erro
 }
 
 // StoreBatch provides a mock function with given fields: ctx, values, typ, taskID
-func (_m *Client) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error {
+func (_m *Client) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) (float64, int, error) {
 	ret := _m.Called(ctx, values, typ, taskID)
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, [][]byte, int, string) error); ok {
+	var r0 float64
+	if rf, ok := ret.Get(0).(func(context.Context, [][]byte, int, string) float64); ok {
 		r0 = rf(ctx, values, typ, taskID)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(float64)
+		}
 	}
 
-	return r0
+	var r1 int
+	if rf, ok := ret.Get(1).(func(context.Context, [][]byte, int, string) int); ok {
+		r1 = rf(ctx, values, typ, taskID)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(int)
+		}
+	}
+
+	var r2 error
+	if rf, ok := ret.Get(2).(func(context.Context, [][]byte, int, string) error); ok {
+		r2 = rf(ctx, values, typ, taskID)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 type mockConstructorTestingTNewClient interface {

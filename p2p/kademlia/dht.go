@@ -339,23 +339,32 @@ func (s *DHT) Store(ctx context.Context, data []byte, typ int) (string, error) {
 	return retKey, nil
 }
 
-// StoreBatch will store a batch of values with their Blake3 hash as the key
-func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error {
+// StoreBatch will store a batch of values with their Blake3 hash as the key.
+//
+// Returns:
+//   - successRatePct: percentage (0–100) of successful node RPCs during the
+//     network store phase for this batch.
+//   - requestCount: total number of node RPCs attempted (batch store calls) for
+//     this batch; this is not the number of values stored.
+//   - error: wrapped error if local DB store failed, or if the network store did
+//     not reach the configured minimum success rate.
+func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) (float64, int, error) {
 	logtrace.Info(ctx, "Store DB batch begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		logtrace.FieldTaskID: taskID,
 		"records":            len(values),
 	})
 	if err := s.store.StoreBatch(ctx, values, typ, true); err != nil {
-		return fmt.Errorf("store batch: %v", err)
+		return 0, 0, fmt.Errorf("store batch: %v", err)
 	}
 	logtrace.Info(ctx, "Store DB batch done, store network batch begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		logtrace.FieldTaskID: taskID,
 	})
 
-	if err := s.IterateBatchStore(ctx, values, typ, taskID); err != nil {
-		return fmt.Errorf("iterate batch store: %v", err)
+	rate, requests, err := s.IterateBatchStore(ctx, values, typ, taskID)
+	if err != nil {
+		return rate, requests, fmt.Errorf("iterate batch store: %v", err)
 	}
 
 	logtrace.Info(ctx, "Store network batch workers done", logtrace.Fields{
@@ -363,7 +372,7 @@ func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID s
 		logtrace.FieldTaskID: taskID,
 	})
 
-	return nil
+	return rate, requests, nil
 }
 
 // Retrieve data from the networking using key. Key is the base58 encoded
@@ -1568,7 +1577,13 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 	}
 }
 
-func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) error {
+// IterateBatchStore performs the network store and returns (successRatePct, requestCount, error).
+//
+// Request count is computed as the number of per-node batch store RPCs attempted
+// during this run; success rate is successful responses divided by this count.
+// If the success rate is below `minimumDataStoreSuccessRate`, an error is
+// returned alongside the measured rate and request count.
+func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) (float64, int, error) {
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
 	// contacted := make(map[string]bool)
@@ -1646,18 +1661,18 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
 			})
-			return nil
+			return successRate, requests, nil
 		} else {
 			logtrace.Info(ctx, "Failed to achieve desired success rate", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
 			})
-			return fmt.Errorf("failed to achieve desired success rate, only: %.2f%% successful", successRate)
+			return successRate, requests, fmt.Errorf("failed to achieve desired success rate, only: %.2f%% successful", successRate)
 		}
 	}
 
-	return fmt.Errorf("no store operations were performed")
+	return 0, 0, fmt.Errorf("no store operations were performed")
 }
 
 func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[string]*Node, storageMap map[string][]int, typ int) chan *MessageWithError {
