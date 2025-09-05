@@ -200,7 +200,7 @@ Auto-update checks run every 10 minutes when enabled.
 
 ## Version Update Scenarios
 
-The auto-updater follows stable-only, same-major update rules and defers updates while the gateway is busy. Summary:
+The auto-updater follows stable-only, same-major update rules and coordinates updates around the gateway state to minimize disruption while avoiding being stuck. Summary:
 
 | Current | Available | Auto-Upgrade Enabled | Auto Updates? | Manual Option |
 |---|---|---|---|---|
@@ -211,16 +211,22 @@ The auto-updater follows stable-only, same-major update rules and defers updates
 | v1.7.4 | v1.7.4 (stable) | Yes | ❌ | — |
 | v1.7.5 | v1.7.4 (stable) | Yes | ❌ | — |
 | Any | Any | No | ❌ | `sn-manager get [version] && sn-manager use [version]` |
-| Any | Any | Yes, but gateway busy | ❌ (deferred) | Manual allowed |
+| Any | Any | Yes, but gateway busy | ⏳ Deferred (max 1 hour), then ✅ | Manual allowed |
 
 Mechanics and notes:
 - Stable-only: auto-updater targets latest stable GitHub release (non-draft, non-prerelease).
 - Same-major only: SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
-- Gateway-aware: updates are applied only when the gateway reports no running tasks; otherwise they are deferred.
-- Gateway errors: repeated check failures over a 5-minute window request a clean SuperNode restart (no version change) to recover.
+- Gateway idle: updates are applied when the gateway reports no running tasks.
+- Gateway busy: if tasks are running, updates are deferred for up to 1 hour for the target version; after that hard window, the update proceeds to avoid being stuck.
+- Gateway unresponsive: if an update is available, it proceeds immediately to break the deadlock; if no update is available, a clean SuperNode restart is requested via marker.
 - Combined tarball: when updating, sn-manager downloads a single tarball once, then updates itself first (if eligible), then installs/activates the new SuperNode version.
 - Config is updated to reflect the new `updates.current_version` after a successful SuperNode update.
 - Manual installs: you can always override with `sn-manager get <version>` and `sn-manager use <version>`; pre-releases are supported manually.
+
+### Update Timing
+
+- Checks run every 10 minutes when auto-upgrade is enabled.
+- On every `sn-manager start`, the updater runs an immediate check and bypasses the gateway check once so that initial updates can be applied even if the gateway is not yet available.
 
 ## Start/Stop Behavior
 

@@ -125,6 +125,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	var autoUpdater *updater.AutoUpdater
 	if cfg.Updates.AutoUpgrade {
 		autoUpdater = updater.New(home, cfg, appVersion)
+		// On every manager start, bypass the gateway check once so an
+		// update can be applied even if the gateway isn't up yet.
+		autoUpdater.SkipGatewayCheckOnce()
 		autoUpdater.Start(ctx)
 	}
 
@@ -168,39 +171,47 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 }
 
-// ensureBinaryExists ensures we have at least one SuperNode binary
+// ensureBinaryExists ensures there is an installed and active SuperNode binary.
+// Steps:
+// 1) If versions exist: ensure a current symlink and sync config.
+// 2) If no versions exist: download, install, and activate the latest release.
 func ensureBinaryExists(home string, cfg *config.Config) error {
 	versionMgr := version.NewManager(home)
-
-	// Check if we have any versions installed
 	versions, err := versionMgr.ListVersions()
 	if err != nil {
 		return err
 	}
-
 	if len(versions) > 0 {
-		// We have versions, make sure current is set
-		current, err := versionMgr.GetCurrentVersion()
-		if err != nil || current == "" {
-			// Set the first available version as current
-			if err := versionMgr.SetCurrentVersion(versions[0]); err != nil {
-				return fmt.Errorf("failed to set current version: %w", err)
-			}
-			current = versions[0]
-		}
-
-		// Update config if current version is not set or different
-		if cfg.Updates.CurrentVersion != current {
-			cfg.Updates.CurrentVersion = current
-			configPath := filepath.Join(home, "config.yml")
-			if err := config.Save(cfg, configPath); err != nil {
-				return fmt.Errorf("failed to update config with current version: %w", err)
-			}
-		}
-		return nil
+		return ensureCurrentVersionSet(versionMgr, cfg, home, versions)
 	}
+	return downloadAndInstallLatest(versionMgr, home, cfg)
+}
 
-	// No versions installed, download latest tarball and extract supernode
+// ensureCurrentVersionSet sets a current version and syncs config if needed.
+// ensureCurrentVersionSet atomically ensures a current version is set and
+// persists it to the sn-manager config when changed.
+func ensureCurrentVersionSet(versionMgr *version.Manager, cfg *config.Config, home string, versions []string) error {
+	current, err := versionMgr.GetCurrentVersion()
+	if err != nil || current == "" {
+		if err := versionMgr.SetCurrentVersion(versions[0]); err != nil {
+			return fmt.Errorf("failed to set current version: %w", err)
+		}
+		current = versions[0]
+	}
+	if cfg.Updates.CurrentVersion != current {
+		cfg.Updates.CurrentVersion = current
+		configPath := filepath.Join(home, "config.yml")
+		if err := config.Save(cfg, configPath); err != nil {
+			return fmt.Errorf("failed to update config with current version: %w", err)
+		}
+	}
+	return nil
+}
+
+// downloadAndInstallLatest downloads, installs, and activates the latest SuperNode.
+// downloadAndInstallLatest downloads the combined release, extracts supernode,
+// installs the version, activates it, and syncs config.
+func downloadAndInstallLatest(versionMgr *version.Manager, home string, cfg *config.Config) error {
 	fmt.Println("No SuperNode binary found. Downloading latest version...")
 
 	client := github.NewClient(config.GitHubRepo)

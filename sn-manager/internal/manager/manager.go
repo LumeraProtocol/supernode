@@ -14,6 +14,15 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 )
 
+// Constants for process management
+const (
+	DefaultShutdownTimeout = 30 * time.Second
+	ProcessCheckInterval   = 5 * time.Second
+	CrashBackoffDelay      = 2 * time.Second
+	StopMarkerFile         = ".stop_requested"
+	RestartMarkerFile      = ".needs_restart"
+)
+
 // Manager handles the SuperNode process lifecycle
 type Manager struct {
 	config    *config.Config
@@ -171,177 +180,9 @@ func (m *Manager) cleanup() {
 	}
 }
 
-// Constants for process management
-const (
-	DefaultShutdownTimeout = 30 * time.Second
-	ProcessCheckInterval   = 5 * time.Second
-	CrashBackoffDelay     = 2 * time.Second
-	StopMarkerFile        = ".stop_requested"
-	RestartMarkerFile     = ".needs_restart"
-)
-
-// Monitor continuously supervises the SuperNode process
-// It ensures SuperNode is always running unless a stop marker is present
-func (m *Manager) Monitor(ctx context.Context) error {
-
-	// Create ticker for periodic checks
-	ticker := time.NewTicker(ProcessCheckInterval)
-	defer ticker.Stop()
-
-	// Channel to monitor process exits
-	processExitCh := make(chan error, 1)
-	
-	// Function to arm the process wait goroutine
-	armProcessWait := func() {
-		processExitCh = make(chan error, 1)
-		go func() {
-			if err := m.Wait(); err != nil {
-				processExitCh <- err
-			} else {
-				processExitCh <- nil
-			}
-		}()
-	}
-
-	// Initial check and start if needed
-	stopMarkerPath := filepath.Join(m.homeDir, StopMarkerFile)
-	if _, err := os.Stat(stopMarkerPath); os.IsNotExist(err) {
-		// No stop marker, ensure SuperNode is running
-		if !m.IsRunning() {
-			log.Println("Starting SuperNode...")
-			if err := m.Start(ctx); err != nil {
-				log.Printf("Failed to start SuperNode: %v", err)
-			} else {
-				armProcessWait()
-			}
-		} else {
-			// Already running, arm the wait
-			armProcessWait()
-		}
-	} else {
-		log.Println("Stop marker present, SuperNode will not be started")
-	}
-
-	// Main supervision loop
-	for {
-		select {
-		case <-ctx.Done():
-			// Context cancelled, stop monitoring
-			return ctx.Err()
-
-		case err := <-processExitCh:
-			// SuperNode process exited
-			if err != nil {
-				log.Printf("SuperNode exited with error: %v", err)
-			} else {
-				log.Printf("SuperNode exited normally")
-			}
-
-			// Cleanup internal state after exit
-			m.mu.Lock()
-			m.cleanup()
-			m.mu.Unlock()
-
-			// Check if we should restart
-			if _, err := os.Stat(stopMarkerPath); err == nil {
-				log.Println("Stop marker present, not restarting SuperNode")
-				continue
-			}
-
-			// Apply backoff to prevent rapid restart loops
-			time.Sleep(CrashBackoffDelay)
-
-			// Restart SuperNode
-			log.Println("Restarting SuperNode after crash...")
-			if err := m.Start(ctx); err != nil {
-				log.Printf("Failed to restart SuperNode: %v", err)
-				continue
-			}
-			armProcessWait()
-			log.Println("SuperNode restarted successfully")
-
-		case <-ticker.C:
-			// Periodic check for various conditions
-			
-			// 1. Check if stop marker was removed and we should start
-			if !m.IsRunning() {
-				if _, err := os.Stat(stopMarkerPath); os.IsNotExist(err) {
-					log.Println("Stop marker removed, starting SuperNode...")
-					if err := m.Start(ctx); err != nil {
-						log.Printf("Failed to start SuperNode: %v", err)
-					} else {
-						armProcessWait()
-						log.Println("SuperNode started")
-					}
-				}
-			}
-
-			// 2. Check if binary was updated and needs restart
-			restartMarkerPath := filepath.Join(m.homeDir, RestartMarkerFile)
-			if _, err := os.Stat(restartMarkerPath); err == nil {
-				if m.IsRunning() {
-					log.Println("Binary update detected, restarting SuperNode...")
-					
-					// Remove the restart marker
-					if err := os.Remove(restartMarkerPath); err != nil && !os.IsNotExist(err) {
-						log.Printf("Warning: failed to remove restart marker: %v", err)
-					}
-					
-					// Create temporary stop marker for clean restart
-					tmpStopMarker := []byte("update")
-					os.WriteFile(stopMarkerPath, tmpStopMarker, 0644)
-					
-					// Stop current process
-					if err := m.Stop(); err != nil {
-						log.Printf("Failed to stop for update: %v", err)
-						if err := os.Remove(stopMarkerPath); err != nil && !os.IsNotExist(err) {
-							log.Printf("Warning: failed to remove stop marker: %v", err)
-						}
-						continue
-					}
-					
-					// Brief pause
-					time.Sleep(CrashBackoffDelay)
-					
-					// Remove temporary stop marker
-					if err := os.Remove(stopMarkerPath); err != nil && !os.IsNotExist(err) {
-						log.Printf("Warning: failed to remove stop marker: %v", err)
-					}
-					
-					// Start with new binary
-					log.Println("Starting with updated binary...")
-					if err := m.Start(ctx); err != nil {
-						log.Printf("Failed to start updated binary: %v", err)
-					} else {
-						armProcessWait()
-						log.Println("SuperNode restarted with new binary")
-					}
-				}
-			}
-
-			// 3. Health check - ensure process is actually alive
-			if m.IsRunning() {
-				// Process thinks it's running, verify it really is
-				m.mu.RLock()
-				proc := m.process
-				m.mu.RUnlock()
-				
-				if proc != nil {
-					if err := proc.Signal(syscall.Signal(0)); err != nil {
-						// Process is dead but not cleaned up
-						log.Println("Detected stale process, cleaning up...")
-						m.mu.Lock()
-						m.cleanup()
-						m.mu.Unlock()
-					}
-				}
-			}
-		}
-	}
-}
+// Monitor and related helpers moved to monitor.go
 
 // GetConfig returns the manager configuration
 func (m *Manager) GetConfig() *config.Config {
 	return m.config
 }
-
