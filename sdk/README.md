@@ -16,6 +16,7 @@ The Lumera Supernode SDK is a comprehensive toolkit  for interacting with the Lu
   - [SubscribeToAllEvents](#subscribetoallevents)
 - [Event System](#event-system)
 - [Error Handling](#error-handling)
+- [Timeouts & Networking](#timeouts--networking)
 
 ## Configuration
 
@@ -364,6 +365,8 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SDKTaskTxHashReceived`: Transaction hash received from supernode
 - `SDKTaskCompleted`: Task completed successfully
 - `SDKTaskFailed`: Task failed with error
+ - `SDKUploadTimeout`: Upload phase exceeded time budget and was cancelled
+- `SDKProcessingTimeout`: Post-upload processing exceeded time budget and was cancelled
 - `SDKDownloadAttempt`: Attempting to download from supernode
 - `SDKDownloadFailure`: Download attempt failed
 - `SDKOutputPathReceived`: File download path received
@@ -418,3 +421,8 @@ err := client.SubscribeToEvents(ctx, event.SDKTaskCompleted, func(ctx context.Co
 err := client.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
     fmt.Printf("Event: %s for task %s\n", e.Type, e.TaskID)
 })
+## Timeouts & Networking
+
+For an in-depth explanation of how contexts, deadlines, client/server options, and cascade registration timeouts are applied see:
+
+- `supernode/sdk/docs/cascade-timeouts.md`

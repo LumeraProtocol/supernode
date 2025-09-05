@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/v2/pkg/net"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
@@ -80,10 +80,13 @@ func calculateOptimalChunkSize(fileSize int64) int {
 const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
 
 func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
-	// Create the client stream
-	ctx = net.AddCorrelationID(ctx)
+	// Create a cancelable context for phased timers (no correlation IDs)
+	baseCtx := ctx
+	phaseCtx, cancel := context.WithCancel(baseCtx)
+	defer cancel()
 
-	stream, err := a.client.Register(ctx, opts...)
+	// Create the client stream
+	stream, err := a.client.Register(phaseCtx, opts...)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to create register stream",
 			"error", err)
@@ -125,7 +128,19 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	chunkIndex := 0
 	buffer := make([]byte, chunkSize)
 
-	// Read and send data in chunks
+	// Start upload phase timer
+	uploadTimer := time.AfterFunc(cascadeUploadTimeout, func() {
+		a.logger.Error(baseCtx, "Upload phase timeout reached; cancelling stream")
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadTimeout, "upload phase timeout", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
+		cancel()
+	})
+
+	// Read and send data in chunks (upload phase)
 	for {
 		// Read a chunk from the file
 		n, err := file.Read(buffer)
@@ -181,6 +196,28 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		return nil, fmt.Errorf("failed to receive response: %w", err)
 	}
 
+	// Upload phase completed; stop its timer
+	if uploadTimer != nil {
+		uploadTimer.Stop()
+	}
+
+	// Processing phase timer starts now (waiting for server streamed responses)
+	processingTimer := time.AfterFunc(cascadeProcessingTimeout, func() {
+		a.logger.Error(baseCtx, "Processing phase timeout reached; cancelling stream")
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKProcessingTimeout, "processing phase timeout", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
+		cancel()
+	})
+	defer func() {
+		if processingTimer != nil {
+			processingTimer.Stop()
+		}
+	}()
+
 	// Handle streaming responses from supernode
 	var finalResp *cascade.RegisterResponse
 	for {
@@ -189,6 +226,14 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 			break
 		}
 		if err != nil {
+			// Distinguish timeout phase for clearer error messages
+			if phaseCtx.Err() != nil {
+				// Determine which phase we were in by whether upload finished
+				// At this point, upload is finished; classify as processing timeout/cancel
+				if phaseCtx.Err() == context.DeadlineExceeded || phaseCtx.Err() == context.Canceled {
+					return nil, fmt.Errorf("processing timed out or cancelled: %w", phaseCtx.Err())
+				}
+			}
 			return nil, fmt.Errorf("failed to receive server response: %w", err)
 		}
 
@@ -219,6 +264,10 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}
 
 	if finalResp == nil {
+		// If context was cancelled due to timer, surface a more specific error
+		if phaseCtx.Err() != nil {
+			return nil, fmt.Errorf("processing timed out or cancelled before final response: %w", phaseCtx.Err())
+		}
 		return nil, fmt.Errorf("no final response with tx_hash received")
 	}
 
@@ -248,7 +297,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 	opts ...grpc.CallOption,
 ) (*CascadeSupernodeDownloadResponse, error) {
 
-	ctx = net.AddCorrelationID(ctx)
+	// Use provided context as-is (no correlation IDs)
 
 	// 1. Open gRPC stream (server-stream)
 	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{

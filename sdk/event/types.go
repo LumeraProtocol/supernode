@@ -23,6 +23,9 @@ const (
 	SDKTaskTxHashReceived     EventType = "sdk:txhash_received"
 	SDKTaskCompleted          EventType = "sdk:completed"
 	SDKTaskFailed             EventType = "sdk:failed"
+	// Fine-grained timeouts for cascade registration
+	SDKUploadTimeout     EventType = "sdk:upload_timeout"
+	SDKProcessingTimeout EventType = "sdk:processing_timeout"
 
 	SDKDownloadAttempt    EventType = "sdk:download_attempt"
 	SDKDownloadFailure    EventType = "sdk:download_failure"
