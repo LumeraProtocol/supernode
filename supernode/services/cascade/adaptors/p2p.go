@@ -111,13 +111,13 @@ func (p *p2pImpl) storeCascadeMetadata(ctx context.Context, metadataFiles [][]by
 func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID string, symbolsDir string) (float64, int, int, error) {
 	/* record directory in DB */
 	if err := p.rqStore.StoreSymbolDirectory(taskID, symbolsDir); err != nil {
-		return 0, 0, fmt.Errorf("store symbol dir: %w", err)
+		return 0, 0, 0, fmt.Errorf("store symbol dir: %w", err)
 	}
 
 	/* gather every symbol path under symbolsDir ------------------------- */
 	keys, err := walkSymbolTree(symbolsDir)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
 	/* down-sample if we exceed the “big directory” threshold ------------- */
@@ -198,10 +198,10 @@ func walkSymbolTree(root string) ([]string, error) {
 func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) (float64, int, int, error) {
 	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
-	symbols, err := utils.LoadSymbols(root, fileKeys)
-	if err != nil {
-		return 0, 0, fmt.Errorf("load symbols: %w", err)
-	}
+    symbols, err := utils.LoadSymbols(root, fileKeys)
+    if err != nil {
+        return 0, 0, 0, fmt.Errorf("load symbols: %w", err)
+    }
 
 	symCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
