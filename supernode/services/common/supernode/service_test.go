@@ -14,7 +14,7 @@ func TestSupernodeStatusService(t *testing.T) {
 	t.Run("empty service", func(t *testing.T) {
 		statusService := NewSupernodeStatusService(nil, nil, nil)
 
-		resp, err := statusService.GetStatus(ctx)
+        resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 		
 		// Should have version info
@@ -61,7 +61,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		}
 		statusService.RegisterTaskProvider(mockProvider)
 
-		resp, err := statusService.GetStatus(ctx)
+        resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have one service
@@ -91,7 +91,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		statusService.RegisterTaskProvider(cascadeProvider)
 		statusService.RegisterTaskProvider(senseProvider)
 
-		resp, err := statusService.GetStatus(ctx)
+        resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have two services
@@ -127,7 +127,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		}
 		statusService.RegisterTaskProvider(mockProvider)
 
-		resp, err := statusService.GetStatus(ctx)
+        resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have one service

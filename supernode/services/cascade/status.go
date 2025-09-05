@@ -18,5 +18,5 @@ func (service *CascadeService) GetStatus(ctx context.Context) (StatusResponse, e
 	statusService.RegisterTaskProvider(service)
 
 	// Get the status from the common service
-	return statusService.GetStatus(ctx)
+	return statusService.GetStatus(ctx, false)
 }

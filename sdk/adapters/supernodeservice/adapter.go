@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
-	"github.com/LumeraProtocol/supernode/v2/pkg/net"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
@@ -80,13 +80,22 @@ func calculateOptimalChunkSize(fileSize int64) int {
 const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
 
 func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error) {
-	// Create the client stream
-	ctx = net.AddCorrelationID(ctx)
+	// Create a cancelable context for phased timers (no correlation IDs)
+	baseCtx := ctx
+	phaseCtx, cancel := context.WithCancel(baseCtx)
+	defer cancel()
 
-	stream, err := a.client.Register(ctx, opts...)
+	// Create the client stream
+	stream, err := a.client.Register(phaseCtx, opts...)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to create register stream",
 			"error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=stream_open", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, err
 	}
 
@@ -94,6 +103,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	file, err := os.Open(in.FilePath)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to open file", "filePath", in.FilePath, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=file_open", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
@@ -102,6 +117,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	fileInfo, err := file.Stat()
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get file stats", "filePath", in.FilePath, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=file_stat", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to get file stats: %w", err)
 	}
 	totalBytes := fileInfo.Size()
@@ -125,7 +146,26 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	chunkIndex := 0
 	buffer := make([]byte, chunkSize)
 
-	// Read and send data in chunks
+	// Emit upload started event
+	if in.EventLogger != nil {
+		estChunks := (totalBytes + int64(chunkSize) - 1) / int64(chunkSize)
+		in.EventLogger(baseCtx, event.SDKUploadStarted,
+			fmt.Sprintf("upload started | size=%dB chunk_size=%dB est_chunks=%d", totalBytes, chunkSize, estChunks),
+			event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+	}
+
+	uploadStart := time.Now()
+
+	// Start upload phase timer
+	uploadTimer := time.AfterFunc(cascadeUploadTimeout, func() {
+		a.logger.Error(baseCtx, "Upload phase timeout reached; cancelling stream")
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=timeout", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+		}
+		cancel()
+	})
+
+	// Read and send data in chunks (upload phase)
 	for {
 		// Read a chunk from the file
 		n, err := file.Read(buffer)
@@ -134,6 +174,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		}
 		if err != nil {
 			a.logger.Error(ctx, "Failed to read file chunk", "chunkIndex", chunkIndex, "error", err)
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKUploadFailed, fmt.Sprintf("upload failed | reason=read_error chunk=%d", chunkIndex), event.EventData{
+					event.KeyTaskID:   in.TaskId,
+					event.KeyActionID: in.ActionID,
+				})
+			}
 			return nil, fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
@@ -148,6 +194,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 		if err := stream.Send(chunk); err != nil {
 			a.logger.Error(ctx, "Failed to send data chunk", "chunkIndex", chunkIndex, "error", err)
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKUploadFailed, fmt.Sprintf("upload failed | reason=send_error chunk=%d", chunkIndex), event.EventData{
+					event.KeyTaskID:   in.TaskId,
+					event.KeyActionID: in.ActionID,
+				})
+			}
 			return nil, fmt.Errorf("failed to send chunk: %w", err)
 		}
 
@@ -171,6 +223,12 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	if err := stream.Send(metadata); err != nil {
 		a.logger.Error(ctx, "Failed to send metadata", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=send_metadata", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to send metadata: %w", err)
 	}
 
@@ -178,7 +236,50 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 
 	if err := stream.CloseSend(); err != nil {
 		a.logger.Error(ctx, "Failed to close stream and receive response", "TaskId", in.TaskId, "ActionID", in.ActionID, "error", err)
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKUploadFailed, "upload failed | reason=close_send", event.EventData{
+				event.KeyTaskID:   in.TaskId,
+				event.KeyActionID: in.ActionID,
+			})
+		}
 		return nil, fmt.Errorf("failed to receive response: %w", err)
+	}
+
+	// Upload phase completed; stop its timer
+	if uploadTimer != nil {
+		uploadTimer.Stop()
+	}
+
+	// Emit upload completed with throughput metrics
+	if in.EventLogger != nil {
+		elapsed := time.Since(uploadStart).Seconds()
+		mb := float64(bytesRead) / (1024.0 * 1024.0)
+		avg := 0.0
+		if elapsed > 0 {
+			avg = mb / elapsed
+		}
+		in.EventLogger(baseCtx, event.SDKUploadCompleted,
+			fmt.Sprintf("upload complete | size=%dB chunks=%d elapsed=%.2fs avg=%.2fMB/s", totalBytes, chunkIndex, elapsed, avg),
+			event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+	}
+
+	// Processing phase timer starts now (waiting for server streamed responses)
+	processingTimer := time.AfterFunc(cascadeProcessingTimeout, func() {
+		a.logger.Error(baseCtx, "Processing phase timeout reached; cancelling stream")
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKProcessingTimeout, "processing timeout", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+		}
+		cancel()
+	})
+	defer func() {
+		if processingTimer != nil {
+			processingTimer.Stop()
+		}
+	}()
+
+	// Emit processing started
+	if in.EventLogger != nil {
+		in.EventLogger(baseCtx, event.SDKProcessingStarted, "processing started | awaiting server progress", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
 	}
 
 	// Handle streaming responses from supernode
@@ -189,6 +290,18 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 			break
 		}
 		if err != nil {
+			// Distinguish timeout phase for clearer error messages
+			if phaseCtx.Err() != nil {
+				// At this point, upload is finished; classify as processing timeout/cancel
+				if phaseCtx.Err() == context.DeadlineExceeded || phaseCtx.Err() == context.Canceled {
+					return nil, fmt.Errorf("processing timed out or cancelled: %w", phaseCtx.Err())
+				}
+			}
+			if in.EventLogger != nil {
+				in.EventLogger(baseCtx, event.SDKProcessingFailed,
+					fmt.Sprintf("processing failed | reason=stream_recv error=%v", err),
+					event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+			}
 			return nil, fmt.Errorf("failed to receive server response: %w", err)
 		}
 
@@ -219,6 +332,13 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 	}
 
 	if finalResp == nil {
+		// If context was cancelled due to timer, surface a more specific error
+		if phaseCtx.Err() != nil {
+			return nil, fmt.Errorf("processing timed out or cancelled before final response: %w", phaseCtx.Err())
+		}
+		if in.EventLogger != nil {
+			in.EventLogger(baseCtx, event.SDKProcessingFailed, "processing failed | reason=missing_final_response", event.EventData{event.KeyTaskID: in.TaskId, event.KeyActionID: in.ActionID})
+		}
 		return nil, fmt.Errorf("no final response with tx_hash received")
 	}
 
@@ -230,7 +350,9 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 }
 
 func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
-	resp, err := a.statusClient.GetStatus(ctx, &supernode.StatusRequest{})
+    // Gate P2P metrics via context option to keep API backward compatible
+    req := &supernode.StatusRequest{IncludeP2PMetrics: includeP2PMetrics(ctx)}
+    resp, err := a.statusClient.GetStatus(ctx, req)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
 		return SupernodeStatusresponse{}, fmt.Errorf("failed to get supernode status: %w", err)
@@ -248,7 +370,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 	opts ...grpc.CallOption,
 ) (*CascadeSupernodeDownloadResponse, error) {
 
-	ctx = net.AddCorrelationID(ctx)
+	// Use provided context as-is (no correlation IDs)
 
 	// 1. Open gRPC stream (server-stream)
 	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
@@ -331,7 +453,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
-	switch e {
+    switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
 		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:
@@ -356,8 +478,10 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeActionFinalized
 	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
 		return event.SupernodeArtefactsDownloaded
-	case cascade.SupernodeEventType_FINALIZE_SIMULATED:
-		return event.SupernodeFinalizeSimulated
+    case cascade.SupernodeEventType_FINALIZE_SIMULATED:
+        return event.SupernodeFinalizeSimulated
+    case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
+        return event.SupernodeFinalizeSimulationFailed
 	default:
 		return event.SupernodeUnknown
 	}
@@ -387,9 +511,9 @@ func parseSuccessRate(msg string) (float64, bool) {
 }
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
-	result := &SupernodeStatusresponse{}
-	result.Version = resp.Version
-	result.UptimeSeconds = resp.UptimeSeconds
+    result := &SupernodeStatusresponse{}
+    result.Version = resp.Version
+    result.UptimeSeconds = resp.UptimeSeconds
 
 	// Convert Resources data
 	if resp.Resources != nil {
@@ -444,9 +568,117 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 		copy(result.Network.PeerAddresses, resp.Network.PeerAddresses)
 	}
 
-	// Copy rank and IP address
-	result.Rank = resp.Rank
-	result.IPAddress = resp.IpAddress
+    // Copy rank and IP address
+    result.Rank = resp.Rank
+    result.IPAddress = resp.IpAddress
 
-	return result
+    // Map optional P2P metrics
+    if resp.P2PMetrics != nil {
+        // DHT metrics
+        if resp.P2PMetrics.DhtMetrics != nil {
+            // Store success recent
+            for _, p := range resp.P2PMetrics.DhtMetrics.StoreSuccessRecent {
+                result.P2PMetrics.DhtMetrics.StoreSuccessRecent = append(result.P2PMetrics.DhtMetrics.StoreSuccessRecent, struct {
+                    TimeUnix    int64
+                    Requests    int32
+                    Successful  int32
+                    SuccessRate float64
+                }{
+                    TimeUnix:    p.TimeUnix,
+                    Requests:    p.Requests,
+                    Successful:  p.Successful,
+                    SuccessRate: p.SuccessRate,
+                })
+            }
+            // Batch retrieve recent
+            for _, p := range resp.P2PMetrics.DhtMetrics.BatchRetrieveRecent {
+                result.P2PMetrics.DhtMetrics.BatchRetrieveRecent = append(result.P2PMetrics.DhtMetrics.BatchRetrieveRecent, struct {
+                    TimeUnix     int64
+                    Keys         int32
+                    Required     int32
+                    FoundLocal   int32
+                    FoundNetwork int32
+                    DurationMS   int64
+                }{
+                    TimeUnix:     p.TimeUnix,
+                    Keys:         p.Keys,
+                    Required:     p.Required,
+                    FoundLocal:   p.FoundLocal,
+                    FoundNetwork: p.FoundNetwork,
+                    DurationMS:   p.DurationMs,
+                })
+            }
+            result.P2PMetrics.DhtMetrics.HotPathBannedSkips = resp.P2PMetrics.DhtMetrics.HotPathBannedSkips
+            result.P2PMetrics.DhtMetrics.HotPathBanIncrements = resp.P2PMetrics.DhtMetrics.HotPathBanIncrements
+        }
+
+        // Network handle metrics
+        if resp.P2PMetrics.NetworkHandleMetrics != nil {
+            if result.P2PMetrics.NetworkHandleMetrics == nil {
+                result.P2PMetrics.NetworkHandleMetrics = map[string]struct{
+                    Total   int64
+                    Success int64
+                    Failure int64
+                    Timeout int64
+                }{}
+            }
+            for k, v := range resp.P2PMetrics.NetworkHandleMetrics {
+                result.P2PMetrics.NetworkHandleMetrics[k] = struct{
+                    Total   int64
+                    Success int64
+                    Failure int64
+                    Timeout int64
+                }{
+                    Total:   v.Total,
+                    Success: v.Success,
+                    Failure: v.Failure,
+                    Timeout: v.Timeout,
+                }
+            }
+        }
+
+        // Conn pool metrics
+        if resp.P2PMetrics.ConnPoolMetrics != nil {
+            if result.P2PMetrics.ConnPoolMetrics == nil {
+                result.P2PMetrics.ConnPoolMetrics = map[string]int64{}
+            }
+            for k, v := range resp.P2PMetrics.ConnPoolMetrics {
+                result.P2PMetrics.ConnPoolMetrics[k] = v
+            }
+        }
+
+        // Ban list
+        for _, b := range resp.P2PMetrics.BanList {
+            result.P2PMetrics.BanList = append(result.P2PMetrics.BanList, struct {
+                ID            string
+                IP            string
+                Port          uint32
+                Count         int32
+                CreatedAtUnix int64
+                AgeSeconds    int64
+            }{
+                ID:            b.Id,
+                IP:            b.Ip,
+                Port:          b.Port,
+                Count:         b.Count,
+                CreatedAtUnix: b.CreatedAtUnix,
+                AgeSeconds:    b.AgeSeconds,
+            })
+        }
+
+        // Database
+        if resp.P2PMetrics.Database != nil {
+            result.P2PMetrics.Database.P2PDBSizeMB = resp.P2PMetrics.Database.P2PDbSizeMb
+            result.P2PMetrics.Database.P2PDBRecordsCount = resp.P2PMetrics.Database.P2PDbRecordsCount
+        }
+
+        // Disk
+        if resp.P2PMetrics.Disk != nil {
+            result.P2PMetrics.Disk.AllMB = resp.P2PMetrics.Disk.AllMb
+            result.P2PMetrics.Disk.UsedMB = resp.P2PMetrics.Disk.UsedMb
+            result.P2PMetrics.Disk.FreeMB = resp.P2PMetrics.Disk.FreeMb
+        }
+    }
+
+    return result
 }

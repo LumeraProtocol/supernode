@@ -16,6 +16,7 @@ The Lumera Supernode SDK is a comprehensive toolkit  for interacting with the Lu
   - [SubscribeToAllEvents](#subscribetoallevents)
 - [Event System](#event-system)
 - [Error Handling](#error-handling)
+- [Timeouts & Networking](#timeouts--networking)
 
 ## Configuration
 
@@ -305,6 +306,25 @@ if err != nil {
 - `*supernodeservice.SupernodeStatusresponse`: Status information including CPU usage, memory stats, and active services
 - `error`: Error if the supernode is unreachable or query fails
 
+Include detailed P2P metrics (optional):
+
+By default, peer info and P2P metrics are not returned to keep calls lightweight. To include them, set an option in the context:
+
+```go
+import snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
+
+// Opt-in via context
+ctxWithMetrics := snsvc.WithIncludeP2PMetrics(ctx)
+status, err := client.GetSupernodeStatus(ctxWithMetrics, "lumera1abc...")
+if err != nil {
+    // handle error
+}
+
+// Access optional fields when present
+fmt.Println("Peers:", status.Network.PeersCount)
+fmt.Println("DHT hot path bans:", status.P2PMetrics.DhtMetrics.HotPathBanIncrements)
+```
+
 ### SubscribeToEvents
 
 Registers an event handler for specific event types to monitor task progress.
@@ -364,6 +384,13 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SDKTaskTxHashReceived`: Transaction hash received from supernode
 - `SDKTaskCompleted`: Task completed successfully
 - `SDKTaskFailed`: Task failed with error
+ - `SDKConnectionEstablished`: Connection to supernode established
+ - `SDKUploadStarted`: Upload started (size, chunk size, est chunks)
+ - `SDKUploadCompleted`: Upload completed (size, chunks, elapsed, avg throughput)
+ - `SDKUploadFailed`: Upload failed (reason=timeout|send_error|read_error|file_open|file_stat|close_send)
+ - `SDKProcessingStarted`: Waiting for server progress/final tx hash
+ - `SDKProcessingFailed`: Processing failed (reason=stream_recv|missing_final_response)
+ - `SDKProcessingTimeout`: Processing exceeded time budget and was cancelled
 - `SDKDownloadAttempt`: Attempting to download from supernode
 - `SDKDownloadFailure`: Download attempt failed
 - `SDKOutputPathReceived`: File download path received
@@ -381,9 +408,10 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SupernodeRQIDVerified`: RaptorQ ID verified
 - `SupernodeFinalizeSimulated`: Finalize transaction simulated successfully (pre-storage)
 - `SupernodeArtefactsStored`: Artifacts stored successfully
-- `SupernodeActionFinalized`: Action processing finalized
-- `SupernodeArtefactsDownloaded`: Artifacts downloaded
-- `SupernodeUnknown`: Unknown supernode event
+ - `SupernodeActionFinalized`: Action processing finalized
+ - `SupernodeArtefactsDownloaded`: Artifacts downloaded
+ - `SupernodeFinalizeSimulationFailed`: Finalize action simulation failed
+ - `SupernodeUnknown`: Unknown supernode event
 
 Note: For backward compatibility, older supernodes may emit the finalize simulation as an `RQID_VERIFIED` event with the message `"finalize action simulation passed"`. The SDK adapter maps this to `SupernodeFinalizeSimulated` automatically.
 
@@ -418,3 +446,8 @@ err := client.SubscribeToEvents(ctx, event.SDKTaskCompleted, func(ctx context.Co
 err := client.SubscribeToAllEvents(ctx, func(ctx context.Context, e event.Event) {
     fmt.Printf("Event: %s for task %s\n", e.Type, e.TaskID)
 })
+## Timeouts & Networking
+
+For an in-depth explanation of how contexts, deadlines, client/server options, and cascade registration timeouts are applied see:
+
+- `supernode/sdk/docs/cascade-timeouts.md`

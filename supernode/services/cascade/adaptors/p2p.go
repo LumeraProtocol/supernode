@@ -28,15 +28,17 @@ const (
 //
 //go:generate mockgen -destination=mocks/p2p_mock.go -package=cascadeadaptormocks -source=p2p.go
 type P2PService interface {
-    // StoreArtefacts stores ID files and RaptorQ symbols, returning an aggregated
-    // network success rate percentage across all store batches.
-    //
-    // Aggregation model:
+	// StoreArtefacts stores ID files and RaptorQ symbols.
+	//
+	// Aggregation model:
 	// - Each underlying StoreBatch returns (ratePct, requests) where requests is
-	//   the number of node RPCs. The aggregated rate is computed as a weighted
-	//   average by requests across metadata and symbol batches, which yields the
-	//   global success rate across all node calls attempted for this action.
-    StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) (float64, int, error)
+	//   the number of node RPCs. The aggregated success rate can be computed as
+	//   a weighted average by requests across metadata and symbol batches,
+	//   yielding a global success view across all node calls attempted for this action.
+	//   See implementation notes for item‑weighted aggregation currently in use.
+	//
+	// Returns detailed metrics for both categories along with an aggregated view.
+	StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) (StoreArtefactsMetrics, error)
 }
 
 // p2pImpl is the default implementation of the P2PService interface.
@@ -57,33 +59,60 @@ type StoreArtefactsRequest struct {
 	SymbolsDir string
 }
 
-func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) (float64, int, error) {
-    logtrace.Info(ctx, "About to store ID files", logtrace.Fields{"taskID": req.TaskID, "fileCount": len(req.IDFiles)})
+// StoreArtefactsMetrics captures detailed outcomes of metadata and symbols storage.
+type StoreArtefactsMetrics struct {
+	// Metadata (ID files)
+	MetaRate     float64 // percentage (0–100)
+	MetaRequests int     // number of node RPCs attempted for metadata
+	MetaCount    int     // number of metadata files attempted
 
-    metaRate, metaReqs, err := p.storeCascadeMetadata(ctx, req.IDFiles, req.TaskID)
-    if err != nil {
-        return 0, 0, errors.Wrap(err, "failed to store ID files")
-    }
-    logtrace.Info(ctx, "id files have been stored", f)
+	// Symbols
+	SymRate     float64 // percentage (0–100) across all symbol batches (item-weighted)
+	SymRequests int     // total node RPCs for symbol batches
+	SymCount    int     // total symbols processed
 
-    // NOTE: For now we aggregate by item count (ID files + symbol count).
-    // TODO(move-to-request-weighted): Switch aggregation to request-weighted once
-    // external consumers and metrics expectations are updated. We already return
-    // totalRequests so the event/logs can include accurate request counts.
-    symRate, symCount, symReqs, err := p.storeCascadeSymbols(ctx, req.TaskID, req.ActionID, req.SymbolsDir)
-    if err != nil {
-        return 0, 0, errors.Wrap(err, "error storing raptor-q symbols")
-    }
-    logtrace.Info(ctx, "raptor-q symbols have been stored", f)
+	// Aggregated view
+	AggregatedRate float64 // item-weighted across metadata and symbols
+	TotalRequests  int     // MetaRequests + SymRequests
+}
 
-    // Aggregate: weight by item counts (ID files + symbols) for now.
-    totalItems := len(req.IDFiles) + symCount
-    aggRate := 0.0
-    if totalItems > 0 {
-        aggRate = ((metaRate * float64(len(req.IDFiles))) + (symRate * float64(symCount))) / float64(totalItems)
-    }
-    totalRequests := metaReqs + symReqs
-    return aggRate, totalRequests, nil
+func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) (StoreArtefactsMetrics, error) {
+	logtrace.Info(ctx, "About to store ID files", logtrace.Fields{"taskID": req.TaskID, "fileCount": len(req.IDFiles)})
+
+	metaRate, metaReqs, err := p.storeCascadeMetadata(ctx, req.IDFiles, req.TaskID)
+	if err != nil {
+		return StoreArtefactsMetrics{}, errors.Wrap(err, "failed to store ID files")
+	}
+	logtrace.Info(ctx, "id files have been stored", f)
+
+	// NOTE: For now we aggregate by item count (ID files + symbol count).
+	// TODO(move-to-request-weighted): Switch aggregation to request-weighted once
+	// external consumers and metrics expectations are updated. We already return
+	// totalRequests so the event/logs can include accurate request counts.
+	symRate, symCount, symReqs, err := p.storeCascadeSymbols(ctx, req.TaskID, req.ActionID, req.SymbolsDir)
+	if err != nil {
+		return StoreArtefactsMetrics{}, errors.Wrap(err, "error storing raptor-q symbols")
+	}
+	logtrace.Info(ctx, "raptor-q symbols have been stored", f)
+
+	// Aggregate: weight by item counts (ID files + symbols) for now.
+	metaCount := len(req.IDFiles)
+	totalItems := metaCount + symCount
+	aggRate := 0.0
+	if totalItems > 0 {
+		aggRate = ((metaRate * float64(metaCount)) + (symRate * float64(symCount))) / float64(totalItems)
+	}
+	totalRequests := metaReqs + symReqs
+	return StoreArtefactsMetrics{
+		MetaRate:       metaRate,
+		MetaRequests:   metaReqs,
+		MetaCount:      metaCount,
+		SymRate:        symRate,
+		SymRequests:    symReqs,
+		SymCount:       symCount,
+		AggregatedRate: aggRate,
+		TotalRequests:  totalRequests,
+	}, nil
 }
 
 // storeCascadeMetadata stores cascade metadata (ID files) via P2P.
@@ -132,39 +161,39 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 
 	logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
 
-    /* stream in fixed-size batches -------------------------------------- */
-    sumWeightedRates := 0.0
-    totalSymbols := 0
-    totalRequests := 0
-    for start := 0; start < len(keys); {
-        end := start + loadSymbolsBatchSize
-        if end > len(keys) {
-            end = len(keys)
-        }
-        batch := keys[start:end]
-        rate, requests, count, err := p.storeSymbolsInP2P(ctx, taskID, symbolsDir, batch)
-        if err != nil {
-            return rate, totalSymbols, totalRequests, err
-        }
-        sumWeightedRates += rate * float64(count)
-        totalSymbols += count
-        totalRequests += requests
-        start = end
-    }
+	/* stream in fixed-size batches -------------------------------------- */
+	sumWeightedRates := 0.0
+	totalSymbols := 0
+	totalRequests := 0
+	for start := 0; start < len(keys); {
+		end := start + loadSymbolsBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		batch := keys[start:end]
+		rate, requests, count, err := p.storeSymbolsInP2P(ctx, taskID, symbolsDir, batch)
+		if err != nil {
+			return rate, totalSymbols, totalRequests, err
+		}
+		sumWeightedRates += rate * float64(count)
+		totalSymbols += count
+		totalRequests += requests
+		start = end
+	}
 
-    if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
-        return 0, totalSymbols, totalRequests, fmt.Errorf("update first-batch flag: %w", err)
-    }
-    logtrace.Info(ctx, "finished storing RaptorQ symbols", logtrace.Fields{
-        "curr-time": time.Now().UTC(),
-        "count":     len(keys),
-    })
+	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
+		return 0, totalSymbols, totalRequests, fmt.Errorf("update first-batch flag: %w", err)
+	}
+	logtrace.Info(ctx, "finished storing RaptorQ symbols", logtrace.Fields{
+		"curr-time": time.Now().UTC(),
+		"count":     len(keys),
+	})
 
-    aggRate := 0.0
-    if totalSymbols > 0 {
-        aggRate = sumWeightedRates / float64(totalSymbols)
-    }
-    return aggRate, totalSymbols, totalRequests, nil
+	aggRate := 0.0
+	if totalSymbols > 0 {
+		aggRate = sumWeightedRates / float64(totalSymbols)
+	}
+	return aggRate, totalSymbols, totalRequests, nil
 }
 
 func walkSymbolTree(root string) ([]string, error) {
@@ -198,24 +227,24 @@ func walkSymbolTree(root string) ([]string, error) {
 func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) (float64, int, int, error) {
 	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
-    symbols, err := utils.LoadSymbols(root, fileKeys)
-    if err != nil {
-        return 0, 0, 0, fmt.Errorf("load symbols: %w", err)
-    }
+	symbols, err := utils.LoadSymbols(root, fileKeys)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("load symbols: %w", err)
+	}
 
 	symCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-    rate, requests, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
-    if err != nil {
-        return rate, requests, len(symbols), fmt.Errorf("p2p store batch: %w", err)
-    }
-    logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
+	rate, requests, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
+	if err != nil {
+		return rate, requests, len(symbols), fmt.Errorf("p2p store batch: %w", err)
+	}
+	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
 
-    if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
-        return rate, requests, len(symbols), fmt.Errorf("delete symbols: %w", err)
-    }
-    logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
+	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
+		return rate, requests, len(symbols), fmt.Errorf("delete symbols: %w", err)
+	}
+	logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
 
-    return rate, requests, len(symbols), nil
+	return rate, requests, len(symbols), nil
 }

@@ -14,7 +14,7 @@ type EventType string
 // These events are used to track the progress of tasks
 // and to notify subscribers about important changes in the system.
 const (
-	SDKTaskStarted            EventType = "sdk:started"
+    SDKTaskStarted            EventType = "sdk:started"
 	SDKSupernodesUnavailable  EventType = "sdk:supernodes_unavailable"
 	SDKSupernodesFound        EventType = "sdk:supernodes_found"
 	SDKRegistrationAttempt    EventType = "sdk:registration_attempt"
@@ -22,7 +22,15 @@ const (
 	SDKRegistrationSuccessful EventType = "sdk:registration_successful"
 	SDKTaskTxHashReceived     EventType = "sdk:txhash_received"
 	SDKTaskCompleted          EventType = "sdk:completed"
-	SDKTaskFailed             EventType = "sdk:failed"
+    SDKTaskFailed             EventType = "sdk:failed"
+    SDKConnectionEstablished  EventType = "sdk:connection_established"
+    // Upload/processing phase events for cascade registration
+    SDKUploadStarted     EventType = "sdk:upload_started"
+    SDKUploadCompleted   EventType = "sdk:upload_completed"
+    SDKUploadFailed      EventType = "sdk:upload_failed"      // reason includes timeout
+    SDKProcessingStarted EventType = "sdk:processing_started"
+    SDKProcessingFailed  EventType = "sdk:processing_failed"
+    SDKProcessingTimeout EventType = "sdk:processing_timeout"
 
 	SDKDownloadAttempt    EventType = "sdk:download_attempt"
 	SDKDownloadFailure    EventType = "sdk:download_failure"
@@ -42,9 +50,10 @@ const (
 	SupernodeRQIDVerified        EventType = "supernode:rqid_verified"
 	SupernodeFinalizeSimulated   EventType = "supernode:finalize_simulated"
 	SupernodeArtefactsStored     EventType = "supernode:artefacts_stored"
-	SupernodeActionFinalized     EventType = "supernode:action_finalized"
-	SupernodeArtefactsDownloaded EventType = "supernode:artefacts_downloaded"
-	SupernodeUnknown             EventType = "supernode:unknown"
+    SupernodeActionFinalized     EventType = "supernode:action_finalized"
+    SupernodeArtefactsDownloaded EventType = "supernode:artefacts_downloaded"
+    SupernodeUnknown             EventType = "supernode:unknown"
+    SupernodeFinalizeSimulationFailed EventType = "supernode:finalize_simulation_failed"
 )
 
 // EventData is a map of event data attributes using standardized keys

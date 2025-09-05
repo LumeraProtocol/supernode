@@ -38,7 +38,8 @@ const (
 	SupernodeEventType_FINALIZE_SIMULATED   SupernodeEventType = 10
 	SupernodeEventType_ARTEFACTS_STORED     SupernodeEventType = 11
 	SupernodeEventType_ACTION_FINALIZED     SupernodeEventType = 12
-	SupernodeEventType_ARTEFACTS_DOWNLOADED SupernodeEventType = 13
+    SupernodeEventType_ARTEFACTS_DOWNLOADED SupernodeEventType = 13
+    SupernodeEventType_FINALIZE_SIMULATION_FAILED SupernodeEventType = 14
 )
 
 // Enum value maps for SupernodeEventType.
@@ -57,7 +58,8 @@ var (
 		10: "FINALIZE_SIMULATED",
 		11: "ARTEFACTS_STORED",
 		12: "ACTION_FINALIZED",
-		13: "ARTEFACTS_DOWNLOADED",
+        13: "ARTEFACTS_DOWNLOADED",
+        14: "FINALIZE_SIMULATION_FAILED",
 	}
 	SupernodeEventType_value = map[string]int32{
 		"UNKNOWN":                    0,
@@ -73,7 +75,8 @@ var (
 		"FINALIZE_SIMULATED":         10,
 		"ARTEFACTS_STORED":           11,
 		"ACTION_FINALIZED":           12,
-		"ARTEFACTS_DOWNLOADED":       13,
+        "ARTEFACTS_DOWNLOADED":       13,
+        "FINALIZE_SIMULATION_FAILED": 14,
 	}
 )
 

@@ -55,6 +55,15 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "includeP2pMetrics",
+            "description": "Optional: include detailed P2P metrics in the response\nMaps to query param via grpc-gateway: /api/v1/status?include_p2p_metrics=true",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
         "tags": [
           "SupernodeService"
         ]
@@ -62,6 +71,184 @@
     }
   },
   "definitions": {
+    "DhtMetricsBatchRetrievePoint": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "event time (unix seconds)"
+        },
+        "keys": {
+          "type": "integer",
+          "format": "int32",
+          "title": "keys requested"
+        },
+        "required": {
+          "type": "integer",
+          "format": "int32",
+          "title": "required count"
+        },
+        "foundLocal": {
+          "type": "integer",
+          "format": "int32",
+          "title": "found locally"
+        },
+        "foundNetwork": {
+          "type": "integer",
+          "format": "int32",
+          "title": "found on network"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64",
+          "title": "duration in milliseconds"
+        }
+      }
+    },
+    "DhtMetricsStoreSuccessPoint": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "event time (unix seconds)"
+        },
+        "requests": {
+          "type": "integer",
+          "format": "int32",
+          "title": "total node RPCs attempted"
+        },
+        "successful": {
+          "type": "integer",
+          "format": "int32",
+          "title": "successful node RPCs"
+        },
+        "successRate": {
+          "type": "number",
+          "format": "double",
+          "title": "percentage (0-100)"
+        }
+      }
+    },
+    "P2PMetricsBanEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "printable ID"
+        },
+        "ip": {
+          "type": "string",
+          "title": "last seen IP"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int64",
+          "title": "last seen port"
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32",
+          "title": "failure count"
+        },
+        "createdAtUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "first ban time (unix seconds)"
+        },
+        "ageSeconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "age in seconds"
+        }
+      },
+      "title": "Ban list entry"
+    },
+    "P2PMetricsDatabaseStats": {
+      "type": "object",
+      "properties": {
+        "p2pDbSizeMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "p2pDbRecordsCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "DB stats"
+    },
+    "P2PMetricsDhtMetrics": {
+      "type": "object",
+      "properties": {
+        "storeSuccessRecent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/DhtMetricsStoreSuccessPoint"
+          }
+        },
+        "batchRetrieveRecent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/DhtMetricsBatchRetrievePoint"
+          }
+        },
+        "hotPathBannedSkips": {
+          "type": "string",
+          "format": "int64",
+          "title": "counter"
+        },
+        "hotPathBanIncrements": {
+          "type": "string",
+          "format": "int64",
+          "title": "counter"
+        }
+      },
+      "title": "Rolling DHT metrics snapshot"
+    },
+    "P2PMetricsDiskStatus": {
+      "type": "object",
+      "properties": {
+        "allMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "usedMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "freeMb": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "title": "Disk status"
+    },
+    "P2PMetricsHandleCounters": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "success": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failure": {
+          "type": "string",
+          "format": "int64"
+        },
+        "timeout": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "Per-handler counters from network layer"
+    },
     "ResourcesCPU": {
       "type": "object",
       "properties": {
@@ -145,6 +332,41 @@
         }
       },
       "title": "Network information"
+    },
+    "StatusResponseP2PMetrics": {
+      "type": "object",
+      "properties": {
+        "dhtMetrics": {
+          "$ref": "#/definitions/P2PMetricsDhtMetrics"
+        },
+        "networkHandleMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/P2PMetricsHandleCounters"
+          }
+        },
+        "connPoolMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "banList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsBanEntry"
+          }
+        },
+        "database": {
+          "$ref": "#/definitions/P2PMetricsDatabaseStats"
+        },
+        "disk": {
+          "$ref": "#/definitions/P2PMetricsDiskStatus"
+        }
+      },
+      "title": "P2P metrics and diagnostics (additive field)"
     },
     "StatusResponseResources": {
       "type": "object",
@@ -288,6 +510,9 @@
         "ipAddress": {
           "type": "string",
           "title": "Supernode IP address with port (e.g., \"192.168.1.1:4445\")"
+        },
+        "p2pMetrics": {
+          "$ref": "#/definitions/StatusResponseP2PMetrics"
         }
       },
       "title": "The StatusResponse represents system status with clear organization"
