@@ -306,6 +306,25 @@ if err != nil {
 - `*supernodeservice.SupernodeStatusresponse`: Status information including CPU usage, memory stats, and active services
 - `error`: Error if the supernode is unreachable or query fails
 
+Include detailed P2P metrics (optional):
+
+By default, peer info and P2P metrics are not returned to keep calls lightweight. To include them, set an option in the context:
+
+```go
+import snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
+
+// Opt-in via context
+ctxWithMetrics := snsvc.WithIncludeP2PMetrics(ctx)
+status, err := client.GetSupernodeStatus(ctxWithMetrics, "lumera1abc...")
+if err != nil {
+    // handle error
+}
+
+// Access optional fields when present
+fmt.Println("Peers:", status.Network.PeersCount)
+fmt.Println("DHT hot path bans:", status.P2PMetrics.DhtMetrics.HotPathBanIncrements)
+```
+
 ### SubscribeToEvents
 
 Registers an event handler for specific event types to monitor task progress.

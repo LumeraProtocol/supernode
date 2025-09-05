@@ -15,7 +15,13 @@ service SupernodeService {
   rpc GetStatus(StatusRequest) returns (StatusResponse);
 }
 
-message StatusRequest {}
+// Optional request flags
+message StatusRequest {
+  // When true, the response includes detailed P2P metrics and
+  // network peer information. This is gated to avoid heavy work
+  // unless explicitly requested.
+  bool include_p2p_metrics = 1;
+}
 
 message StatusResponse {
   string version = 1;                        // Supernode version
@@ -65,6 +71,68 @@ message StatusResponse {
   Network network = 6;                      // P2P network information
   int32 rank = 7;                           // Rank in the top supernodes list (0 if not in top list)
   string ip_address = 8;                    // Supernode IP address with port (e.g., "192.168.1.1:4445")
+  
+  // Optional detailed P2P metrics (present only when requested)
+  message P2PMetrics {
+    message DhtMetrics {
+      message StoreSuccessPoint {
+        int64 time_unix = 1;     // event time (unix seconds)
+        int32 requests = 2;      // total node RPCs attempted
+        int32 successful = 3;    // successful node RPCs
+        double success_rate = 4; // percentage (0-100)
+      }
+
+      message BatchRetrievePoint {
+        int64 time_unix = 1;     // event time (unix seconds)
+        int32 keys = 2;          // keys requested
+        int32 required = 3;      // required count
+        int32 found_local = 4;   // found locally
+        int32 found_network = 5; // found on network
+        int64 duration_ms = 6;   // duration in milliseconds
+      }
+
+      repeated StoreSuccessPoint store_success_recent = 1;
+      repeated BatchRetrievePoint batch_retrieve_recent = 2;
+      int64 hot_path_banned_skips = 3;
+      int64 hot_path_ban_increments = 4;
+    }
+
+    message HandleCounters {
+      int64 total = 1;
+      int64 success = 2;
+      int64 failure = 3;
+      int64 timeout = 4;
+    }
+
+    message BanEntry {
+      string id = 1;
+      string ip = 2;
+      uint32 port = 3;
+      int32 count = 4;
+      int64 created_at_unix = 5;
+      int64 age_seconds = 6;
+    }
+
+    message DatabaseStats {
+      double p2p_db_size_mb = 1;
+      int64 p2p_db_records_count = 2;
+    }
+
+    message DiskStatus {
+      double all_mb = 1;
+      double used_mb = 2;
+      double free_mb = 3;
+    }
+
+    DhtMetrics dht_metrics = 1;
+    map<string, HandleCounters> network_handle_metrics = 2;
+    map<string, int64> conn_pool_metrics = 3;
+    repeated BanEntry ban_list = 4;
+    DatabaseStats database = 5;
+    DiskStatus disk = 6;
+  }
+
+  P2PMetrics p2p_metrics = 9;               // Only present when include_p2p_metrics=true
 }
 ```
 
@@ -144,11 +212,14 @@ The supernode provides an HTTP gateway that exposes the gRPC services via REST A
 #### GET /api/v1/status
 Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
+- Query parameter `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
+- When omitted or false, peer count, peer addresses, and `p2p_metrics` are not included.
+
 ```bash
-curl http://localhost:8002/api/v1/status
+curl "http://localhost:8002/api/v1/status"
 ```
 
-Response:
+Response (without P2P metrics):
 ```json
 {
   "version": "1.0.0",
@@ -183,15 +254,49 @@ Response:
     }
   ],
   "registered_services": ["cascade", "sense"],
+  "network": {},
+  "rank": 6,
+  "ip_address": "192.168.1.100:4445"
+}
+```
+
+To include P2P metrics and peer information:
+
+```bash
+curl "http://localhost:8002/api/v1/status?include_p2p_metrics=true"
+```
+
+Response (with P2P metrics):
+
+```json
+{
+  "version": "1.0.0",
+  "uptime_seconds": "3600",
+  "resources": { /* ... */ },
+  "running_tasks": [ /* ... */ ],
+  "registered_services": ["cascade", "sense"],
   "network": {
     "peers_count": 11,
     "peer_addresses": [
-      "lumera13z4pkmgkr587sg6lkqnmqmqkkfpsau3rmjd5kx@156.67.29.226:4445",
-      "lumera1s55nzsyqsuwxsl3es0v7rxux7rypsa7zpzlqg5@18.216.80.56:4445"
+      "lumera13z...@156.67.29.226:4445",
+      "lumera1s5...@18.216.80.56:4445"
     ]
   },
   "rank": 6,
-  "ip_address": "192.168.1.100:4445"
+  "ip_address": "192.168.1.100:4445",
+  "p2p_metrics": {
+    "dht_metrics": {
+      "store_success_recent": [ /* ... */ ],
+      "batch_retrieve_recent": [ /* ... */ ],
+      "hot_path_banned_skips": 0,
+      "hot_path_ban_increments": 0
+    },
+    "network_handle_metrics": { "STORE": {"total": 42, "success": 40, "failure": 1, "timeout": 1} },
+    "conn_pool_metrics": { "active": 12, "idle": 3 },
+    "ban_list": [ /* ... */ ],
+    "database": { "p2p_db_size_mb": 123.4, "p2p_db_records_count": "1000" },
+    "disk": { "all_mb": 102400, "used_mb": 51200, "free_mb": 51200 }
+  }
 }
 ```
 

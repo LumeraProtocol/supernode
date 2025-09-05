@@ -350,7 +350,9 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 }
 
 func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
-	resp, err := a.statusClient.GetStatus(ctx, &supernode.StatusRequest{})
+    // Gate P2P metrics via context option to keep API backward compatible
+    req := &supernode.StatusRequest{IncludeP2PMetrics: includeP2PMetrics(ctx)}
+    resp, err := a.statusClient.GetStatus(ctx, req)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
 		return SupernodeStatusresponse{}, fmt.Errorf("failed to get supernode status: %w", err)
@@ -509,9 +511,9 @@ func parseSuccessRate(msg string) (float64, bool) {
 }
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
-	result := &SupernodeStatusresponse{}
-	result.Version = resp.Version
-	result.UptimeSeconds = resp.UptimeSeconds
+    result := &SupernodeStatusresponse{}
+    result.Version = resp.Version
+    result.UptimeSeconds = resp.UptimeSeconds
 
 	// Convert Resources data
 	if resp.Resources != nil {
@@ -566,9 +568,117 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 		copy(result.Network.PeerAddresses, resp.Network.PeerAddresses)
 	}
 
-	// Copy rank and IP address
-	result.Rank = resp.Rank
-	result.IPAddress = resp.IpAddress
+    // Copy rank and IP address
+    result.Rank = resp.Rank
+    result.IPAddress = resp.IpAddress
 
-	return result
+    // Map optional P2P metrics
+    if resp.P2PMetrics != nil {
+        // DHT metrics
+        if resp.P2PMetrics.DhtMetrics != nil {
+            // Store success recent
+            for _, p := range resp.P2PMetrics.DhtMetrics.StoreSuccessRecent {
+                result.P2PMetrics.DhtMetrics.StoreSuccessRecent = append(result.P2PMetrics.DhtMetrics.StoreSuccessRecent, struct {
+                    TimeUnix    int64
+                    Requests    int32
+                    Successful  int32
+                    SuccessRate float64
+                }{
+                    TimeUnix:    p.TimeUnix,
+                    Requests:    p.Requests,
+                    Successful:  p.Successful,
+                    SuccessRate: p.SuccessRate,
+                })
+            }
+            // Batch retrieve recent
+            for _, p := range resp.P2PMetrics.DhtMetrics.BatchRetrieveRecent {
+                result.P2PMetrics.DhtMetrics.BatchRetrieveRecent = append(result.P2PMetrics.DhtMetrics.BatchRetrieveRecent, struct {
+                    TimeUnix     int64
+                    Keys         int32
+                    Required     int32
+                    FoundLocal   int32
+                    FoundNetwork int32
+                    DurationMS   int64
+                }{
+                    TimeUnix:     p.TimeUnix,
+                    Keys:         p.Keys,
+                    Required:     p.Required,
+                    FoundLocal:   p.FoundLocal,
+                    FoundNetwork: p.FoundNetwork,
+                    DurationMS:   p.DurationMs,
+                })
+            }
+            result.P2PMetrics.DhtMetrics.HotPathBannedSkips = resp.P2PMetrics.DhtMetrics.HotPathBannedSkips
+            result.P2PMetrics.DhtMetrics.HotPathBanIncrements = resp.P2PMetrics.DhtMetrics.HotPathBanIncrements
+        }
+
+        // Network handle metrics
+        if resp.P2PMetrics.NetworkHandleMetrics != nil {
+            if result.P2PMetrics.NetworkHandleMetrics == nil {
+                result.P2PMetrics.NetworkHandleMetrics = map[string]struct{
+                    Total   int64
+                    Success int64
+                    Failure int64
+                    Timeout int64
+                }{}
+            }
+            for k, v := range resp.P2PMetrics.NetworkHandleMetrics {
+                result.P2PMetrics.NetworkHandleMetrics[k] = struct{
+                    Total   int64
+                    Success int64
+                    Failure int64
+                    Timeout int64
+                }{
+                    Total:   v.Total,
+                    Success: v.Success,
+                    Failure: v.Failure,
+                    Timeout: v.Timeout,
+                }
+            }
+        }
+
+        // Conn pool metrics
+        if resp.P2PMetrics.ConnPoolMetrics != nil {
+            if result.P2PMetrics.ConnPoolMetrics == nil {
+                result.P2PMetrics.ConnPoolMetrics = map[string]int64{}
+            }
+            for k, v := range resp.P2PMetrics.ConnPoolMetrics {
+                result.P2PMetrics.ConnPoolMetrics[k] = v
+            }
+        }
+
+        // Ban list
+        for _, b := range resp.P2PMetrics.BanList {
+            result.P2PMetrics.BanList = append(result.P2PMetrics.BanList, struct {
+                ID            string
+                IP            string
+                Port          uint32
+                Count         int32
+                CreatedAtUnix int64
+                AgeSeconds    int64
+            }{
+                ID:            b.Id,
+                IP:            b.Ip,
+                Port:          b.Port,
+                Count:         b.Count,
+                CreatedAtUnix: b.CreatedAtUnix,
+                AgeSeconds:    b.AgeSeconds,
+            })
+        }
+
+        // Database
+        if resp.P2PMetrics.Database != nil {
+            result.P2PMetrics.Database.P2PDBSizeMB = resp.P2PMetrics.Database.P2PDbSizeMb
+            result.P2PMetrics.Database.P2PDBRecordsCount = resp.P2PMetrics.Database.P2PDbRecordsCount
+        }
+
+        // Disk
+        if resp.P2PMetrics.Disk != nil {
+            result.P2PMetrics.Disk.AllMB = resp.P2PMetrics.Disk.AllMb
+            result.P2PMetrics.Disk.UsedMB = resp.P2PMetrics.Disk.UsedMb
+            result.P2PMetrics.Disk.FreeMB = resp.P2PMetrics.Disk.FreeMb
+        }
+    }
+
+    return result
 }
