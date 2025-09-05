@@ -43,13 +43,12 @@ func (m *MockP2PService) EXPECT() *MockP2PServiceMockRecorder {
 }
 
 // StoreArtefacts mocks base method.
-func (m *MockP2PService) StoreArtefacts(ctx context.Context, req adaptors.StoreArtefactsRequest, f logtrace.Fields) (float64, int, error) {
-    m.ctrl.T.Helper()
-    ret := m.ctrl.Call(m, "StoreArtefacts", ctx, req, f)
-    ret0, _ := ret[0].(float64)
-    ret1, _ := ret[1].(int)
-    ret2, _ := ret[2].(error)
-    return ret0, ret1, ret2
+func (m *MockP2PService) StoreArtefacts(ctx context.Context, req adaptors.StoreArtefactsRequest, f logtrace.Fields) (adaptors.StoreArtefactsMetrics, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreArtefacts", ctx, req, f)
+	ret0, _ := ret[0].(adaptors.StoreArtefactsMetrics)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // StoreArtefacts indicates an expected call of StoreArtefacts.

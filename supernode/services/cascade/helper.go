@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	stdmath "math"
 	"strconv"
 	"strings"
 
@@ -177,13 +178,13 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 //   - Underlying batches return (ratePct, requests) where `requests` is the number
 //     of node RPCs attempted. The adaptor computes a weighted average by requests
 //     across all batches, reflecting the overall network success rate.
-func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) (float64, int, error) {
-    return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
-        IDFiles:    idFiles,
-        SymbolsDir: symbolsDir,
-        TaskID:     task.ID(),
-        ActionID:   actionID,
-    }, f)
+func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) (adaptors.StoreArtefactsMetrics, error) {
+	return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
+		IDFiles:    idFiles,
+		SymbolsDir: symbolsDir,
+		TaskID:     task.ID(),
+		ActionID:   actionID,
+	}, f)
 }
 
 func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, err error, f logtrace.Fields) error {
@@ -197,6 +198,27 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 		return status.Errorf(codes.Internal, "%s: %v", msg, err)
 	}
 	return status.Errorf(codes.Internal, "%s", msg)
+}
+
+// emitArtefactsStored builds a single-line metrics summary and emits the
+// SupernodeEventTypeArtefactsStored event while logging the metrics line.
+func (task *CascadeRegistrationTask) emitArtefactsStored(
+	ctx context.Context,
+	metrics adaptors.StoreArtefactsMetrics,
+	fields logtrace.Fields,
+	send func(resp *RegisterResponse) error,
+) {
+	ok := int(stdmath.Round(metrics.AggregatedRate / 100.0 * float64(metrics.TotalRequests)))
+	fail := metrics.TotalRequests - ok
+	line := fmt.Sprintf(
+		"artefacts stored | success_rate=%.2f%% agg_rate=%.2f%% total_reqs=%d ok=%d fail=%d meta_rate=%.2f%% meta_reqs=%d meta_count=%d sym_rate=%.2f%% sym_reqs=%d sym_count=%d",
+		metrics.AggregatedRate, metrics.AggregatedRate, metrics.TotalRequests, ok, fail,
+		metrics.MetaRate, metrics.MetaRequests, metrics.MetaCount,
+		metrics.SymRate, metrics.SymRequests, metrics.SymCount,
+	)
+	fields["metrics"] = line
+	logtrace.Info(ctx, "artefacts have been stored", fields)
+	task.streamEvent(SupernodeEventTypeArtefactsStored, line, "", send)
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data

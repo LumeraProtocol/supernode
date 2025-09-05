@@ -1,10 +1,8 @@
 package cascade
 
 import (
-    "context"
-    "fmt"
-    "math"
-    "os"
+	"context"
+	"os"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
@@ -157,28 +155,18 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "finalize action simulation passed", "", send)
 
 	/* 11. Persist artefacts -------------------------------------------------------- */
-	// Persist artefacts to the P2P network. The returned `successRate` is a
-	// request-weighted percentage (0–100) computed across all underlying P2P
-	// store batches for this action. Each batch contributes its success rate
-	// weighted by the number of node RPCs attempted, so the aggregate reflects
-	// overall network behavior rather than item counts.
-	successRate, totalRequests, err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields)
+	// Persist artefacts to the P2P network.
+	// Aggregation model (context):
+	// - Each underlying StoreBatch returns (ratePct, requests) where requests is
+	//   the number of node RPCs. The aggregated success rate can be computed as a
+	//   weighted average by requests across metadata and symbol batches, yielding
+	//   an overall network success view for the action.
+	metrics, err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields)
 	if err != nil {
 		return err
 	}
-	// Attach the success rate to structured fields for observability. This value
-	// is best-effort and non-fatal so long as it meets the configured minimum in
-	// lower layers; failures below threshold would already propagate an error.
-	fields["success_rate"] = successRate
-	fields["requests"] = totalRequests
-	logtrace.Info(ctx, "artefacts have been stored", fields)
-    // Emit compact, rich metrics in the event message for external visibility.
-    // ok and fail are derived counts based on the measured rate and requests.
-    // TODO(move-to-request-weighted): Once aggregation switches to request-weighted,
-    // these derived counts will align exactly with the per-request success rate.
-    ok := int(math.Round(successRate / 100.0 * float64(totalRequests)))
-    fail := totalRequests - ok
-    task.streamEvent(SupernodeEventTypeArtefactsStored, fmt.Sprintf("artefacts stored | rate=%.2f%% req=%d ok=%d fail=%d", successRate, totalRequests, ok, fail), "", send)
+	// Emit single-line metrics via helper to keep Register clean
+	task.emitArtefactsStored(ctx, metrics, fields, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
