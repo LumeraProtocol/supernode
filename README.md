@@ -205,11 +205,11 @@ enum SupernodeEventType {
 
 ## HTTP Gateway
 
-The supernode provides an HTTP gateway that exposes the gRPC services via REST API. The gateway runs on a separate port  8002
+The supernode provides an HTTP gateway that exposes the gRPC services via REST API on port `8002`.
 
-### Endpoints
+See `docs/gateway.md` for the full gateway guide and additional examples.
 
-#### GET /api/v1/status
+### Example: GET /api/v1/status
 Returns the current supernode status including system resources (CPU, memory, storage) and service information.
 
 - Query parameter `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
