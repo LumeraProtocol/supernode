@@ -121,7 +121,7 @@ This approach requires no request‑struct changes and preserves existing call s
 
 - Health checks use `connectionTimeout = 10s` during supernode discovery.
 - gRPC client connect behavior: adds a `30s` deadline if none is present, waits up to `ConnWaitTime = 10s` per attempt with retries.
-- Downloads use a separate `downloadTimeout = 5m` envelope.
+- Downloads use a separate `downloadTimeout = 5m` envelope (per-attempt). On timeout during download, the SDK emits `SDKDownloadFailure` with a reason-coded message `| reason=timeout` and sets `event.KeyMessage = "timeout"`.
 
 ## Operational Guidance
 
@@ -149,7 +149,7 @@ This approach requires no request‑struct changes and preserves existing call s
 
 ## Events
 
-- Upload phase timeout: `SDKUploadTimeout`.
+- Upload phase timeout: classified as `SDKUploadFailed` with message suffix `| reason=timeout`.
 - Processing phase timeout: `SDKProcessingTimeout`.
 # Cascade Registration Timeouts and Networking
 
@@ -178,7 +178,7 @@ This document describes how the SDK applies timeouts and deadlines during cascad
 
 ## Events
 
-- `SDKUploadTimeout` — emitted when the upload phase exceeds its time budget.
+- Upload phase timeout — emitted as `SDKUploadFailed` with `reason=timeout` in the message and `KeyMessage = "timeout"`.
 - `SDKProcessingTimeout` — emitted when the post-upload processing exceeds its time budget.
 
 ## Files and Constants

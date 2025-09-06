@@ -2,8 +2,10 @@ package task
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
@@ -84,11 +86,12 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		result, batchErrors := t.attemptConcurrentDownload(ctx, supernodes[i:i+batchSize], clientFactory, req, i)
 
 		if result != nil {
-			// Success! Log and return
+			// Success! Log and return (include final output path)
 			t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
 				event.KeySupernode:        result.SupernodeEndpoint,
 				event.KeySupernodeAddress: result.SupernodeAddress,
 				event.KeyIteration:        result.Iteration,
+				event.KeyOutputPath:       t.outputPath,
 			})
 			return nil
 		}
@@ -123,6 +126,12 @@ func (t *CascadeDownloadTask) attemptDownload(
 	}
 	defer client.Close(ctx)
 
+	// Emit connection established for observability (parity with StartCascade)
+	t.LogEvent(ctx, event.SDKConnectionEstablished, "connection established", event.EventData{
+		event.KeySupernode:        sn.GrpcEndpoint,
+		event.KeySupernodeAddress: sn.CosmosAddress,
+	})
+
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)
 	}
@@ -136,8 +145,9 @@ func (t *CascadeDownloadTask) attemptDownload(
 	}
 
 	t.LogEvent(ctx, event.SDKOutputPathReceived, "file downloaded", event.EventData{
-		event.KeyOutputPath: resp.OutputPath,
-		event.KeySupernode:  sn.CosmosAddress,
+		event.KeyOutputPath:       resp.OutputPath,
+		event.KeySupernode:        sn.GrpcEndpoint,
+		event.KeySupernodeAddress: sn.CosmosAddress,
 	})
 
 	return nil
@@ -148,6 +158,7 @@ type downloadResult struct {
 	SupernodeAddress  string
 	SupernodeEndpoint string
 	Iteration         int
+	TempPath          string
 }
 
 // attemptConcurrentDownload tries to download from multiple supernodes concurrently
@@ -159,10 +170,11 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
 	baseIteration int,
 ) (*downloadResult, []error) {
-	// Remove existing file if it exists to allow overwrite (do this once before concurrent attempts)
-	if _, err := os.Stat(req.OutputPath); err == nil {
-		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
-			return nil, []error{fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)}
+	// Remove existing final file if it exists to allow overwrite (once per batch)
+	finalOutputPath := req.OutputPath
+	if _, err := os.Stat(finalOutputPath); err == nil {
+		if removeErr := os.Remove(finalOutputPath); removeErr != nil {
+			return nil, []error{fmt.Errorf("failed to remove existing file %s: %w", finalOutputPath, removeErr)}
 		}
 	}
 
@@ -178,6 +190,9 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 	}
 	resultCh := make(chan attemptResult, len(batch))
 
+	// Track per-attempt temporary output paths for safe concurrent writes
+	tmpPaths := make([]string, len(batch))
+
 	// Start concurrent download attempts
 	for idx, sn := range batch {
 		iteration := baseIteration + idx + 1
@@ -192,14 +207,18 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 		go func(sn lumera.Supernode, idx int, iter int) {
 			// Create a copy of the request for this goroutine
 			reqCopy := &supernodeservice.CascadeSupernodeDownloadRequest{
-				ActionID:   req.ActionID,
-				TaskID:     req.TaskID,
-				OutputPath: req.OutputPath,
+				ActionID: req.ActionID,
+				TaskID:   req.TaskID,
+				// Use a unique temporary path per attempt to avoid concurrent writes
+				OutputPath: filepath.Join(filepath.Dir(finalOutputPath), fmt.Sprintf(".%s.part.%d", filepath.Base(finalOutputPath), idx)),
 				Signature:  req.Signature,
 			}
+			tmpPaths[idx] = reqCopy.OutputPath
 
 			err := t.attemptDownload(batchCtx, sn, factory, reqCopy)
 			if err != nil {
+				// Best-effort cleanup of the partial file for this attempt
+				_ = os.Remove(reqCopy.OutputPath)
 				resultCh <- attemptResult{
 					err: err,
 					idx: idx,
@@ -212,6 +231,7 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 					SupernodeAddress:  sn.CosmosAddress,
 					SupernodeEndpoint: sn.GrpcEndpoint,
 					Iteration:         iter,
+					TempPath:          reqCopy.OutputPath,
 				},
 				idx: idx,
 			}
@@ -219,11 +239,24 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 	}
 
 	// Collect results
-	var errors []error
-	for i := range len(batch) {
+	var errs []error
+	for i := 0; i < len(batch); i++ {
 		select {
 		case result := <-resultCh:
 			if result.success != nil {
+				// Attempt to move the temp file to the final destination atomically
+				if err := os.Rename(result.success.TempPath, finalOutputPath); err != nil {
+					// Treat rename failure as a batch error
+					cancelBatch()
+					// Drain remaining results to avoid goroutine leaks
+					go func() {
+						for j := i + 1; j < len(batch); j++ {
+							<-resultCh
+						}
+					}()
+					return nil, []error{fmt.Errorf("finalize download (rename) failed: %w", err)}
+				}
+
 				// Success! Cancel other attempts and return
 				cancelBatch()
 				// Drain remaining results to avoid goroutine leaks
@@ -237,13 +270,23 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 
 			// Log failure
 			sn := batch[result.idx]
-			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
-				event.KeySupernode:        sn.GrpcEndpoint,
-				event.KeySupernodeAddress: sn.CosmosAddress,
-				event.KeyIteration:        baseIteration + result.idx + 1,
-				event.KeyError:            result.err.Error(),
-			})
-			errors = append(errors, result.err)
+            // Classify failure reason when possible
+            data := event.EventData{
+                event.KeySupernode:        sn.GrpcEndpoint,
+                event.KeySupernodeAddress: sn.CosmosAddress,
+                event.KeyIteration:        baseIteration + result.idx + 1,
+                event.KeyError:            result.err.Error(),
+            }
+            msg := "download from super-node failed"
+            if stderrors.Is(result.err, context.DeadlineExceeded) {
+                data[event.KeyMessage] = "timeout"
+                msg += " | reason=timeout"
+            } else if stderrors.Is(result.err, context.Canceled) {
+                data[event.KeyMessage] = "canceled"
+                msg += " | reason=canceled"
+            }
+            t.LogEvent(ctx, event.SDKDownloadFailure, msg, data)
+			errs = append(errs, result.err)
 
 		case <-ctx.Done():
 			return nil, []error{ctx.Err()}
@@ -251,5 +294,5 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 	}
 
 	// All attempts in this batch failed
-	return nil, errors
+	return nil, errs
 }
