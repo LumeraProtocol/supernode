@@ -89,7 +89,7 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 		sns = sns[:10]
 	}
 
-	// Keep only SERVING nodes (done in parallel – keeps latency flat)
+	// Keep only eligible nodes (SERVING and with connected peers), done in parallel
 	healthy := make(lumera.Supernodes, 0, len(sns))
 	eg, ctx := errgroup.WithContext(ctx)
 	mu := sync.Mutex{}
@@ -97,7 +97,7 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 	for _, sn := range sns {
 		sn := sn
 		eg.Go(func() error {
-			if t.isServing(ctx, sn) {
+			if t.isEligible(ctx, sn) {
 				mu.Lock()
 				healthy = append(healthy, sn)
 				mu.Unlock()
@@ -116,8 +116,9 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 	return healthy, nil
 }
 
-// isServing pings the super-node once with a short timeout.
-func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
+// isEligible probes a supernode quickly to ensure it's SERVING and has peers.
+// Uses a short timeout to avoid slow/bad actors impacting discovery.
+func (t *BaseTask) isEligible(parent context.Context, sn lumera.Supernode) bool {
 	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
 	defer cancel()
 
@@ -131,6 +132,16 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	}
 	defer client.Close(ctx)
 
+	// 1) Health check
 	resp, err := client.HealthCheck(ctx)
-	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING
+	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		return false
+	}
+
+	// 2) Lightweight status check (no heavy metrics) to ensure peers connected
+	status, err := client.GetSupernodeStatus(ctx)
+	if err != nil {
+		return false
+	}
+	return status.Network.PeersCount > 1
 }

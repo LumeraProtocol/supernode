@@ -1697,7 +1697,8 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 
 func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[string]*Node, storageMap map[string][]int, typ int) chan *MessageWithError {
 	responses := make(chan *MessageWithError, len(nodes))
-	maxStore := 16
+	// Reduce in-batch concurrency to lower receiver pressure and timeouts
+	maxStore := 12
 	if ln := len(nodes); ln < maxStore {
 		maxStore = ln
 	}

@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 )
 
 const (
-	loadSymbolsBatchSize = 2500
+	loadSymbolsBatchSize = 1000
 	storeSymbolsPercent  = 10
 )
 
@@ -156,7 +155,7 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 			rand.Shuffle(len(keys), func(i, j int) { keys[i], keys[j] = keys[j], keys[i] })
 			keys = keys[:want]
 		}
-		sort.Strings(keys) // deterministic order inside the sample
+		// keep shuffled order to preserve randomness across batches
 	}
 
 	logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
@@ -179,6 +178,9 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 		totalSymbols += count
 		totalRequests += requests
 		start = end
+
+		// tiny inter-batch jitter (25–75ms) to reduce burst pressure
+		time.Sleep(time.Duration(rand.IntN(51)+25) * time.Millisecond)
 	}
 
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
@@ -236,6 +238,23 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	defer cancel()
 
 	rate, requests, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
+	// Minimal resilience: if the only issue is low success rate (<75%), retry once with slight backoff and longer timeout.
+	needRetry := false
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "failed to achieve desired success rate") {
+		needRetry = true
+	} else if err == nil && rate < 75.0 {
+		needRetry = true
+	}
+	if needRetry {
+		// short jittered backoff before retry
+		time.Sleep(time.Duration(rand.IntN(201)+200) * time.Millisecond)
+
+		retryCtx, retryCancel := context.WithTimeout(ctx, 7*time.Minute)
+		rate2, requests2, err2 := c.p2p.StoreBatch(retryCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
+		retryCancel()
+		// On retry, report the retry measurement (do not double-count the first attempt)
+		rate, requests, err = rate2, requests2, err2
+	}
 	if err != nil {
 		return rate, requests, len(symbols), fmt.Errorf("p2p store batch: %w", err)
 	}

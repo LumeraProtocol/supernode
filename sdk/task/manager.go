@@ -107,11 +107,8 @@ func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, ac
 		return "", err
 	}
 
-	// Check peer connectivity before creating task
-	if err := m.checkSupernodesPeerConnectivity(taskCtx, action.Height); err != nil {
-		cancel() // Clean up if peer check fails
-		return "", err
-	}
+	// Connectivity is now validated concurrently during discovery in Run().
+	// Skip pre-task peer connectivity to return taskID faster.
 
 	taskID := uuid.New().String()[:8]
 

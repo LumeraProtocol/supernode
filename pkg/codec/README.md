@@ -40,25 +40,27 @@
 
 ## Quick Defaults (no env)
 - Profile: perf (fastest defaults)
-- Headroom: `LUMERA_RQ_MEM_HEADROOM_PCT=40` → usable_mem = limit × (1−0.40)
-- Max memory: `min(0.6 × usable_mem, 16 GiB)`
-- Concurrency: `min(8, effective_cores)`, then reduced so `max_memory_mb / concurrency ≥ 512 MB`
+- Headroom (by profile):
+  - perf: 10%  •  standard: 25%  •  edge: 40%
+  - usable_mem = limit × (1 − headroom/100)
+- Max memory: `min(0.8 × usable_mem, 32 GiB)` (perf); `min(0.75 × usable_mem, 8 GiB)` (standard); `min(0.5 × usable_mem, 2 GiB)` (edge)
+- Concurrency: `min(16, effective_cores)` on perf; `min(6, effective_cores)` on standard; `min(2, effective_cores)` on edge — then reduced so `max_memory_mb / concurrency ≥ 512 MB`
 - Symbol size: `65535`  •  Redundancy: `5`
 
 ## Change Behavior (simple rules)
-- Pick profile: set `CODEC_PROFILE=edge|standard|perf` (perf is default)
-- Reserve headroom: set `LUMERA_RQ_MEM_HEADROOM_PCT` (0–90, default 40)
-- Override knobs directly (take precedence over profile):
+- Profile: perf is used by default.
+- Headroom: managed by profile (perf 10%, standard 25%, edge 40%).
+- Optional overrides:
   - `LUMERA_RQ_MAX_MEMORY_MB`, `LUMERA_RQ_CONCURRENCY`, `LUMERA_RQ_SYMBOL_SIZE`, `LUMERA_RQ_REDUNDANCY`
 - Detection sources: memory from cgroups v2/v1 (fallback `/proc/meminfo`), CPU from cgroup quota or `runtime.NumCPU()`
 
 ## Profiles (behavior overview)
 
-| Profile   | Default selection | Max memory (default)                           | Concurrency (default)                | CPU cap                       | Min per‑worker MB | Symbol size | Redundancy | Env overrides                         |
-|-----------|-------------------|-----------------------------------------------|--------------------------------------|-------------------------------|-------------------|-------------|------------|----------------------------------------|
-| `edge`    | Only when forced  | `min(usable_mem, 1 GiB)`                      | `2`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=edge`    |
-| `standard`| Only when forced  | `min(0.6 × usable_mem, 4 GiB)`                | `4`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=standard`|
-| `perf`    | Default           | `min(0.6 × usable_mem, 16 GiB)`               | `8`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=perf`   |
+| Profile   | Default selection | Headroom (default) | Max memory (default)                           | Concurrency (default) | CPU cap                   | Min per‑worker MB | Symbol size | Redundancy | Env overrides                    |
+|-----------|-------------------|--------------------|-----------------------------------------------|-----------------------|---------------------------|-------------------|-------------|------------|--------------------------------------|
+| `edge`    | Only when forced  | 40%                | `min(0.5 × usable_mem, 2 GiB)`                | `2`                   | Capped by effective cores | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`                     |
+| `standard`| Only when forced  | 25%                | `min(0.75 × usable_mem, 8 GiB)`               | `6`                   | Capped by effective cores | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`                     |
+| `perf`    | Default           | 10%                | `min(0.8 × usable_mem, 32 GiB)`               | `16`                  | Capped by effective cores | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`                     |
 
 - usable_mem = memory_limit × (1 − `LUMERA_RQ_MEM_HEADROOM_PCT`/100). Default headroom = 40%.
 - Effective cores: derived from cgroup CPU quota (v2 `cpu.max`, v1 `cpu.cfs_*`) or `runtime.NumCPU()`.
@@ -87,9 +89,9 @@
 - Codec redundancy and DHT replication are independent; progressive decode needs “enough” distinct symbols, not all of them
 
 ## Examples (no env)
-- 16 GiB limit, 8 cores → usable=9.6 GiB → max=5.76 GiB → conc=8 → ~720 MB/worker
-- 8 GiB limit, 4 cores → usable=4.8 GiB → max=2.88 GiB → conc=4 → ~720 MB/worker
-- 2 GiB limit, 2 cores → usable=1.2 GiB → max=0.72 GiB → conc=1 (to keep ≥512 MB/worker)
+- 16 GiB limit, 8 cores (perf) → usable=9.6 GiB → max=8.64 GiB → conc=8 → ~1.08 GB/worker
+- 24 GiB limit, 8 cores (perf) → usable=14.4 GiB → max=12.96 GiB → conc=8 → ~1.62 GB/worker
+- 8 GiB limit, 4 cores (standard) → usable=4.8 GiB → max=3.6 GiB → conc=4–6 (rebalance to keep ≥512 MB/worker)
 
 ## Minimal Usage (Decode)
 ```go

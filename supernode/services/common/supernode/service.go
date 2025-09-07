@@ -1,16 +1,16 @@
 package supernode
 
 import (
-    "context"
-    "fmt"
-    "time"
+	"context"
+	"fmt"
+	"time"
 
-    "github.com/LumeraProtocol/supernode/v2/p2p"
-    "github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
-    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-    "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
-    "github.com/LumeraProtocol/supernode/v2/pkg/utils"
-    "github.com/LumeraProtocol/supernode/v2/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
 
 // Version is the supernode version, set by the main application
@@ -125,130 +125,131 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		PeerAddresses: []string{},
 	}
 
-    // Prepare P2P metrics container (always present in response)
-    metrics := P2PMetrics{
-        NetworkHandleMetrics: map[string]HandleCounters{},
-        ConnPoolMetrics:      map[string]int64{},
-        BanList:              []BanEntry{},
-    }
+	// Prepare P2P metrics container (always present in response)
+	metrics := P2PMetrics{
+		NetworkHandleMetrics: map[string]HandleCounters{},
+		ConnPoolMetrics:      map[string]int64{},
+		BanList:              []BanEntry{},
+	}
 
-    // Collect P2P network information and metrics (fill when available and requested)
-    if includeP2PMetrics && s.p2pService != nil {
-        p2pStats, err := s.p2pService.Stats(ctx)
-        if err != nil {
-            // Log error but continue - non-critical
-            logtrace.Error(ctx, "failed to get p2p stats", logtrace.Fields{logtrace.FieldError: err.Error()})
-        } else {
-            if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
-                if peersCount, ok := dhtStats["peers_count"].(int); ok {
-                    resp.Network.PeersCount = int32(peersCount)
-                }
+	// Collect P2P network information (peers) unconditionally for fast probes
+	if s.p2pService != nil {
+		p2pStats, err := s.p2pService.Stats(ctx)
+		if err != nil {
+			// Log error but continue - non-critical
+			logtrace.Error(ctx, "failed to get p2p stats", logtrace.Fields{logtrace.FieldError: err.Error()})
+		} else {
+			if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
+				if peersCount, ok := dhtStats["peers_count"].(int); ok {
+					resp.Network.PeersCount = int32(peersCount)
+				}
+				// Extract peer addresses
+				if peers, ok := dhtStats["peers"].([]*kademlia.Node); ok {
+					resp.Network.PeerAddresses = make([]string, 0, len(peers))
+					for _, peer := range peers {
+						peerAddr := fmt.Sprintf("%s@%s:%d", string(peer.ID), peer.IP, peer.Port)
+						resp.Network.PeerAddresses = append(resp.Network.PeerAddresses, peerAddr)
+					}
+				} else {
+					resp.Network.PeerAddresses = []string{}
+				}
+			}
 
-                // Extract peer addresses
-                if peers, ok := dhtStats["peers"].([]*kademlia.Node); ok {
-                    resp.Network.PeerAddresses = make([]string, 0, len(peers))
-                    for _, peer := range peers {
-                        // Format peer address as "ID@IP:Port"
-                        peerAddr := fmt.Sprintf("%s@%s:%d", string(peer.ID), peer.IP, peer.Port)
-                        resp.Network.PeerAddresses = append(resp.Network.PeerAddresses, peerAddr)
-                    }
-                } else {
-                    resp.Network.PeerAddresses = []string{}
-                }
-            }
+			// If heavy metrics were requested, populate them
+			if includeP2PMetrics {
+				// Disk info
+				if du, ok := p2pStats["disk-info"].(utils.DiskStatus); ok {
+					metrics.Disk = DiskStatus{AllMB: du.All, UsedMB: du.Used, FreeMB: du.Free}
+				} else if duPtr, ok := p2pStats["disk-info"].(*utils.DiskStatus); ok && duPtr != nil {
+					metrics.Disk = DiskStatus{AllMB: duPtr.All, UsedMB: duPtr.Used, FreeMB: duPtr.Free}
+				}
 
-            // Disk info
-            if du, ok := p2pStats["disk-info"].(utils.DiskStatus); ok {
-                metrics.Disk = DiskStatus{AllMB: du.All, UsedMB: du.Used, FreeMB: du.Free}
-            } else if duPtr, ok := p2pStats["disk-info"].(*utils.DiskStatus); ok && duPtr != nil {
-                metrics.Disk = DiskStatus{AllMB: duPtr.All, UsedMB: duPtr.Used, FreeMB: duPtr.Free}
-            }
+				// Ban list
+				if bans, ok := p2pStats["ban-list"].([]kademlia.BanSnapshot); ok {
+					for _, b := range bans {
+						metrics.BanList = append(metrics.BanList, BanEntry{
+							ID:            b.ID,
+							IP:            b.IP,
+							Port:          uint32(b.Port),
+							Count:         int32(b.Count),
+							CreatedAtUnix: b.CreatedAt.Unix(),
+							AgeSeconds:    int64(b.Age.Seconds()),
+						})
+					}
+				}
 
-            // Ban list
-            if bans, ok := p2pStats["ban-list"].([]kademlia.BanSnapshot); ok {
-                for _, b := range bans {
-                    metrics.BanList = append(metrics.BanList, BanEntry{
-                        ID:            b.ID,
-                        IP:            b.IP,
-                        Port:          uint32(b.Port),
-                        Count:         int32(b.Count),
-                        CreatedAtUnix: b.CreatedAt.Unix(),
-                        AgeSeconds:    int64(b.Age.Seconds()),
-                    })
-                }
-            }
+				// Conn pool metrics
+				if pool, ok := p2pStats["conn-pool"].(map[string]int64); ok {
+					for k, v := range pool {
+						metrics.ConnPoolMetrics[k] = v
+					}
+				}
 
-            // Conn pool metrics
-            if pool, ok := p2pStats["conn-pool"].(map[string]int64); ok {
-                for k, v := range pool {
-                    metrics.ConnPoolMetrics[k] = v
-                }
-            }
+				// DHT metrics and database/network counters live inside dht map
+				if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
+					// Database
+					if db, ok := dhtStats["database"].(map[string]interface{}); ok {
+						var sizeMB float64
+						if v, ok := db["p2p_db_size"].(float64); ok {
+							sizeMB = v
+						}
+						var recs int64
+						switch v := db["p2p_db_records_count"].(type) {
+						case int:
+							recs = int64(v)
+						case int64:
+							recs = v
+						case float64:
+							recs = int64(v)
+						}
+						metrics.Database = DatabaseStats{P2PDBSizeMB: sizeMB, P2PDBRecordsCount: recs}
+					}
 
-            // DHT metrics and database/network counters live inside dht map
-            if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
-                // Database
-                if db, ok := dhtStats["database"].(map[string]interface{}); ok {
-                    var sizeMB float64
-                    if v, ok := db["p2p_db_size"].(float64); ok {
-                        sizeMB = v
-                    }
-                    var recs int64
-                    switch v := db["p2p_db_records_count"].(type) {
-                    case int:
-                        recs = int64(v)
-                    case int64:
-                        recs = v
-                    case float64:
-                        recs = int64(v)
-                    }
-                    metrics.Database = DatabaseStats{P2PDBSizeMB: sizeMB, P2PDBRecordsCount: recs}
-                }
+					// Network handle metrics
+					if nhm, ok := dhtStats["network"].(map[string]kademlia.HandleCounters); ok {
+						for k, c := range nhm {
+							metrics.NetworkHandleMetrics[k] = HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
+						}
+					} else if nhmI, ok := dhtStats["network"].(map[string]interface{}); ok {
+						for k, vi := range nhmI {
+							if c, ok := vi.(kademlia.HandleCounters); ok {
+								metrics.NetworkHandleMetrics[k] = HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
+							}
+						}
+					}
+				}
 
-                // Network handle metrics
-                if nhm, ok := dhtStats["network"].(map[string]kademlia.HandleCounters); ok {
-                    for k, c := range nhm {
-                        metrics.NetworkHandleMetrics[k] = HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
-                    }
-                } else if nhmI, ok := dhtStats["network"].(map[string]interface{}); ok {
-                    for k, vi := range nhmI {
-                        if c, ok := vi.(kademlia.HandleCounters); ok {
-                            metrics.NetworkHandleMetrics[k] = HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
-                        }
-                    }
-                }
-            }
+				// DHT rolling metrics snapshot is attached at top-level under dht_metrics
+				if snap, ok := p2pStats["dht_metrics"].(kademlia.DHTMetricsSnapshot); ok {
+					// Store success
+					for _, p := range snap.StoreSuccessRecent {
+						metrics.DhtMetrics.StoreSuccessRecent = append(metrics.DhtMetrics.StoreSuccessRecent, StoreSuccessPoint{
+							TimeUnix:    p.Time.Unix(),
+							Requests:    int32(p.Requests),
+							Successful:  int32(p.Successful),
+							SuccessRate: p.SuccessRate,
+						})
+					}
+					// Batch retrieve
+					for _, p := range snap.BatchRetrieveRecent {
+						metrics.DhtMetrics.BatchRetrieveRecent = append(metrics.DhtMetrics.BatchRetrieveRecent, BatchRetrievePoint{
+							TimeUnix:     p.Time.Unix(),
+							Keys:         int32(p.Keys),
+							Required:     int32(p.Required),
+							FoundLocal:   int32(p.FoundLocal),
+							FoundNetwork: int32(p.FoundNet),
+							DurationMS:   p.Duration.Milliseconds(),
+						})
+					}
+					metrics.DhtMetrics.HotPathBannedSkips = snap.HotPathBannedSkips
+					metrics.DhtMetrics.HotPathBanIncrements = snap.HotPathBanIncrements
+				}
+			}
+		}
+	}
 
-            // DHT rolling metrics snapshot is attached at top-level under dht_metrics
-            if snap, ok := p2pStats["dht_metrics"].(kademlia.DHTMetricsSnapshot); ok {
-                // Store success
-                for _, p := range snap.StoreSuccessRecent {
-                    metrics.DhtMetrics.StoreSuccessRecent = append(metrics.DhtMetrics.StoreSuccessRecent, StoreSuccessPoint{
-                        TimeUnix:    p.Time.Unix(),
-                        Requests:    int32(p.Requests),
-                        Successful:  int32(p.Successful),
-                        SuccessRate: p.SuccessRate,
-                    })
-                }
-                // Batch retrieve
-                for _, p := range snap.BatchRetrieveRecent {
-                    metrics.DhtMetrics.BatchRetrieveRecent = append(metrics.DhtMetrics.BatchRetrieveRecent, BatchRetrievePoint{
-                        TimeUnix:     p.Time.Unix(),
-                        Keys:         int32(p.Keys),
-                        Required:     int32(p.Required),
-                        FoundLocal:   int32(p.FoundLocal),
-                        FoundNetwork: int32(p.FoundNet),
-                        DurationMS:   p.Duration.Milliseconds(),
-                    })
-                }
-                metrics.DhtMetrics.HotPathBannedSkips = snap.HotPathBannedSkips
-                metrics.DhtMetrics.HotPathBanIncrements = snap.HotPathBanIncrements
-            }
-        }
-    }
-
-    // Always include metrics (may be empty if not available)
-    resp.P2PMetrics = metrics
+	// Always include metrics (may be empty if not available)
+	resp.P2PMetrics = metrics
 
 	// Calculate rank from top supernodes
 	if s.lumeraClient != nil && s.config != nil {

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
-	snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/net"
 )
 
@@ -130,9 +129,10 @@ func (m *ManagerImpl) checkSupernodesPeerConnectivity(ctx context.Context, block
 			continue // Skip this supernode if we can't connect
 		}
 
-		// Request peer info and P2P metrics to assess connectivity
-		ctxWithMetrics := snsvc.WithIncludeP2PMetrics(ctx)
-		status, err := client.GetSupernodeStatus(ctxWithMetrics)
+		// Use lightweight status response (no P2P metrics) and short timeout
+		ctxStatus, cancel := context.WithTimeout(ctx, connectionTimeout)
+		status, err := client.GetSupernodeStatus(ctxStatus)
+		cancel()
 		client.Close(ctx)
 		if err != nil {
 			continue // Skip this supernode if we can't get status

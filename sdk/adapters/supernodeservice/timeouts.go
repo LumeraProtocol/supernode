@@ -7,5 +7,6 @@ import "time"
 const cascadeUploadTimeout = 60 * time.Minute
 
 // cascadeProcessingTimeout bounds the time waiting for server-side processing
-// and final response (e.g., tx hash) after upload completes.
-const cascadeProcessingTimeout = 10 * time.Minute
+// and final response (e.g., tx hash) after upload completes. Increased to
+// accommodate longer processing on busy/slow nodes to avoid client disconnects.
+const cascadeProcessingTimeout = 12 * time.Minute
