@@ -20,7 +20,16 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const gatewayTimeout = 15 * time.Second
+// Global updater timing constants
+const (
+	// gatewayTimeout bounds the local gateway status probe
+	gatewayTimeout = 15 * time.Second
+	// updateCheckInterval is how often the periodic updater runs
+	updateCheckInterval = 10 * time.Minute
+	// forceUpdateAfter is the age threshold after a release is published
+	// beyond which updates are applied regardless of normal gates (idle, policy)
+	forceUpdateAfter = 1 * time.Hour
+)
 
 type AutoUpdater struct {
 	config         *config.Config
@@ -59,18 +68,17 @@ func (u *AutoUpdater) Start(ctx context.Context) {
 		return
 	}
 
-	// Fixed update check interval: 10 minutes
-	interval := 10 * time.Minute
-	u.ticker = time.NewTicker(interval)
+	// Fixed update check interval
+	u.ticker = time.NewTicker(updateCheckInterval)
 
 	// Run an immediate check on startup so restarts don't wait a full interval
-	u.checkAndUpdateCombined()
+	u.checkAndUpdateCombined(false)
 
 	go func() {
 		for {
 			select {
 			case <-u.ticker.C:
-				u.checkAndUpdateCombined()
+				u.checkAndUpdateCombined(false)
 			case <-u.stopCh:
 				return
 			case <-ctx.Done():
@@ -172,7 +180,17 @@ func (u *AutoUpdater) isGatewayIdle() (bool, bool) {
 // downloads the release tarball once to update sn-manager and SuperNode.
 // Order: update sn-manager first (prepare new binary), then SuperNode, then
 // trigger restart if manager was updated.
-func (u *AutoUpdater) checkAndUpdateCombined() {
+// ForceSyncToLatest performs a one-shot forced sync to the latest stable
+// release, bypassing standard gating checks (gateway idle, same-major policy).
+// Intended for mandatory checks at manager start.
+func (u *AutoUpdater) ForceSyncToLatest(_ context.Context) {
+	u.checkAndUpdateCombined(true)
+}
+
+// checkAndUpdateCombined performs a single release check and, if needed,
+// downloads the release tarball once to update sn-manager and SuperNode.
+// If force is true, bypass gateway idleness and version policy checks.
+func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 
 	// Fetch latest stable release once
 	release, err := u.githubClient.GetLatestStableRelease()
@@ -186,18 +204,34 @@ func (u *AutoUpdater) checkAndUpdateCombined() {
 		return
 	}
 
+	// If the latest release has been out for > 4 hours, elevate to force mode
+	if !force {
+		if !release.PublishedAt.IsZero() && time.Since(release.PublishedAt) > forceUpdateAfter {
+			force = true
+		}
+	}
+
 	// Determine if sn-manager should update (same criteria: stable, same major)
 	managerNeedsUpdate := false
 	ver := strings.TrimSpace(u.managerVersion)
 	if ver != "" && ver != "dev" && !strings.EqualFold(ver, "unknown") {
-		if utils.SameMajor(ver, latest) && utils.CompareVersions(ver, latest) < 0 {
-			managerNeedsUpdate = true
+		if force {
+			managerNeedsUpdate = !strings.EqualFold(ver, latest)
+		} else {
+			if utils.SameMajor(ver, latest) && utils.CompareVersions(ver, latest) < 0 {
+				managerNeedsUpdate = true
+			}
 		}
 	}
 
 	// Determine if SuperNode should update using existing policy
 	currentSN := u.config.Updates.CurrentVersion
-	supernodeNeedsUpdate := u.ShouldUpdate(currentSN, latest)
+	supernodeNeedsUpdate := false
+	if force {
+		supernodeNeedsUpdate = !strings.EqualFold(strings.TrimPrefix(currentSN, "v"), strings.TrimPrefix(latest, "v"))
+	} else {
+		supernodeNeedsUpdate = u.ShouldUpdate(currentSN, latest)
+	}
 
 	if !managerNeedsUpdate && !supernodeNeedsUpdate {
 		return
@@ -205,14 +239,16 @@ func (u *AutoUpdater) checkAndUpdateCombined() {
 
 	// Gate all updates (manager + SuperNode) on gateway idleness
 	// to avoid disrupting traffic during a self-update.
-	if idle, isErr := u.isGatewayIdle(); !idle {
-		if isErr {
-			// Track errors and possibly request a clean SuperNode restart
-			u.handleGatewayError()
-		} else {
-			log.Println("Gateway busy, deferring updates")
+	if !force {
+		if idle, isErr := u.isGatewayIdle(); !idle {
+			if isErr {
+				// Track errors and possibly request a clean SuperNode restart
+				u.handleGatewayError()
+			} else {
+				log.Println("Gateway busy, deferring updates")
+			}
+			return
 		}
-		return
 	}
 
 	// Download the combined release tarball once

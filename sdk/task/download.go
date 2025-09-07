@@ -6,17 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/net"
-)
-
-// timeouts
-const (
-	downloadTimeout = 5 * time.Minute
 )
 
 type CascadeDownloadTask struct {
@@ -270,22 +264,22 @@ func (t *CascadeDownloadTask) attemptConcurrentDownload(
 
 			// Log failure
 			sn := batch[result.idx]
-            // Classify failure reason when possible
-            data := event.EventData{
-                event.KeySupernode:        sn.GrpcEndpoint,
-                event.KeySupernodeAddress: sn.CosmosAddress,
-                event.KeyIteration:        baseIteration + result.idx + 1,
-                event.KeyError:            result.err.Error(),
-            }
-            msg := "download from super-node failed"
-            if stderrors.Is(result.err, context.DeadlineExceeded) {
-                data[event.KeyMessage] = "timeout"
-                msg += " | reason=timeout"
-            } else if stderrors.Is(result.err, context.Canceled) {
-                data[event.KeyMessage] = "canceled"
-                msg += " | reason=canceled"
-            }
-            t.LogEvent(ctx, event.SDKDownloadFailure, msg, data)
+			// Classify failure reason when possible
+			data := event.EventData{
+				event.KeySupernode:        sn.GrpcEndpoint,
+				event.KeySupernodeAddress: sn.CosmosAddress,
+				event.KeyIteration:        baseIteration + result.idx + 1,
+				event.KeyError:            result.err.Error(),
+			}
+			msg := "download from super-node failed"
+			if stderrors.Is(result.err, context.DeadlineExceeded) {
+				data[event.KeyMessage] = "timeout"
+				msg += " | reason=timeout"
+			} else if stderrors.Is(result.err, context.Canceled) {
+				data[event.KeyMessage] = "canceled"
+				msg += " | reason=canceled"
+			}
+			t.LogEvent(ctx, event.SDKDownloadFailure, msg, data)
 			errs = append(errs, result.err)
 
 		case <-ctx.Done():

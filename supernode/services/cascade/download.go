@@ -1,11 +1,11 @@
 package cascade
 
 import (
-    "bytes"
-    "context"
-    "fmt"
-    "os"
-    "sort"
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"sort"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
@@ -31,11 +31,18 @@ type DownloadResponse struct {
 	DownloadedDir string
 }
 
+// Download preparation is bounded by DownloadPrepareTimeout (see timeouts.go).
+// The subsequent file streaming to the client is not bounded by this timer.
+
 func (task *CascadeRegistrationTask) Download(
 	ctx context.Context,
 	req *DownloadRequest,
 	send func(resp *DownloadResponse) error,
 ) (err error) {
+	// Bound the preparation phase only (metadata/layout/symbols/restore)
+	ctx, cancel := context.WithTimeout(ctx, DownloadPrepareTimeout)
+	defer cancel()
+
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "cascade-action-download request received", fields)
 
@@ -124,10 +131,10 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 }
 
 func (task *CascadeRegistrationTask) restoreFileFromLayout(
-    ctx context.Context,
-    layout codec.Layout,
-    dataHash string,
-    actionID string,
+	ctx context.Context,
+	layout codec.Layout,
+	dataHash string,
+	actionID string,
 ) (string, string, error) {
 
 	fields := logtrace.Fields{
@@ -139,18 +146,18 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	sort.Strings(allSymbols)
 
-    totalSymbols := len(allSymbols)
-    requiredSymbols := (totalSymbols*requiredSymbolPercent + 99) / 100
+	totalSymbols := len(allSymbols)
+	requiredSymbols := (totalSymbols*requiredSymbolPercent + 99) / 100
 
-    fields["totalSymbols"] = totalSymbols
-    fields["requiredSymbols"] = requiredSymbols
-    logtrace.Info(ctx, "symbols to be retrieved", fields)
+	fields["totalSymbols"] = totalSymbols
+	fields["requiredSymbols"] = requiredSymbols
+	logtrace.Info(ctx, "symbols to be retrieved", fields)
 
-    // Progressive retrieval moved to helper for readability/testing
-    decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, allSymbols, layout, actionID, fields)
-    if err != nil {
-        return "", "", err
-    }
+	// Progressive retrieval moved to helper for readability/testing
+	decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, allSymbols, layout, actionID, fields)
+	if err != nil {
+		return "", "", err
+	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
@@ -164,8 +171,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
-    // Validate final payload hash against on-chain data hash
-    err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
+	// Validate final payload hash against on-chain data hash
+	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)
 		fields[logtrace.FieldError] = err.Error()
