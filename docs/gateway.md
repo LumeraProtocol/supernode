@@ -1,31 +1,40 @@
 # Supernode HTTP Gateway
 
-The HTTP gateway exposes the gRPC services via REST on port `8002` using grpc-gateway.
+The Supernode exposes its gRPC services via an HTTP/JSON gateway on port `8002`.
 
-## Endpoints
+- Swagger UI: http://localhost:8002/swagger-ui/
+- OpenAPI Spec: http://localhost:8002/swagger.json
 
-### GET `/api/v1/status`
-Returns supernode status: system resources (CPU, memory, storage), service info, and optionally P2P metrics.
+## Status API
 
-- Query `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
-- When omitted or false, peer count, peer addresses, and `p2p_metrics` are not included.
+GET `/api/v1/status`
 
-Examples:
+Returns the current supernode status including system resources (CPU, memory, storage), running tasks, registered services, network info, and codec configuration.
 
+- Query `include_p2p_metrics=true` adds detailed P2P metrics and peer information.
+
+Example:
 ```bash
-# Lightweight status
 curl "http://localhost:8002/api/v1/status"
+```
 
-# Include P2P metrics and peer info
+With P2P metrics:
+```bash
 curl "http://localhost:8002/api/v1/status?include_p2p_metrics=true"
 ```
 
-Example responses are shown in the main README under the SupernodeService section.
+## Services API
 
-## API Documentation
+GET `/api/v1/services`
 
-- Swagger UI: `http://localhost:8002/swagger-ui/`
-- OpenAPI Spec: `http://localhost:8002/swagger.json`
+Returns the list of available services and methods exposed by this supernode.
 
-The Swagger UI provides an interactive interface to explore and test all available API endpoints.
+Example:
+```bash
+curl http://localhost:8002/api/v1/services
+```
 
+## Notes
+
+- The gateway translates between HTTP/JSON and gRPC/protobuf, enabling easy integration with web tooling and monitoring.
+- Interactive exploration is available via Swagger UI.

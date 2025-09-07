@@ -1,12 +1,13 @@
 package server
 
 import (
-	"context"
+    "context"
 
-	"google.golang.org/grpc"
+    "google.golang.org/grpc"
 
-	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
+    pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+    "github.com/LumeraProtocol/supernode/v2/pkg/codec"
+    "github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
 )
 
 // SupernodeServer implements the SupernodeService gRPC service
@@ -175,6 +176,21 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
         pbpm.Disk.FreeMb = pm.Disk.FreeMB
 
         response.P2PMetrics = pbpm
+    }
+
+    // Populate codec configuration
+    cfg := codec.CurrentConfig(ctx)
+    response.Codec = &pb.StatusResponse_CodecConfig{
+        SymbolSize:     uint32(cfg.SymbolSize),
+        Redundancy:     uint32(cfg.Redundancy),
+        MaxMemoryMb:    cfg.MaxMemoryMB,
+        Concurrency:    uint32(cfg.Concurrency),
+        Profile:        cfg.Profile,
+        HeadroomPct:    int32(cfg.HeadroomPct),
+        MemLimitMb:     cfg.MemLimitMB,
+        MemLimitSource: cfg.MemLimitSource,
+        EffectiveCores: int32(cfg.EffectiveCores),
+        CpuLimitSource: cfg.CpuLimitSource,
     }
 
     return response, nil

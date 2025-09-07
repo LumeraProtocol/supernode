@@ -1,74 +1,116 @@
-Codec (RaptorQ) Usage Guide
+# Codec (RaptorQ) Guide
 
-Purpose
-- Provides a thin, well‑scoped API around the RaptorQ erasure coding engine for encoding and decoding cascade artefacts.
-- Centralizes safe defaults and memory‑conscious behavior suitable for files up to 1 GB.
+## Table of Contents
+- [Overview](#overview)
+- [What It Does](#what-it-does)
+- [Behavioural Note](#behavioural-note)
+- [What We Don’t Do](#what-we-dont-do)
+- [Quick Defaults (no env)](#quick-defaults-no-env)
+- [Change Behavior (simple rules)](#change-behavior-simple-rules)
+- [Profiles (behavior overview)](#profiles-behavior-overview)
+- [Where It Applies](#where-it-applies)
+- [Integration](#integration)
+- [Notes](#notes)
+- [Log Observability](#log-observability)
+- [P2P interaction (high‑level)](#p2p-interaction-highlevel)
+- [Examples (no env)](#examples-no-env)
+- [Minimal Usage (Decode)](#minimal-usage-decode)
+- [Minimal Usage (Encode)](#minimal-usage-encode)
+- [Troubleshooting](#troubleshooting)
 
-What We Do
-- Per‑request processor lifecycle: create a processor per Encode/Decode call and Free it immediately after to avoid long‑lived native allocations.
-- Decode hygiene: write incoming symbols to disk and drop their in‑memory buffers before calling the native decoder to minimize heap + native overlap.
-- Layout file naming: store layout as `_raptorq_layout.json` inside the symbols directory used for the request. The decoder takes the explicit path; the name is for operator clarity.
+## Overview
+- Thin, well‑scoped API around RaptorQ for encoding/decoding cascade artefacts.
+- Safe defaults and memory‑conscious behavior tuned for files up to 1 GB.
+
+## What It Does
+- Per‑request processor: create/free a processor per Encode/Decode to bound native memory.
+- Decode hygiene: write symbols to disk and drop in‑memory buffers before decoding to lower peaks.
+- Layout file: stored as `_raptorq_layout.json` in the request’s symbols directory.
 - Directory layout:
-  - Encode: symbols are written under `<symbolsBaseDir>/<taskID>/`.
-  - Decode: symbols are written under `<symbolsBaseDir>/<actionID>/` and the decoded output file is placed alongside.
+  - Encode → `<symbolsBaseDir>/<taskID>/`
+  - Decode → `<symbolsBaseDir>/<actionID>/` (decoded output sits alongside)
 
-Behavioural Note (Decode mutates input)
-- Decode deletes entries from `DecodeRequest.Symbols` as they are flushed to disk. This is intentional to free memory early. Do not reuse the map after calling Decode.
+## Behavioural Note
+- Decode mutates input: it deletes entries from `DecodeRequest.Symbols` after flushing to disk to free memory.
 
-What We Don’t Do
-- No environment configuration required: deployments do not set or rely on env vars. The defaults below are used automatically.
-- No up‑front full fetch of symbols in the download path: the download service uses progressive retrieval (outside this package) to avoid over‑fetching and reduce memory pressure.
-- No persistent shared processor: we avoid sharing a single processor across requests to keep native memory bounded and lifecycle explicit.
+## What We Don’t Do
+- Require env setup: runs fine without any env vars. If set, env vars override the defaults.
+- Full pre‑fetch of symbols: progressive retrieval avoids over‑fetching and reduces memory pressure.
+- Long‑lived processors: we create/free a processor per request to bound native memory.
 
-Defaults (chosen for ≤ 1 GB files)
-- Symbol size: 65535 bytes
-- Redundancy: 5
-- Max memory cap: 8 GB
-- Concurrency: min(NumCPU, 8)
+## Quick Defaults (no env)
+- Profile: perf (fastest defaults)
+- Headroom: `LUMERA_RQ_MEM_HEADROOM_PCT=40` → usable_mem = limit × (1−0.40)
+- Max memory: `min(0.6 × usable_mem, 16 GiB)`
+- Concurrency: `min(8, effective_cores)`, then reduced so `max_memory_mb / concurrency ≥ 512 MB`
+- Symbol size: `65535`  •  Redundancy: `5`
 
-Where These Apply
-- Encode: `supernode/pkg/codec/raptorq.go::Encode()` creates a processor and uses `GetRecommendedBlockSize()` from the library, then `EncodeFile()` and reads the generated layout.
-- Decode: `supernode/pkg/codec/decode.go::Decode()` writes symbols + layout to disk, then calls `DecodeSymbols()`.
-- Progression logic: implemented in `supernode/supernode/services/cascade/progressive_decode.go`, not in this package. This helper escalates required symbol count (9%, 25%, 50%, 75%, 100%).
+## Change Behavior (simple rules)
+- Pick profile: set `CODEC_PROFILE=edge|standard|perf` (perf is default)
+- Reserve headroom: set `LUMERA_RQ_MEM_HEADROOM_PCT` (0–90, default 40)
+- Override knobs directly (take precedence over profile):
+  - `LUMERA_RQ_MAX_MEMORY_MB`, `LUMERA_RQ_CONCURRENCY`, `LUMERA_RQ_SYMBOL_SIZE`, `LUMERA_RQ_REDUNDANCY`
+- Detection sources: memory from cgroups v2/v1 (fallback `/proc/meminfo`), CPU from cgroup quota or `runtime.NumCPU()`
 
-Integration Points
-- Adaptors: `supernode/supernode/services/cascade/adaptors/rq.go` bridges the codec interface to higher‑level services.
-- Download flow: `supernode/supernode/services/cascade/download.go` calls the progressive helper, then verifies the final file hash against on‑chain metadata.
+## Profiles (behavior overview)
 
-Caveats & Notes
-- Error categories vs messages: the native library may return an error code (e.g., memory limit) while the detail string mentions integrity (e.g., block hash mismatch). The Go binding maps codes per header; consumers should treat the code as authoritative and the message as context.
-- Disk usage: decode writes all received symbols to disk. Ensure `<symbolsBaseDir>` has sufficient free space for worst‑case symbol sets and the final file.
-- Cleanup: callers are responsible for deleting the decode temp directory (exposed as `DecodeTmpDir`).
-- File size target: defaults are tuned for up to 1 GB artefacts. Larger files may require different caps and concurrency; our deployment does not rely on env var tuning by default.
+| Profile   | Default selection | Max memory (default)                           | Concurrency (default)                | CPU cap                       | Min per‑worker MB | Symbol size | Redundancy | Env overrides                         |
+|-----------|-------------------|-----------------------------------------------|--------------------------------------|-------------------------------|-------------------|-------------|------------|----------------------------------------|
+| `edge`    | Only when forced  | `min(usable_mem, 1 GiB)`                      | `2`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=edge`    |
+| `standard`| Only when forced  | `min(0.6 × usable_mem, 4 GiB)`                | `4`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=standard`|
+| `perf`    | Default           | `min(0.6 × usable_mem, 16 GiB)`               | `8`                                  | Capped by effective cores     | `≥ 512`           | 65535       | 5          | `LUMERA_RQ_*`, `CODEC_PROFILE=perf`   |
 
-Alignment with P2P Redundancy
-- RaptorQ redundancy (repair symbols) and DHT replication are separate layers:
-  - Codec produces all symbols (source + repair) according to the encoder’s redundancy settings.
-  - P2P stores each symbol as an independent key and replicates values across the network per Kademlia (e.g., replicated to closest `Alpha` nodes).
-- No direct configuration coupling is required: the network treats symbols as opaque blobs; decode only needs “enough” distinct symbols, which the progressive retrieval strategy handles.
-- Operational implication: higher RaptorQ redundancy improves tolerance to missing symbols from peers; DHT replication improves availability of each symbol. Together they determine effective resilience.
+- usable_mem = memory_limit × (1 − `LUMERA_RQ_MEM_HEADROOM_PCT`/100). Default headroom = 40%.
+- Effective cores: derived from cgroup CPU quota (v2 `cpu.max`, v1 `cpu.cfs_*`) or `runtime.NumCPU()`.
+- Per‑worker memory: if `max_memory_mb / concurrency < 512`, concurrency is reduced until the target is met (down to 1).
+- Env overrides: any of `LUMERA_RQ_SYMBOL_SIZE`, `LUMERA_RQ_REDUNDANCY`, `LUMERA_RQ_MAX_MEMORY_MB`, `LUMERA_RQ_CONCURRENCY` supersede the profile defaults.
 
-Minimal Example (Decode)
+## Where It Applies
+- Encode: `pkg/codec/raptorq.go::Encode()` → compute block size, `EncodeFile()`, read layout
+- Decode: `pkg/codec/decode.go::Decode()` → write symbols + layout to disk, `DecodeSymbols()`
+- Progressive decode: `supernode/supernode/services/cascade/progressive_decode.go` escalates required symbols (9%, 25%, 50%, 75%, 100%)
+
+## Integration
+- Adaptors: `supernode/supernode/services/cascade/adaptors/rq.go` bridge the codec to higher‑level services
+- Download flow: `supernode/supernode/services/cascade/download.go` uses progressive decode and verifies final file hash
+
+## Notes
+- Error code vs message: treat the error code as authoritative; message is context only
+- Disk usage: ensure `<symbolsBaseDir>` has space for symbols and the final file
+- Cleanup: callers delete the decode temp dir (`DecodeTmpDir`)
+- File size: defaults suit ≤1 GiB; use overrides or profiles for larger files
+
+## Log Observability
+- On processor creation we log: symbol_size, redundancy_factor, max_memory_mb, concurrency, profile, headroom_pct, mem_limit and source, effective_cores and source.
+
+## P2P interaction (high‑level)
+- Codec redundancy and DHT replication are independent; progressive decode needs “enough” distinct symbols, not all of them
+
+## Examples (no env)
+- 16 GiB limit, 8 cores → usable=9.6 GiB → max=5.76 GiB → conc=8 → ~720 MB/worker
+- 8 GiB limit, 4 cores → usable=4.8 GiB → max=2.88 GiB → conc=4 → ~720 MB/worker
+- 2 GiB limit, 2 cores → usable=1.2 GiB → max=0.72 GiB → conc=1 (to keep ≥512 MB/worker)
+
+## Minimal Usage (Decode)
 ```go
-// Build symbol map and layout upstream; then:
 resp, err := codecImpl.Decode(ctx, codec.DecodeRequest{
     ActionID: actionID,
     Layout:   layout,
     Symbols:  symbols, // map[id]payload
 })
-// resp.Path is the reconstructed file, resp.DecodeTmpDir holds symbols + layout
+// resp.Path is the reconstructed file; resp.DecodeTmpDir holds symbols + layout
 ```
 
-Minimal Example (Encode)
+## Minimal Usage (Encode)
 ```go
 resp, err := codecImpl.Encode(ctx, codec.EncodeRequest{
     TaskID:   taskID,
     Path:     inputPath,
     DataSize: sizeBytes,
 })
-// resp.SymbolsDir contains symbols; resp.Metadata holds the layout for publishing
+// resp.SymbolsDir contains symbols; resp.Metadata holds the layout to publish
 ```
 
-Troubleshooting
-- “memory limit exceeded” with integrity message: likely a native library mismatch of code/message. Treat the code as the handler (e.g., retry with fewer concurrent tasks or escalate symbols via progressive fetch).
-- Decode failures: the progressive helper will escalate symbol count automatically. Non‑integrity errors bubble up immediately.
+## Troubleshooting
+- “memory limit exceeded” with integrity text: treat the error code as authoritative; the message may include integrity hints.
+- Decode failures: progressive helper escalates symbol count automatically; non‑integrity errors bubble up immediately.
