@@ -24,6 +24,10 @@ type RegisterResponse struct {
 	TxHash    string
 }
 
+// RegisterTimeout bounds the execution time of a Register task to prevent tasks
+// from lingering in a non-final state if a dependency stalls. Keep greater than
+// the SDK's upload+processing budgets so the client cancels first.
+
 // Register processes the upload request for cascade input data.
 // 1- Fetch & validate action (it should be a cascade action registered on the chain)
 // 2- Ensure this super-node is eligible to process the action (should be in the top supernodes list for the action block height)
@@ -44,6 +48,9 @@ func (task *CascadeRegistrationTask) Register(
 	req *RegisterRequest,
 	send func(resp *RegisterResponse) error,
 ) (err error) {
+	// Defensive envelope deadline to guarantee task finalization
+	ctx, cancel := context.WithTimeout(ctx, RegisterTimeout)
+	defer cancel()
 
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "cascade-action-registration request received", fields)
@@ -145,13 +152,13 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeRqIDsVerified, "rq-ids have been verified", "", send)
 
 	/* 10. Simulate finalize to avoid storing artefacts if it would fail ---------- */
-    if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
-        fields[logtrace.FieldError] = err.Error()
-        logtrace.Info(ctx, "finalize action simulation failed", fields)
-        // Emit explicit simulation failure event for client visibility
-        task.streamEvent(SupernodeEventTypeFinalizeSimulationFailed, "finalize action simulation failed", "", send)
-        return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
-    }
+	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		logtrace.Info(ctx, "finalize action simulation failed", fields)
+		// Emit explicit simulation failure event for client visibility
+		task.streamEvent(SupernodeEventTypeFinalizeSimulationFailed, "finalize action simulation failed", "", send)
+		return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
+	}
 	logtrace.Info(ctx, "finalize action simulation passed", fields)
 	// Transmit as a standard event so SDK can propagate it (dedicated type)
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "finalize action simulation passed", "", send)

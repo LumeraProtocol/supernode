@@ -1,134 +1,60 @@
-# Cascade Registration Timeouts and Networking
+# Cascade Timeouts — Quick Guide
 
-This document explains how timeouts and deadlines are applied across the SDK cascade registration flow, including the current split between upload and processing phases and the relevant client/server defaults.
+Concise overview of timeout locations, defaults, and intent.
 
-## Purpose
+## Defaults
 
-- Make slow, user‑network–dependent uploads more tolerant without impacting other stages.
-- Keep health checks and connection establishment responsive.
-- Enable clearer error categorization: upload vs processing.
+- Register (client → server)
+  - Upload (SDK adapter): 60m — `cascadeUploadTimeout`
+  - Processing (SDK adapter): 10m — `cascadeProcessingTimeout`
+  - Server envelope: 75m — `RegisterTimeout`
 
-## TL;DR Defaults
+- Download (server → client)
+  - Server preparation: 5m — `DownloadPrepareTimeout`
+  - Client per‑attempt: 60m — `downloadTimeout`
+  - Client liveness (SDK adapter):
+    - Prep idle (pre‑first‑message): 6m — `downloadPrepIdleTimeout`
+    - Idle (post‑first‑message): 2m — `downloadIdleTimeout`
+    - Max attempt: 60m — `downloadMaxTimeout`
+  - Note: File streaming is not server‑bounded; the client governs transfer.
 
-- Upload timeout (adapter): `cascadeUploadTimeout = 60m` — covers client-side file streaming to the supernode.
-- Processing timeout (adapter): `cascadeProcessingTimeout = 10m` — covers waiting for server progress/final tx hash after upload completes.
-- Health check to supernodes (task): `connectionTimeout = 10s` — per-node probe during discovery.
-- gRPC connect (client):
-  - Adds a default `30s` deadline if caller context has none.
-  - Connection readiness gate: `ConnWaitTime = 10s` per attempt, with `MaxRetries = 3` and retry backoff.
-- ALTS handshake (secure transport): `30s` internal read timeouts (client and server sides).
-- Supernode gRPC server:
-  - No per‑RPC timeout for `Register`/`Download` handlers.
-  - Keepalive is permissive (idle ping at 1h, ping ack timeout 30m).
-  - Stream tuning: 16MB message caps, 16MB stream window, 160MB conn window, ~20 concurrent streams.
+- Discovery / Connect
+  - Health probe per supernode: 10s — `connectionTimeout`
+  - gRPC connect default: 30s if caller provides no deadline
+  - Keepalives: permissive (idle ping ~1h, ack timeout ~30m)
 
-## Control Flow and Contexts
+## Intent and Ordering
 
-1) `sdk/action/client.go: ClientImpl.StartCascade(ctx, ...)`
-   - Forwards `ctx` to Task Manager.
+- Register: server envelope (75m) > SDK phases (60m + 10m) so the client surfaces errors first when appropriate.
+- Download: server prep is tight (5m). Transfer is governed by the client with a generous per‑attempt window and two‑phase idle watchdogs.
 
-2) `sdk/task/manager.go: ManagerImpl.CreateCascadeTask(...)`
-   - Detaches from caller: `taskCtx := context.WithCancel(context.Background())`.
-   - All subsequent work uses `taskCtx` (no deadline by default).
+## Where They Live
 
-3) `sdk/task/cascade.go: CascadeTask.Run(ctx)`
-   - Validates file size; fetches healthy supernodes; registers with one.
+- SDK adapter (upload/download phases): `sdk/adapters/supernodeservice/timeouts.go`
+- SDK task (discovery, per‑attempt download): `sdk/task/timeouts.go`
+- Supernode service (server envelopes): `supernode/services/cascade/timeouts.go`
+- P2P internal RPCs: `p2p/kademlia/network.go` (fixed per‑message timeouts)
 
-4) Discovery: `sdk/task/task.go: BaseTask.fetchSupernodes` → `BaseTask.isServing`
-   - `context.WithTimeout(parent, 10s)` for health probe (create client + `HealthCheck`).
+## Notes
 
-5) Registration attempt: `sdk/task/cascade.go: attemptRegistration`
-   - Client connect: uses task context (no deadline); gRPC injects a 30s default at connect if needed.
-   - No outer registration timeout here; the adapter handles per‑phase timers.
-
-6) RPC staging:
-   - `sdk/net/impl.go: supernodeClient.RegisterCascade` →
-   - `sdk/adapters/supernodeservice/adapter.go: CascadeSupernodeRegister` performs client‑stream upload and reads server progress / final tx hash.
-
-## Where Timeouts Come From (by Layer)
-
-- SDK adapter level (registration RPC):
-  - `cascadeUploadTimeout` (60m): upload phase timer (file chunks + metadata + CloseSend).
-  - `cascadeProcessingTimeout` (10m): processing phase timer (receive server progress + final tx hash).
-- SDK task level:
-  - `connectionTimeout` (10s): supernode health checks only.
-
-- gRPC client (`pkg/net/grpc/client`):
-  - `defaultTimeout = 30s`: applied to connect if context lacks a deadline.
-  - `ConnWaitTime = 10s`, `MaxRetries = 3`, backoff configured; keepalives: 30m/30m.
-
-- ALTS handshake (`pkg/net/credentials/alts/handshake`):
-  - `defaultTimeout = 30s` for handshake read operations (client/server).
-
-- gRPC server (`pkg/net/grpc/server` and supernode runtime):
-  - No explicit per‑RPC timeouts; generous keepalives; tuned flow control and message sizes for 4MB chunks.
-
-## SDK Constants
-
-Timeout constants are defined in dedicated files for clarity:
-
-- Upload/Processing: `supernode/sdk/adapters/supernodeservice/timeouts.go`
-- Connection/health probe: `supernode/sdk/task/timeouts.go`
-
-Notes:
-- `BaseTask.isServing` keeps a short 10s budget for snappy health checks.
+- Health checks use a 10s budget for snappy discovery.
 - gRPC connect/handshake defaults remain unchanged.
 
-## Implementation Details
-
-The split is implemented inside `CascadeSupernodeRegister` where the phases are naturally separated by the client‑stream CloseSend.
-
-1) Create a cancelable context from the inbound one for the stream lifetime:
-
-```go
-phaseCtx, cancel := context.WithCancel(ctx)
-defer cancel()
-stream, err := a.client.Register(phaseCtx, opts...)
-```
-
-2) Upload phase timer:
-
-```go
-uploadTimer := time.AfterFunc(cascadeUploadTimeout, cancel)
-
-// send chunks...
-// send metadata...
-
-if err := stream.CloseSend(); err != nil { /* ... */ }
-uploadTimer.Stop()
-```
-
-3) Processing phase timer (server progress → final tx hash):
-
-```go
-processingTimer := time.AfterFunc(cascadeProcessingTimeout, cancel)
-defer processingTimer.Stop()
-
-for {
-    resp, err := stream.Recv()
-    // handle EOF, errors, progress, final tx hash
-}
-```
-
-4) Error mapping and events:
-- If cancellation occurs during Send loop → classify as upload timeout and emit `SDKUploadTimeout`.
-- If cancellation occurs during Recv loop → classify as processing timeout and emit `SDKProcessingTimeout`.
-- Surface distinct error messages and publish events accordingly.
+## Events (SDK)
+- Upload timeout → `SDKUploadFailed`
+- Processing timeout → `SDKProcessingTimeout`
+- Download failure (timeout/canceled) → `SDKDownloadFailure`
 
 This approach requires no request‑struct changes and preserves existing call sites. It uses a single cancelable context across both phases and phase‑specific timers.
 
-## Additional Notes
+## Minimal Tuning Guidance
+- Slow client links: keep download attempt at 60m; adjust idle windows if needed.
+- Very large inputs: raise `cascadeUploadTimeout` (keep processing modest at 10m).
 
-- Health checks use `connectionTimeout = 10s` during supernode discovery.
-- gRPC client connect behavior: adds a `30s` deadline if none is present, waits up to `ConnWaitTime = 10s` per attempt with retries.
-- Downloads use a separate `downloadTimeout = 5m` envelope (per-attempt). On timeout during download, the SDK emits `SDKDownloadFailure` with a reason-coded message `| reason=timeout` and sets `event.KeyMessage = "timeout"`.
-
-## Operational Guidance
-
-- For slow client links: raise `cascadeUploadTimeout` (e.g., 30–120m). Keep processing modest (e.g., 5–10m) unless chain finalization is known to stall.
-- Server tuning is already generous; no server change required to support longer uploads.
-- Telemetry: differentiate upload vs processing timeout in logs and emitted events for better retry behavior and user messaging.
-- Retry policy: on upload timeout, prefer retrying with a different supernode; on processing timeout, consider whether the server might still finalize (idempotency depends on service semantics).
+## Reference Map
+- SDK: `sdk/task/timeouts.go`, `sdk/adapters/supernodeservice/timeouts.go`, `sdk/adapters/supernodeservice/adapter.go`
+- Server: `supernode/services/cascade/timeouts.go`, server handlers in `supernode/node/action/server/cascade`
+- Network: `pkg/net/grpc/client`, `p2p/kademlia/network.go`
 
 ## File/Code Reference Map
 
@@ -145,7 +71,8 @@ This approach requires no request‑struct changes and preserves existing call s
 
 - Supernode
   - `supernode/supernode/node/supernode/server/server.go` — server options (16MB caps, windows, 20 streams).
-  - `supernode/supernode/node/action/server/cascade/cascade_action_server.go` — server-side Register/Download handlers (no per‑RPC timeout).
+  - `supernode/supernode/node/action/server/cascade/cascade_action_server.go` — server-side handlers.
+  - `supernode/supernode/services/cascade/timeouts.go` — Register (`RegisterTimeout = 75m`) and Download prep (`DownloadPrepareTimeout = 5m`) timeouts.
 
 ## Events
 
@@ -160,10 +87,12 @@ This document describes how the SDK applies timeouts and deadlines during cascad
 - Upload (adapter): `cascadeUploadTimeout = 60m` — client-side streaming of file chunks and metadata.
 - Processing (adapter): `cascadeProcessingTimeout = 10m` — wait for server progress and final tx hash after upload completes.
 - Discovery (task): `connectionTimeout = 10s` — per-supernode health probe during discovery.
-- Download (task): `downloadTimeout = 5m` — envelope for cascade download.
+- Download (task): `downloadTimeout = 60m` — per-attempt envelope. Adapter adds
+  `downloadPrepIdleTimeout = 6m` (pre-first-message), `downloadIdleTimeout = 2m`
+  (post-first-message), and `downloadMaxTimeout = 60m`.
 - gRPC client connect: adds a `30s` deadline if none is present; readiness wait per attempt `ConnWaitTime = 10s` with retries and backoff.
 - ALTS handshake: internal `30s` read timeouts on both client and server sides.
-- Supernode gRPC server: no per-RPC timeout; keepalive is permissive (idle ping ~1h, ack timeout ~30m); flow-control and message-size tuning supports 4MB chunks.
+- Supernode gRPC server: task-level timeouts are applied (Register 75m). Download preparation is bounded to 5m; file streaming is client-governed. Keepalive is permissive (idle ping ~1h, ack timeout ~30m); flow-control and message-size tuning supports 4MB chunks.
 
 ## Control Flow
 

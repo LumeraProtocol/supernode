@@ -109,10 +109,15 @@ func NewWorker() *Worker {
 }
 
 // cleanupLoop periodically removes tasks that are in a final state for a grace period
+// or any task that has been around for too long
 func (worker *Worker) cleanupLoop(ctx context.Context) {
 	const (
 		cleanupInterval = 30 * time.Second
 		finalTaskTTL    = 2 * time.Minute
+		// maxTaskAge removes any task entry after this age, regardless of state.
+		// Keep greater than the largest server-side task envelope (RegisterTimeout ~75m)
+		// to avoid pruning legitimate long-running tasks from the worker registry.
+		maxTaskAge = 2 * time.Hour
 	)
 
 	ticker := time.NewTicker(cleanupInterval)
@@ -129,10 +134,16 @@ func (worker *Worker) cleanupLoop(ctx context.Context) {
 			kept := worker.tasks[:0]
 			for _, t := range worker.tasks {
 				st := t.Status()
-				if st != nil && st.SubStatus != nil && st.SubStatus.IsFinal() {
-					if now.Sub(st.CreatedAt) >= finalTaskTTL {
-						// drop this finalized task
+				if st != nil {
+					// Remove any task older than 30 minutes, regardless of state
+					if now.Sub(st.CreatedAt) >= maxTaskAge {
 						continue
+					}
+					// Also remove final tasks after 2 minutes
+					if st.SubStatus != nil && st.SubStatus.IsFinal() {
+						if now.Sub(st.CreatedAt) >= finalTaskTTL {
+							continue
+						}
 					}
 				}
 				kept = append(kept, t)
