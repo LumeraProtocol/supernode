@@ -12,7 +12,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
-	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codecconfig"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
@@ -77,7 +77,7 @@ func (s *Server) Run(ctx context.Context) error {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		cfg := codec.CurrentConfig(r.Context())
+		cfg := codecconfig.Current(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(cfg)
 	})

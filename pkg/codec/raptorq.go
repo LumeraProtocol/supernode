@@ -16,7 +16,7 @@ import (
 )
 
 type raptorQ struct {
-    symbolsBaseDir string
+	symbolsBaseDir string
 }
 
 func NewRaptorQCodec(dir string) Codec {
@@ -46,7 +46,7 @@ func newProcessor(ctx context.Context) (*raptorq.RaptorQProcessor, error) {
 	usableMemMB := computeUsableMem(memLimitMB, headroomPct)
 
 	// 3) Select profile (forced via env or inferred)
-	profile := selectProfile(memLimitMB, os.Getenv("CODEC_PROFILE"))
+	profile := selectProfile(os.Getenv("CODEC_PROFILE"))
 
 	// 4) Compute default limits for the chosen profile
 	defMaxMemMB, defConcurrency := defaultLimitsForProfile(profile, usableMemMB)
@@ -83,52 +83,52 @@ func newProcessor(ctx context.Context) (*raptorq.RaptorQProcessor, error) {
 
 // RaptorQConfig describes the effective codec configuration derived from env, resources and defaults.
 type RaptorQConfig struct {
-    SymbolSize      uint16
-    Redundancy      uint8
-    MaxMemoryMB     uint64
-    Concurrency     uint64
-    Profile         string
-    HeadroomPct     int
-    MemLimitMB      uint64
-    MemLimitSource  string
-    EffectiveCores  int
-    CpuLimitSource  string
+	SymbolSize     uint16
+	Redundancy     uint8
+	MaxMemoryMB    uint64
+	Concurrency    uint64
+	Profile        string
+	HeadroomPct    int
+	MemLimitMB     uint64
+	MemLimitSource string
+	EffectiveCores int
+	CpuLimitSource string
 }
 
 // CurrentConfig computes the current effective RaptorQ configuration without allocating a processor.
 func CurrentConfig(ctx context.Context) RaptorQConfig {
-    // 1) Detect resources
-    memLimitMB, memSource := detectMemoryLimitMB()
-    effCores, cpuSource := detectEffectiveCores()
+	// 1) Detect resources
+	memLimitMB, memSource := detectMemoryLimitMB()
+	effCores, cpuSource := detectEffectiveCores()
 
-    // 2) Apply headroom and select profile
-    headroomPct := readInt("LUMERA_RQ_MEM_HEADROOM_PCT", 40, 0, 90)
-    usableMemMB := computeUsableMem(memLimitMB, headroomPct)
-    profile := selectProfile(memLimitMB, os.Getenv("CODEC_PROFILE"))
+	// 2) Apply headroom and select profile
+	headroomPct := readInt("LUMERA_RQ_MEM_HEADROOM_PCT", 40, 0, 90)
+	usableMemMB := computeUsableMem(memLimitMB, headroomPct)
+	profile := selectProfile(os.Getenv("CODEC_PROFILE"))
 
-    // 3) Compute defaults and adjust by cores and per‑worker budget
-    defMaxMemMB, defConcurrency := defaultLimitsForProfile(profile, usableMemMB)
-    defConcurrency = adjustConcurrency(defConcurrency, effCores)
-    defConcurrency = rebalancePerWorkerMem(defMaxMemMB, defConcurrency, 512)
+	// 3) Compute defaults and adjust by cores and per‑worker budget
+	defMaxMemMB, defConcurrency := defaultLimitsForProfile(profile, usableMemMB)
+	defConcurrency = adjustConcurrency(defConcurrency, effCores)
+	defConcurrency = rebalancePerWorkerMem(defMaxMemMB, defConcurrency, 512)
 
-    // 4) Apply env overrides
-    symbolSize := uint16(readUint("LUMERA_RQ_SYMBOL_SIZE", uint64(raptorq.DefaultSymbolSize), 1024, 65535))
-    redundancy := uint8(readUint("LUMERA_RQ_REDUNDANCY", 5, 1, 32))
-    maxMemMB := readUint("LUMERA_RQ_MAX_MEMORY_MB", defMaxMemMB, 256, 1<<20)
-    concurrency := readUint("LUMERA_RQ_CONCURRENCY", defConcurrency, 1, 1024)
+	// 4) Apply env overrides
+	symbolSize := uint16(readUint("LUMERA_RQ_SYMBOL_SIZE", uint64(raptorq.DefaultSymbolSize), 1024, 65535))
+	redundancy := uint8(readUint("LUMERA_RQ_REDUNDANCY", 5, 1, 32))
+	maxMemMB := readUint("LUMERA_RQ_MAX_MEMORY_MB", defMaxMemMB, 256, 1<<20)
+	concurrency := readUint("LUMERA_RQ_CONCURRENCY", defConcurrency, 1, 1024)
 
-    return RaptorQConfig{
-        SymbolSize:     symbolSize,
-        Redundancy:     redundancy,
-        MaxMemoryMB:    maxMemMB,
-        Concurrency:    concurrency,
-        Profile:        profile,
-        HeadroomPct:    headroomPct,
-        MemLimitMB:     memLimitMB,
-        MemLimitSource: memSource,
-        EffectiveCores: effCores,
-        CpuLimitSource: cpuSource,
-    }
+	return RaptorQConfig{
+		SymbolSize:     symbolSize,
+		Redundancy:     redundancy,
+		MaxMemoryMB:    maxMemMB,
+		Concurrency:    concurrency,
+		Profile:        profile,
+		HeadroomPct:    headroomPct,
+		MemLimitMB:     memLimitMB,
+		MemLimitSource: memSource,
+		EffectiveCores: effCores,
+		CpuLimitSource: cpuSource,
+	}
 }
 
 // detectMemoryLimitMB attempts to determine the memory limit (MB) from cgroups, falling back to MemTotal.
@@ -263,7 +263,7 @@ func computeUsableMem(memLimitMB uint64, headroomPct int) uint64 {
 }
 
 // selectProfile decides which profile to use based on a forced value or memory limit.
-func selectProfile(memLimitMB uint64, forced string) string {
+func selectProfile(forced string) string {
 	p := strings.ToLower(strings.TrimSpace(forced))
 	switch p {
 	case "edge", "standard", "perf":
