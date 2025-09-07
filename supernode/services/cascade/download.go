@@ -1,11 +1,11 @@
 package cascade
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"os"
-	"sort"
+    "bytes"
+    "context"
+    "fmt"
+    "os"
+    "sort"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
@@ -13,7 +13,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
@@ -125,10 +124,10 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 }
 
 func (task *CascadeRegistrationTask) restoreFileFromLayout(
-	ctx context.Context,
-	layout codec.Layout,
-	dataHash string,
-	actionID string,
+    ctx context.Context,
+    layout codec.Layout,
+    dataHash string,
+    actionID string,
 ) (string, string, error) {
 
 	fields := logtrace.Fields{
@@ -140,34 +139,18 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	sort.Strings(allSymbols)
 
-	totalSymbols := len(allSymbols)
-	requiredSymbols := (totalSymbols*requiredSymbolPercent + 99) / 100
+    totalSymbols := len(allSymbols)
+    requiredSymbols := (totalSymbols*requiredSymbolPercent + 99) / 100
 
-	fields["totalSymbols"] = totalSymbols
-	fields["requiredSymbols"] = requiredSymbols
-	logtrace.Info(ctx, "symbols to be retrieved", fields)
+    fields["totalSymbols"] = totalSymbols
+    fields["requiredSymbols"] = requiredSymbols
+    logtrace.Info(ctx, "symbols to be retrieved", fields)
 
-	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, requiredSymbols, actionID)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to retrieve symbols", fields)
-		return "", "", fmt.Errorf("failed to retrieve symbols: %w", err)
-	}
-
-	fields["retrievedSymbols"] = len(symbols)
-	logtrace.Info(ctx, "symbols retrieved", fields)
-
-	// 2. Decode symbols using RaptorQ
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
-		ActionID: actionID,
-		Symbols:  symbols,
-		Layout:   layout,
-	})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to decode symbols", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
-	}
+    // Progressive retrieval moved to helper for readability/testing
+    decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, allSymbols, layout, actionID, fields)
+    if err != nil {
+        return "", "", err
+    }
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
@@ -181,7 +164,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
-	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
+    // Validate final payload hash against on-chain data hash
+    err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)
 		fields[logtrace.FieldError] = err.Error()

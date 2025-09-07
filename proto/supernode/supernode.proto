@@ -157,4 +157,20 @@ message StatusResponse {
   }
 
   P2PMetrics p2p_metrics = 9;
+
+  // RaptorQ codec configuration (effective values)
+  message CodecConfig {
+    uint32 symbol_size = 1;     // bytes (typically 65535)
+    uint32 redundancy = 2;      // repair factor (percent-like scalar; 5 = default)
+    uint64 max_memory_mb = 3;   // memory cap for native decoder
+    uint32 concurrency = 4;     // native decoder parallelism
+    string profile = 5;         // selected profile: edge|standard|perf
+    int32 headroom_pct = 6;     // reserved memory percentage (0-90)
+    uint64 mem_limit_mb = 7;    // detected memory limit (MB)
+    string mem_limit_source = 8;// detection source (cgroup/meminfo)
+    int32 effective_cores = 9;  // detected cores/quota
+    string cpu_limit_source = 10; // detection source (cgroups/NumCPU)
+  }
+
+  CodecConfig codec = 10;
 }
