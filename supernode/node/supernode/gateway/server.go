@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codecconfig"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
@@ -69,6 +71,34 @@ func (s *Server) Run(ctx context.Context) error {
 	// Register Swagger endpoints
 	httpMux.HandleFunc("/swagger.json", s.serveSwaggerJSON)
 	httpMux.HandleFunc("/swagger-ui/", s.serveSwaggerUI)
+    // Expose minimal RaptorQ codec config (trimmed; no bloat)
+    httpMux.HandleFunc("/api/v1/codec", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodGet {
+            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+            return
+        }
+        cfg := codecconfig.Current(r.Context())
+        type minimalCodec struct {
+            SymbolSize     uint16 `json:"symbol_size"`
+            Redundancy     uint8  `json:"redundancy"`
+            MaxMemoryMB    uint64 `json:"max_memory_mb"`
+            Concurrency    uint64 `json:"concurrency"`
+            HeadroomPct    int    `json:"headroom_pct"`
+            MemLimitMB     uint64 `json:"mem_limit_mb"`
+            MemLimitSource string `json:"mem_limit_source"`
+        }
+        out := minimalCodec{
+            SymbolSize:     cfg.SymbolSize,
+            Redundancy:     cfg.Redundancy,
+            MaxMemoryMB:    cfg.MaxMemoryMB,
+            Concurrency:    cfg.Concurrency,
+            HeadroomPct:    cfg.HeadroomPct,
+            MemLimitMB:     cfg.MemLimitMB,
+            MemLimitSource: cfg.MemLimitSource,
+        }
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(out)
+    })
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/swagger-ui/", http.StatusFound)
