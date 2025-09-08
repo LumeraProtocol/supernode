@@ -6,6 +6,8 @@ SuperNode Process Manager with Automatic Updates
 
 - [Installation](#installation)
 - [Systemd Service Setup](#systemd-service-setup)
+  - [Custom Base (Same User, Recommended)](#setup-custom-base-same-user)
+  - [Custom Base (Dedicated User)](#setup-custom-base-dedicated-user)
 - [Ensure PATH points to user install](#ensure-path-points-to-user-install-required-for-self-update)
 - [Initialization](#initialization)
 - [Commands](#commands)
@@ -81,6 +83,116 @@ sudo systemctl start sn-manager
 sudo systemctl restart sn-manager
 journalctl -u sn-manager -f
 ```
+
+<a id="setup-custom-base-same-user"></a>
+## Setup in a Custom Base (Same User, Simple CLI) — Recommended
+
+Use your current user and keep CLI commands unchanged by placing data under a custom base and linking it to your home directory.
+
+Why this is simple:
+- CLI stays the same: run `sn-manager ...` as usual (no sudo -u).
+- No environment overrides: systemd can use the standard unit from this README.
+- Self-update works: binary lives in a user-writable location.
+
+Variables:
+- `<BASE_DIR>`: The custom base directory (e.g., `/srv/app`).
+
+```bash
+# 1) Prepare directories under your chosen base
+mkdir -p <BASE_DIR>/.sn-manager/bin
+mkdir -p <BASE_DIR>/.supernode
+
+# 2) Install sn-manager to the base (user-writable for self-update)
+curl -L https://github.com/LumeraProtocol/supernode/releases/latest/download/supernode-linux-amd64.tar.gz | tar -xz
+install -D -m 0755 sn-manager <BASE_DIR>/.sn-manager/bin/sn-manager
+
+# 3) Link the base to your home (so CLI and unit files remain unchanged)
+ln -s <BASE_DIR>/.sn-manager "$HOME/.sn-manager"
+ln -s <BASE_DIR>/.supernode "$HOME/.supernode"
+
+# 4) Ensure your shell resolves to the user install (self-update)
+#    Follow: "Ensure PATH points to user install" section below.
+
+# 5) Use the standard systemd unit from this README (no HOME override needed)
+#    Then start the service and follow logs
+sudo systemctl daemon-reload
+sudo systemctl enable --now sn-manager
+journalctl -u sn-manager -f
+```
+
+Notes (plain English):
+- Your files live under `<BASE_DIR>` but appear at `~/.sn-manager` and `~/.supernode` via links, keeping tools happy.
+- Auto-update needs a writable binary dir; installing to `<BASE_DIR>/.sn-manager/bin` (linked to `~/.sn-manager/bin`) ensures this.
+- Avoid multiple installs to prevent PATH confusion; remove any global `/usr/local/bin/sn-manager` copy if present.
+
+<a id="setup-custom-base-dedicated-user"></a>
+## Setup in a Custom Base (Dedicated Service User)
+
+Alternative (isolated) setup. This installs and runs sn-manager and SuperNode under a custom base directory using a dedicated system user. It isolates the service, keeps auto-updates working, and avoids affecting other applications or users.
+
+Rationale and choices:
+- Dedicated service user: Contains impact to just this service, avoids changing your login user’s HOME, and keeps permissions tight. Recommended for production.
+- Current user: You may reuse your existing user if desired. In that case, set `User=<YOUR_USER>` in the unit, ensure the base directory is owned by that user, and keep the service-only `HOME=<BASE_DIR>` override.
+- Why HOME override: Both sn-manager and SuperNode derive their state from `HOME` (`$HOME/.sn-manager` and `$HOME/.supernode`). Overriding HOME for the service ensures both components operate in the same custom base without extra flags.
+- Self-update requirement: sn-manager must be installed in a directory writable by the service user (`<BASE_DIR>/.sn-manager/bin/sn-manager`).
+
+Variables used below:
+- `<SERVICE_USER>`: The system user account that will run the service (e.g., `lumera` or your current user).
+- `<BASE_DIR>`: The custom base directory (e.g., `/srv/app`).
+
+```bash
+# 1) Create base and (optionally) a dedicated service user
+sudo useradd --system --home-dir <BASE_DIR> --shell /usr/sbin/nologin <SERVICE_USER> || true
+sudo mkdir -p <BASE_DIR>
+sudo chown -R <SERVICE_USER>:<SERVICE_USER> <BASE_DIR>
+
+# 2) Install sn-manager into the custom base so it can self-update
+curl -L https://github.com/LumeraProtocol/supernode/releases/latest/download/supernode-linux-amd64.tar.gz | tar -xz
+sudo -u <SERVICE_USER> install -D -m 0755 sn-manager <BASE_DIR>/.sn-manager/bin/sn-manager
+
+# 3) Systemd unit (service-only HOME override keeps state under <BASE_DIR>)
+sudo tee /etc/systemd/system/sn-manager.service <<EOF
+[Unit]
+Description=Lumera SuperNode Manager
+After=network-online.target
+
+[Service]
+User=<SERVICE_USER>
+Environment="HOME=<BASE_DIR>"
+WorkingDirectory=<BASE_DIR>
+ExecStart=<BASE_DIR>/.sn-manager/bin/sn-manager start
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+
+# 4) Initialize (see the Initialization section below)
+#    Use: sn-manager init (interactive) or flags as needed.
+
+# 5) Start and follow logs
+sudo systemctl enable --now sn-manager
+journalctl -u sn-manager -f
+```
+
+Notes:
+- Your files live under `<BASE_DIR>`:
+  - Manager data: `<BASE_DIR>/.sn-manager`
+  - SuperNode data: `<BASE_DIR>/.supernode`
+- New user vs current user:
+  - New user keeps things isolated and safer (recommended for servers).
+  - Using your current user is fine too; just set `User=<YOUR_USER>` and ensure `<BASE_DIR>` belongs to that user.
+- Only the service’s HOME changes:
+  - This does not change your normal shell’s HOME.
+  - The change applies only to the sn-manager service and the SuperNode it starts.
+- Self-update works only if the binary is writable by the service user:
+  - Install to `<BASE_DIR>/.sn-manager/bin/sn-manager` as shown.
+- Command-line usage as the service user (optional):
+  - `sudo -u <SERVICE_USER> HOME=<BASE_DIR> <BASE_DIR>/.sn-manager/bin/sn-manager status`
 
 ### Ensure PATH points to user install (Required for self-update)
 
@@ -344,6 +456,8 @@ updates:
   current_version: "v1.7.4"
   auto_upgrade: true
 ```
+
+When using a custom base setup (service-only HOME override), the path above becomes `$HOME/.sn-manager/config.yml` at `<BASE_DIR>/.sn-manager/config.yml`.
 
 **Reset:**
 

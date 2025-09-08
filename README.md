@@ -205,125 +205,19 @@ enum SupernodeEventType {
 
 ## HTTP Gateway
 
-The supernode provides an HTTP gateway that exposes the gRPC services via REST API on port `8002`.
+See docs/gateway.md for the full gateway guide (endpoints, examples, Swagger links).
 
-See `docs/gateway.md` for the full gateway guide and additional examples.
+### Codec Configuration (fixed policy)
 
-### Example: GET /api/v1/status
-Returns the current supernode status including system resources (CPU, memory, storage) and service information.
+The supernode uses a fixed RaptorQ codec policy (linux/amd64 only):
+- Concurrency: 4
+- Symbol size: 65535
+- Redundancy: 5
+- Max memory: detected cgroup/system memory minus 10% headroom
 
-- Query parameter `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
-- When omitted or false, peer count, peer addresses, and `p2p_metrics` are not included.
-
-```bash
-curl "http://localhost:8002/api/v1/status"
-```
-
-Response (without P2P metrics):
-```json
-{
-  "version": "1.0.0",
-  "uptime_seconds": "3600",
-  "resources": {
-    "cpu": {
-      "usage_percent": 15.2,
-      "cores": 8
-    },
-    "memory": {
-      "total_gb": 32.0,
-      "used_gb": 16.0,
-      "available_gb": 16.0,
-      "usage_percent": 50.0
-    },
-    "storage_volumes": [
-      {
-        "path": "/",
-        "total_bytes": "500000000000",
-        "used_bytes": "250000000000",
-        "available_bytes": "250000000000",
-        "usage_percent": 50.0
-      }
-    ],
-    "hardware_summary": "8 cores / 32GB RAM"
-  },
-  "running_tasks": [
-    {
-      "service_name": "cascade",
-      "task_ids": ["task1", "task2"],
-      "task_count": 2
-    }
-  ],
-  "registered_services": ["cascade", "sense"],
-  "network": {},
-  "rank": 6,
-  "ip_address": "192.168.1.100:4445"
-}
-```
-
-To include P2P metrics and peer information:
-
-```bash
-curl "http://localhost:8002/api/v1/status?include_p2p_metrics=true"
-```
-
-Response (with P2P metrics):
-
-```json
-{
-  "version": "1.0.0",
-  "uptime_seconds": "3600",
-  "resources": { /* ... */ },
-  "running_tasks": [ /* ... */ ],
-  "registered_services": ["cascade", "sense"],
-  "network": {
-    "peers_count": 11,
-    "peer_addresses": [
-      "lumera13z...@156.67.29.226:4445",
-      "lumera1s5...@18.216.80.56:4445"
-    ]
-  },
-  "rank": 6,
-  "ip_address": "192.168.1.100:4445",
-  "p2p_metrics": {
-    "dht_metrics": {
-      "store_success_recent": [ /* ... */ ],
-      "batch_retrieve_recent": [ /* ... */ ],
-      "hot_path_banned_skips": 0,
-      "hot_path_ban_increments": 0
-    },
-    "network_handle_metrics": { "STORE": {"total": 42, "success": 40, "failure": 1, "timeout": 1} },
-    "conn_pool_metrics": { "active": 12, "idle": 3 },
-    "ban_list": [ /* ... */ ],
-    "database": { "p2p_db_size_mb": 123.4, "p2p_db_records_count": "1000" },
-    "disk": { "all_mb": 102400, "used_mb": 51200, "free_mb": 51200 }
-  }
-}
-```
-
-#### GET /api/v1/services
-Returns the list of available services on the supernode.
-
-```bash
-curl http://localhost:8002/api/v1/services
-```
-
-Response:
-```json
-{
-  "services": ["cascade", "sense"]
-}
-```
-
-The gateway automatically translates between HTTP/JSON and gRPC/protobuf formats, making it easy to integrate with web applications and monitoring tools.
-
-### API Documentation
-
-The gateway provides interactive API documentation via Swagger UI:
-
-- **Swagger UI**: http://localhost:8002/swagger-ui/
-- **OpenAPI Spec**: http://localhost:8002/swagger.json
-
-The Swagger UI provides an interactive interface to explore and test all available API endpoints.
+Status includes these effective values under `codec` in `StatusResponse`.
+The HTTP gateway also exposes a minimal view at `GET /api/v1/codec` with:
+- `symbol_size`, `redundancy`, `max_memory_mb`, `concurrency`, `headroom_pct`, `mem_limit_mb`, `mem_limit_source`.
 
 ## CLI Commands
 
