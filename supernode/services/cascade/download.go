@@ -13,7 +13,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
@@ -147,27 +146,13 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	fields["requiredSymbols"] = requiredSymbols
 	logtrace.Info(ctx, "symbols to be retrieved", fields)
 
-	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, requiredSymbols, actionID)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to retrieve symbols", fields)
-		return "", "", fmt.Errorf("failed to retrieve symbols: %w", err)
-	}
-
-	fields["retrievedSymbols"] = len(symbols)
-	logtrace.Info(ctx, "symbols retrieved", fields)
-
-	// 2. Decode symbols using RaptorQ
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
-		ActionID: actionID,
-		Symbols:  symbols,
-		Layout:   layout,
-	})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to decode symbols", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
-	}
+		// Progressive retrieval moved to helper for readability/testing
+		decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, layout, actionID, fields)
+		if err != nil {
+			fields[logtrace.FieldError] = err.Error()
+			logtrace.Error(ctx, "failed to decode symbols progressively", fields)
+			return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
+		}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
