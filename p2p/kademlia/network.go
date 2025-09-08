@@ -32,14 +32,22 @@ const (
 	defaultMaxPayloadSize              = 200 // MB
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
-	defaultExecTimeout                 = 10 * time.Second
+	// defaultExecTimeout is for small control-plane RPCs; large payload RPCs
+	// have explicit entries in execTimeouts below.
+	defaultExecTimeout = 10 * time.Second
 )
 
 // Global map for message type timeouts
 var execTimeouts map[int]time.Duration
 
 func init() {
-	// Initialize the request execution timeout values
+	// Initialize the request execution timeout values.
+	// These defaults are intentionally conservative to accommodate slower
+	// peers and larger payloads. If future deployments consistently see
+	// responsive nodes, consider reducing the larger RPC timeouts (e.g.,
+	// BatchStoreData/BatchGetValues to ~45s, BatchFindValues to ~30s) to
+	// fail fast on degraded nodes. Long, user-dependent operations like
+	// uploads/downloads are governed at higher layers.
 	execTimeouts = map[int]time.Duration{
 		Ping:            5 * time.Second,
 		FindNode:        10 * time.Second,
