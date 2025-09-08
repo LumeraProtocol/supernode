@@ -29,8 +29,8 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 	}
 	logtrace.Info(ctx, "RaptorQ decode request received", fields)
 
-	// Use env-configurable processor to allow memory/concurrency tuning per deployment
-	processor, err := newProcessor(ctx)
+    // Create processor using fixed policy (no env overrides)
+    processor, err := newProcessor(ctx)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return DecodeResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)

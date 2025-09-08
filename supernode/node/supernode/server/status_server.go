@@ -180,18 +180,15 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 
 	// Populate codec configuration
 	cfg := codecconfig.Current(ctx)
-	response.Codec = &pb.StatusResponse_CodecConfig{
-		SymbolSize:     uint32(cfg.SymbolSize),
-		Redundancy:     uint32(cfg.Redundancy),
-		MaxMemoryMb:    cfg.MaxMemoryMB,
-		Concurrency:    uint32(cfg.Concurrency),
-		Profile:        cfg.Profile,
-		HeadroomPct:    int32(cfg.HeadroomPct),
-		MemLimitMb:     cfg.MemLimitMB,
-		MemLimitSource: cfg.MemLimitSource,
-		EffectiveCores: int32(cfg.EffectiveCores),
-		CpuLimitSource: cfg.CpuLimitSource,
-	}
+    response.Codec = &pb.StatusResponse_CodecConfig{
+        SymbolSize:     uint32(cfg.SymbolSize),
+        Redundancy:     uint32(cfg.Redundancy),
+        MaxMemoryMb:    cfg.MaxMemoryMB,
+        Concurrency:    uint32(cfg.Concurrency),
+        HeadroomPct:    int32(cfg.HeadroomPct),
+        MemLimitMb:     cfg.MemLimitMB,
+        MemLimitSource: cfg.MemLimitSource,
+    }
 
 	return response, nil
 }
