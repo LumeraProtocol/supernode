@@ -153,11 +153,13 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	fields["requiredSymbols"] = requiredSymbols
 	logtrace.Info(ctx, "symbols to be retrieved", fields)
 
-	// Progressive retrieval moved to helper for readability/testing
-	decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, allSymbols, layout, actionID, fields)
-	if err != nil {
-		return "", "", err
-	}
+		// Progressive retrieval moved to helper for readability/testing
+		decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, layout, actionID, fields)
+		if err != nil {
+			fields[logtrace.FieldError] = err.Error()
+			logtrace.Error(ctx, "failed to decode symbols progressively", fields)
+			return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
+		}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
