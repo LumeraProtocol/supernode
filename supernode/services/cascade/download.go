@@ -13,7 +13,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
@@ -32,11 +31,18 @@ type DownloadResponse struct {
 	DownloadedDir string
 }
 
+// Download preparation is bounded by DownloadPrepareTimeout (see timeouts.go).
+// The subsequent file streaming to the client is not bounded by this timer.
+
 func (task *CascadeRegistrationTask) Download(
 	ctx context.Context,
 	req *DownloadRequest,
 	send func(resp *DownloadResponse) error,
 ) (err error) {
+	// Bound the preparation phase only (metadata/layout/symbols/restore)
+	ctx, cancel := context.WithTimeout(ctx, DownloadPrepareTimeout)
+	defer cancel()
+
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "cascade-action-download request received", fields)
 
@@ -147,26 +153,10 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	fields["requiredSymbols"] = requiredSymbols
 	logtrace.Info(ctx, "symbols to be retrieved", fields)
 
-	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, requiredSymbols, actionID)
+	// Progressive retrieval moved to helper for readability/testing
+	decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, allSymbols, layout, actionID, fields)
 	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to retrieve symbols", fields)
-		return "", "", fmt.Errorf("failed to retrieve symbols: %w", err)
-	}
-
-	fields["retrievedSymbols"] = len(symbols)
-	logtrace.Info(ctx, "symbols retrieved", fields)
-
-	// 2. Decode symbols using RaptorQ
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
-		ActionID: actionID,
-		Symbols:  symbols,
-		Layout:   layout,
-	})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "failed to decode symbols", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
+		return "", "", err
 	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
@@ -181,6 +171,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
+	// Validate final payload hash against on-chain data hash
 	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)

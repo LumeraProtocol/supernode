@@ -350,9 +350,9 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 }
 
 func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatusresponse, error) {
-    // Gate P2P metrics via context option to keep API backward compatible
-    req := &supernode.StatusRequest{IncludeP2PMetrics: includeP2PMetrics(ctx)}
-    resp, err := a.statusClient.GetStatus(ctx, req)
+	// Gate P2P metrics via context option to keep API backward compatible
+	req := &supernode.StatusRequest{IncludeP2PMetrics: includeP2PMetrics(ctx)}
+	resp, err := a.statusClient.GetStatus(ctx, req)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernode status", "error", err)
 		return SupernodeStatusresponse{}, fmt.Errorf("failed to get supernode status: %w", err)
@@ -370,10 +370,14 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 	opts ...grpc.CallOption,
 ) (*CascadeSupernodeDownloadResponse, error) {
 
-	// Use provided context as-is (no correlation IDs)
+	// Use provided context as-is (no correlation IDs). Add watchdogs:
+	// - idle timer: reset on every received message (event or chunk).
+	// - max timer: hard cap for one attempt.
+	phaseCtx, phaseCancel := context.WithCancel(ctx)
+	defer phaseCancel()
 
 	// 1. Open gRPC stream (server-stream)
-	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
+	stream, err := a.client.Download(phaseCtx, &cascade.DownloadRequest{
 		ActionId:  in.ActionID,
 		Signature: in.Signature,
 	}, opts...)
@@ -401,6 +405,23 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 		chunkIndex   int
 	)
 
+	// 3. Receive streamed responses with liveness watchdog
+	// Start with a generous prep idle timeout; tighten after first message
+	currentIdle := downloadPrepIdleTimeout
+	idleTimer := time.AfterFunc(currentIdle, func() {
+		a.logger.Error(ctx, "download idle timeout; cancelling stream", "action_id", in.ActionID)
+		phaseCancel()
+	})
+	defer idleTimer.Stop()
+	maxTimer := time.AfterFunc(downloadMaxTimeout, func() {
+		a.logger.Error(ctx, "download max timeout; cancelling stream", "action_id", in.ActionID)
+		phaseCancel()
+	})
+	defer maxTimer.Stop()
+	start := time.Now()
+	lastActivity := start
+	firstMsg := false
+
 	// 3. Receive streamed responses
 	for {
 		resp, err := stream.Recv()
@@ -408,6 +429,17 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			break
 		}
 		if err != nil {
+			// Classify timeouts for clearer upstream handling
+			if phaseCtx.Err() != nil {
+				sinceLast := time.Since(lastActivity)
+				sinceStart := time.Since(start)
+				switch {
+				case sinceLast >= downloadIdleTimeout:
+					return nil, fmt.Errorf("download idle timeout: %w", context.DeadlineExceeded)
+				case sinceStart >= downloadMaxTimeout:
+					return nil, fmt.Errorf("download overall timeout: %w", context.DeadlineExceeded)
+				}
+			}
 			return nil, fmt.Errorf("stream recv: %w", err)
 		}
 
@@ -415,20 +447,39 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 		// 3a. Progress / event message
 		case *cascade.DownloadResponse_Event:
+			// On first message, tighten idle window for active transfer
+			if !firstMsg {
+				firstMsg = true
+				currentIdle = downloadIdleTimeout
+			}
+			if idleTimer != nil {
+				idleTimer.Reset(currentIdle)
+			}
+			lastActivity = time.Now()
 			a.logger.Info(ctx, "supernode event", "event_type", x.Event.EventType, "message", x.Event.Message, "action_id", in.ActionID)
 
 			if in.EventLogger != nil {
 				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
+					event.KeyTaskID:    in.TaskID,
 					event.KeyActionID:  in.ActionID,
 					event.KeyEventType: x.Event.EventType,
 					event.KeyMessage:   x.Event.Message,
 				})
 			}
 
-		// 3b. Actual data chunk
+			// 3b. Actual data chunk
 		case *cascade.DownloadResponse_Chunk:
 			data := x.Chunk.Data
 			if len(data) == 0 {
+				// Treat empty chunks as keep-alive; reset idle
+				if !firstMsg {
+					firstMsg = true
+					currentIdle = downloadIdleTimeout
+				}
+				if idleTimer != nil {
+					idleTimer.Reset(currentIdle)
+				}
+				lastActivity = time.Now()
 				continue
 			}
 			if _, err := outFile.Write(data); err != nil {
@@ -437,7 +488,14 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 			bytesWritten += int64(len(data))
 			chunkIndex++
-
+			if !firstMsg {
+				firstMsg = true
+				currentIdle = downloadIdleTimeout
+			}
+			if idleTimer != nil {
+				idleTimer.Reset(currentIdle)
+			}
+			lastActivity = time.Now()
 			a.logger.Debug(ctx, "received chunk", "chunk_index", chunkIndex, "chunk_size", len(data), "bytes_written", bytesWritten)
 		}
 	}
@@ -453,7 +511,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
-    switch e {
+	switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
 		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:
@@ -478,10 +536,10 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeActionFinalized
 	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
 		return event.SupernodeArtefactsDownloaded
-    case cascade.SupernodeEventType_FINALIZE_SIMULATED:
-        return event.SupernodeFinalizeSimulated
-    case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
-        return event.SupernodeFinalizeSimulationFailed
+	case cascade.SupernodeEventType_FINALIZE_SIMULATED:
+		return event.SupernodeFinalizeSimulated
+	case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
+		return event.SupernodeFinalizeSimulationFailed
 	default:
 		return event.SupernodeUnknown
 	}
@@ -511,9 +569,9 @@ func parseSuccessRate(msg string) (float64, bool) {
 }
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {
-    result := &SupernodeStatusresponse{}
-    result.Version = resp.Version
-    result.UptimeSeconds = resp.UptimeSeconds
+	result := &SupernodeStatusresponse{}
+	result.Version = resp.Version
+	result.UptimeSeconds = resp.UptimeSeconds
 
 	// Convert Resources data
 	if resp.Resources != nil {
@@ -568,117 +626,117 @@ func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusrespon
 		copy(result.Network.PeerAddresses, resp.Network.PeerAddresses)
 	}
 
-    // Copy rank and IP address
-    result.Rank = resp.Rank
-    result.IPAddress = resp.IpAddress
+	// Copy rank and IP address
+	result.Rank = resp.Rank
+	result.IPAddress = resp.IpAddress
 
-    // Map optional P2P metrics
-    if resp.P2PMetrics != nil {
-        // DHT metrics
-        if resp.P2PMetrics.DhtMetrics != nil {
-            // Store success recent
-            for _, p := range resp.P2PMetrics.DhtMetrics.StoreSuccessRecent {
-                result.P2PMetrics.DhtMetrics.StoreSuccessRecent = append(result.P2PMetrics.DhtMetrics.StoreSuccessRecent, struct {
-                    TimeUnix    int64
-                    Requests    int32
-                    Successful  int32
-                    SuccessRate float64
-                }{
-                    TimeUnix:    p.TimeUnix,
-                    Requests:    p.Requests,
-                    Successful:  p.Successful,
-                    SuccessRate: p.SuccessRate,
-                })
-            }
-            // Batch retrieve recent
-            for _, p := range resp.P2PMetrics.DhtMetrics.BatchRetrieveRecent {
-                result.P2PMetrics.DhtMetrics.BatchRetrieveRecent = append(result.P2PMetrics.DhtMetrics.BatchRetrieveRecent, struct {
-                    TimeUnix     int64
-                    Keys         int32
-                    Required     int32
-                    FoundLocal   int32
-                    FoundNetwork int32
-                    DurationMS   int64
-                }{
-                    TimeUnix:     p.TimeUnix,
-                    Keys:         p.Keys,
-                    Required:     p.Required,
-                    FoundLocal:   p.FoundLocal,
-                    FoundNetwork: p.FoundNetwork,
-                    DurationMS:   p.DurationMs,
-                })
-            }
-            result.P2PMetrics.DhtMetrics.HotPathBannedSkips = resp.P2PMetrics.DhtMetrics.HotPathBannedSkips
-            result.P2PMetrics.DhtMetrics.HotPathBanIncrements = resp.P2PMetrics.DhtMetrics.HotPathBanIncrements
-        }
+	// Map optional P2P metrics
+	if resp.P2PMetrics != nil {
+		// DHT metrics
+		if resp.P2PMetrics.DhtMetrics != nil {
+			// Store success recent
+			for _, p := range resp.P2PMetrics.DhtMetrics.StoreSuccessRecent {
+				result.P2PMetrics.DhtMetrics.StoreSuccessRecent = append(result.P2PMetrics.DhtMetrics.StoreSuccessRecent, struct {
+					TimeUnix    int64
+					Requests    int32
+					Successful  int32
+					SuccessRate float64
+				}{
+					TimeUnix:    p.TimeUnix,
+					Requests:    p.Requests,
+					Successful:  p.Successful,
+					SuccessRate: p.SuccessRate,
+				})
+			}
+			// Batch retrieve recent
+			for _, p := range resp.P2PMetrics.DhtMetrics.BatchRetrieveRecent {
+				result.P2PMetrics.DhtMetrics.BatchRetrieveRecent = append(result.P2PMetrics.DhtMetrics.BatchRetrieveRecent, struct {
+					TimeUnix     int64
+					Keys         int32
+					Required     int32
+					FoundLocal   int32
+					FoundNetwork int32
+					DurationMS   int64
+				}{
+					TimeUnix:     p.TimeUnix,
+					Keys:         p.Keys,
+					Required:     p.Required,
+					FoundLocal:   p.FoundLocal,
+					FoundNetwork: p.FoundNetwork,
+					DurationMS:   p.DurationMs,
+				})
+			}
+			result.P2PMetrics.DhtMetrics.HotPathBannedSkips = resp.P2PMetrics.DhtMetrics.HotPathBannedSkips
+			result.P2PMetrics.DhtMetrics.HotPathBanIncrements = resp.P2PMetrics.DhtMetrics.HotPathBanIncrements
+		}
 
-        // Network handle metrics
-        if resp.P2PMetrics.NetworkHandleMetrics != nil {
-            if result.P2PMetrics.NetworkHandleMetrics == nil {
-                result.P2PMetrics.NetworkHandleMetrics = map[string]struct{
-                    Total   int64
-                    Success int64
-                    Failure int64
-                    Timeout int64
-                }{}
-            }
-            for k, v := range resp.P2PMetrics.NetworkHandleMetrics {
-                result.P2PMetrics.NetworkHandleMetrics[k] = struct{
-                    Total   int64
-                    Success int64
-                    Failure int64
-                    Timeout int64
-                }{
-                    Total:   v.Total,
-                    Success: v.Success,
-                    Failure: v.Failure,
-                    Timeout: v.Timeout,
-                }
-            }
-        }
+		// Network handle metrics
+		if resp.P2PMetrics.NetworkHandleMetrics != nil {
+			if result.P2PMetrics.NetworkHandleMetrics == nil {
+				result.P2PMetrics.NetworkHandleMetrics = map[string]struct {
+					Total   int64
+					Success int64
+					Failure int64
+					Timeout int64
+				}{}
+			}
+			for k, v := range resp.P2PMetrics.NetworkHandleMetrics {
+				result.P2PMetrics.NetworkHandleMetrics[k] = struct {
+					Total   int64
+					Success int64
+					Failure int64
+					Timeout int64
+				}{
+					Total:   v.Total,
+					Success: v.Success,
+					Failure: v.Failure,
+					Timeout: v.Timeout,
+				}
+			}
+		}
 
-        // Conn pool metrics
-        if resp.P2PMetrics.ConnPoolMetrics != nil {
-            if result.P2PMetrics.ConnPoolMetrics == nil {
-                result.P2PMetrics.ConnPoolMetrics = map[string]int64{}
-            }
-            for k, v := range resp.P2PMetrics.ConnPoolMetrics {
-                result.P2PMetrics.ConnPoolMetrics[k] = v
-            }
-        }
+		// Conn pool metrics
+		if resp.P2PMetrics.ConnPoolMetrics != nil {
+			if result.P2PMetrics.ConnPoolMetrics == nil {
+				result.P2PMetrics.ConnPoolMetrics = map[string]int64{}
+			}
+			for k, v := range resp.P2PMetrics.ConnPoolMetrics {
+				result.P2PMetrics.ConnPoolMetrics[k] = v
+			}
+		}
 
-        // Ban list
-        for _, b := range resp.P2PMetrics.BanList {
-            result.P2PMetrics.BanList = append(result.P2PMetrics.BanList, struct {
-                ID            string
-                IP            string
-                Port          uint32
-                Count         int32
-                CreatedAtUnix int64
-                AgeSeconds    int64
-            }{
-                ID:            b.Id,
-                IP:            b.Ip,
-                Port:          b.Port,
-                Count:         b.Count,
-                CreatedAtUnix: b.CreatedAtUnix,
-                AgeSeconds:    b.AgeSeconds,
-            })
-        }
+		// Ban list
+		for _, b := range resp.P2PMetrics.BanList {
+			result.P2PMetrics.BanList = append(result.P2PMetrics.BanList, struct {
+				ID            string
+				IP            string
+				Port          uint32
+				Count         int32
+				CreatedAtUnix int64
+				AgeSeconds    int64
+			}{
+				ID:            b.Id,
+				IP:            b.Ip,
+				Port:          b.Port,
+				Count:         b.Count,
+				CreatedAtUnix: b.CreatedAtUnix,
+				AgeSeconds:    b.AgeSeconds,
+			})
+		}
 
-        // Database
-        if resp.P2PMetrics.Database != nil {
-            result.P2PMetrics.Database.P2PDBSizeMB = resp.P2PMetrics.Database.P2PDbSizeMb
-            result.P2PMetrics.Database.P2PDBRecordsCount = resp.P2PMetrics.Database.P2PDbRecordsCount
-        }
+		// Database
+		if resp.P2PMetrics.Database != nil {
+			result.P2PMetrics.Database.P2PDBSizeMB = resp.P2PMetrics.Database.P2PDbSizeMb
+			result.P2PMetrics.Database.P2PDBRecordsCount = resp.P2PMetrics.Database.P2PDbRecordsCount
+		}
 
-        // Disk
-        if resp.P2PMetrics.Disk != nil {
-            result.P2PMetrics.Disk.AllMB = resp.P2PMetrics.Disk.AllMb
-            result.P2PMetrics.Disk.UsedMB = resp.P2PMetrics.Disk.UsedMb
-            result.P2PMetrics.Disk.FreeMB = resp.P2PMetrics.Disk.FreeMb
-        }
-    }
+		// Disk
+		if resp.P2PMetrics.Disk != nil {
+			result.P2PMetrics.Disk.AllMB = resp.P2PMetrics.Disk.AllMb
+			result.P2PMetrics.Disk.UsedMB = resp.P2PMetrics.Disk.UsedMb
+			result.P2PMetrics.Disk.FreeMB = resp.P2PMetrics.Disk.FreeMb
+		}
+	}
 
-    return result
+	return result
 }

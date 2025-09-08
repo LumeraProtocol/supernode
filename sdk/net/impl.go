@@ -140,12 +140,12 @@ func (c *supernodeClient) GetSupernodeStatus(ctx context.Context) (*supernodeser
 
 // Download downloads the cascade action file
 func (c *supernodeClient) Download(ctx context.Context, in *supernodeservice.CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*supernodeservice.CascadeSupernodeDownloadResponse, error) {
-	resp, err := c.cascadeClient.CascadeSupernodeDownload(ctx, in, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("get artefacts failed: %w", err)
-	}
+    resp, err := c.cascadeClient.CascadeSupernodeDownload(ctx, in, opts...)
+    if err != nil {
+        return nil, fmt.Errorf("download failed: %w", err)
+    }
 
-	return resp, nil
+    return resp, nil
 }
 
 // Close closes the connection to the supernode
