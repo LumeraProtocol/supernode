@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -184,6 +185,20 @@ func (m *module) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdk
 	return resp, nil
 }
 
+// GetTransaction queries a transaction by its hash
+func (m *module) GetTransaction(ctx context.Context, txHash string) (*sdktx.GetTxResponse, error) {
+	req := &sdktx.GetTxRequest{
+		Hash: txHash,
+	}
+
+	resp, err := m.client.GetTx(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction: %w", err)
+	}
+
+	return resp, nil
+}
+
 // CalculateFee calculates the transaction fee based on gas usage and config
 func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
 	// Determine gas price (numeric) and denom. Accept both plain number (e.g., "0.025")
@@ -270,6 +285,32 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	result, err := m.BroadcastTransaction(ctx, txBytes)
 	if err != nil {
 		return result, fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
+
+	if result != nil && result.TxResponse != nil && result.TxResponse.Code == 0 && len(result.TxResponse.Events) == 0 {
+		logtrace.Info(ctx, "Transaction broadcast successful, waiting for inclusion to get events...", nil)
+
+		// Retry 5 times with 1 second intervals
+		var txResp *sdktx.GetTxResponse
+		for i := 0; i < 5; i++ {
+			time.Sleep(1 * time.Second)
+
+			txResp, err = m.GetTransaction(ctx, result.TxResponse.TxHash)
+			if err == nil && txResp != nil && txResp.TxResponse != nil {
+				// Successfully got the transaction with events
+				logtrace.Info(ctx, fmt.Sprintf("Retrieved transaction with %d events", len(txResp.TxResponse.Events)), nil)
+				result.TxResponse = txResp.TxResponse
+				break
+			}
+
+			if err != nil {
+				logtrace.Warn(ctx, fmt.Sprintf("Attempt %d: failed to query transaction: %v", i+1, err), nil)
+			}
+		}
+	}
+
+	if len(result.TxResponse.Events) == 0 {
+		logtrace.Error(ctx, "Failed to retrieve transaction events after 5 attempts", nil)
 	}
 
 	return result, nil

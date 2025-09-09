@@ -35,6 +35,9 @@ type Module interface {
 	// BroadcastTransaction broadcasts a signed transaction and returns the result
 	BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdktx.BroadcastTxResponse, error)
 
+	// GetTransaction queries a transaction by its hash
+	GetTransaction(ctx context.Context, txHash string) (*sdktx.GetTxResponse, error)
+
 	// CalculateFee calculates the transaction fee based on gas usage and config
 	CalculateFee(gasAmount uint64, config *TxConfig) string
 
