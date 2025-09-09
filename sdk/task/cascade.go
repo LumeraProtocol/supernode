@@ -110,7 +110,7 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
     defer client.Close(ctx)
 
     // Emit connection established event for observability
-    t.LogEvent(ctx, event.SDKConnectionEstablished, "connection established", event.EventData{
+    t.LogEvent(ctx, event.SDKConnectionEstablished, "Connection to supernode established", event.EventData{
         event.KeySupernode:        sn.GrpcEndpoint,
         event.KeySupernodeAddress: sn.CosmosAddress,
     })

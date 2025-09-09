@@ -28,7 +28,7 @@ const (
 	updateCheckInterval = 10 * time.Minute
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
-	forceUpdateAfter = 1 * time.Hour
+	forceUpdateAfter = 30 * time.Minute
 )
 
 type AutoUpdater struct {

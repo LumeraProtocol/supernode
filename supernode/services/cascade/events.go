@@ -18,4 +18,8 @@ const (
     SupernodeEventTypeActionFinalized         SupernodeEventType = 12
     SupernodeEventTypeArtefactsDownloaded     SupernodeEventType = 13
     SupernodeEventTypeFinalizeSimulationFailed SupernodeEventType = 14
+    // Download phase markers
+    SupernodeEventTypeNetworkRetrieveStarted  SupernodeEventType = 15
+    SupernodeEventTypeDecodeCompleted         SupernodeEventType = 16
+    SupernodeEventTypeServeReady              SupernodeEventType = 17
 )

@@ -147,13 +147,8 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			continue
 		}
 
-		// Success! Log and return
-		t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
-			event.KeySupernode:        sn.GrpcEndpoint,
-			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyIteration:        iteration,
-		})
-		return nil
+    // Success; return to caller
+    return nil
 	}
 
 	if lastErr != nil {
@@ -188,21 +183,15 @@ func (t *CascadeDownloadTask) attemptDownload(
 		t.LogEvent(ctx, evt, msg, data)
 	}
 
-	resp, err := client.Download(ctx, req)
-	if err != nil {
-		return fmt.Errorf("download from %s: %w", sn.CosmosAddress, err)
-	}
-	if !resp.Success {
-		return fmt.Errorf("download rejected by %s: %s", sn.CosmosAddress, resp.Message)
-	}
+    resp, err := client.Download(ctx, req)
+    if err != nil {
+        return fmt.Errorf("download from %s: %w", sn.CosmosAddress, err)
+    }
+    if !resp.Success {
+        return fmt.Errorf("download rejected by %s: %s", sn.CosmosAddress, resp.Message)
+    }
 
-	t.LogEvent(ctx, event.SDKOutputPathReceived, "file downloaded", event.EventData{
-		event.KeyOutputPath:       resp.OutputPath,
-		event.KeySupernode:        sn.GrpcEndpoint,
-		event.KeySupernodeAddress: sn.CosmosAddress,
-	})
-
-	return nil
+    return nil
 }
 
 // downloadResult holds the result of a successful download attempt
