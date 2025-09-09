@@ -22,7 +22,7 @@ const (
 	fixedConcurrency  = 1
 	defaultRedundancy = 5
 	headroomPct       = 20  // simple fixed safety margin
-	targetBlockMB     = 256 // cap block size on encode (MB); 0 means use recommended
+	targetBlockMB     = 128 // cap block size on encode (MB); 0 means use recommended
 )
 
 type raptorQ struct {
