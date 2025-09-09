@@ -1,40 +1,45 @@
 # Supernode HTTP Gateway
 
-The Supernode exposes its gRPC services via an HTTP/JSON gateway on port `8002`.
+The HTTP gateway exposes the gRPC services via REST on port `8002` using grpc-gateway.
 
-- Swagger UI: http://localhost:8002/swagger-ui/
-- OpenAPI Spec: http://localhost:8002/swagger.json
+## Endpoints
 
-## Status API
+### GET `/api/v1/status`
+Returns supernode status: system resources (CPU, memory, storage), service info, and optionally P2P metrics.
 
-GET `/api/v1/status`
+- Query `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
+- When omitted or false, peer count, peer addresses, and `p2p_metrics` are not included.
 
-Returns the current supernode status including system resources (CPU, memory, storage), running tasks, registered services, network info, and codec configuration.
+Examples:
 
-- Query `include_p2p_metrics=true` adds detailed P2P metrics and peer information.
-
-Example:
 ```bash
+# Lightweight status
 curl "http://localhost:8002/api/v1/status"
-```
 
-With P2P metrics:
-```bash
+# Include P2P metrics and peer info
 curl "http://localhost:8002/api/v1/status?include_p2p_metrics=true"
 ```
 
-## Services API
+Example responses are shown in the main README under the SupernodeService section.
 
-GET `/api/v1/services`
+### GET `/api/v1/codec`
+Returns the minimal effective RaptorQ codec configuration used by the node (fixed policy):
 
-Returns the list of available services and methods exposed by this supernode.
-
-Example:
-```bash
-curl http://localhost:8002/api/v1/services
+```json
+{
+  "symbol_size": 65535,
+  "redundancy": 5,
+  "max_memory_mb": 12288,
+  "concurrency": 4,
+  "headroom_pct": 10,
+  "mem_limit_mb": 13653,
+  "mem_limit_source": "cgroupv2:memory.max"
+}
 ```
 
-## Notes
+## API Documentation
 
-- The gateway translates between HTTP/JSON and gRPC/protobuf, enabling easy integration with web tooling and monitoring.
-- Interactive exploration is available via Swagger UI.
+- Swagger UI: `http://localhost:8002/swagger-ui/`
+- OpenAPI Spec: `http://localhost:8002/swagger.json`
+
+The Swagger UI provides an interactive interface to explore and test all available API endpoints.

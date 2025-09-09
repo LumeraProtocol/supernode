@@ -338,10 +338,6 @@
           "format": "int64",
           "title": "native decoder parallelism"
         },
-        "profile": {
-          "type": "string",
-          "title": "selected profile: edge|standard|perf"
-        },
         "headroomPct": {
           "type": "integer",
           "format": "int32",
@@ -355,15 +351,6 @@
         "memLimitSource": {
           "type": "string",
           "title": "detection source (cgroup/meminfo)"
-        },
-        "effectiveCores": {
-          "type": "integer",
-          "format": "int32",
-          "title": "detected cores/quota"
-        },
-        "cpuLimitSource": {
-          "type": "string",
-          "title": "detection source (cgroups/NumCPU)"
         }
       },
       "title": "RaptorQ codec configuration (effective values)"

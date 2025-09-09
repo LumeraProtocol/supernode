@@ -28,3 +28,4 @@ go.work.sum
 /release
 /tests/system/data
 tests/system/**/supernode-data*
+AGENTS.md

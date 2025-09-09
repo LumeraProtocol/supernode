@@ -32,10 +32,10 @@ const (
     SDKProcessingFailed  EventType = "sdk:processing_failed"
     SDKProcessingTimeout EventType = "sdk:processing_timeout"
 
-	SDKDownloadAttempt    EventType = "sdk:download_attempt"
-	SDKDownloadFailure    EventType = "sdk:download_failure"
-	SDKOutputPathReceived EventType = "sdk:output_path_received"
-	SDKDownloadSuccessful EventType = "sdk:download_successful"
+    SDKDownloadAttempt    EventType = "sdk:download_attempt"
+    SDKDownloadFailure    EventType = "sdk:download_failure"
+    SDKDownloadStarted    EventType = "sdk:download_started"
+    SDKDownloadCompleted  EventType = "sdk:download_completed"
 )
 
 const (
@@ -52,6 +52,9 @@ const (
 	SupernodeArtefactsStored     EventType = "supernode:artefacts_stored"
     SupernodeActionFinalized     EventType = "supernode:action_finalized"
     SupernodeArtefactsDownloaded EventType = "supernode:artefacts_downloaded"
+    SupernodeNetworkRetrieveStarted EventType = "supernode:network_retrieve_started"
+    SupernodeDecodeCompleted     EventType = "supernode:decode_completed"
+    SupernodeServeReady          EventType = "supernode:serve_ready"
     SupernodeUnknown             EventType = "supernode:unknown"
     SupernodeFinalizeSimulationFailed EventType = "supernode:finalize_simulation_failed"
 )

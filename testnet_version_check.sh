@@ -7,7 +7,7 @@ set -o pipefail
 #
 # Usage: ./check_versions.sh    (no args)
 
-TIMEOUT=5
+TIMEOUT=10
 API_URL="https://lcd.testnet.lumera.io/LumeraProtocol/lumera/supernode/list_super_nodes?pagination.limit=1000&pagination.count_total=true"
 
 TOTAL_CHECKED=0

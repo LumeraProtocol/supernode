@@ -17,6 +17,16 @@ const (
 	KeyOutputPath       EventDataKey = "output_path"
 	KeySuccessRate      EventDataKey = "success_rate"
 
+	// Upload/download metrics keys (no progress events; start/complete metrics only)
+	KeyBytesTotal     EventDataKey = "bytes_total"
+	KeyChunkSize      EventDataKey = "chunk_size"
+	KeyEstChunks      EventDataKey = "est_chunks"
+	KeyChunks         EventDataKey = "chunks"
+	KeyElapsedSeconds EventDataKey = "elapsed_seconds"
+	KeyThroughputMBS  EventDataKey = "throughput_mb_s"
+	KeyChunkIndex     EventDataKey = "chunk_index"
+	KeyReason         EventDataKey = "reason"
+
 	// Task specific keys
 	KeyTaskID   EventDataKey = "task_id"
 	KeyActionID EventDataKey = "action_id"

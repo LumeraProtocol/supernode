@@ -308,8 +308,21 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		"chunk_size": chunkSize,
 	})
 
-	// Split and stream the file using adaptive chunk size
-	for i := 0; i < len(restoredFile); i += chunkSize {
+    // Announce: file is ready to be served to the client
+    if err := stream.Send(&pb.DownloadResponse{
+        ResponseType: &pb.DownloadResponse_Event{
+            Event: &pb.DownloadEvent{
+                EventType: pb.SupernodeEventType_SERVE_READY,
+                Message:   "File available for download",
+            },
+        },
+    }); err != nil {
+        logtrace.Error(ctx, "failed to send serve-ready event", logtrace.Fields{logtrace.FieldError: err.Error()})
+        return err
+    }
+
+    // Split and stream the file using adaptive chunk size
+    for i := 0; i < len(restoredFile); i += chunkSize {
 		end := i + chunkSize
 		if end > len(restoredFile) {
 			end = len(restoredFile)

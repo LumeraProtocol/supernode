@@ -221,12 +221,6 @@ if err != nil {
 // taskID can be used to track the download progress
 ```
 
-Behavior notes:
-- The SDK determines the final filename from on-chain cascade metadata and creates the path: `outputDir/<actionID>/<filename>`.
-- Events will include both the supernode endpoint (`event.KeySupernode`) and its Cosmos address (`event.KeySupernodeAddress`).
-- On success, both `SDKOutputPathReceived` and `SDKDownloadSuccessful` include `event.KeyOutputPath`.
-- Failures include reason-coded suffixes in the message (e.g., `| reason=timeout`) and set `event.KeyMessage` accordingly.
-
 **Parameters:**
 - `ctx context.Context`: Context for the operation
 - `actionID string`: ID of the action to download
@@ -387,7 +381,7 @@ The SDK provides an event system to monitor task progress through event subscrip
 - `SDKRegistrationAttempt`: Attempting to register with a supernode
 - `SDKRegistrationFailure`: Registration with supernode failed
 - `SDKRegistrationSuccessful`: Successfully registered with supernode
-- `SDKTaskTxHashReceived`: Transaction hash received from supernode (includes endpoint in `KeySupernode` and Cosmos address in `KeySupernodeAddress`)
+- `SDKTaskTxHashReceived`: Transaction hash received from supernode
 - `SDKTaskCompleted`: Task completed successfully
 - `SDKTaskFailed`: Task failed with error
  - `SDKConnectionEstablished`: Connection to supernode established
@@ -398,9 +392,9 @@ The SDK provides an event system to monitor task progress through event subscrip
  - `SDKProcessingFailed`: Processing failed (reason=stream_recv|missing_final_response)
  - `SDKProcessingTimeout`: Processing exceeded time budget and was cancelled
 - `SDKDownloadAttempt`: Attempting to download from supernode
-- `SDKDownloadFailure`: Download attempt failed (message may include `| reason=timeout|canceled`; `KeyMessage` mirrors the reason)
-- `SDKOutputPathReceived`: File download path received (includes `KeyOutputPath` and supernode identity keys)
-- `SDKDownloadSuccessful`: Download completed successfully (includes `KeyOutputPath` and supernode identity keys)
+- `SDKDownloadFailure`: Download attempt failed
+- `SDKOutputPathReceived`: File download path received
+- `SDKDownloadSuccessful`: Download completed successfully
 
 **Supernode Events (forwarded from supernodes):**
 - `SupernodeActionRetrieved`: Action retrieved from blockchain
@@ -427,8 +421,8 @@ Events may include additional data accessible through these keys:
 
 - `event.KeyError`: Error message (for failure events)
 - `event.KeyCount`: Count of items (e.g., supernodes found)
-- `event.KeySupernode`: Supernode gRPC endpoint
-- `event.KeySupernodeAddress`: Supernode Cosmos address
+- `event.KeySupernode`: Supernode endpoint
+- `event.KeySupernodeAddress`: Supernode cosmos address
 - `event.KeyIteration`: Attempt iteration number
 - `event.KeyTxHash`: Transaction hash
 - `event.KeyMessage`: Event message

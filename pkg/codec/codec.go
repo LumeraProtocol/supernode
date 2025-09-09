@@ -1,18 +1,16 @@
 //go:generate mockgen -destination=codec_mock.go -package=codec -source=codec.go
 
 // Package codec provides an abstraction over the RaptorQ encoding/decoding engine
-// used by the supernode for cascade artefacts. It centralizes resource tuning and
-// safe decode/encode workflows.
+// used by the supernode for cascade artefacts. It centralizes safe encode/decode
+// workflows with a fixed policy (no environment overrides):
+//   - Concurrency: 4
+//   - Symbol size: 65535
+//   - Redundancy: 5
+//   - Max memory: detected system/cgroup memory minus slight headroom (10%)
 //
-// - Memory/Concurrency: The concrete implementation (raptorQ) reads runtime overrides
-//   from environment variables to tame memory pressure on different deployments:
-//     * LUMERA_RQ_SYMBOL_SIZE (uint16, default 65535)
-//     * LUMERA_RQ_REDUNDANCY (uint8,  default 5)
-//     * LUMERA_RQ_MAX_MEMORY_MB (uint64, default 16384)
-//     * LUMERA_RQ_CONCURRENCY (uint64, default 4)
-// - Decode Memory Hygiene: Symbols passed in memory are written to disk immediately
-//   and dropped from RAM during decode to minimize overlapping heap and native
-//   allocations.
+// Decode Memory Hygiene: Symbols passed in memory are written to disk immediately
+// and dropped from RAM during decode to minimize overlapping heap and native
+// allocations.
 package codec
 
 import (

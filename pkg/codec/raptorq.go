@@ -4,15 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
 	raptorq "github.com/LumeraProtocol/rq-go"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+)
+
+// Fixed policy (linux/amd64 only):
+// - Concurrency: 1
+// - Symbol size: 65535
+// - Redundancy: 5
+// - Max memory: use detected system/cgroup memory with headroom
+const (
+	fixedConcurrency  = 1
+	defaultRedundancy = 5
+	headroomPct       = 20  // simple fixed safety margin
+	targetBlockMB     = 128 // cap block size on encode (MB); 0 means use recommended
 )
 
 type raptorQ struct {
@@ -26,112 +36,40 @@ func NewRaptorQCodec(dir string) Codec {
 
 }
 
-// newProcessor constructs a RaptorQ processor using environment overrides when provided.
-//
-// Environment variables:
-// - LUMERA_RQ_SYMBOL_SIZE      (uint16, default 65535)
-// - LUMERA_RQ_REDUNDANCY       (uint8,  default 5)
-// - LUMERA_RQ_MAX_MEMORY_MB    (uint64, default 16384)
-// - LUMERA_RQ_CONCURRENCY      (uint64, default 4)
-//
-// The goal is to allow deployments to tune memory and concurrency to avoid pressure spikes
-// without changing code paths, while keeping the prior defaults when unset.
+// newProcessor constructs a RaptorQ processor using a fixed policy:
+// - concurrency=1
+// - symbol size=65535
+// - redundancy=5
+// - max memory = detected system/cgroup memory with slight headroom
 func newProcessor(ctx context.Context) (*raptorq.RaptorQProcessor, error) {
-	// 1) Detect resources (memory/CPU)
 	memLimitMB, memSource := detectMemoryLimitMB()
-	effCores, cpuSource := detectEffectiveCores()
-
-	// 2) Apply headroom knob and compute usable memory
-	headroomPct := readInt("LUMERA_RQ_MEM_HEADROOM_PCT", 40, 0, 90)
 	usableMemMB := computeUsableMem(memLimitMB, headroomPct)
 
-	// 3) Select profile (forced via env or inferred)
-	profile := selectProfile(os.Getenv("CODEC_PROFILE"))
+	// Fixed params
+	symbolSize := uint16(raptorq.DefaultSymbolSize)
+	redundancy := uint8(defaultRedundancy)
+	concurrency := uint64(fixedConcurrency)
+	maxMemMB := usableMemMB
 
-	// 4) Compute default limits for the chosen profile
-	defMaxMemMB, defConcurrency := defaultLimitsForProfile(profile, usableMemMB)
-
-	// 5) Adjust concurrency by effective cores/quotas
-	defConcurrency = adjustConcurrency(defConcurrency, effCores)
-
-	// 6) Ensure per-worker memory target (>=512MB) by reducing concurrency if needed
-	defConcurrency = rebalancePerWorkerMem(defMaxMemMB, defConcurrency, 512)
-
-	// 7) Read env overrides (env wins)
-	symbolSize := uint16(readUint("LUMERA_RQ_SYMBOL_SIZE", uint64(raptorq.DefaultSymbolSize), 1024, 65535))
-	redundancy := uint8(readUint("LUMERA_RQ_REDUNDANCY", 5, 1, 32))
-	maxMemMB := readUint("LUMERA_RQ_MAX_MEMORY_MB", defMaxMemMB, 256, 1<<20)
-	concurrency := readUint("LUMERA_RQ_CONCURRENCY", defConcurrency, 1, 1024)
-
-	// 8) Log final configuration
+	perWorkerMB := uint64(0)
+	if concurrency > 0 {
+		perWorkerMB = maxMemMB / concurrency
+	}
 	logtrace.Info(ctx, "RaptorQ processor config", logtrace.Fields{
 		"symbol_size":       symbolSize,
 		"redundancy_factor": redundancy,
 		"max_memory_mb":     maxMemMB,
 		"concurrency":       concurrency,
-		"profile":           profile,
+		"per_worker_mb":     perWorkerMB,
 		"headroom_pct":      headroomPct,
 		"mem_limit_mb":      memLimitMB,
 		"mem_limit_source":  memSource,
-		"effective_cores":   effCores,
-		"cpu_limit_source":  cpuSource,
 	})
 
-	// 9) Construct processor
 	return raptorq.NewRaptorQProcessor(symbolSize, redundancy, maxMemMB, concurrency)
 }
 
-// RaptorQConfig describes the effective codec configuration derived from env, resources and defaults.
-type RaptorQConfig struct {
-	SymbolSize     uint16
-	Redundancy     uint8
-	MaxMemoryMB    uint64
-	Concurrency    uint64
-	Profile        string
-	HeadroomPct    int
-	MemLimitMB     uint64
-	MemLimitSource string
-	EffectiveCores int
-	CpuLimitSource string
-}
-
-// CurrentConfig computes the current effective RaptorQ configuration without allocating a processor.
-func CurrentConfig(ctx context.Context) RaptorQConfig {
-	// 1) Detect resources
-	memLimitMB, memSource := detectMemoryLimitMB()
-	effCores, cpuSource := detectEffectiveCores()
-
-	// 2) Apply headroom and select profile
-	headroomPct := readInt("LUMERA_RQ_MEM_HEADROOM_PCT", 40, 0, 90)
-	usableMemMB := computeUsableMem(memLimitMB, headroomPct)
-	profile := selectProfile(os.Getenv("CODEC_PROFILE"))
-
-	// 3) Compute defaults and adjust by cores and per‑worker budget
-	defMaxMemMB, defConcurrency := defaultLimitsForProfile(profile, usableMemMB)
-	defConcurrency = adjustConcurrency(defConcurrency, effCores)
-	defConcurrency = rebalancePerWorkerMem(defMaxMemMB, defConcurrency, 512)
-
-	// 4) Apply env overrides
-	symbolSize := uint16(readUint("LUMERA_RQ_SYMBOL_SIZE", uint64(raptorq.DefaultSymbolSize), 1024, 65535))
-	redundancy := uint8(readUint("LUMERA_RQ_REDUNDANCY", 5, 1, 32))
-	maxMemMB := readUint("LUMERA_RQ_MAX_MEMORY_MB", defMaxMemMB, 256, 1<<20)
-	concurrency := readUint("LUMERA_RQ_CONCURRENCY", defConcurrency, 1, 1024)
-
-	return RaptorQConfig{
-		SymbolSize:     symbolSize,
-		Redundancy:     redundancy,
-		MaxMemoryMB:    maxMemMB,
-		Concurrency:    concurrency,
-		Profile:        profile,
-		HeadroomPct:    headroomPct,
-		MemLimitMB:     memLimitMB,
-		MemLimitSource: memSource,
-		EffectiveCores: effCores,
-		CpuLimitSource: cpuSource,
-	}
-}
-
-// detectMemoryLimitMB attempts to determine the memory limit (MB) from cgroups, falling back to MemTotal.
+// detectMemoryLimitMB determines the memory limit (MB) from cgroups, falling back to MemTotal.
 func detectMemoryLimitMB() (uint64, string) {
 	// cgroup v2: /sys/fs/cgroup/memory.max
 	if b, err := os.ReadFile("/sys/fs/cgroup/memory.max"); err == nil {
@@ -147,11 +85,10 @@ func detectMemoryLimitMB() (uint64, string) {
 		s := strings.TrimSpace(string(b))
 		if v, err := strconv.ParseUint(s, 10, 64); err == nil && v > 0 {
 			// Some systems report a huge number when unlimited; treat > 1PB as unlimited
-			if v > 1<<50 {
-				// unlimited; fallthrough to MemTotal
-			} else {
+			if v <= 1<<50 {
 				return v / (1024 * 1024), "cgroupv1:memory.limit_in_bytes"
 			}
+			// unlimited; fallthrough to MemTotal
 		}
 	}
 	// Fallback: /proc/meminfo MemTotal
@@ -171,153 +108,12 @@ func detectMemoryLimitMB() (uint64, string) {
 	return 0, "unknown"
 }
 
-// detectEffectiveCores attempts to determine CPU quota; returns cores and source.
-func detectEffectiveCores() (int, string) {
-	// cgroup v2: /sys/fs/cgroup/cpu.max: "max" or "<quota> <period>"
-	if b, err := os.ReadFile("/sys/fs/cgroup/cpu.max"); err == nil {
-		parts := strings.Fields(strings.TrimSpace(string(b)))
-		if len(parts) == 2 && parts[0] != "max" {
-			if quota, err1 := strconv.ParseUint(parts[0], 10, 64); err1 == nil {
-				if period, err2 := strconv.ParseUint(parts[1], 10, 64); err2 == nil && period > 0 {
-					cores := int(float64(quota) / float64(period))
-					if cores < 1 {
-						cores = 1
-					}
-					return cores, "cgroupv2:cpu.max"
-				}
-			}
-		}
-	}
-	// cgroup v1: /sys/fs/cgroup/cpu/cpu.cfs_quota_us and cpu.cfs_period_us
-	if qb, err1 := os.ReadFile("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"); err1 == nil {
-		if pb, err2 := os.ReadFile("/sys/fs/cgroup/cpu/cpu.cfs_period_us"); err2 == nil {
-			qStr := strings.TrimSpace(string(qb))
-			pStr := strings.TrimSpace(string(pb))
-			if qStr != "-1" {
-				if quota, errA := strconv.ParseUint(qStr, 10, 64); errA == nil {
-					if period, errB := strconv.ParseUint(pStr, 10, 64); errB == nil && period > 0 {
-						cores := int(float64(quota) / float64(period))
-						if cores < 1 {
-							cores = 1
-						}
-						return cores, "cgroupv1:cpu.cfs_quota_us/period"
-					}
-				}
-			}
-		}
-	}
-	return 0, "runtime.NumCPU"
-}
-
-func minNonZero(a, b uint64) uint64 {
-	if a == 0 {
-		return b
-	}
-	if b == 0 {
-		return a
-	}
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// readUint reads an unsigned integer from env with bounds and a default.
-func readUint(env string, def uint64, min uint64, max uint64) uint64 {
-	if v, ok := os.LookupEnv(env); ok {
-		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
-			if n < min {
-				return min
-			}
-			if max > 0 && n > max {
-				return max
-			}
-			return n
-		}
-	}
-	return def
-}
-
-// readInt reads an integer from env with bounds and a default.
-func readInt(env string, def int, min int, max int) int {
-	if v, ok := os.LookupEnv(env); ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			if n < min {
-				return min
-			}
-			if max > 0 && n > max {
-				return max
-			}
-			return n
-		}
-	}
-	return def
-}
-
-// computeUsableMem applies a headroom percentage to a memory limit.
+// computeUsableMem applies a headroom percentage to a memory limit using integer math.
 func computeUsableMem(memLimitMB uint64, headroomPct int) uint64 {
 	if headroomPct <= 0 || memLimitMB == 0 {
 		return memLimitMB
 	}
-	return uint64(math.Max(0, float64(memLimitMB)*(1.0-float64(headroomPct)/100.0)))
-}
-
-// selectProfile decides which profile to use based on a forced value or memory limit.
-func selectProfile(forced string) string {
-	p := strings.ToLower(strings.TrimSpace(forced))
-	switch p {
-	case "edge", "standard", "perf":
-		return p
-	}
-	// Default to perf when not forced
-	return "perf"
-}
-
-// defaultLimitsForProfile returns default max memory and concurrency for a profile.
-func defaultLimitsForProfile(profile string, usableMemMB uint64) (uint64, uint64) {
-	switch profile {
-	case "edge":
-		mm := minNonZero(usableMemMB, 1024)
-		if mm == 0 {
-			mm = 1024
-		}
-		return mm, 2
-	case "standard":
-		mm := uint64(math.Min(float64(usableMemMB)*0.6, 4*1024))
-		if mm < 1024 {
-			mm = 1024
-		}
-		return mm, 4
-	default: // perf
-		mm := uint64(math.Min(float64(usableMemMB)*0.6, 16*1024))
-		return mm, 8
-	}
-}
-
-// adjustConcurrency caps concurrency by effective cores.
-func adjustConcurrency(defConcurrency uint64, effCores int) uint64 {
-	cpu := runtime.NumCPU()
-	if effCores > 0 {
-		cpu = effCores
-	}
-	if cpu < 1 {
-		cpu = 1
-	}
-	if defConcurrency > uint64(cpu) {
-		return uint64(cpu)
-	}
-	return defConcurrency
-}
-
-// rebalancePerWorkerMem reduces concurrency until each worker has at least minPerWorkerMB.
-func rebalancePerWorkerMem(defMaxMemMB uint64, defConcurrency uint64, minPerWorkerMB uint64) uint64 {
-	if defConcurrency == 0 {
-		return 1
-	}
-	for defMaxMemMB/defConcurrency < minPerWorkerMB && defConcurrency > 1 {
-		defConcurrency--
-	}
-	return defConcurrency
+	return memLimitMB - (memLimitMB*uint64(headroomPct))/100
 }
 
 func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error) {
@@ -330,7 +126,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		"data-size":          req.DataSize,
 	}
 
-	// Use env-configurable processor to allow memory/concurrency tuning per deployment
+	// Create processor using fixed policy (linux/amd64, no env)
 	processor, err := newProcessor(ctx)
 	if err != nil {
 		return EncodeResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)
@@ -339,7 +135,20 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	logtrace.Info(ctx, "RaptorQ processor created", fields)
 
 	/* ---------- 1.  run the encoder ---------- */
-	blockSize := processor.GetRecommendedBlockSize(uint64(req.DataSize))
+	// Determine block size with a simple cap (no env): use min(recommended, targetBlockMB)
+	rec := processor.GetRecommendedBlockSize(uint64(req.DataSize))
+	var blockSize int
+	if targetBlockMB > 0 {
+		targetBytes := int(targetBlockMB) * 1024 * 1024
+		if rec == 0 || rec > targetBytes {
+			blockSize = targetBytes
+		} else {
+			blockSize = rec
+		}
+	} else {
+		blockSize = rec
+	}
+	logtrace.Info(ctx, "RaptorQ recommended block size", logtrace.Fields{"block_size": rec, "chosen_block_size": blockSize, "target_block_mb": targetBlockMB})
 
 	symbolsDir := filepath.Join(rq.symbolsBaseDir, req.TaskID)
 	if err := os.MkdirAll(symbolsDir, 0o755); err != nil {
@@ -356,8 +165,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		return EncodeResponse{}, fmt.Errorf("raptorq encode: %w", err)
 	}
 
-	/* we no longer need the temp file */
-	// _ = os.Remove(tmpPath)
+	// layout will be read from disk below
 
 	/* ---------- 2.  read the layout JSON ---------- */
 	layoutData, err := os.ReadFile(resp.LayoutFilePath)
