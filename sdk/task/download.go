@@ -5,12 +5,18 @@ import (
 	stderrors "errors"
 	"fmt"
 	"os"
-	"path/filepath"
+	"sort"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/net"
+)
+
+// timeouts
+const (
+	downloadTimeout = 15 * time.Minute
 )
 
 type CascadeDownloadTask struct {
@@ -65,41 +71,93 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		Signature:  t.signature,
 	}
 
-	// Process supernodes in pairs
-	var allErrors []error
-	for i := 0; i < len(supernodes); i += 2 {
-		// Determine how many supernodes to try in this batch (1 or 2)
-		batchSize := 2
-		if i+1 >= len(supernodes) {
-			batchSize = 1
+	// Remove existing file once before starting attempts to allow overwrite
+	if _, err := os.Stat(req.OutputPath); err == nil {
+		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
+			return fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)
 		}
-
-		t.logger.Info(ctx, "attempting concurrent download from supernode batch", "batch_start", i, "batch_size", batchSize)
-
-		// Try downloading from this batch concurrently
-		result, batchErrors := t.attemptConcurrentDownload(ctx, supernodes[i:i+batchSize], clientFactory, req, i)
-
-		if result != nil {
-			// Success! Log and return (include final output path)
-			t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
-				event.KeySupernode:        result.SupernodeEndpoint,
-				event.KeySupernodeAddress: result.SupernodeAddress,
-				event.KeyIteration:        result.Iteration,
-				event.KeyOutputPath:       t.outputPath,
-			})
-			return nil
-		}
-
-		// Both (or the single one) failed, collect errors
-		allErrors = append(allErrors, batchErrors...)
-
-		// Log batch failure
-		t.logger.Warn(ctx, "download batch failed", "batch_start", i, "batch_size", batchSize, "errors", len(batchErrors))
 	}
 
-	// All attempts failed
-	if len(allErrors) > 0 {
-		return fmt.Errorf("failed to download from all super-nodes: %v", allErrors)
+	// Optionally rank supernodes by available memory to improve success for large files
+	// We keep a short timeout per status fetch to avoid delaying downloads.
+	type rankedSN struct {
+		sn        lumera.Supernode
+		availGB   float64
+		hasStatus bool
+	}
+	ranked := make([]rankedSN, 0, len(supernodes))
+	for _, sn := range supernodes {
+		ranked = append(ranked, rankedSN{sn: sn})
+	}
+
+	// Probe supernode status with short timeouts and close clients promptly
+	for i := range ranked {
+		sn := ranked[i].sn
+		// 2s status timeout to keep this pass fast
+		stx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		client, err := clientFactory.CreateClient(stx, sn)
+		if err != nil {
+			cancel()
+			continue
+		}
+		status, err := client.GetSupernodeStatus(stx)
+		_ = client.Close(stx)
+		cancel()
+		if err != nil {
+			continue
+		}
+		ranked[i].hasStatus = true
+		ranked[i].availGB = status.Resources.Memory.AvailableGB
+	}
+
+	// Sort: nodes with status first, higher available memory first
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].hasStatus != ranked[j].hasStatus {
+			return ranked[i].hasStatus && !ranked[j].hasStatus
+		}
+		return ranked[i].availGB > ranked[j].availGB
+	})
+
+	// Rebuild the supernodes list in the sorted order
+	for i := range ranked {
+		supernodes[i] = ranked[i].sn
+	}
+
+	// Try supernodes sequentially, one by one (now sorted)
+	var lastErr error
+	for idx, sn := range supernodes {
+		iteration := idx + 1
+
+		// Log download attempt
+		t.LogEvent(ctx, event.SDKDownloadAttempt, "attempting download from super-node", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyIteration:        iteration,
+		})
+
+		if err := t.attemptDownload(ctx, sn, clientFactory, req); err != nil {
+			// Log failure and continue to next supernode
+			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
+				event.KeySupernode:        sn.GrpcEndpoint,
+				event.KeySupernodeAddress: sn.CosmosAddress,
+				event.KeyIteration:        iteration,
+				event.KeyError:            err.Error(),
+			})
+			lastErr = err
+			continue
+		}
+
+		// Success! Log and return
+		t.LogEvent(ctx, event.SDKDownloadSuccessful, "download successful", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyIteration:        iteration,
+		})
+		return nil
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("failed to download from all super-nodes: %w", lastErr)
 	}
 	return fmt.Errorf("no supernodes available for download")
 }
