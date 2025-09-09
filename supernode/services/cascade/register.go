@@ -24,10 +24,6 @@ type RegisterResponse struct {
 	TxHash    string
 }
 
-// RegisterTimeout bounds the execution time of a Register task to prevent tasks
-// from lingering in a non-final state if a dependency stalls. Keep greater than
-// the SDK's upload+processing budgets so the client cancels first.
-
 // Register processes the upload request for cascade input data.
 // 1- Fetch & validate action (it should be a cascade action registered on the chain)
 // 2- Ensure this super-node is eligible to process the action (should be in the top supernodes list for the action block height)
@@ -48,9 +44,6 @@ func (task *CascadeRegistrationTask) Register(
 	req *RegisterRequest,
 	send func(resp *RegisterResponse) error,
 ) (err error) {
-	// Defensive envelope deadline to guarantee task finalization
-	ctx, cancel := context.WithTimeout(ctx, RegisterTimeout)
-	defer cancel()
 
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "Cascade registration request received", fields)

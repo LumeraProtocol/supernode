@@ -210,12 +210,6 @@ func (m *MockTxModule) ProcessTransaction(ctx context.Context, msgs []sdktypes.M
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
-// GetTransaction queries a transaction by its hash
-func (m *MockTxModule) GetTransaction(ctx context.Context, txHash string) (*sdktx.GetTxResponse, error) {
-	// Mock implementation returns empty transaction response
-	return &sdktx.GetTxResponse{}, nil
-}
-
 // MockNodeModule implements the node.Module interface for testing
 type MockNodeModule struct{}
 

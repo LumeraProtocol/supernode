@@ -232,15 +232,8 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 		return 0, 0, 0, fmt.Errorf("load symbols: %w", err)
 	}
 
-	// Timeouts: rely on inner per-RPC limits and outer task envelope
-	// - Each node RPC invoked by StoreBatch uses Network.Call with per-message
-	//   timeouts (BatchStoreData currently ~75s) enforced in kademlia/network.go.
-	// - The server-side Register handler is wrapped in a long envelope timeout
-	//   (RegisterTimeout) to guarantee eventual completion/cancellation.
-	// Therefore, we avoid adding another mid-layer timer here to prevent
-	// premature cancellation of large batches and to let lower-level retries
-	// and per-RPC deadlines operate as designed.
-	symCtx := ctx
+	symCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 
 	rate, requests, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
 	if err != nil {

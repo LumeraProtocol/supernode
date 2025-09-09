@@ -400,14 +400,10 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
     opts ...grpc.CallOption,
 ) (*CascadeSupernodeDownloadResponse, error) {
 
-	// Use provided context as-is (no correlation IDs). Add watchdogs:
-	// - idle timer: reset on every received message (event or chunk).
-	// - max timer: hard cap for one attempt.
-	phaseCtx, phaseCancel := context.WithCancel(ctx)
-	defer phaseCancel()
+	// Use provided context as-is (no correlation IDs)
 
 	// 1. Open gRPC stream (server-stream)
-	stream, err := a.client.Download(phaseCtx, &cascade.DownloadRequest{
+	stream, err := a.client.Download(ctx, &cascade.DownloadRequest{
 		ActionId:  in.ActionID,
 		Signature: in.Signature,
 	}, opts...)
@@ -436,23 +432,6 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
         startedEmitted bool
     )
 
-	// 3. Receive streamed responses with liveness watchdog
-	// Start with a generous prep idle timeout; tighten after first message
-	currentIdle := downloadPrepIdleTimeout
-	idleTimer := time.AfterFunc(currentIdle, func() {
-		a.logger.Error(ctx, "download idle timeout; cancelling stream", "action_id", in.ActionID)
-		phaseCancel()
-	})
-	defer idleTimer.Stop()
-	maxTimer := time.AfterFunc(downloadMaxTimeout, func() {
-		a.logger.Error(ctx, "download max timeout; cancelling stream", "action_id", in.ActionID)
-		phaseCancel()
-	})
-	defer maxTimer.Stop()
-	start := time.Now()
-	lastActivity := start
-	firstMsg := false
-
 	// 3. Receive streamed responses
 	for {
 		resp, err := stream.Recv()
@@ -460,17 +439,6 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			break
 		}
 		if err != nil {
-			// Classify timeouts for clearer upstream handling
-			if phaseCtx.Err() != nil {
-				sinceLast := time.Since(lastActivity)
-				sinceStart := time.Since(start)
-				switch {
-				case sinceLast >= downloadIdleTimeout:
-					return nil, fmt.Errorf("download idle timeout: %w", context.DeadlineExceeded)
-				case sinceStart >= downloadMaxTimeout:
-					return nil, fmt.Errorf("download overall timeout: %w", context.DeadlineExceeded)
-				}
-			}
 			return nil, fmt.Errorf("stream recv: %w", err)
 		}
 
@@ -478,20 +446,10 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 		// 3a. Progress / event message
 		case *cascade.DownloadResponse_Event:
-			// On first message, tighten idle window for active transfer
-			if !firstMsg {
-				firstMsg = true
-				currentIdle = downloadIdleTimeout
-			}
-			if idleTimer != nil {
-				idleTimer.Reset(currentIdle)
-			}
-			lastActivity = time.Now()
 			a.logger.Info(ctx, "supernode event", "event_type", x.Event.EventType, "message", x.Event.Message, "action_id", in.ActionID)
 
 			if in.EventLogger != nil {
 				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
-					event.KeyTaskID:    in.TaskID,
 					event.KeyActionID:  in.ActionID,
 					event.KeyEventType: x.Event.EventType,
 					event.KeyMessage:   x.Event.Message,
@@ -516,14 +474,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 			bytesWritten += int64(len(data))
 			chunkIndex++
-			if !firstMsg {
-				firstMsg = true
-				currentIdle = downloadIdleTimeout
-			}
-			if idleTimer != nil {
-				idleTimer.Reset(currentIdle)
-			}
-			lastActivity = time.Now()
+
 			a.logger.Debug(ctx, "received chunk", "chunk_index", chunkIndex, "chunk_size", len(data), "bytes_written", bytesWritten)
 		}
 	}
@@ -542,7 +493,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
-	switch e {
+    switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
 		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:

@@ -38,12 +38,3 @@ runs:
       shell: bash
       run: |
         go mod download
-
-    - name: Tidy Go modules
-      shell: bash
-      run: |
-        # Ensure go.mod/go.sum are up to date to prevent CI build failures
-        go mod tidy
-        if [ -f sn-manager/go.mod ]; then
-          (cd sn-manager && go mod tidy)
-        fi

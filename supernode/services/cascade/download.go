@@ -31,9 +31,6 @@ type DownloadResponse struct {
 	DownloadedDir string
 }
 
-// Download preparation is bounded by DownloadPrepareTimeout (see timeouts.go).
-// The subsequent file streaming to the client is not bounded by this timer.
-
 func (task *CascadeRegistrationTask) Download(
 	ctx context.Context,
 	req *DownloadRequest,
@@ -172,7 +169,6 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
-	// Validate final payload hash against on-chain data hash
 	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)

@@ -127,11 +127,10 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 		return fmt.Errorf("upload rejected by %s: %s", sn.CosmosAddress, resp.Message)
 	}
 
-    t.LogEvent(ctx, event.SDKTaskTxHashReceived, "txhash received", event.EventData{
-        event.KeyTxHash:           resp.TxHash,
-        event.KeySupernode:        sn.GrpcEndpoint,
-        event.KeySupernodeAddress: sn.CosmosAddress,
-    })
+	t.LogEvent(ctx, event.SDKTaskTxHashReceived, "txhash received", event.EventData{
+		event.KeyTxHash:    resp.TxHash,
+		event.KeySupernode: sn.CosmosAddress,
+	})
 
 	return nil
 }
