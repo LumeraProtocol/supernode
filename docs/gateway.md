@@ -22,20 +22,6 @@ curl "http://localhost:8002/api/v1/status?include_p2p_metrics=true"
 
 Example responses are shown in the main README under the SupernodeService section.
 
-### GET `/api/v1/codec`
-Returns the minimal effective RaptorQ codec configuration used by the node (fixed policy):
-
-```json
-{
-  "symbol_size": 65535,
-  "redundancy": 5,
-  "max_memory_mb": 12288,
-  "concurrency": 4,
-  "headroom_pct": 10,
-  "mem_limit_mb": 13653,
-  "mem_limit_source": "cgroupv2:memory.max"
-}
-```
 
 ## API Documentation
 

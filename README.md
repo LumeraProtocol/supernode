@@ -207,17 +207,9 @@ enum SupernodeEventType {
 
 See docs/gateway.md for the full gateway guide (endpoints, examples, Swagger links).
 
-### Codec Configuration (fixed policy)
+### HTTP Gateway
 
-The supernode uses a fixed RaptorQ codec policy (linux/amd64 only):
-- Concurrency: 4
-- Symbol size: 65535
-- Redundancy: 5
-- Max memory: detected cgroup/system memory minus 10% headroom
-
-Status includes these effective values under `codec` in `StatusResponse`.
-The HTTP gateway also exposes a minimal view at `GET /api/v1/codec` with:
-- `symbol_size`, `redundancy`, `max_memory_mb`, `concurrency`, `headroom_pct`, `mem_limit_mb`, `mem_limit_source`.
+See docs/gateway.md for the full gateway guide (endpoints, examples, Swagger links).
 
 ## CLI Commands
 
