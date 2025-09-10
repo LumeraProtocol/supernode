@@ -55,6 +55,9 @@ func TestEncode_ToDirA(t *testing.T) {
 func TestDecode_FromDirA(t *testing.T) {
 	symbolsDir := filepath.Join(BaseDir, TaskID)
 
+	if InputPath == "" {
+		t.Skip("set InputPath constant to a file path to run this test")
+	}
 	// Load layout from disk (prefer library-produced name)
 	var layout Layout
 	var layoutPath string
