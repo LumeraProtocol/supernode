@@ -21,7 +21,8 @@ import (
 
 const (
 	loadSymbolsBatchSize = 2500
-	storeSymbolsPercent  = 10
+	// Minimum first-pass coverage to store before returning from Register (percent)
+	storeSymbolsPercent = 18
 )
 
 // P2PService defines the interface for storing data in the P2P layer.
@@ -149,9 +150,20 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 		return 0, 0, 0, err
 	}
 
+	totalAvailable := len(keys)
+	targetCount := int(math.Ceil(float64(totalAvailable) * storeSymbolsPercent / 100.0))
+	if targetCount < 1 && totalAvailable > 0 {
+		targetCount = 1
+	}
+	logtrace.Info(ctx, "first-pass target coverage (symbols)", logtrace.Fields{
+		"total_symbols":  totalAvailable,
+		"target_percent": storeSymbolsPercent,
+		"target_count":   targetCount,
+	})
+
 	/* down-sample if we exceed the “big directory” threshold ------------- */
 	if len(keys) > loadSymbolsBatchSize {
-		want := int(math.Ceil(float64(len(keys)) * storeSymbolsPercent / 100))
+		want := targetCount
 		if want < len(keys) {
 			rand.Shuffle(len(keys), func(i, j int) { keys[i], keys[j] = keys[j], keys[i] })
 			keys = keys[:want]
@@ -180,6 +192,16 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 		totalRequests += requests
 		start = end
 	}
+
+	achievedPct := 0.0
+	if totalAvailable > 0 {
+		achievedPct = (float64(totalSymbols) / float64(totalAvailable)) * 100.0
+	}
+	logtrace.Info(ctx, "first-pass achieved coverage (symbols)", logtrace.Fields{
+		"achieved_symbols": totalSymbols,
+		"achieved_percent": achievedPct,
+		"total_requests":   totalRequests,
+	})
 
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
 		return 0, totalSymbols, totalRequests, fmt.Errorf("update first-batch flag: %w", err)

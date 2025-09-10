@@ -1,16 +1,5 @@
 //go:generate mockgen -destination=codec_mock.go -package=codec -source=codec.go
 
-// Package codec provides an abstraction over the RaptorQ encoding/decoding engine
-// used by the supernode for cascade artefacts. It centralizes safe encode/decode
-// workflows with a fixed policy (no environment overrides):
-//   - Concurrency: 4
-//   - Symbol size: 65535
-//   - Redundancy: 5
-//   - Max memory: detected system/cgroup memory minus slight headroom (10%)
-//
-// Decode Memory Hygiene: Symbols passed in memory are written to disk immediately
-// and dropped from RAM during decode to minimize overlapping heap and native
-// allocations.
 package codec
 
 import (

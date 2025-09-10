@@ -315,46 +315,6 @@
         }
       }
     },
-    "StatusResponseCodecConfig": {
-      "type": "object",
-      "properties": {
-        "symbolSize": {
-          "type": "integer",
-          "format": "int64",
-          "title": "bytes (typically 65535)"
-        },
-        "redundancy": {
-          "type": "integer",
-          "format": "int64",
-          "title": "repair factor (percent-like scalar; 5 = default)"
-        },
-        "maxMemoryMb": {
-          "type": "string",
-          "format": "uint64",
-          "title": "memory cap for native decoder"
-        },
-        "concurrency": {
-          "type": "integer",
-          "format": "int64",
-          "title": "native decoder parallelism"
-        },
-        "headroomPct": {
-          "type": "integer",
-          "format": "int32",
-          "title": "reserved memory percentage (0-90)"
-        },
-        "memLimitMb": {
-          "type": "string",
-          "format": "uint64",
-          "title": "detected memory limit (MB)"
-        },
-        "memLimitSource": {
-          "type": "string",
-          "title": "detection source (cgroup/meminfo)"
-        }
-      },
-      "title": "RaptorQ codec configuration (effective values)"
-    },
     "StatusResponseNetwork": {
       "type": "object",
       "properties": {
@@ -553,9 +513,6 @@
         },
         "p2pMetrics": {
           "$ref": "#/definitions/StatusResponseP2PMetrics"
-        },
-        "codec": {
-          "$ref": "#/definitions/StatusResponseCodecConfig"
         }
       },
       "title": "The StatusResponse represents system status with clear organization"
