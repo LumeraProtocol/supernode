@@ -30,4 +30,10 @@ const (
 	// Task specific keys
 	KeyTaskID   EventDataKey = "task_id"
 	KeyActionID EventDataKey = "action_id"
+
+	// Cascade storage metrics keys
+	KeyMetaDurationMS EventDataKey = "meta_duration_ms"
+	KeySymDurationMS  EventDataKey = "sym_duration_ms"
+    KeyMetaNodes      EventDataKey = "meta_nodes"
+    KeySymNodes       EventDataKey = "sym_nodes"
 )

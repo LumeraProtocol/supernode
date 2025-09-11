@@ -203,22 +203,106 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 // emitArtefactsStored builds a single-line metrics summary and emits the
 // SupernodeEventTypeArtefactsStored event while logging the metrics line.
 func (task *CascadeRegistrationTask) emitArtefactsStored(
-	ctx context.Context,
-	metrics adaptors.StoreArtefactsMetrics,
-	fields logtrace.Fields,
-	send func(resp *RegisterResponse) error,
+    ctx context.Context,
+    metrics adaptors.StoreArtefactsMetrics,
+    fields logtrace.Fields,
+    send func(resp *RegisterResponse) error,
 ) {
+    if fields == nil {
+        fields = logtrace.Fields{}
+    }
 	ok := int(stdmath.Round(metrics.AggregatedRate / 100.0 * float64(metrics.TotalRequests)))
 	fail := metrics.TotalRequests - ok
-	line := fmt.Sprintf(
-		"artefacts stored | success_rate=%.2f%% agg_rate=%.2f%% total_reqs=%d ok=%d fail=%d meta_rate=%.2f%% meta_reqs=%d meta_count=%d sym_rate=%.2f%% sym_reqs=%d sym_count=%d",
-		metrics.AggregatedRate, metrics.AggregatedRate, metrics.TotalRequests, ok, fail,
-		metrics.MetaRate, metrics.MetaRequests, metrics.MetaCount,
-		metrics.SymRate, metrics.SymRequests, metrics.SymCount,
-	)
-	fields["metrics"] = line
+
+    // Build a JSON payload carrying aggregated per-node distribution + durations
+    type nodeAgg struct {
+        IP            string `json:"ip"`
+        ID            string `json:"id"`
+        Address       string `json:"address"`
+        Calls         int    `json:"calls"`
+        Successes     int    `json:"successes"`
+        Failures      int    `json:"failures"`
+        TotalKeys     int    `json:"total_keys"`
+        TotalDuration int64  `json:"total_duration_ms"`
+        CallSymbols   []int  `json:"call_symbols"`
+    }
+    payload := map[string]any{
+        "success_rate":     metrics.AggregatedRate,
+        "agg_rate":         metrics.AggregatedRate,
+        "total_requests":   metrics.TotalRequests,
+        "ok":               ok,
+        "fail":             fail,
+        "meta_rate":        metrics.MetaRate,
+        "meta_reqs":        metrics.MetaRequests,
+        "meta_count":       metrics.MetaCount,
+        "sym_rate":         metrics.SymRate,
+        "sym_reqs":         metrics.SymRequests,
+        "sym_count":        metrics.SymCount,
+        "meta_duration_ms": metrics.MetaDurationMS,
+        "sym_duration_ms":  metrics.SymDurationMS,
+    }
+    // Aggregate per-node from per-call metrics
+    toNodeAgg := func(calls []adaptors.StoreCallMetric) []nodeAgg {
+        type bucket struct {
+            agg nodeAgg
+            seen bool
+        }
+        byAddr := map[string]*bucket{}
+        for _, c := range calls {
+            key := c.Address
+            b := byAddr[key]
+            if b == nil {
+                b = &bucket{agg: nodeAgg{IP: c.IP, ID: c.ID, Address: c.Address}}
+                byAddr[key] = b
+            }
+            b.seen = true
+            b.agg.Calls++
+            if c.Success {
+                b.agg.Successes++
+            } else {
+                b.agg.Failures++
+            }
+            b.agg.TotalKeys += c.Keys
+            b.agg.TotalDuration += c.DurationMS
+            b.agg.CallSymbols = append(b.agg.CallSymbols, c.Keys)
+        }
+        out := make([]nodeAgg, 0, len(byAddr))
+        for _, b := range byAddr {
+            out = append(out, b.agg)
+        }
+        return out
+    }
+
+    if len(metrics.MetaCalls) > 0 {
+        payload["meta_nodes"] = toNodeAgg(metrics.MetaCalls)
+    }
+    if len(metrics.SymCalls) > 0 {
+        payload["sym_nodes"] = toNodeAgg(metrics.SymCalls)
+    }
+
+    // Also include request-weighted aggregates ("correct" basis) in addition to legacy ok/fail
+    totalCalls := len(metrics.MetaCalls) + len(metrics.SymCalls)
+    if totalCalls > 0 {
+        reqOK := 0
+        for _, c := range metrics.MetaCalls {
+            if c.Success { reqOK++ }
+        }
+        for _, c := range metrics.SymCalls {
+            if c.Success { reqOK++ }
+        }
+        reqFail := totalCalls - reqOK
+        requestRate := float64(reqOK) / float64(totalCalls) * 100.0
+        payload["request_rate"] = requestRate
+        payload["req_ok"] = reqOK
+        payload["req_fail"] = reqFail
+    }
+
+	// Marshal payload as JSON string for the event message
+	b, _ := json.Marshal(payload)
+	msg := string(b)
+	fields["metrics_json"] = msg
 	logtrace.Info(ctx, "artefacts have been stored", fields)
-	task.streamEvent(SupernodeEventTypeArtefactsStored, line, "", send)
+	task.streamEvent(SupernodeEventTypeArtefactsStored, msg, "", send)
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data

@@ -123,10 +123,10 @@ func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
 // - successRatePct: percentage of successful node RPCs during the network store
 // - requests: total node RPCs attempted for the batch
 // - error: error if persistence or network store did not meet minimum success criteria
-func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) (float64, int, error) {
+func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) (float64, int, []kademlia.StoreCallMetric, error) {
 
 	if !s.running {
-		return 0, 0, errors.New("p2p service is not running")
+		return 0, 0, nil, errors.New("p2p service is not running")
 	}
 
 	return s.dht.StoreBatch(ctx, data, typ, taskID)

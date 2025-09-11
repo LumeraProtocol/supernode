@@ -79,7 +79,7 @@ func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int)
 
 	logtrace.Info(ctx, "task_id in storeList", logtrace.Fields{logtrace.FieldTaskID: taskID})
 
-	_, _, err := h.P2PClient.StoreBatch(ctx, list, typ, taskID)
+	_, _, _, err := h.P2PClient.StoreBatch(ctx, list, typ, taskID)
 	return err
 }
 
@@ -170,7 +170,7 @@ func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root str
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if _, _, err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
+	if _, _, _, err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 

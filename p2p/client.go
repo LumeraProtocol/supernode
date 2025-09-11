@@ -5,6 +5,8 @@ package p2p
 import (
 	"context"
 	"time"
+
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 )
 
 // Client exposes the interfaces for p2p service
@@ -23,16 +25,8 @@ type Client interface {
 	Store(ctx context.Context, data []byte, typ int) (string, error)
 
 	// StoreBatch will store a batch of values with their Blake3 hash as the key.
-	//
-	// Semantics:
-	// - Returns `successRatePct` as a percentage (0–100) computed as
-	//   successful node RPCs divided by total node RPCs attempted during the
-	//   network store phase for this batch.
-	// - Returns `requests` as the total number of node RPCs attempted for this
-	//   batch (not the number of items in `values`).
-	// - On error, `successRatePct` and `requests` may reflect partial progress;
-	//   prefer using them only when err == nil, or treat as best‑effort metrics.
-	StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) (float64, int, error)
+	// Returns success rate, request count, and per-node call metrics for the batch.
+	StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) (float64, int, []kademlia.StoreCallMetric, error)
 
 	// Delete a key, value
 	Delete(ctx context.Context, key string) error

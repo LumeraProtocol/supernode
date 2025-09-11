@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
@@ -75,26 +76,49 @@ type StoreArtefactsMetrics struct {
 	// Aggregated view
 	AggregatedRate float64 // item-weighted across metadata and symbols
 	TotalRequests  int     // MetaRequests + SymRequests
+
+	// Durations (ms)
+	MetaDurationMS int64
+	SymDurationMS  int64
+
+	// Per-RPC call details
+	MetaCalls []StoreCallMetric
+	SymCalls  []StoreCallMetric
+}
+
+// StoreCallMetric captures one per-node RPC attempt
+type StoreCallMetric struct {
+	IP         string
+	ID         string
+	Address    string
+	Keys       int
+	Success    bool
+	Error      string
+	DurationMS int64
 }
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) (StoreArtefactsMetrics, error) {
 	logtrace.Info(ctx, "About to store ID files", logtrace.Fields{"taskID": req.TaskID, "fileCount": len(req.IDFiles)})
 
-	metaRate, metaReqs, err := p.storeCascadeMetadata(ctx, req.IDFiles, req.TaskID)
+	metaStart := time.Now()
+	metaRate, metaReqs, metaCalls, err := p.storeCascadeMetadata(ctx, req.IDFiles, req.TaskID)
 	if err != nil {
 		return StoreArtefactsMetrics{}, errors.Wrap(err, "failed to store ID files")
 	}
 	logtrace.Info(ctx, "id files have been stored", f)
+	metaDuration := time.Since(metaStart).Milliseconds()
 
 	// NOTE: For now we aggregate by item count (ID files + symbol count).
 	// TODO(move-to-request-weighted): Switch aggregation to request-weighted once
 	// external consumers and metrics expectations are updated. We already return
 	// totalRequests so the event/logs can include accurate request counts.
-	symRate, symCount, symReqs, err := p.storeCascadeSymbols(ctx, req.TaskID, req.ActionID, req.SymbolsDir)
+	symStart := time.Now()
+	symRate, symCount, symReqs, symCalls, err := p.storeCascadeSymbols(ctx, req.TaskID, req.ActionID, req.SymbolsDir)
 	if err != nil {
 		return StoreArtefactsMetrics{}, errors.Wrap(err, "error storing raptor-q symbols")
 	}
 	logtrace.Info(ctx, "raptor-q symbols have been stored", f)
+	symDuration := time.Since(symStart).Milliseconds()
 
 	// Aggregate: weight by item counts (ID files + symbols) for now.
 	metaCount := len(req.IDFiles)
@@ -113,22 +137,26 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 		SymCount:       symCount,
 		AggregatedRate: aggRate,
 		TotalRequests:  totalRequests,
+		MetaDurationMS: metaDuration,
+		SymDurationMS:  symDuration,
+		MetaCalls:      metaCalls,
+		SymCalls:       symCalls,
 	}, nil
 }
 
 // storeCascadeMetadata stores cascade metadata (ID files) via P2P.
 // Returns (ratePct, requests, error) as reported by the P2P client.
-func (p *p2pImpl) storeCascadeMetadata(ctx context.Context, metadataFiles [][]byte, taskID string) (float64, int, error) {
+func (p *p2pImpl) storeCascadeMetadata(ctx context.Context, metadataFiles [][]byte, taskID string) (float64, int, []StoreCallMetric, error) {
 	logtrace.Info(ctx, "Storing cascade metadata", logtrace.Fields{
 		"taskID":    taskID,
 		"fileCount": len(metadataFiles),
 	})
 
-	rate, reqs, err := p.p2p.StoreBatch(ctx, metadataFiles, storage.P2PDataCascadeMetadata, taskID)
+	rate, reqs, calls, err := p.p2p.StoreBatch(ctx, metadataFiles, storage.P2PDataCascadeMetadata, taskID)
 	if err != nil {
-		return rate, reqs, err
+		return rate, reqs, nil, err
 	}
-	return rate, reqs, nil
+	return rate, reqs, toAdaptorCalls(calls), nil
 }
 
 // storeCascadeSymbols loads symbols from `symbolsDir`, optionally downsamples,
@@ -138,16 +166,16 @@ func (p *p2pImpl) storeCascadeMetadata(ctx context.Context, metadataFiles [][]by
 // - the total number of node requests attempted across batches
 //
 // Returns (aggRate, totalSymbols, totalRequests, err).
-func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID string, symbolsDir string) (float64, int, int, error) {
+func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID string, symbolsDir string) (float64, int, int, []StoreCallMetric, error) {
 	/* record directory in DB */
 	if err := p.rqStore.StoreSymbolDirectory(taskID, symbolsDir); err != nil {
-		return 0, 0, 0, fmt.Errorf("store symbol dir: %w", err)
+		return 0, 0, 0, nil, fmt.Errorf("store symbol dir: %w", err)
 	}
 
 	/* gather every symbol path under symbolsDir ------------------------- */
 	keys, err := walkSymbolTree(symbolsDir)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, nil, err
 	}
 
 	totalAvailable := len(keys)
@@ -177,19 +205,21 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 	sumWeightedRates := 0.0
 	totalSymbols := 0
 	totalRequests := 0
+	var allCalls []StoreCallMetric
 	for start := 0; start < len(keys); {
 		end := start + loadSymbolsBatchSize
 		if end > len(keys) {
 			end = len(keys)
 		}
 		batch := keys[start:end]
-		rate, requests, count, err := p.storeSymbolsInP2P(ctx, taskID, symbolsDir, batch)
+		rate, requests, count, calls, err := p.storeSymbolsInP2P(ctx, taskID, symbolsDir, batch)
 		if err != nil {
-			return rate, totalSymbols, totalRequests, err
+			return rate, totalSymbols, totalRequests, allCalls, err
 		}
 		sumWeightedRates += rate * float64(count)
 		totalSymbols += count
 		totalRequests += requests
+		allCalls = append(allCalls, calls...)
 		start = end
 	}
 
@@ -204,7 +234,7 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 	})
 
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
-		return 0, totalSymbols, totalRequests, fmt.Errorf("update first-batch flag: %w", err)
+		return 0, totalSymbols, totalRequests, allCalls, fmt.Errorf("update first-batch flag: %w", err)
 	}
 	logtrace.Info(ctx, "finished storing RaptorQ symbols", logtrace.Fields{
 		"curr-time": time.Now().UTC(),
@@ -215,7 +245,7 @@ func (p *p2pImpl) storeCascadeSymbols(ctx context.Context, taskID, actionID stri
 	if totalSymbols > 0 {
 		aggRate = sumWeightedRates / float64(totalSymbols)
 	}
-	return aggRate, totalSymbols, totalRequests, nil
+	return aggRate, totalSymbols, totalRequests, allCalls, nil
 }
 
 func walkSymbolTree(root string) ([]string, error) {
@@ -246,27 +276,44 @@ func walkSymbolTree(root string) ([]string, error) {
 
 // storeSymbolsInP2P loads a batch of symbols and stores them via P2P.
 // Returns (ratePct, requests, count, error) where `count` is the number of symbols in this batch.
-func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) (float64, int, int, error) {
+func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) (float64, int, int, []StoreCallMetric, error) {
 	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
 	symbols, err := utils.LoadSymbols(root, fileKeys)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("load symbols: %w", err)
+		return 0, 0, 0, nil, fmt.Errorf("load symbols: %w", err)
 	}
 
 	symCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	rate, requests, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
+	rate, requests, calls, err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID)
 	if err != nil {
-		return rate, requests, len(symbols), fmt.Errorf("p2p store batch: %w", err)
+		return rate, requests, len(symbols), nil, fmt.Errorf("p2p store batch: %w", err)
 	}
 	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
-		return rate, requests, len(symbols), fmt.Errorf("delete symbols: %w", err)
+		return rate, requests, len(symbols), nil, fmt.Errorf("delete symbols: %w", err)
 	}
 	logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
 
-	return rate, requests, len(symbols), nil
+	return rate, requests, len(symbols), toAdaptorCalls(calls), nil
+}
+
+// toAdaptorCalls converts DHT call metrics to adaptor-level metrics
+func toAdaptorCalls(in []kademlia.StoreCallMetric) []StoreCallMetric {
+	out := make([]StoreCallMetric, 0, len(in))
+	for _, c := range in {
+		out = append(out, StoreCallMetric{
+			IP:         c.IP,
+			ID:         c.ID,
+			Address:    c.Address,
+			Keys:       c.Keys,
+			Success:    c.Success,
+			Error:      c.Error,
+			DurationMS: c.DurationMS,
+		})
+	}
+	return out
 }
