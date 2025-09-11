@@ -1,13 +1,14 @@
 package storage
 
 import (
-	"context"
-	"testing"
+    "context"
+    "testing"
 
-	"github.com/LumeraProtocol/supernode/v2/p2p/mocks"
+    "github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
+    "github.com/LumeraProtocol/supernode/v2/p2p/mocks"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/mock"
 )
 
 // --- Mocks ---
@@ -44,13 +45,14 @@ func TestStoreBytesIntoP2P(t *testing.T) {
 }
 
 func TestStoreBatch(t *testing.T) {
-	p2pClient := new(mockP2PClient)
-	handler := NewStorageHandler(p2pClient, "", nil)
+    p2pClient := new(mockP2PClient)
+    handler := NewStorageHandler(p2pClient, "", nil)
 
-	ctx := context.WithValue(context.Background(), "task_id", "123")
-	list := [][]byte{[]byte("a"), []byte("b")}
-	p2pClient.On("StoreBatch", mock.Anything, list, 3, "").Return(0.0, 0, nil)
+    ctx := context.WithValue(context.Background(), "task_id", "123")
+    list := [][]byte{[]byte("a"), []byte("b")}
+    // StoreBatch returns (ratePct float64, requests int, metrics []kademlia.StoreCallMetric, err error)
+    p2pClient.On("StoreBatch", mock.Anything, list, 3, "").Return(0.0, 0, []kademlia.StoreCallMetric(nil), nil)
 
-	err := handler.StoreBatch(ctx, list, 3)
-	assert.NoError(t, err)
+    err := handler.StoreBatch(ctx, list, 3)
+    assert.NoError(t, err)
 }
