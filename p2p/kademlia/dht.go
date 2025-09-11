@@ -741,6 +741,8 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	semaphore := make(chan struct{}, parallelBatches)
 	var wg sync.WaitGroup
+	// aggregator for per-node retrieve metrics by Address
+	var retrieveCalls sync.Map
 	gctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -769,13 +771,21 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 			&networkFound,
 			cancel,
 			txID,
+			&retrieveCalls,
 		)
 	}
 
 	wg.Wait()
 
 	netFound := int(atomic.LoadInt32(&networkFound))
-	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Duration(time.Since(start).Milliseconds())) // NEW
+	var callsSlice []RetrieveCallMetric
+	retrieveCalls.Range(func(_, v any) bool {
+		if m, ok := v.(RetrieveCallMetric); ok {
+			callsSlice = append(callsSlice, m)
+		}
+		return true
+	})
+	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Duration(time.Since(start).Milliseconds()), callsSlice)
 
 	return result, nil
 }
@@ -796,6 +806,7 @@ func (s *DHT) processBatch(
 	networkFound *int32,
 	cancel context.CancelFunc,
 	txID string,
+	calls *sync.Map,
 ) {
 	defer wg.Done()
 	defer func() { <-semaphore }()
@@ -822,13 +833,30 @@ func (s *DHT) processBatch(
 			}
 		}
 
-		foundCount, newClosestContacts, batchErr := s.iterateBatchGetValues(
+		foundCount, newClosestContacts, nodeMetrics, batchErr := s.iterateBatchGetValues(
 			ctx, knownNodes, batchKeys, batchHexKeys, fetchMap, resMap, required, foundLocalCount+atomic.LoadInt32(networkFound),
 		)
 		if batchErr != nil {
 			logtrace.Error(ctx, "Iterate batch get values failed", logtrace.Fields{
 				logtrace.FieldModule: "dht", "txid": txID, logtrace.FieldError: batchErr.Error(),
 			})
+		}
+		// aggregate per-node metrics by Address
+		for _, rm := range nodeMetrics {
+			addr := rm.Address
+			if current, ok := calls.Load(addr); ok {
+				if agg, ok := current.(RetrieveCallMetric); ok {
+					agg.Keys += rm.Keys
+					agg.Success = agg.Success || rm.Success
+					agg.DurationMS += rm.DurationMS
+					if rm.Error != "" {
+						agg.Error = rm.Error
+					}
+					calls.Store(addr, agg)
+					continue
+				}
+			}
+			calls.Store(addr, rm)
 		}
 
 		atomic.AddInt32(networkFound, int32(foundCount))
@@ -873,7 +901,7 @@ func (s *DHT) processBatch(
 }
 
 func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node, keys []string, hexKeys []string, fetchMap map[string][]int,
-	resMap *sync.Map, req, alreadyFound int32) (int, map[string]*NodeList, error) {
+	resMap *sync.Map, req, alreadyFound int32) (int, map[string]*NodeList, []RetrieveCallMetric, error) {
 	semaphore := make(chan struct{}, storeSameSymbolsBatchConcurrency) // Limit concurrency to 1
 	closestContacts := make(map[string]*NodeList)
 	var wg sync.WaitGroup
@@ -881,6 +909,8 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 	var firstErr error
 	var mu sync.Mutex // To protect the firstErr
 	foundCount := int32(0)
+	// per-node retrieve metrics aggregator (by Address)
+	var nodeMetrics sync.Map
 
 	gctx, cancel := context.WithCancel(ctx) // Create a cancellable context
 	defer cancel()
@@ -907,6 +937,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				defer func() { <-semaphore }()
 			}
 
+			callStart := time.Now()
 			indices := fetchMap[nodeID]
 			requestKeys := make(map[string]KeyValWithClosest)
 			for _, idx := range indices {
@@ -919,6 +950,15 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			}
 
 			if len(requestKeys) == 0 {
+				nodeMetrics.Store(node.String(), RetrieveCallMetric{
+					IP:         node.IP,
+					ID:         base58.Encode(node.ID),
+					Address:    node.String(),
+					Keys:       0,
+					Success:    false,
+					Error:      "",
+					DurationMS: time.Since(callStart).Milliseconds(),
+				})
 				return
 			}
 
@@ -929,22 +969,54 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 					firstErr = err
 				}
 				mu.Unlock()
+				nodeMetrics.Store(node.String(), RetrieveCallMetric{
+					IP:         node.IP,
+					ID:         base58.Encode(node.ID),
+					Address:    node.String(),
+					Keys:       0,
+					Success:    false,
+					Error:      err.Error(),
+					DurationMS: time.Since(callStart).Milliseconds(),
+				})
 				return
 			}
 
+			returned := 0
 			for k, v := range decompressedData {
 				if len(v.Value) > 0 {
 					_, loaded := resMap.LoadOrStore(k, v.Value)
 					if !loaded {
 						atomic.AddInt32(&foundCount, 1)
+						returned++
 						if atomic.LoadInt32(&foundCount) >= int32(req-alreadyFound) {
 							cancel() // Cancel context to stop other goroutines
-							return
+							// don't early return; record metric and exit goroutine
+							break
 						}
 					}
 				} else {
 					contactsMap[nodeID][k] = v.Closest
 				}
+			}
+
+			// aggregate metric per node
+			if current, ok := nodeMetrics.Load(node.String()); ok {
+				if agg, ok := current.(RetrieveCallMetric); ok {
+					agg.Keys += returned
+					agg.Success = agg.Success || returned > 0
+					agg.DurationMS += time.Since(callStart).Milliseconds()
+					nodeMetrics.Store(node.String(), agg)
+				}
+			} else {
+				nodeMetrics.Store(node.String(), RetrieveCallMetric{
+					IP:         node.IP,
+					ID:         base58.Encode(node.ID),
+					Address:    node.String(),
+					Keys:       returned,
+					Success:    returned > 0,
+					Error:      "",
+					DurationMS: time.Since(callStart).Milliseconds(),
+				})
 			}
 		}(node, nodeID)
 	}
@@ -973,7 +1045,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 					"key":                key,
 					logtrace.FieldError:  err.Error(),
 				})
-				return 0, nil, err
+				return 0, nil, nil, err
 			}
 			bkey := base58.Encode(comparator)
 
@@ -990,8 +1062,15 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 		nodes.TopN(Alpha)
 		closestContacts[key] = nodes
 	}
-
-	return int(foundCount), closestContacts, firstErr
+	// collapse node metrics to slice for return
+	var metricsSlice []RetrieveCallMetric
+	nodeMetrics.Range(func(_, v any) bool {
+		if m, ok := v.(RetrieveCallMetric); ok {
+			metricsSlice = append(metricsSlice, m)
+		}
+		return true
+	})
+	return int(foundCount), closestContacts, metricsSlice, firstErr
 }
 
 func (s *DHT) doBatchGetValuesCall(ctx context.Context, node *Node, requestKeys map[string]KeyValWithClosest) (map[string]KeyValWithClosest, error) {
@@ -1612,6 +1691,17 @@ type StoreCallMetric struct {
 	DurationMS int64
 }
 
+// RetrieveCallMetric captures one per-node retrieve attempt outcome
+type RetrieveCallMetric struct {
+	IP         string `json:"ip"`
+	ID         string `json:"id"`
+	Address    string `json:"address"`
+	Keys       int    `json:"keys"` // number of symbols returned by this node
+	Success    bool   `json:"success"`
+	Error      string `json:"error,omitempty"`
+	DurationMS int64  `json:"duration_ms"`
+}
+
 func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) (float64, int, []StoreCallMetric, error) {
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
@@ -1909,12 +1999,13 @@ type StoreSuccessPoint struct {
 }
 
 type BatchRetrievePoint struct {
-	Time       time.Time     `json:"time"`
-	Keys       int           `json:"keys"`
-	Required   int           `json:"required"`
-	FoundLocal int           `json:"found_local"`
-	FoundNet   int           `json:"found_network"`
-	Duration   time.Duration `json:"duration"`
+	Time       time.Time            `json:"time"`
+	Keys       int                  `json:"keys"`
+	Required   int                  `json:"required"`
+	FoundLocal int                  `json:"found_local"`
+	FoundNet   int                  `json:"found_network"`
+	Duration   time.Duration        `json:"duration"`
+	Nodes      []RetrieveCallMetric `json:"nodes,omitempty"`
 }
 
 type DHTMetricsSnapshot struct {
@@ -1976,7 +2067,7 @@ func (m *DHTMetrics) RecordStoreSuccess(req, succ int) {
 	m.mu.Unlock()
 }
 
-func (m *DHTMetrics) RecordBatchRetrieve(keys, required, foundLocal, foundNet int, dur time.Duration) {
+func (m *DHTMetrics) RecordBatchRetrieve(keys, required, foundLocal, foundNet int, dur time.Duration, nodes []RetrieveCallMetric) {
 	m.init()
 	m.mu.Lock()
 	m.batchRetrieve = append([]BatchRetrievePoint{{
@@ -1986,6 +2077,7 @@ func (m *DHTMetrics) RecordBatchRetrieve(keys, required, foundLocal, foundNet in
 		FoundLocal: foundLocal,
 		FoundNet:   foundNet,
 		Duration:   dur,
+		Nodes:      append([]RetrieveCallMetric(nil), nodes...),
 	}}, m.batchRetrieve...)
 	m.trimRetrieve()
 	m.mu.Unlock()

@@ -3,9 +3,11 @@ package cascade
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
@@ -88,7 +90,12 @@ func (task *CascadeRegistrationTask) Download(
 func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) (string, string, error) {
 	logtrace.Info(ctx, "started downloading the artifacts", fields)
 
-	var layout codec.Layout
+	var (
+		layout         codec.Layout
+		layoutFetchMS  int64
+		layoutDecodeMS int64
+		layoutAttempts int
+	)
 
 	for _, indexID := range metadata.RqIdsIds {
 		indexFile, err := task.P2PClient.Retrieve(ctx, indexID)
@@ -104,11 +111,14 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		}
 
 		// Try to retrieve layout files using layout IDs from index file
-		layout, err = task.retrieveLayoutFromIndex(ctx, indexData, fields)
+		var netMS, decMS int64
+		layout, netMS, decMS, layoutAttempts, err = task.retrieveLayoutFromIndex(ctx, indexData, fields)
 		if err != nil {
 			logtrace.Info(ctx, "failed to retrieve layout from index", fields)
 			continue
 		}
+		layoutFetchMS = netMS
+		layoutDecodeMS = decMS
 
 		if len(layout.Blocks) > 0 {
 			logtrace.Info(ctx, "layout file retrieved via index", fields)
@@ -119,7 +129,10 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	if len(layout.Blocks) == 0 {
 		return "", "", errors.New("no symbols found in RQ metadata")
 	}
-
+	// Persist layout timing in fields for downstream metrics
+	fields["layout_fetch_ms"] = layoutFetchMS
+	fields["layout_decode_ms"] = layoutDecodeMS
+	fields["layout_attempts"] = layoutAttempts
 	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID)
 }
 
@@ -143,13 +156,18 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	fields["totalSymbols"] = totalSymbols
 	logtrace.Info(ctx, "Retrieving all symbols for decode", fields)
 
+	// Measure symbols batch retrieve duration
+	retrieveStart := time.Now()
 	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, totalSymbols, actionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "batch retrieve failed", fields)
 		return "", "", fmt.Errorf("batch retrieve symbols: %w", err)
 	}
+	retrieveMS := time.Since(retrieveStart).Milliseconds()
 
+	// Measure decode duration
+	decodeStart := time.Now()
 	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
 		ActionID: actionID,
 		Symbols:  symbols,
@@ -159,6 +177,68 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "decode failed", fields)
 		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
+	}
+	decodeMS := time.Since(decodeStart).Milliseconds()
+
+	// Build and emit retrieve metrics similar to artefact store metrics
+	found := len(symbols)
+	failed := totalSymbols - found
+
+	// Try to enrich with DHT metrics snapshot (most recent)
+	var dhtFoundLocal, dhtFoundNet int
+	var dhtDurationMS int64
+	var perNode []map[string]any
+	if stats, err := task.P2PClient.Stats(ctx); err == nil {
+		if dhtRaw, ok := stats["dht"].(map[string]any); ok {
+			if metrics, ok := dhtRaw["dht_metrics"].(map[string]any); ok {
+				if recent, ok := metrics["batch_retrieve_recent"].([]any); ok && len(recent) > 0 {
+					if point, ok := recent[0].(map[string]any); ok {
+						if v, ok := point["found_local"].(float64); ok {
+							dhtFoundLocal = int(v)
+						}
+						if v, ok := point["found_network"].(float64); ok {
+							dhtFoundNet = int(v)
+						}
+						switch dur := point["duration"].(type) {
+						case float64:
+							dhtDurationMS = int64(dur) / int64(time.Millisecond)
+						case string:
+							if parse, err := time.ParseDuration(dur); err == nil {
+								dhtDurationMS = parse.Milliseconds()
+							}
+						}
+						if nodes, ok := point["nodes"].([]any); ok {
+							for _, n := range nodes {
+								if m, ok := n.(map[string]any); ok {
+									perNode = append(perNode, m)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	payload := map[string]any{
+		"total_symbols":    totalSymbols,
+		"required_symbols": totalSymbols,
+		"success_symbols":  found,
+		"failed_symbols":   failed,
+		"retrieve_ms":      retrieveMS,
+		"decode_ms":        decodeMS,
+		"layout_fetch_ms":  fields["layout_fetch_ms"],
+		"layout_decode_ms": fields["layout_decode_ms"],
+		"layout_attempts":  fields["layout_attempts"],
+		"dht": map[string]any{
+			"found_local":   dhtFoundLocal,
+			"found_network": dhtFoundNet,
+			"duration_ms":   dhtDurationMS,
+			"nodes":         perNode,
+		},
+	}
+	if b, err := json.Marshal(payload); err == nil {
+		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", func(resp *DownloadResponse) error { return nil })
 	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
@@ -211,25 +291,35 @@ func (task *CascadeRegistrationTask) parseIndexFile(data []byte) (IndexFile, err
 }
 
 // retrieveLayoutFromIndex retrieves layout file using layout IDs from index file
-func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context, indexData IndexFile, fields logtrace.Fields) (codec.Layout, error) {
+func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context, indexData IndexFile, fields logtrace.Fields) (codec.Layout, int64, int64, int, error) {
 	// Try to retrieve layout files using layout IDs from index file
+	var (
+		totalFetchMS  int64
+		totalDecodeMS int64
+		attempts      int
+	)
 	for _, layoutID := range indexData.LayoutIDs {
+		attempts++
+		t0 := time.Now()
 		layoutFile, err := task.P2PClient.Retrieve(ctx, layoutID)
+		totalFetchMS += time.Since(t0).Milliseconds()
 		if err != nil || len(layoutFile) == 0 {
 			continue
 		}
 
+		t1 := time.Now()
 		layout, _, _, err := parseRQMetadataFile(layoutFile)
+		totalDecodeMS += time.Since(t1).Milliseconds()
 		if err != nil {
 			continue
 		}
 
 		if len(layout.Blocks) > 0 {
-			return layout, nil
+			return layout, totalFetchMS, totalDecodeMS, attempts, nil
 		}
 	}
 
-	return codec.Layout{}, errors.New("no valid layout found in index")
+	return codec.Layout{}, totalFetchMS, totalDecodeMS, attempts, errors.New("no valid layout found in index")
 }
 
 func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, actionID string) error {
