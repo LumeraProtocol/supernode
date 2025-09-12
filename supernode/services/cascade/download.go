@@ -180,14 +180,53 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	decodeMS := time.Since(decodeStart).Milliseconds()
 
-	// Build and emit retrieve metrics similar to artefact store metrics
+	// Build new structured analytics payload
 	found := len(symbols)
+	if found < 0 {
+		found = 0
+	}
 	failed := totalSymbols - found
+	if failed < 0 {
+		failed = 0
+	}
 
-	// Try to enrich with DHT metrics snapshot (most recent)
+	// Compute theoretical minimums from layout (sum over blocks of ceil(Size/65535))
+	const symbolSize int64 = 65535
+	var minRequired int
+	for _, b := range layout.Blocks {
+		if b.Size > 0 {
+			minRequired += int((b.Size + symbolSize - 1) / symbolSize)
+		}
+	}
+	minPct := 0.0
+	if totalSymbols > 0 {
+		minPct = (float64(minRequired) / float64(totalSymbols)) * 100.0
+	}
+	retrievedPct := 0.0
+	if totalSymbols > 0 {
+		retrievedPct = (float64(found) / float64(totalSymbols)) * 100.0
+	}
+	marginOverMin := retrievedPct - minPct
+	if marginOverMin < 0 {
+		marginOverMin = 0
+	}
+
+	// Try to enrich with DHT metrics snapshot (most recent) and aggregate per-node
 	var dhtFoundLocal, dhtFoundNet int
 	var dhtDurationMS int64
-	var perNode []map[string]any
+	type nodeAgg struct {
+		IP              string  `json:"ip"`
+		ID              string  `json:"id"`
+		Address         string  `json:"address"`
+		Calls           int     `json:"calls"`
+		Successes       int     `json:"successes"`
+		Failures        int     `json:"failures"`
+		KeysTotal       int     `json:"keys_total"`
+		DurationTotalMS int64   `json:"duration_total_ms"`
+		KeysPct         float64 `json:"keys_pct"`
+	}
+	var nodesSummary []nodeAgg
+	nodesTotal := 0
 	if stats, err := task.P2PClient.Stats(ctx); err == nil {
 		if dhtRaw, ok := stats["dht"].(map[string]any); ok {
 			if metrics, ok := dhtRaw["dht_metrics"].(map[string]any); ok {
@@ -208,11 +247,48 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 							}
 						}
 						if nodes, ok := point["nodes"].([]any); ok {
+							type bucket struct{ agg nodeAgg }
+							byAddr := map[string]*bucket{}
 							for _, n := range nodes {
 								if m, ok := n.(map[string]any); ok {
-									perNode = append(perNode, m)
+									ip, _ := m["ip"].(string)
+									id, _ := m["id"].(string)
+									addr, _ := m["address"].(string)
+									keys := 0
+									if kv, ok := m["keys"].(float64); ok {
+										keys = int(kv)
+									}
+									success := false
+									if sv, ok := m["success"].(bool); ok {
+										success = sv
+									}
+									durMS := int64(0)
+									if dv, ok := m["duration_ms"].(float64); ok {
+										durMS = int64(dv)
+									}
+									b := byAddr[addr]
+									if b == nil {
+										b = &bucket{agg: nodeAgg{IP: ip, ID: id, Address: addr}}
+										byAddr[addr] = b
+									}
+									b.agg.Calls++
+									if success {
+										b.agg.Successes++
+									} else {
+										b.agg.Failures++
+									}
+									b.agg.KeysTotal += keys
+									b.agg.DurationTotalMS += durMS
 								}
 							}
+							nodesSummary = make([]nodeAgg, 0, len(byAddr))
+							for _, b := range byAddr {
+								if found > 0 {
+									b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(found)) * 100.0
+								}
+								nodesSummary = append(nodesSummary, b.agg)
+							}
+							nodesTotal = len(byAddr)
 						}
 					}
 				}
@@ -221,20 +297,28 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 
 	payload := map[string]any{
-		"total_symbols":    totalSymbols,
-		"required_symbols": totalSymbols,
-		"success_symbols":  found,
-		"failed_symbols":   failed,
-		"retrieve_ms":      retrieveMS,
-		"decode_ms":        decodeMS,
-		"layout_fetch_ms":  fields["layout_fetch_ms"],
-		"layout_decode_ms": fields["layout_decode_ms"],
-		"layout_attempts":  fields["layout_attempts"],
+		"layout": map[string]any{
+			"symbols_total":        totalSymbols,
+			"min_required_symbols": minRequired,
+			"min_required_pct":     minPct,
+			"attempts":             fields["layout_attempts"],
+			"fetch_ms":             fields["layout_fetch_ms"],
+			"decode_ms":            fields["layout_decode_ms"],
+		},
+		"retrieve": map[string]any{
+			"retrieved_total":     found,
+			"missing_total":       failed,
+			"retrieved_pct":       retrievedPct,
+			"margin_over_min_pct": marginOverMin,
+			"retrieve_ms":         retrieveMS,
+			"decode_ms":           decodeMS,
+		},
 		"dht": map[string]any{
 			"found_local":   dhtFoundLocal,
 			"found_network": dhtFoundNet,
 			"duration_ms":   dhtDurationMS,
-			"nodes":         perNode,
+			"nodes_total":   nodesTotal,
+			"nodes":         nodesSummary,
 		},
 	}
 	if b, err := json.Marshal(payload); err == nil {

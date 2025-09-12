@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	stdmath "math"
 	"strconv"
 	"strings"
 
@@ -203,101 +202,106 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 // emitArtefactsStored builds a single-line metrics summary and emits the
 // SupernodeEventTypeArtefactsStored event while logging the metrics line.
 func (task *CascadeRegistrationTask) emitArtefactsStored(
-    ctx context.Context,
-    metrics adaptors.StoreArtefactsMetrics,
-    fields logtrace.Fields,
-    send func(resp *RegisterResponse) error,
+	ctx context.Context,
+	metrics adaptors.StoreArtefactsMetrics,
+	fields logtrace.Fields,
+	layoutSymbolsTotal int,
+	layoutMinRequiredSymbols int,
+	layoutMinRequiredPct float64,
+	send func(resp *RegisterResponse) error,
 ) {
-    if fields == nil {
-        fields = logtrace.Fields{}
-    }
-	ok := int(stdmath.Round(metrics.AggregatedRate / 100.0 * float64(metrics.TotalRequests)))
-	fail := metrics.TotalRequests - ok
+	if fields == nil {
+		fields = logtrace.Fields{}
+	}
 
-    // Build a JSON payload carrying aggregated per-node distribution + durations
-    type nodeAgg struct {
-        IP            string `json:"ip"`
-        ID            string `json:"id"`
-        Address       string `json:"address"`
-        Calls         int    `json:"calls"`
-        Successes     int    `json:"successes"`
-        Failures      int    `json:"failures"`
-        TotalKeys     int    `json:"total_keys"`
-        TotalDuration int64  `json:"total_duration_ms"`
-        CallSymbols   []int  `json:"call_symbols"`
-    }
-    payload := map[string]any{
-        "success_rate":     metrics.AggregatedRate,
-        "agg_rate":         metrics.AggregatedRate,
-        "total_requests":   metrics.TotalRequests,
-        "ok":               ok,
-        "fail":             fail,
-        "meta_rate":        metrics.MetaRate,
-        "meta_reqs":        metrics.MetaRequests,
-        "meta_count":       metrics.MetaCount,
-        "sym_rate":         metrics.SymRate,
-        "sym_reqs":         metrics.SymRequests,
-        "sym_count":        metrics.SymCount,
-        "meta_duration_ms": metrics.MetaDurationMS,
-        "sym_duration_ms":  metrics.SymDurationMS,
-    }
-    // Aggregate per-node from per-call metrics
-    toNodeAgg := func(calls []adaptors.StoreCallMetric) []nodeAgg {
-        type bucket struct {
-            agg nodeAgg
-            seen bool
-        }
-        byAddr := map[string]*bucket{}
-        for _, c := range calls {
-            key := c.Address
-            b := byAddr[key]
-            if b == nil {
-                b = &bucket{agg: nodeAgg{IP: c.IP, ID: c.ID, Address: c.Address}}
-                byAddr[key] = b
-            }
-            b.seen = true
-            b.agg.Calls++
-            if c.Success {
-                b.agg.Successes++
-            } else {
-                b.agg.Failures++
-            }
-            b.agg.TotalKeys += c.Keys
-            b.agg.TotalDuration += c.DurationMS
-            b.agg.CallSymbols = append(b.agg.CallSymbols, c.Keys)
-        }
-        out := make([]nodeAgg, 0, len(byAddr))
-        for _, b := range byAddr {
-            out = append(out, b.agg)
-        }
-        return out
-    }
+	// Helper to aggregate per-node metrics (no cap, full list)
+	type nodeAgg struct {
+		IP              string  `json:"ip"`
+		ID              string  `json:"id"`
+		Address         string  `json:"address"`
+		Calls           int     `json:"calls"`
+		Successes       int     `json:"successes"`
+		Failures        int     `json:"failures"`
+		KeysTotal       int     `json:"keys_total"`
+		DurationTotalMS int64   `json:"duration_total_ms"`
+		KeysPct         float64 `json:"keys_pct"`
+	}
+	aggregateNodes := func(calls []adaptors.StoreCallMetric, denom int) ([]nodeAgg, int) {
+		type bucket struct{ agg nodeAgg }
+		byAddr := map[string]*bucket{}
+		for _, c := range calls {
+			b := byAddr[c.Address]
+			if b == nil {
+				b = &bucket{agg: nodeAgg{IP: c.IP, ID: c.ID, Address: c.Address}}
+				byAddr[c.Address] = b
+			}
+			b.agg.Calls++
+			if c.Success {
+				b.agg.Successes++
+			} else {
+				b.agg.Failures++
+			}
+			b.agg.KeysTotal += c.Keys
+			b.agg.DurationTotalMS += c.DurationMS
+		}
+		out := make([]nodeAgg, 0, len(byAddr))
+		for _, b := range byAddr {
+			if denom > 0 {
+				b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(denom)) * 100.0
+			}
+			out = append(out, b.agg)
+		}
+		return out, len(byAddr)
+	}
 
-    if len(metrics.MetaCalls) > 0 {
-        payload["meta_nodes"] = toNodeAgg(metrics.MetaCalls)
-    }
-    if len(metrics.SymCalls) > 0 {
-        payload["sym_nodes"] = toNodeAgg(metrics.SymCalls)
-    }
+	// Symbols section calculations
+	storedTotal := metrics.SymCount
+	missingTotal := 0
+	if layoutSymbolsTotal > storedTotal {
+		missingTotal = layoutSymbolsTotal - storedTotal
+	}
+	firstPassTargetPct := 18.0 // mirrors initial storage target in first pass
+	firstPassAchievedPct := 0.0
+	if layoutSymbolsTotal > 0 {
+		firstPassAchievedPct = (float64(storedTotal) / float64(layoutSymbolsTotal)) * 100.0
+	}
 
-    // Also include request-weighted aggregates ("correct" basis) in addition to legacy ok/fail
-    totalCalls := len(metrics.MetaCalls) + len(metrics.SymCalls)
-    if totalCalls > 0 {
-        reqOK := 0
-        for _, c := range metrics.MetaCalls {
-            if c.Success { reqOK++ }
-        }
-        for _, c := range metrics.SymCalls {
-            if c.Success { reqOK++ }
-        }
-        reqFail := totalCalls - reqOK
-        requestRate := float64(reqOK) / float64(totalCalls) * 100.0
-        payload["request_rate"] = requestRate
-        payload["req_ok"] = reqOK
-        payload["req_fail"] = reqFail
-    }
+	// Aggregate nodes for metadata and symbols
+	metaNodes, metaNodesTotal := aggregateNodes(metrics.MetaCalls, metrics.MetaCount)
+	symNodes, symNodesTotal := aggregateNodes(metrics.SymCalls, storedTotal)
 
-	// Marshal payload as JSON string for the event message
+	// Build new, compact payload with separate sections for layout, metadata, symbols and network
+	payload := map[string]any{
+		"layout": map[string]any{
+			"symbols_total":        layoutSymbolsTotal,
+			"min_required_symbols": layoutMinRequiredSymbols,
+			"min_required_pct":     layoutMinRequiredPct,
+		},
+		"metadata": map[string]any{
+			"files_total":      metrics.MetaCount,
+			"success_rate_pct": metrics.MetaRate,
+			"requests":         metrics.MetaRequests,
+			"duration_ms":      metrics.MetaDurationMS,
+			"nodes_total":      metaNodesTotal,
+			"nodes":            metaNodes,
+		},
+		"symbols": map[string]any{
+			"stored_total":            storedTotal,
+			"missing_total":           missingTotal,
+			"first_pass_target_pct":   firstPassTargetPct,
+			"first_pass_achieved_pct": firstPassAchievedPct,
+			"success_rate_pct":        metrics.SymRate,
+			"requests":                metrics.SymRequests,
+			"duration_ms":             metrics.SymDurationMS,
+			"nodes_total":             symNodesTotal,
+			"nodes":                   symNodes,
+		},
+		"network": map[string]any{
+			"success_rate_pct": metrics.AggregatedRate,
+			"total_requests":   metrics.TotalRequests,
+		},
+	}
+
 	b, _ := json.Marshal(payload)
 	msg := string(b)
 	fields["metrics_json"] = msg
