@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -23,6 +24,145 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// RaptorQ symbol size for minimum K calculation (bytes).
+const rqSymbolByteSize int64 = 65535
+
+// nodeAgg aggregates per-node metrics for event payloads.
+type nodeAgg struct {
+	IP              string  `json:"ip"`
+	ID              string  `json:"id"`
+	Address         string  `json:"address"`
+	Calls           int     `json:"calls"`
+	Successes       int     `json:"successes"`
+	Failures        int     `json:"failures"`
+	KeysTotal       int     `json:"keys_total"`
+	DurationTotalMS int64   `json:"duration_total_ms"`
+	KeysPct         float64 `json:"keys_pct"`
+}
+
+// computeLayoutStats returns total symbols T, minimum required symbols K and K% based solely on the layout.
+func computeLayoutStats(layout codec.Layout) (symbolsTotal int, minRequired int, minPct float64) {
+	for _, b := range layout.Blocks {
+		symbolsTotal += len(b.Symbols)
+		if b.Size > 0 {
+			minRequired += int((b.Size + rqSymbolByteSize - 1) / rqSymbolByteSize)
+		}
+	}
+	if symbolsTotal > 0 {
+		minPct = (float64(minRequired) / float64(symbolsTotal)) * 100.0
+	}
+	return
+}
+
+// aggregateStoreCalls aggregates adaptor StoreCallMetric entries per node and computes key share percentage using denom.
+func aggregateStoreCalls(calls []adaptors.StoreCallMetric, denom int) ([]nodeAgg, int) {
+	type bucket struct{ agg nodeAgg }
+	byAddr := map[string]*bucket{}
+	for _, c := range calls {
+		b := byAddr[c.Address]
+		if b == nil {
+			b = &bucket{agg: nodeAgg{IP: c.IP, ID: c.ID, Address: c.Address}}
+			byAddr[c.Address] = b
+		}
+		b.agg.Calls++
+		if c.Success {
+			b.agg.Successes++
+		} else {
+			b.agg.Failures++
+		}
+		b.agg.KeysTotal += c.Keys
+		b.agg.DurationTotalMS += c.DurationMS
+	}
+	out := make([]nodeAgg, 0, len(byAddr))
+	for _, b := range byAddr {
+		if denom > 0 {
+			b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(denom)) * 100.0
+		}
+		out = append(out, b.agg)
+	}
+	return out, len(byAddr)
+}
+
+// aggregateDHTRecent folds the most recent DHT batch retrieve point and aggregates per-node metrics.
+func aggregateDHTRecent(stats map[string]any, denom int) (foundLocal int, foundNetwork int, durationMS int64, nodes []nodeAgg, nodesTotal int) {
+	nodes = nil
+	dhtRaw, ok := stats["dht"].(map[string]any)
+	if !ok {
+		return
+	}
+	metrics, ok := dhtRaw["dht_metrics"].(map[string]any)
+	if !ok {
+		return
+	}
+	recent, ok := metrics["batch_retrieve_recent"].([]any)
+	if !ok || len(recent) == 0 {
+		return
+	}
+	point, ok := recent[0].(map[string]any)
+	if !ok {
+		return
+	}
+	if v, ok := point["found_local"].(float64); ok {
+		foundLocal = int(v)
+	}
+	if v, ok := point["found_network"].(float64); ok {
+		foundNetwork = int(v)
+	}
+	switch dur := point["duration"].(type) {
+	case float64:
+		durationMS = int64(dur) / int64(time.Millisecond)
+	case string:
+		if parse, err := time.ParseDuration(dur); err == nil {
+			durationMS = parse.Milliseconds()
+		}
+	}
+	type bucket struct{ agg nodeAgg }
+	byAddr := map[string]*bucket{}
+	if arr, ok := point["nodes"].([]any); ok {
+		for _, n := range arr {
+			if m, ok := n.(map[string]any); ok {
+				ip, _ := m["ip"].(string)
+				id, _ := m["id"].(string)
+				addr, _ := m["address"].(string)
+				keys := 0
+				if kv, ok := m["keys"].(float64); ok {
+					keys = int(kv)
+				}
+				success := false
+				if sv, ok := m["success"].(bool); ok {
+					success = sv
+				}
+				durMS := int64(0)
+				if dv, ok := m["duration_ms"].(float64); ok {
+					durMS = int64(dv)
+				}
+				b := byAddr[addr]
+				if b == nil {
+					b = &bucket{agg: nodeAgg{IP: ip, ID: id, Address: addr}}
+					byAddr[addr] = b
+				}
+				b.agg.Calls++
+				if success {
+					b.agg.Successes++
+				} else {
+					b.agg.Failures++
+				}
+				b.agg.KeysTotal += keys
+				b.agg.DurationTotalMS += durMS
+			}
+		}
+	}
+	nodes = make([]nodeAgg, 0, len(byAddr))
+	for _, b := range byAddr {
+		if denom > 0 {
+			b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(denom)) * 100.0
+		}
+		nodes = append(nodes, b.agg)
+	}
+	nodesTotal = len(byAddr)
+	return
+}
 
 func (task *CascadeRegistrationTask) fetchAction(ctx context.Context, actionID string, f logtrace.Fields) (*actiontypes.Action, error) {
 	res, err := task.LumeraClient.GetAction(ctx, actionID)
@@ -205,70 +345,29 @@ func (task *CascadeRegistrationTask) emitArtefactsStored(
 	ctx context.Context,
 	metrics adaptors.StoreArtefactsMetrics,
 	fields logtrace.Fields,
-	layoutSymbolsTotal int,
-	layoutMinRequiredSymbols int,
-	layoutMinRequiredPct float64,
+	layout codec.Layout,
 	send func(resp *RegisterResponse) error,
 ) {
 	if fields == nil {
 		fields = logtrace.Fields{}
 	}
 
-	// Helper to aggregate per-node metrics (no cap, full list)
-	type nodeAgg struct {
-		IP              string  `json:"ip"`
-		ID              string  `json:"id"`
-		Address         string  `json:"address"`
-		Calls           int     `json:"calls"`
-		Successes       int     `json:"successes"`
-		Failures        int     `json:"failures"`
-		KeysTotal       int     `json:"keys_total"`
-		DurationTotalMS int64   `json:"duration_total_ms"`
-		KeysPct         float64 `json:"keys_pct"`
-	}
-	aggregateNodes := func(calls []adaptors.StoreCallMetric, denom int) ([]nodeAgg, int) {
-		type bucket struct{ agg nodeAgg }
-		byAddr := map[string]*bucket{}
-		for _, c := range calls {
-			b := byAddr[c.Address]
-			if b == nil {
-				b = &bucket{agg: nodeAgg{IP: c.IP, ID: c.ID, Address: c.Address}}
-				byAddr[c.Address] = b
-			}
-			b.agg.Calls++
-			if c.Success {
-				b.agg.Successes++
-			} else {
-				b.agg.Failures++
-			}
-			b.agg.KeysTotal += c.Keys
-			b.agg.DurationTotalMS += c.DurationMS
-		}
-		out := make([]nodeAgg, 0, len(byAddr))
-		for _, b := range byAddr {
-			if denom > 0 {
-				b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(denom)) * 100.0
-			}
-			out = append(out, b.agg)
-		}
-		return out, len(byAddr)
-	}
-
-	// Symbols section calculations
+	// Layout and symbol stats (no mixing of metadata files with symbol chunks)
+	layoutSymbolsTotal, layoutMinRequiredSymbols, layoutMinRequiredPct := computeLayoutStats(layout)
 	storedTotal := metrics.SymCount
 	missingTotal := 0
 	if layoutSymbolsTotal > storedTotal {
 		missingTotal = layoutSymbolsTotal - storedTotal
 	}
-	firstPassTargetPct := 18.0 // mirrors initial storage target in first pass
+	firstPassTargetPct := 18.0
 	firstPassAchievedPct := 0.0
 	if layoutSymbolsTotal > 0 {
 		firstPassAchievedPct = (float64(storedTotal) / float64(layoutSymbolsTotal)) * 100.0
 	}
 
 	// Aggregate nodes for metadata and symbols
-	metaNodes, metaNodesTotal := aggregateNodes(metrics.MetaCalls, metrics.MetaCount)
-	symNodes, symNodesTotal := aggregateNodes(metrics.SymCalls, storedTotal)
+	metaNodes, metaNodesTotal := aggregateStoreCalls(metrics.MetaCalls, metrics.MetaCount)
+	symNodes, symNodesTotal := aggregateStoreCalls(metrics.SymCalls, storedTotal)
 
 	// Build new, compact payload with separate sections for layout, metadata, symbols and network
 	payload := map[string]any{
@@ -302,7 +401,7 @@ func (task *CascadeRegistrationTask) emitArtefactsStored(
 		},
 	}
 
-	b, _ := json.Marshal(payload)
+	b, _ := json.MarshalIndent(payload, "", "  ")
 	msg := string(b)
 	fields["metrics_json"] = msg
 	logtrace.Info(ctx, "artefacts have been stored", fields)

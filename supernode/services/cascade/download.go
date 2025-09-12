@@ -190,18 +190,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		failed = 0
 	}
 
-	// Compute theoretical minimums from layout (sum over blocks of ceil(Size/65535))
-	const symbolSize int64 = 65535
-	var minRequired int
-	for _, b := range layout.Blocks {
-		if b.Size > 0 {
-			minRequired += int((b.Size + symbolSize - 1) / symbolSize)
-		}
-	}
-	minPct := 0.0
-	if totalSymbols > 0 {
-		minPct = (float64(minRequired) / float64(totalSymbols)) * 100.0
-	}
+	// Compute theoretical minimums purely from layout (no mixing with chunks)
+	_, minRequired, minPct := computeLayoutStats(layout)
 	retrievedPct := 0.0
 	if totalSymbols > 0 {
 		retrievedPct = (float64(found) / float64(totalSymbols)) * 100.0
@@ -211,89 +201,13 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		marginOverMin = 0
 	}
 
-	// Try to enrich with DHT metrics snapshot (most recent) and aggregate per-node
+	// Aggregate latest DHT metrics via helper (no caps)
 	var dhtFoundLocal, dhtFoundNet int
 	var dhtDurationMS int64
-	type nodeAgg struct {
-		IP              string  `json:"ip"`
-		ID              string  `json:"id"`
-		Address         string  `json:"address"`
-		Calls           int     `json:"calls"`
-		Successes       int     `json:"successes"`
-		Failures        int     `json:"failures"`
-		KeysTotal       int     `json:"keys_total"`
-		DurationTotalMS int64   `json:"duration_total_ms"`
-		KeysPct         float64 `json:"keys_pct"`
-	}
 	var nodesSummary []nodeAgg
-	nodesTotal := 0
+	var nodesTotal int
 	if stats, err := task.P2PClient.Stats(ctx); err == nil {
-		if dhtRaw, ok := stats["dht"].(map[string]any); ok {
-			if metrics, ok := dhtRaw["dht_metrics"].(map[string]any); ok {
-				if recent, ok := metrics["batch_retrieve_recent"].([]any); ok && len(recent) > 0 {
-					if point, ok := recent[0].(map[string]any); ok {
-						if v, ok := point["found_local"].(float64); ok {
-							dhtFoundLocal = int(v)
-						}
-						if v, ok := point["found_network"].(float64); ok {
-							dhtFoundNet = int(v)
-						}
-						switch dur := point["duration"].(type) {
-						case float64:
-							dhtDurationMS = int64(dur) / int64(time.Millisecond)
-						case string:
-							if parse, err := time.ParseDuration(dur); err == nil {
-								dhtDurationMS = parse.Milliseconds()
-							}
-						}
-						if nodes, ok := point["nodes"].([]any); ok {
-							type bucket struct{ agg nodeAgg }
-							byAddr := map[string]*bucket{}
-							for _, n := range nodes {
-								if m, ok := n.(map[string]any); ok {
-									ip, _ := m["ip"].(string)
-									id, _ := m["id"].(string)
-									addr, _ := m["address"].(string)
-									keys := 0
-									if kv, ok := m["keys"].(float64); ok {
-										keys = int(kv)
-									}
-									success := false
-									if sv, ok := m["success"].(bool); ok {
-										success = sv
-									}
-									durMS := int64(0)
-									if dv, ok := m["duration_ms"].(float64); ok {
-										durMS = int64(dv)
-									}
-									b := byAddr[addr]
-									if b == nil {
-										b = &bucket{agg: nodeAgg{IP: ip, ID: id, Address: addr}}
-										byAddr[addr] = b
-									}
-									b.agg.Calls++
-									if success {
-										b.agg.Successes++
-									} else {
-										b.agg.Failures++
-									}
-									b.agg.KeysTotal += keys
-									b.agg.DurationTotalMS += durMS
-								}
-							}
-							nodesSummary = make([]nodeAgg, 0, len(byAddr))
-							for _, b := range byAddr {
-								if found > 0 {
-									b.agg.KeysPct = (float64(b.agg.KeysTotal) / float64(found)) * 100.0
-								}
-								nodesSummary = append(nodesSummary, b.agg)
-							}
-							nodesTotal = len(byAddr)
-						}
-					}
-				}
-			}
-		}
+		dhtFoundLocal, dhtFoundNet, dhtDurationMS, nodesSummary, nodesTotal = aggregateDHTRecent(stats, found)
 	}
 
 	payload := map[string]any{
@@ -321,7 +235,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 			"nodes":         nodesSummary,
 		},
 	}
-	if b, err := json.Marshal(payload); err == nil {
+	if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
 		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", func(resp *DownloadResponse) error { return nil })
 	}
 

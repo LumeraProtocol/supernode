@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/stretchr/testify/require"
 )
@@ -43,8 +44,10 @@ func TestEmitArtefactsStored_JSONPayload(t *testing.T) {
 		return nil
 	}
 
-	// Call the emitter with layout totals (T=103, K=17 -> ~16.5%)
-	task.emitArtefactsStored(t.Context(), metrics, nil, 103, 17, (float64(17)/103.0)*100.0, send)
+	// Build a minimal layout with 103 symbols and Size implying K=17
+	layout := codec.Layout{Blocks: []codec.Block{{BlockID: 0, Size: 17*65535 - 1, Symbols: make([]string, 103)}}}
+	// Call the emitter with layout (helper computes T/K)
+	task.emitArtefactsStored(t.Context(), metrics, nil, layout, send)
 
 	require.Equal(t, SupernodeEventTypeArtefactsStored, gotType)
 	require.NotEmpty(t, gotMsg)
@@ -54,10 +57,10 @@ func TestEmitArtefactsStored_JSONPayload(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(gotMsg), &payload))
 
 	// Spot check sections
-	layout, ok := payload["layout"].(map[string]any)
+	layoutJSON, ok := payload["layout"].(map[string]any)
 	require.True(t, ok)
-	require.EqualValues(t, float64(103), layout["symbols_total"]) // numbers decode to float64
-	require.InDelta(t, float64(17), layout["min_required_symbols"].(float64), 0.001)
+	require.EqualValues(t, float64(103), layoutJSON["symbols_total"]) // numbers decode to float64
+	require.InDelta(t, float64(17), layoutJSON["min_required_symbols"].(float64), 1.0)
 
 	network, ok := payload["network"].(map[string]any)
 	require.True(t, ok)

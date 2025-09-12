@@ -167,23 +167,8 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
-	// Compute layout totals and theoretical minimums for analytics
-	var layoutSymbolsTotal int
-	var layoutMinRequiredSymbols int
-	const symbolSize int64 = 65535 // RaptorQ symbol size (bytes)
-	for _, b := range encResp.Metadata.Blocks {
-		layoutSymbolsTotal += len(b.Symbols)
-		if b.Size > 0 {
-			layoutMinRequiredSymbols += int((b.Size + symbolSize - 1) / symbolSize)
-		}
-	}
-	layoutMinRequiredPct := 0.0
-	if layoutSymbolsTotal > 0 {
-		layoutMinRequiredPct = (float64(layoutMinRequiredSymbols) / float64(layoutSymbolsTotal)) * 100.0
-	}
-
-	// Emit compact analytics payload
-	task.emitArtefactsStored(ctx, metrics, fields, layoutSymbolsTotal, layoutMinRequiredSymbols, layoutMinRequiredPct, send)
+	// Emit compact analytics payload (helper computes layout stats internally)
+	task.emitArtefactsStored(ctx, metrics, fields, encResp.Metadata, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
