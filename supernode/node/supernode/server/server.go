@@ -58,16 +58,16 @@ func (server *Server) Run(ctx context.Context) error {
 		logtrace.Fatal(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
 	}
 
-	// Optimized for streaming 1GB files with 4MB chunks (10 concurrent streams)
+	// Tuned for 1GB max files with 4MB chunks. Reduce in-flight memory.
 	opts := grpcserver.DefaultServerOptions()
 
-	opts.MaxRecvMsgSize = (16 * 1024 * 1024)         // 16MB (supports 4MB chunks + overhead)
-	opts.MaxSendMsgSize = (16 * 1024 * 1024)         // 16MB for download streaming
-	opts.InitialWindowSize = (16 * 1024 * 1024)      // 16MB per stream (4x chunk size)
-	opts.InitialConnWindowSize = (160 * 1024 * 1024) // 160MB (16MB x 10 streams)
-	opts.MaxConcurrentStreams = 20                   // Limit to prevent resource exhaustion
-	opts.ReadBufferSize = (8 * 1024 * 1024)          // 8MB TCP buffer
-	opts.WriteBufferSize = (8 * 1024 * 1024)         // 8MB TCP buffer
+	opts.MaxRecvMsgSize = (8 * 1024 * 1024)         // 8MB supports 4MB chunks + overhead
+	opts.MaxSendMsgSize = (8 * 1024 * 1024)         // 8MB for download streaming
+	opts.InitialWindowSize = (4 * 1024 * 1024)      // 4MB per-stream window ~ chunk size
+	opts.InitialConnWindowSize = (64 * 1024 * 1024) // 64MB per-connection window
+	opts.MaxConcurrentStreams = 20                  // Prevent resource exhaustion
+	opts.ReadBufferSize = (1 * 1024 * 1024)         // 1MB TCP buffer
+	opts.WriteBufferSize = (1 * 1024 * 1024)        // 1MB TCP buffer
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
