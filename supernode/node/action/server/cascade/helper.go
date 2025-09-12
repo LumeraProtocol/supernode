@@ -10,15 +10,15 @@ import (
 )
 
 func initializeHasherAndTempFile() (*blake3.Hasher, *os.File, string, error) {
-	hasher := blake3.New(32, nil)
+    hasher := blake3.New(32, nil)
 
-	tempFilePath := filepath.Join(os.TempDir(), fmt.Sprintf("cascade-upload-%d.tmp", os.Getpid()))
-	tempFile, err := os.Create(tempFilePath)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("could not create temp file: %w", err)
-	}
+    // Create a unique temp file to avoid collisions across concurrent calls
+    tempFile, err := os.CreateTemp("", "cascade-upload-*")
+    if err != nil {
+        return nil, nil, "", fmt.Errorf("could not create temp file: %w", err)
+    }
 
-	return hasher, tempFile, tempFilePath, nil
+    return hasher, tempFile, tempFile.Name(), nil
 }
 
 func replaceTempDirWithTaskDir(taskID, tempFilePath string, tempFile *os.File) (targetPath string, err error) {
