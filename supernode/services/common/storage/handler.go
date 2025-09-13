@@ -14,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
@@ -66,10 +67,6 @@ func (h *StorageHandler) StoreBytesIntoP2P(ctx context.Context, data []byte, typ
 }
 
 // StoreBatch stores into P2P an array of byte slices.
-//
-// Note: The underlying P2P client returns (successRatePct, requests, err).
-// This handler intentionally ignores the metrics and only propagates error,
-// as callers of this common storage path historically consumed only errors.
 func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int) error {
 	val := ctx.Value(logtrace.CorrelationIDKey)
 	taskID := ""
@@ -78,9 +75,9 @@ func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int)
 	}
 
 	logtrace.Info(ctx, "task_id in storeList", logtrace.Fields{logtrace.FieldTaskID: taskID})
-
-	_, _, err := h.P2PClient.StoreBatch(ctx, list, typ, taskID)
-	return err
+	// Add taskID to context for metrics
+	ctx = p2pmetrics.WithTaskID(ctx, taskID)
+	return h.P2PClient.StoreBatch(ctx, list, typ, taskID)
 }
 
 // StoreRaptorQSymbolsIntoP2P stores RaptorQ symbols into P2P
@@ -170,7 +167,9 @@ func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root str
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if _, _, err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
+	// Add taskID to context for metrics
+	ctx = p2pmetrics.WithTaskID(ctx, taskID)
+	if err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 
