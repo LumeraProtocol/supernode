@@ -76,7 +76,7 @@ func (task *CascadeRegistrationTask) Download(
 	// Notify: network retrieval phase begins
 	task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
 
-	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields)
+	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields, send)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
@@ -88,7 +88,7 @@ func (task *CascadeRegistrationTask) Download(
 	return nil
 }
 
-func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) (string, string, error) {
+func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields, send func(resp *DownloadResponse) error) (string, string, error) {
 	logtrace.Info(ctx, "started downloading the artifacts", fields)
 
 	var (
@@ -134,7 +134,7 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	fields["layout_fetch_ms"] = layoutFetchMS
 	fields["layout_decode_ms"] = layoutDecodeMS
 	fields["layout_attempts"] = layoutAttempts
-	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID)
+	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID, send)
 }
 
 func (task *CascadeRegistrationTask) restoreFileFromLayout(
@@ -142,6 +142,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	layout codec.Layout,
 	dataHash string,
 	actionID string,
+	send func(resp *DownloadResponse) error,
 ) (string, string, error) {
 
 	fields := logtrace.Fields{
@@ -190,7 +191,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	// Set minimal retrieve summary and emit event strictly from internal collector
 	cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
 	if b, err := json.MarshalIndent(cm.BuildDownloadEventPayloadFromCollector(actionID), "", "  "); err == nil {
-		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", func(resp *DownloadResponse) error { return nil })
+		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
 	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
