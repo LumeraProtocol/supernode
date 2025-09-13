@@ -2,12 +2,11 @@ package supernodeservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
@@ -346,10 +345,44 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 				event.KeyTaskID:    in.TaskId,
 				event.KeyActionID:  in.ActionID,
 			}
-			// Extract success rate if provided in message format: "... success_rate=NN.NN%"
+			// For artefacts stored, parse JSON payload with metrics (new minimal shape)
 			if resp.EventType == cascade.SupernodeEventType_ARTEFACTS_STORED {
-				if rate, ok := parseSuccessRate(resp.Message); ok {
-					edata[event.KeySuccessRate] = rate
+				var payload map[string]any
+				if err := json.Unmarshal([]byte(resp.Message), &payload); err == nil {
+					if store, ok := payload["store"].(map[string]any); ok {
+						if v, ok := store["duration_ms"].(float64); ok {
+							edata[event.KeyStoreDurationMS] = int64(v)
+						}
+						if v, ok := store["symbols_first_pass"].(float64); ok {
+							edata[event.KeyStoreSymbolsFirstPass] = int64(v)
+						}
+						if v, ok := store["symbols_total"].(float64); ok {
+							edata[event.KeyStoreSymbolsTotal] = int64(v)
+						}
+						if v, ok := store["id_files_count"].(float64); ok {
+							edata[event.KeyStoreIDFilesCount] = int64(v)
+						}
+						if v, ok := store["calls_by_ip"]; ok {
+							edata[event.KeyStoreCallsByIP] = v
+						}
+					} else {
+						// Legacy fallbacks (previous SDK behavior)
+						if v, ok := payload["success_rate"].(float64); ok {
+							edata[event.KeySuccessRate] = v
+						}
+						if v, ok := payload["meta_duration_ms"].(float64); ok {
+							edata[event.KeyMetaDurationMS] = int64(v)
+						}
+						if v, ok := payload["sym_duration_ms"].(float64); ok {
+							edata[event.KeySymDurationMS] = int64(v)
+						}
+						if v, ok := payload["sym_nodes"]; ok {
+							edata[event.KeySymNodes] = v
+						}
+						if v, ok := payload["meta_nodes"]; ok {
+							edata[event.KeyMetaNodes] = v
+						}
+					}
 				}
 			}
 			in.EventLogger(ctx, toSdkEventWithMessage(resp.EventType, resp.Message), resp.Message, edata)
@@ -395,9 +428,9 @@ func (a *cascadeAdapter) GetSupernodeStatus(ctx context.Context) (SupernodeStatu
 
 // CascadeSupernodeDownload downloads a file from a supernode gRPC stream
 func (a *cascadeAdapter) CascadeSupernodeDownload(
-    ctx context.Context,
-    in *CascadeSupernodeDownloadRequest,
-    opts ...grpc.CallOption,
+	ctx context.Context,
+	in *CascadeSupernodeDownloadRequest,
+	opts ...grpc.CallOption,
 ) (*CascadeSupernodeDownloadResponse, error) {
 
 	// Use provided context as-is (no correlation IDs)
@@ -426,11 +459,11 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 	}
 	defer outFile.Close()
 
-    var (
-        bytesWritten   int64
-        chunkIndex     int
-        startedEmitted bool
-    )
+	var (
+		bytesWritten   int64
+		chunkIndex     int
+		startedEmitted bool
+	)
 
 	// 3. Receive streamed responses
 	for {
@@ -449,28 +482,51 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			a.logger.Info(ctx, "supernode event", "event_type", x.Event.EventType, "message", x.Event.Message, "action_id", in.ActionID)
 
 			if in.EventLogger != nil {
-				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, event.EventData{
+				edata := event.EventData{
 					event.KeyActionID:  in.ActionID,
 					event.KeyEventType: x.Event.EventType,
 					event.KeyMessage:   x.Event.Message,
-				})
+				}
+				// Parse detailed metrics for downloaded event if JSON payload provided (new minimal shape)
+				if x.Event.EventType == cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED {
+					var payload map[string]any
+					if err := json.Unmarshal([]byte(x.Event.Message), &payload); err == nil {
+						if retrieve, ok := payload["retrieve"].(map[string]any); ok {
+							if v, ok := retrieve["found_local"].(float64); ok {
+								edata[event.KeyRetrieveFoundLocal] = int64(v)
+							}
+							if v, ok := retrieve["retrieve_ms"].(float64); ok {
+								edata[event.KeyRetrieveMS] = int64(v)
+								// Maintain old key for rough duration if consumers expect it
+								edata[event.KeyDHTDurationMS] = int64(v)
+							}
+							if v, ok := retrieve["decode_ms"].(float64); ok {
+								edata[event.KeyDecodeMS] = int64(v)
+							}
+							if v, ok := retrieve["calls_by_ip"]; ok {
+								edata[event.KeyRetrieveCallsByIP] = v
+							}
+						}
+					}
+				}
+				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, edata)
 			}
 
-		// 3b. Actual data chunk
-        case *cascade.DownloadResponse_Chunk:
-            data := x.Chunk.Data
-            if len(data) == 0 {
-                continue
-            }
-            if !startedEmitted {
-                if in.EventLogger != nil {
-                    in.EventLogger(ctx, event.SDKDownloadStarted, "Download started", event.EventData{event.KeyActionID: in.ActionID})
-                }
-                startedEmitted = true
-            }
-            if _, err := outFile.Write(data); err != nil {
-                return nil, fmt.Errorf("write chunk: %w", err)
-            }
+			// 3b. Actual data chunk
+		case *cascade.DownloadResponse_Chunk:
+			data := x.Chunk.Data
+			if len(data) == 0 {
+				continue
+			}
+			if !startedEmitted {
+				if in.EventLogger != nil {
+					in.EventLogger(ctx, event.SDKDownloadStarted, "Download started", event.EventData{event.KeyActionID: in.ActionID})
+				}
+				startedEmitted = true
+			}
+			if _, err := outFile.Write(data); err != nil {
+				return nil, fmt.Errorf("write chunk: %w", err)
+			}
 
 			bytesWritten += int64(len(data))
 			chunkIndex++
@@ -481,19 +537,19 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 	a.logger.Info(ctx, "download complete", "bytes_written", bytesWritten, "path", in.OutputPath, "action_id", in.ActionID)
 
-    if in.EventLogger != nil {
-        in.EventLogger(ctx, event.SDKDownloadCompleted, "Download completed", event.EventData{event.KeyActionID: in.ActionID, event.KeyOutputPath: in.OutputPath})
-    }
-    return &CascadeSupernodeDownloadResponse{
-        Success:    true,
-        Message:    "artefact downloaded",
-        OutputPath: in.OutputPath,
-    }, nil
+	if in.EventLogger != nil {
+		in.EventLogger(ctx, event.SDKDownloadCompleted, "Download completed", event.EventData{event.KeyActionID: in.ActionID, event.KeyOutputPath: in.OutputPath})
+	}
+	return &CascadeSupernodeDownloadResponse{
+		Success:    true,
+		Message:    "artefact downloaded",
+		OutputPath: in.OutputPath,
+	}, nil
 }
 
 // toSdkEvent converts a supernode-side enum value into an internal SDK EventType.
 func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
-    switch e {
+	switch e {
 	case cascade.SupernodeEventType_ACTION_RETRIEVED:
 		return event.SupernodeActionRetrieved
 	case cascade.SupernodeEventType_ACTION_FEE_VERIFIED:
@@ -516,14 +572,14 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeArtefactsStored
 	case cascade.SupernodeEventType_ACTION_FINALIZED:
 		return event.SupernodeActionFinalized
-    case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
-        return event.SupernodeArtefactsDownloaded
-    case cascade.SupernodeEventType_NETWORK_RETRIEVE_STARTED:
-        return event.SupernodeNetworkRetrieveStarted
-    case cascade.SupernodeEventType_DECODE_COMPLETED:
-        return event.SupernodeDecodeCompleted
-    case cascade.SupernodeEventType_SERVE_READY:
-        return event.SupernodeServeReady
+	case cascade.SupernodeEventType_ARTEFACTS_DOWNLOADED:
+		return event.SupernodeArtefactsDownloaded
+	case cascade.SupernodeEventType_NETWORK_RETRIEVE_STARTED:
+		return event.SupernodeNetworkRetrieveStarted
+	case cascade.SupernodeEventType_DECODE_COMPLETED:
+		return event.SupernodeDecodeCompleted
+	case cascade.SupernodeEventType_SERVE_READY:
+		return event.SupernodeServeReady
 	case cascade.SupernodeEventType_FINALIZE_SIMULATED:
 		return event.SupernodeFinalizeSimulated
 	case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
@@ -540,20 +596,6 @@ func toSdkEventWithMessage(e cascade.SupernodeEventType, msg string) event.Event
 		return event.SupernodeFinalizeSimulated
 	}
 	return toSdkEvent(e)
-}
-
-var rateRe = regexp.MustCompile(`success_rate=([0-9]+(?:\.[0-9]+)?)%`)
-
-func parseSuccessRate(msg string) (float64, bool) {
-	m := rateRe.FindStringSubmatch(msg)
-	if len(m) != 2 {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(m[1], 64)
-	if err != nil {
-		return 0, false
-	}
-	return f, true
 }
 
 func toSdkSupernodeStatus(resp *supernode.StatusResponse) *SupernodeStatusresponse {

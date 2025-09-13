@@ -157,18 +157,13 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "Finalize simulation passed", "", send)
 
 	/* 11. Persist artefacts -------------------------------------------------------- */
-	// Persist artefacts to the P2P network.
-	// Aggregation model (context):
-	// - Each underlying StoreBatch returns (ratePct, requests) where requests is
-	//   the number of node RPCs. The aggregated success rate can be computed as a
-	//   weighted average by requests across metadata and symbol batches, yielding
-	//   an overall network success view for the action.
-	metrics, err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields)
-	if err != nil {
+    // Persist artefacts to the P2P network. P2P interfaces return error only;
+    // metrics are summarized at the cascade layer and emitted via event.
+	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return err
 	}
-	// Emit single-line metrics via helper to keep Register clean
-	task.emitArtefactsStored(ctx, metrics, fields, send)
+	// Emit compact analytics payload from centralized metrics collector
+	task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
