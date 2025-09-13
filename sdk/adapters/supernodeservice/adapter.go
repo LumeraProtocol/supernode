@@ -365,23 +365,6 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 						if v, ok := store["calls_by_ip"]; ok {
 							edata[event.KeyStoreCallsByIP] = v
 						}
-					} else {
-						// Legacy fallbacks (previous SDK behavior)
-						if v, ok := payload["success_rate"].(float64); ok {
-							edata[event.KeySuccessRate] = v
-						}
-						if v, ok := payload["meta_duration_ms"].(float64); ok {
-							edata[event.KeyMetaDurationMS] = int64(v)
-						}
-						if v, ok := payload["sym_duration_ms"].(float64); ok {
-							edata[event.KeySymDurationMS] = int64(v)
-						}
-						if v, ok := payload["sym_nodes"]; ok {
-							edata[event.KeySymNodes] = v
-						}
-						if v, ok := payload["meta_nodes"]; ok {
-							edata[event.KeyMetaNodes] = v
-						}
 					}
 				}
 			}
@@ -497,8 +480,6 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 							}
 							if v, ok := retrieve["retrieve_ms"].(float64); ok {
 								edata[event.KeyRetrieveMS] = int64(v)
-								// Maintain old key for rough duration if consumers expect it
-								edata[event.KeyDHTDurationMS] = int64(v)
 							}
 							if v, ok := retrieve["decode_ms"].(float64); ok {
 								edata[event.KeyDecodeMS] = int64(v)
