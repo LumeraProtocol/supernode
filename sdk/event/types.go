@@ -57,6 +57,7 @@ const (
     SupernodeServeReady          EventType = "supernode:serve_ready"
     SupernodeUnknown             EventType = "supernode:unknown"
     SupernodeFinalizeSimulationFailed EventType = "supernode:finalize_simulation_failed"
+    SupernodePanicRecovered      EventType = "supernode:panic_recovered"
 )
 
 // EventData is a map of event data attributes using standardized keys

@@ -131,6 +131,12 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	}
 	defer client.Close(ctx)
 
+	a, _ := client.GetSupernodeStatus(ctx)
+
+	logtrace.Info(ctx, "version", logtrace.Fields{
+		"version": a.Version,
+	})
+
 	resp, err := client.HealthCheck(ctx)
-	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING
+	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING && a.Version == "2.3.27"
 }
