@@ -176,7 +176,12 @@ func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
 	retStats["disk-info"] = &diskUse
 	retStats["ban-list"] = s.dht.BanListSnapshot()
 	retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
-	dhtStats["dht_metrics"] = s.dht.MetricsSnapshot()
+
+	// Expose DHT rolling metrics snapshot both under the top-level key (as expected by
+	// the status service) and also within the DHT map for backward compatibility.
+	snapshot := s.dht.MetricsSnapshot()
+	retStats["dht_metrics"] = snapshot
+	dhtStats["dht_metrics"] = snapshot
 
 	return retStats, nil
 }

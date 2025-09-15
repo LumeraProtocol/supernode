@@ -66,8 +66,10 @@ func (server *Server) Run(ctx context.Context) error {
 	opts.InitialWindowSize = (4 * 1024 * 1024)      // 4MB per-stream window ~ chunk size
 	opts.InitialConnWindowSize = (64 * 1024 * 1024) // 64MB per-connection window
 	opts.MaxConcurrentStreams = 20                  // Prevent resource exhaustion
-	opts.ReadBufferSize = (1 * 1024 * 1024)         // 1MB TCP buffer
-	opts.WriteBufferSize = (1 * 1024 * 1024)        // 1MB TCP buffer
+	// Use larger socket buffers to reduce risk of flow-control stalls during long-running
+	// retrieve/stream phases while keeping overall memory limits reasonable.
+	opts.ReadBufferSize = (8 * 1024 * 1024)  // 8MB TCP buffer
+	opts.WriteBufferSize = (8 * 1024 * 1024) // 8MB TCP buffer
 
 	for _, address := range addresses {
 		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.config.Port))
