@@ -22,4 +22,6 @@ const (
     SupernodeEventTypeNetworkRetrieveStarted  SupernodeEventType = 15
     SupernodeEventTypeDecodeCompleted         SupernodeEventType = 16
     SupernodeEventTypeServeReady              SupernodeEventType = 17
+    // Error/exception markers
+    SupernodeEventTypePanicRecovered          SupernodeEventType = 18
 )

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -46,7 +47,18 @@ func (task *CascadeRegistrationTask) Download(
 		} else {
 			task.UpdateStatus(common.StatusTaskCompleted)
 		}
-		task.Cancel()
+	}()
+
+	// Panic recovery for Download: emit event with panic message and return error
+	defer func() {
+		if r := recover(); r != nil {
+			fields[logtrace.FieldError] = fmt.Sprintf("panic: %v", r)
+			fields[logtrace.FieldStackTrace] = string(debug.Stack())
+			logtrace.Error(ctx, "panic recovered during Download", fields)
+            // Emit panic-recovered event for consistent client handling
+            task.streamDownloadEvent(SupernodeEventTypePanicRecovered, fmt.Sprintf("panic recovered: %v", r), "", "", send)
+			err = fmt.Errorf("download panic: %v", r)
+		}
 	}()
 
 	actionDetails, err := task.LumeraClient.GetAction(ctx, req.ActionID)
