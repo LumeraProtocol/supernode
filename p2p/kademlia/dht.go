@@ -464,6 +464,17 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 	dhtStats["peers_count"] = len(s.ht.nodes())
 	dhtStats["peers"] = s.ht.nodes()
 	dhtStats["network"] = s.network.HandleMetricsSnapshot()
+	// Include recent request snapshots for observability
+	if s.network != nil {
+		if overall, byIP := s.network.RecentBatchStoreSnapshot(); len(overall) > 0 || len(byIP) > 0 {
+			dhtStats["recent_batch_store_overall"] = overall
+			dhtStats["recent_batch_store_by_ip"] = byIP
+		}
+		if overall, byIP := s.network.RecentBatchRetrieveSnapshot(); len(overall) > 0 || len(byIP) > 0 {
+			dhtStats["recent_batch_retrieve_overall"] = overall
+			dhtStats["recent_batch_retrieve_by_ip"] = byIP
+		}
+	}
 	dhtStats["database"] = dbStats
 
 	return dhtStats, nil
