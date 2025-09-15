@@ -634,7 +634,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 // ---- retryable RPC helpers -------------------------------------------------
 
 func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
-	writeDL := calcWriteDeadline(timeout, len(data), 2.0) // target ~2 MB/s
+	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
 
 	retried := false
 	for {
@@ -1532,9 +1532,9 @@ func calcWriteDeadline(timeout time.Duration, sizeBytes int, targetMBps float64)
 	base := 2 * time.Second
 	cushion := 5 * time.Second
 
-	// Softer floor: assume ~2 MB/s; increase if you like.
+	// Softer floor: assume ~1 MB/s by default; increase if you like.
 	if targetMBps <= 0 {
-		targetMBps = 2.0
+		targetMBps = 1.0
 	}
 	est := time.Duration(sizeMB / targetMBps * float64(time.Second))
 

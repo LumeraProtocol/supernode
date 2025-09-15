@@ -46,7 +46,8 @@ const (
 	storeSymbolsBatchConcurrency                = 3.0
 	minimumDataStoreSuccessRate                 = 75.0
 
-	maxIterations = 4
+	maxIterations                  = 4
+	macConcurrentNetworkStoreCalls = 16
 )
 
 // DHT represents the state of the queries node in the distributed hash table
@@ -1756,7 +1757,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 
 func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[string]*Node, storageMap map[string][]int, typ int) chan *MessageWithError {
 	responses := make(chan *MessageWithError, len(nodes))
-	maxStore := 48
+	maxStore := macConcurrentNetworkStoreCalls
 	if ln := len(nodes); ln < maxStore {
 		maxStore = ln
 	}
