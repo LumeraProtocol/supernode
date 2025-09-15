@@ -918,13 +918,16 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			}
 
 			if len(requestKeys) == 0 {
+				// No keys to request from this node (e.g., all keys already satisfied elsewhere).
+				// Treat as a successful, no-op call for metrics when there is no error.
 				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
 					IP:         node.IP,
 					Address:    node.String(),
 					Keys:       0,
-					Success:    false,
+					Success:    true,
 					Error:      "",
 					DurationMS: time.Since(callStart).Milliseconds(),
+					Noop:       true,
 				})
 				return
 			}
@@ -966,12 +969,12 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 			}
 
-			// record successful RPC per-node (returned may be 0)
+			// record successful RPC per-node (returned may be 0). Success is true when no error.
 			p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
 				IP:         node.IP,
 				Address:    node.String(),
 				Keys:       returned,
-				Success:    returned > 0,
+				Success:    true,
 				Error:      "",
 				DurationMS: time.Since(callStart).Milliseconds(),
 			})
@@ -1778,6 +1781,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 				responses <- &MessageWithError{Error: ctx.Err(), Receiver: receiver}
 				return
 			default:
+				callStart := time.Now()
 				keysToStore := storageMap[key]
 				toStore := make([][]byte, len(keysToStore))
 				totalBytes := 0
@@ -1792,11 +1796,28 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					"size_before_compress": utils.BytesIntToMB(totalBytes),
 				})
 
+				// Skip empty payloads: avoid sending empty store RPCs, but record a noop metric for visibility.
+				if len(toStore) == 0 {
+					logtrace.Info(ctx, "Skipping store RPC with empty payload", logtrace.Fields{
+						logtrace.FieldModule: "dht",
+						"node":               receiver.String(),
+					})
+					p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+						IP:         receiver.IP,
+						Address:    receiver.String(),
+						Keys:       0,
+						Success:    true,
+						Error:      "",
+						DurationMS: time.Since(callStart).Milliseconds(),
+						Noop:       true,
+					})
+					return
+				}
+
 				data := &BatchStoreDataRequest{Data: toStore, Type: typ}
 				request := s.newMessage(BatchStoreData, receiver, data)
-				start := time.Now()
 				response, err := s.network.Call(ctx, request, false)
-				dur := time.Since(start).Milliseconds()
+				dur := time.Since(callStart).Milliseconds()
 				if err != nil {
 					if !isLocalCancel(err) {
 						s.ignorelist.IncrementCount(receiver)

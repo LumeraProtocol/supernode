@@ -13,6 +13,7 @@ type Call struct {
 	Success    bool   `json:"success"`
 	Error      string `json:"error,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
+	Noop       bool   `json:"noop,omitempty"`
 }
 
 // -------- Lightweight hooks  -------------------------
@@ -162,9 +163,25 @@ func BuildStoreEventPayloadFromCollector(taskID string) map[string]any {
 				"symbols_first_pass": 0,
 				"symbols_total":      0,
 				"id_files_count":     0,
+				"success_rate_pct":   float64(0),
 				"calls_by_ip":        map[string][]Call{},
 			},
 		}
+	}
+	// Compute per-call success rate across first-pass store RPC attempts
+	totalCalls := 0
+	successCalls := 0
+	for _, calls := range s.CallsByIP {
+		for _, c := range calls {
+			totalCalls++
+			if c.Success {
+				successCalls++
+			}
+		}
+	}
+	var successRate float64
+	if totalCalls > 0 {
+		successRate = float64(successCalls) / float64(totalCalls) * 100.0
 	}
 	return map[string]any{
 		"store": map[string]any{
@@ -172,6 +189,7 @@ func BuildStoreEventPayloadFromCollector(taskID string) map[string]any {
 			"symbols_first_pass": s.SymbolsFirstPass,
 			"symbols_total":      s.SymbolsTotal,
 			"id_files_count":     s.IDFilesCount,
+			"success_rate_pct":   successRate,
 			"calls_by_ip":        s.CallsByIP,
 		},
 	}
