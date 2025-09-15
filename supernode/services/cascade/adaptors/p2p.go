@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	loadSymbolsBatchSize = 5000
+	loadSymbolsBatchSize = 3000
 	// Minimum first-pass coverage to store before returning from Register (percent)
 	storeSymbolsPercent = 18
 

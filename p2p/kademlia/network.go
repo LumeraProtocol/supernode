@@ -627,20 +627,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 // ---- retryable RPC helpers -------------------------------------------------
 
 func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
-
-	sizeMB := float64(len(data)) / (1024.0 * 1024.0) // data is your gob-encoded message
-	throughputFloor := 8.0                           // MB/s (~64 Mbps)
-	est := time.Duration(sizeMB / throughputFloor * float64(time.Second))
-	base := 1 * time.Second
-	cushion := 5 * time.Second
-
-	writeDL := base + est + cushion
-	if writeDL < 5*time.Second {
-		writeDL = 5 * time.Second
-	}
-	if writeDL > timeout-1*time.Second {
-		writeDL = timeout - 1*time.Second
-	}
+	writeDL := calcWriteDeadline(timeout, len(data), 2.0) // target ~2 MB/s
 
 	retried := false
 	for {
@@ -1429,4 +1416,43 @@ func readDeadlineFor(msgType int, overall time.Duration) time.Duration {
 	default:
 		return overall // Bulk responses keep full budget
 	}
+}
+
+// calcWriteDeadline returns a conservative write deadline based on payload size.
+// - targetMBps: assumed sustained throughput (lower = more lenient).
+// - We reserve some headroom from overall timeout for server processing/response.
+func calcWriteDeadline(timeout time.Duration, sizeBytes int, targetMBps float64) time.Duration {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	// Leave headroom for server processing + response
+	const reserve = 8 * time.Second
+	maxBudget := timeout - reserve
+	if maxBudget < 5*time.Second {
+		maxBudget = timeout - 1*time.Second
+		if maxBudget < 3*time.Second {
+			maxBudget = 3 * time.Second
+		}
+	}
+
+	sizeMB := float64(sizeBytes) / (1024.0 * 1024.0)
+	base := 2 * time.Second
+	cushion := 5 * time.Second
+
+	// Softer floor: assume ~2 MB/s; increase if you like.
+	if targetMBps <= 0 {
+		targetMBps = 2.0
+	}
+	est := time.Duration(sizeMB / targetMBps * float64(time.Second))
+
+	writeDL := base + est + cushion
+
+	// Ensure a more generous minimum for big-ish payloads
+	if writeDL < 10*time.Second {
+		writeDL = 10 * time.Second
+	}
+	if writeDL > maxBudget {
+		writeDL = maxBudget
+	}
+	return writeDL
 }
