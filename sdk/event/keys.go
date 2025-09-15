@@ -15,7 +15,6 @@ const (
 	KeyProgress         EventDataKey = "progress"
 	KeyEventType        EventDataKey = "event_type"
 	KeyOutputPath       EventDataKey = "output_path"
-	KeySuccessRate      EventDataKey = "success_rate"
 
 	// Upload/download metrics keys (no progress events; start/complete metrics only)
 	KeyBytesTotal     EventDataKey = "bytes_total"
@@ -30,4 +29,20 @@ const (
 	// Task specific keys
 	KeyTaskID   EventDataKey = "task_id"
 	KeyActionID EventDataKey = "action_id"
+
+	// Removed legacy cascade storage metrics keys (meta/sym timings and nodes)
+
+	// Combined store metrics (metadata + symbols) — new minimal only
+	KeyStoreDurationMS EventDataKey = "store_duration_ms"
+	// New minimal store metrics
+	KeyStoreSymbolsFirstPass EventDataKey = "store_symbols_first_pass"
+	KeyStoreSymbolsTotal     EventDataKey = "store_symbols_total"
+	KeyStoreIDFilesCount     EventDataKey = "store_id_files_count"
+	KeyStoreCallsByIP        EventDataKey = "store_calls_by_ip"
+
+	// Download (retrieve) detailed metrics — new minimal only
+	KeyRetrieveFoundLocal EventDataKey = "retrieve_found_local"
+	KeyRetrieveMS         EventDataKey = "retrieve_ms"
+	KeyDecodeMS           EventDataKey = "decode_ms"
+	KeyRetrieveCallsByIP  EventDataKey = "retrieve_calls_by_ip"
 )

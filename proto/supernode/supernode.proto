@@ -154,6 +154,37 @@ message StatusResponse {
     repeated BanEntry ban_list = 4;
     DatabaseStats database = 5;
     DiskStatus disk = 6;
+
+    // Last handled BatchStoreData requests (most recent first)
+    message RecentBatchStoreEntry {
+      int64 time_unix = 1;
+      string sender_id = 2;
+      string sender_ip = 3;
+      int32 keys = 4;
+      int64 duration_ms = 5;
+      bool ok = 6;
+      string error = 7;
+    }
+
+    // Last handled BatchGetValues requests (most recent first)
+    message RecentBatchRetrieveEntry {
+      int64 time_unix = 1;
+      string sender_id = 2;
+      string sender_ip = 3;
+      int32 requested = 4;
+      int32 found = 5;
+      int64 duration_ms = 6;
+      string error = 7;
+    }
+
+    repeated RecentBatchStoreEntry recent_batch_store = 7;
+    repeated RecentBatchRetrieveEntry recent_batch_retrieve = 8;
+
+    // Per-IP buckets: last 10 per sender IP
+    message RecentBatchStoreList { repeated RecentBatchStoreEntry entries = 1; }
+    message RecentBatchRetrieveList { repeated RecentBatchRetrieveEntry entries = 1; }
+    map<string, RecentBatchStoreList> recent_batch_store_by_ip = 9;
+    map<string, RecentBatchRetrieveList> recent_batch_retrieve_by_ip = 10;
   }
 
   P2PMetrics p2p_metrics = 9;

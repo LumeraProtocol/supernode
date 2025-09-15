@@ -54,6 +54,10 @@ func init() {
 type MessageWithError struct {
 	Message *Message
 	Error   error
+	// Extended context for store RPCs
+	KeysCount  int   // number of items attempted in this RPC
+	Receiver   *Node // receiver node info (target)
+	DurationMS int64 // duration of the RPC in milliseconds
 }
 
 // Message structure for kademlia network

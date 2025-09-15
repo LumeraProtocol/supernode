@@ -108,7 +108,7 @@ func TestP2PBasicIntegration(t *testing.T) {
 
 		// Add debug logging
 		log.Printf("Storing batch with keys: %v", expectedKeys)
-		_, _, err := services[0].StoreBatch(ctx, batchData, 0, taskID)
+        err := services[0].StoreBatch(ctx, batchData, 0, taskID)
 		require.NoError(t, err)
 
 		// Add immediate verification

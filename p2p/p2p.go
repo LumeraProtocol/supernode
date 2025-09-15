@@ -117,18 +117,12 @@ func (s *p2p) Store(ctx context.Context, data []byte, typ int) (string, error) {
 	return s.dht.Store(ctx, data, typ)
 }
 
-// StoreBatch will store a batch of values with their Blake3 hash as the key.
-//
-// It proxies to DHT.StoreBatch and returns:
-// - successRatePct: percentage of successful node RPCs during the network store
-// - requests: total node RPCs attempted for the batch
-// - error: error if persistence or network store did not meet minimum success criteria
-func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) (float64, int, error) {
+// StoreBatch stores a batch of values by their Blake3 hash as the key.
+func (s *p2p) StoreBatch(ctx context.Context, data [][]byte, typ int, taskID string) error {
 
 	if !s.running {
-		return 0, 0, errors.New("p2p service is not running")
+		return errors.New("p2p service is not running")
 	}
-
 	return s.dht.StoreBatch(ctx, data, typ, taskID)
 }
 
@@ -182,7 +176,12 @@ func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
 	retStats["disk-info"] = &diskUse
 	retStats["ban-list"] = s.dht.BanListSnapshot()
 	retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
-	dhtStats["dht_metrics"] = s.dht.MetricsSnapshot()
+
+	// Expose DHT rolling metrics snapshot both under the top-level key (as expected by
+	// the status service) and also within the DHT map for backward compatibility.
+	snapshot := s.dht.MetricsSnapshot()
+	retStats["dht_metrics"] = snapshot
+	dhtStats["dht_metrics"] = snapshot
 
 	return retStats, nil
 }
