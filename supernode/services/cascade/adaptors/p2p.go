@@ -63,14 +63,21 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 	defer cm.StopStoreCapture(req.TaskID)
 
 	start := time.Now()
-	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles)
+	var firstPassSymbols, totalSymbols int
+	// Always record a summary for the session, even if an error occurs.
+	defer func() {
+		dur := time.Since(start).Milliseconds()
+		cm.SetStoreSummary(req.TaskID, firstPassSymbols, totalSymbols, len(req.IDFiles), dur)
+	}()
+
+	fps, tot, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles)
+	// Capture progress for summary emission in defer
+	firstPassSymbols, totalSymbols = fps, tot
 	if err != nil {
 		return errors.Wrap(err, "error storing artefacts")
 	}
-	dur := time.Since(start).Milliseconds()
+
 	logtrace.Info(ctx, "artefacts have been stored", logtrace.Fields{"taskID": req.TaskID, "symbols_first_pass": firstPassSymbols, "symbols_total": totalSymbols, "id_files_count": len(req.IDFiles)})
-	// Record store summary for later event emission
-	cm.SetStoreSummary(req.TaskID, firstPassSymbols, totalSymbols, len(req.IDFiles), dur)
 	return nil
 }
 

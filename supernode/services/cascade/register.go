@@ -2,7 +2,9 @@ package cascade
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
@@ -48,14 +50,13 @@ func (task *CascadeRegistrationTask) Register(
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "Cascade registration request received", fields)
 
-	// Ensure task status and resources are finalized regardless of outcome
+	// Ensure task status is finalized regardless of outcome
 	defer func() {
 		if err != nil {
 			task.UpdateStatus(common.StatusTaskCanceled)
 		} else {
 			task.UpdateStatus(common.StatusTaskCompleted)
 		}
-		task.Cancel()
 	}()
 
 	// Always attempt to remove the uploaded file path
@@ -66,6 +67,20 @@ func (task *CascadeRegistrationTask) Register(
 			} else {
 				logtrace.Info(ctx, "Uploaded file cleaned up", fields)
 			}
+		}
+	}()
+
+	// Panic recovery: must run before status/cleanup defers (LIFO)
+	defer func() {
+		if r := recover(); r != nil {
+			// Log panic with stacktrace and emit an error event containing the panic message
+			fields[logtrace.FieldError] = fmt.Sprintf("panic: %v", r)
+			fields[logtrace.FieldStackTrace] = string(debug.Stack())
+			logtrace.Error(ctx, "panic recovered during Register", fields)
+			// Emit panic-recovered event for consistent client handling
+			task.streamEvent(SupernodeEventTypePanicRecovered, fmt.Sprintf("panic recovered: %v", r), "", send)
+			// Ensure function returns an error so callers know the operation failed
+			err = fmt.Errorf("register panic: %v", r)
 		}
 	}()
 
@@ -157,9 +172,11 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "Finalize simulation passed", "", send)
 
 	/* 11. Persist artefacts -------------------------------------------------------- */
-    // Persist artefacts to the P2P network. P2P interfaces return error only;
-    // metrics are summarized at the cascade layer and emitted via event.
+	// Persist artefacts to the P2P network. P2P interfaces return error only;
+	// metrics are summarized at the cascade layer and emitted via event.
 	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
+		// Even on failure, emit whatever metrics were captured so far.
+		task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 		return err
 	}
 	// Emit compact analytics payload from centralized metrics collector

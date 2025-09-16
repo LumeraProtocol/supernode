@@ -2,7 +2,6 @@ package lumera
 
 import (
 	"testing"
-	"time"
 )
 
 func TestNormaliseAddr(t *testing.T) {
@@ -109,15 +108,3 @@ func TestGrpcConnectionMethods(t *testing.T) {
 		t.Errorf("GetConn() with nil connection should return nil, got %v", grpcConn)
 	}
 }
-
-func TestConnectionConstants(t *testing.T) {
-	// Test that our constants are reasonable
-	if keepaliveTime < 10*time.Second {
-		t.Errorf("keepaliveTime too short: %v", keepaliveTime)
-	}
-
-	if keepaliveTimeout >= keepaliveTime {
-		t.Errorf("keepaliveTimeout should be less than keepaliveTime: %v >= %v", keepaliveTimeout, keepaliveTime)
-	}
-}
-

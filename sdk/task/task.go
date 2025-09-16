@@ -131,6 +131,21 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	}
 	defer client.Close(ctx)
 
+	a, aErr := client.GetSupernodeStatus(ctx)
+	if aErr != nil || a == nil {
+		// Avoid nil dereference; treat as not serving when status unavailable
+		logtrace.Info(ctx, "supernode status unavailable", logtrace.Fields{
+			logtrace.FieldMethod: "isServing",
+			logtrace.FieldError:  fmt.Sprintf("%v", aErr),
+		})
+		return false
+	}
+
+	logtrace.Info(ctx, "version", logtrace.Fields{
+		"version": a.Version,
+		"ip":      a.IPAddress,
+	})
+
 	resp, err := client.HealthCheck(ctx)
 	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING
 }

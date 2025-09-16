@@ -247,17 +247,31 @@ func decodeMetadataFile(data string) (layout codec.Layout, err error) {
 }
 
 func verifyIDs(ticketMetadata, metadata codec.Layout) error {
-	// Verify that the symbol identifiers match between versions
-	if err := utils.EqualStrList(ticketMetadata.Blocks[0].Symbols, metadata.Blocks[0].Symbols); err != nil {
-		return errors.Errorf("symbol identifiers don't match: %w", err)
-	}
+    // Basic structural checks to avoid panics
+    if len(ticketMetadata.Blocks) == 0 {
+        return errors.New("ticket metadata has no blocks")
+    }
+    if len(metadata.Blocks) == 0 {
+        return errors.New("encoded metadata has no blocks")
+    }
+    if len(ticketMetadata.Blocks[0].Symbols) == 0 {
+        return errors.New("ticket metadata has no symbols")
+    }
+    if len(metadata.Blocks[0].Symbols) == 0 {
+        return errors.New("encoded metadata has no symbols")
+    }
 
-	// Verify that the block hashes match
-	if ticketMetadata.Blocks[0].Hash != metadata.Blocks[0].Hash {
-		return errors.New("block hashes don't match")
-	}
+    // Verify that the symbol identifiers match between versions
+    if err := utils.EqualStrList(ticketMetadata.Blocks[0].Symbols, metadata.Blocks[0].Symbols); err != nil {
+        return errors.Errorf("symbol identifiers don't match: %w", err)
+    }
 
-	return nil
+    // Verify that the block hashes match
+    if ticketMetadata.Blocks[0].Hash != metadata.Blocks[0].Hash {
+        return errors.New("block hashes don't match")
+    }
+
+    return nil
 }
 
 // verifyActionFee checks if the action fee is sufficient for the given data size

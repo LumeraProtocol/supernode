@@ -66,4 +66,6 @@ enum SupernodeEventType {
   NETWORK_RETRIEVE_STARTED = 15; // Supernode started pulling symbols from network
   DECODE_COMPLETED = 16;         // File reconstructed and verified; ready on disk
   SERVE_READY = 17;              // File is ready to be streamed to client
+  // Error/exception markers
+  PANIC_RECOVERED = 18;          // Server recovered from a panic; message contains details
 }

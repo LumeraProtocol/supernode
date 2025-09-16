@@ -565,6 +565,8 @@ func toSdkEvent(e cascade.SupernodeEventType) event.EventType {
 		return event.SupernodeFinalizeSimulated
 	case cascade.SupernodeEventType_FINALIZE_SIMULATION_FAILED:
 		return event.SupernodeFinalizeSimulationFailed
+	case cascade.SupernodeEventType_PANIC_RECOVERED:
+		return event.SupernodePanicRecovered
 	default:
 		return event.SupernodeUnknown
 	}

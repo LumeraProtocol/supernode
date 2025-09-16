@@ -9,16 +9,14 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 )
 
 const (
-	defaultLumeraPort = "9090"
-
-	keepaliveTime    = 6 * time.Minute
-	keepaliveTimeout = 10 * time.Second
+	defaultLumeraPort      = "9090"
+	connectionReadyTimeout = 10 * time.Second
 )
 
 // Connection defines the interface for a client connection.
@@ -51,6 +49,26 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 	conn, err := createGRPCConnection(ctx, hostPort, creds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
+	}
+
+	// Block here until the connection is READY. This avoids returning before
+	// Lumera is up, while keeping the implementation simple and dependency-light.
+	conn.Connect()
+	// Apply a fixed timeout for readiness.
+	readyCtx, cancel := context.WithTimeout(ctx, connectionReadyTimeout)
+	defer cancel()
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			break
+		}
+		if !conn.WaitForStateChange(readyCtx, state) {
+			_ = conn.Close()
+			if readyCtx.Err() != nil {
+				return nil, fmt.Errorf("timeout waiting (%s) for Lumera gRPC at %s", connectionReadyTimeout, hostPort)
+			}
+			return nil, fmt.Errorf("failed waiting for Lumera gRPC at %s", hostPort)
+		}
 	}
 
 	return &grpcConnection{conn: conn}, nil
@@ -104,18 +122,28 @@ func normaliseAddr(raw string) (hostPort string, useTLS bool, serverName string,
 	return net.JoinHostPort(host, port), false, host, nil
 }
 
-// createGRPCConnection creates a gRPC connection with keepalive
+// createGRPCConnection creates a gRPC connection and blocks until it's ready
 func createGRPCConnection(ctx context.Context, hostPort string, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
-	_ = ctx // Keeping this for api compatibility
+	_ = ctx // kept for API compatibility
+	const serviceConfig = `{
+        "methodConfig": [{
+            "name": [{"service": ""}],
+            "retryPolicy": {
+                "MaxAttempts": 3,
+                "InitialBackoff": "0.1s",
+                "MaxBackoff": "1s",
+                "BackoffMultiplier": 2.0,
+                "RetryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"]
+            }
+        }]
+    }`
+
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                keepaliveTime,
-			Timeout:             keepaliveTimeout,
-			PermitWithoutStream: false,
-		}),
+		grpc.WithDefaultServiceConfig(serviceConfig),
 	}
-
+	// NewClient establishes the client connection without blocking until ready.
+	// Higher layers ensure readiness before proceeding with chain operations.
 	return grpc.NewClient(hostPort, opts...)
 }
 
