@@ -77,8 +77,8 @@ func (task *CascadeRegistrationTask) Register(
 			fields[logtrace.FieldError] = fmt.Sprintf("panic: %v", r)
 			fields[logtrace.FieldStackTrace] = string(debug.Stack())
 			logtrace.Error(ctx, "panic recovered during Register", fields)
-            // Emit panic-recovered event for consistent client handling
-            task.streamEvent(SupernodeEventTypePanicRecovered, fmt.Sprintf("panic recovered: %v", r), "", send)
+			// Emit panic-recovered event for consistent client handling
+			task.streamEvent(SupernodeEventTypePanicRecovered, fmt.Sprintf("panic recovered: %v", r), "", send)
 			// Ensure function returns an error so callers know the operation failed
 			err = fmt.Errorf("register panic: %v", r)
 		}
@@ -175,6 +175,8 @@ func (task *CascadeRegistrationTask) Register(
 	// Persist artefacts to the P2P network. P2P interfaces return error only;
 	// metrics are summarized at the cascade layer and emitted via event.
 	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
+		// Even on failure, emit whatever metrics were captured so far.
+		task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 		return err
 	}
 	// Emit compact analytics payload from centralized metrics collector
