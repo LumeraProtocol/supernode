@@ -2,95 +2,66 @@ package lumera
 
 import (
 	"testing"
-	"time"
 )
 
-func TestNormaliseAddr(t *testing.T) {
-	tests := []struct {
-		name           string
-		input          string
-		expectedHost   string
-		expectedTLS    bool
-		expectedServer string
-		expectError    bool
+func TestGenerateCandidates(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		wantTLS   int // count
+		wantPlain int // count
+		wantErr   bool
 	}{
-		{
-			name:           "https scheme",
-			input:          "https://grpc.testnet.lumera.io",
-			expectedHost:   "grpc.testnet.lumera.io:443",
-			expectedTLS:    true,
-			expectedServer: "grpc.testnet.lumera.io",
-			expectError:    false,
-		},
-		{
-			name:           "grpcs scheme with port",
-			input:          "grpcs://grpc.node9x.com:7443",
-			expectedHost:   "grpc.node9x.com:7443",
-			expectedTLS:    true,
-			expectedServer: "grpc.node9x.com",
-			expectError:    false,
-		},
-		{
-			name:           "host with port 443",
-			input:          "grpc.node9x.com:443",
-			expectedHost:   "grpc.node9x.com:443",
-			expectedTLS:    true,
-			expectedServer: "grpc.node9x.com",
-			expectError:    false,
-		},
-		{
-			name:           "host with custom port",
-			input:          "grpc.node9x.com:9090",
-			expectedHost:   "grpc.node9x.com:9090",
-			expectedTLS:    false,
-			expectedServer: "grpc.node9x.com",
-			expectError:    false,
-		},
-		{
-			name:           "host without port",
-			input:          "grpc.testnet.lumera.io",
-			expectedHost:   "grpc.testnet.lumera.io:9090",
-			expectedTLS:    false,
-			expectedServer: "grpc.testnet.lumera.io",
-			expectError:    false,
-		},
-		{
-			name:           "invalid scheme",
-			input:          "ftp://invalid.com",
-			expectedHost:   "",
-			expectedTLS:    false,
-			expectedServer: "",
-			expectError:    true,
-		},
+		{name: "https no port", input: "https://grpc.testnet.lumera.io", wantTLS: 2, wantPlain: 2},
+		{name: "grpcs with port", input: "grpcs://grpc.node9x.com:7443", wantTLS: 1, wantPlain: 1},
+		{name: "http no port", input: "http://example.com", wantTLS: 2, wantPlain: 2},
+		{name: "no scheme no port", input: "grpc.testnet.lumera.io", wantTLS: 2, wantPlain: 2},
+		{name: "no scheme explicit 443", input: "grpc.node9x.com:443", wantTLS: 1, wantPlain: 1},
+		{name: "no scheme explicit 9090", input: "grpc.node9x.com:9090", wantTLS: 1, wantPlain: 1},
+		{name: "unknown scheme still ok", input: "ftp://invalid.com", wantTLS: 2, wantPlain: 2},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hostPort, useTLS, serverName, err := normaliseAddr(tt.input)
-
-			if tt.expectError && err == nil {
-				t.Errorf("normaliseAddr(%s) expected error, got nil", tt.input)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta, err := parseAddrMeta(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
 				return
 			}
-
-			if !tt.expectError && err != nil {
-				t.Errorf("normaliseAddr(%s) unexpected error: %v", tt.input, err)
-				return
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-
-			if !tt.expectError {
-				if hostPort != tt.expectedHost {
-					t.Errorf("normaliseAddr(%s) hostPort = %s, want %s", tt.input, hostPort, tt.expectedHost)
+			cands := generateCandidates(meta)
+			if len(cands) == 0 {
+				t.Fatalf("no candidates generated")
+			}
+			gotTLS, gotPlain := 0, 0
+			seen := map[string]bool{}
+			for _, c := range cands {
+				if seen[c.target+"|"+boolToStr(c.useTLS)] {
+					t.Fatalf("duplicate candidate: %v tls=%v", c.target, c.useTLS)
 				}
-				if useTLS != tt.expectedTLS {
-					t.Errorf("normaliseAddr(%s) useTLS = %v, want %v", tt.input, useTLS, tt.expectedTLS)
+				seen[c.target+"|"+boolToStr(c.useTLS)] = true
+				if c.useTLS {
+					gotTLS++
+				} else {
+					gotPlain++
 				}
-				if serverName != tt.expectedServer {
-					t.Errorf("normaliseAddr(%s) serverName = %s, want %s", tt.input, serverName, tt.expectedServer)
-				}
+			}
+			if gotTLS != tc.wantTLS || gotPlain != tc.wantPlain {
+				t.Fatalf("unexpected counts: got tls=%d plain=%d want tls=%d plain=%d", gotTLS, gotPlain, tc.wantTLS, tc.wantPlain)
 			}
 		})
 	}
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
 
 func TestGrpcConnectionMethods(t *testing.T) {
@@ -110,14 +81,4 @@ func TestGrpcConnectionMethods(t *testing.T) {
 	}
 }
 
-func TestConnectionConstants(t *testing.T) {
-	// Test that our constants are reasonable
-	if keepaliveTime < 10*time.Second {
-		t.Errorf("keepaliveTime too short: %v", keepaliveTime)
-	}
-
-	if keepaliveTimeout >= keepaliveTime {
-		t.Errorf("keepaliveTimeout should be less than keepaliveTime: %v >= %v", keepaliveTimeout, keepaliveTime)
-	}
-}
-
+// no keepalive constants to test anymore

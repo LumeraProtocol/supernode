@@ -3,7 +3,6 @@ package supernode
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
@@ -82,14 +81,22 @@ func Exists(nodes []*types.SuperNode, snAccAddress string) bool {
 }
 
 func GetLatestIP(supernode *types.SuperNode) (string, error) {
-	if len(supernode.PrevIpAddresses) == 0 {
+	if supernode == nil || len(supernode.PrevIpAddresses) == 0 {
 		return "", errors.Errorf("no ip history exists for the supernode")
 	}
-	sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
-		return supernode.PrevIpAddresses[i].GetHeight() > supernode.PrevIpAddresses[j].GetHeight()
-	})
-
-	return supernode.PrevIpAddresses[0].Address, nil
+	var latest *types.IPAddressHistory
+	for _, r := range supernode.PrevIpAddresses {
+		if r == nil {
+			continue
+		}
+		if latest == nil || r.GetHeight() > latest.GetHeight() {
+			latest = r
+		}
+	}
+	if latest == nil {
+		return "", errors.Errorf("no valid ip record in history")
+	}
+	return latest.Address, nil
 }
 
 // GetSupernodeWithLatestAddress gets a supernode by account address and returns comprehensive info
@@ -99,22 +106,25 @@ func (m *module) GetSupernodeWithLatestAddress(ctx context.Context, address stri
 		return nil, fmt.Errorf("failed to get supernode: %w", err)
 	}
 
-	// Get latest IP address
+	// Get latest IP address by max height
 	var latestAddress string
-	if len(supernode.PrevIpAddresses) > 0 {
-		sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
-			return supernode.PrevIpAddresses[i].GetHeight() > supernode.PrevIpAddresses[j].GetHeight()
-		})
-		latestAddress = supernode.PrevIpAddresses[0].Address
+	if addr, err := GetLatestIP(supernode); err == nil {
+		latestAddress = addr
 	}
 
-	// Get latest state
+	// Get latest state by max height
 	var currentState string
-	if len(supernode.States) > 0 {
-		sort.Slice(supernode.States, func(i, j int) bool {
-			return supernode.States[i].Height > supernode.States[j].Height
-		})
-		currentState = supernode.States[0].State.String()
+	var latestState *types.SuperNodeStateRecord
+	for _, s := range supernode.States {
+		if s == nil {
+			continue
+		}
+		if latestState == nil || s.Height > latestState.Height {
+			latestState = s
+		}
+	}
+	if latestState != nil {
+		currentState = latestState.State.String()
 	}
 
 	return &SuperNodeInfo{
@@ -128,9 +138,9 @@ func (m *module) GetSupernodeWithLatestAddress(ctx context.Context, address stri
 
 // ListSuperNodes retrieves all supernodes
 func (m *module) ListSuperNodes(ctx context.Context) (*types.QueryListSuperNodesResponse, error) {
-    resp, err := m.client.ListSuperNodes(ctx, &types.QueryListSuperNodesRequest{})
-    if err != nil {
-        return nil, fmt.Errorf("failed to list supernodes: %w", err)
-    }
-    return resp, nil
+	resp, err := m.client.ListSuperNodes(ctx, &types.QueryListSuperNodesRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list supernodes: %w", err)
+	}
+	return resp, nil
 }
