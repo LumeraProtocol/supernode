@@ -3,7 +3,6 @@ package lumera
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
@@ -104,26 +103,15 @@ func (a *Adapter) GetSupernodeWithLatestAddress(ctx context.Context, address str
 		return nil, fmt.Errorf("received nil response for supernode %s", address)
 	}
 
-	// Sort PrevIpAddresses by height in descending order
-	sort.Slice(resp.PrevIpAddresses, func(i, j int) bool {
-		return resp.PrevIpAddresses[i].Height > resp.PrevIpAddresses[j].Height
-	})
-
-	// Sort States by height in descending order
-	sort.Slice(resp.States, func(i, j int) bool {
-		return resp.States[i].Height > resp.States[j].Height
-	})
-
-	// Extract latest address
+	// Determine latest address/state strictly by max height
 	latestAddress := ""
-	if len(resp.PrevIpAddresses) > 0 {
-		latestAddress = resp.PrevIpAddresses[0].Address
+	if addr, err := getLatestIP(resp); err == nil {
+		latestAddress = addr
 	}
 
-	// Extract current state
 	currentState := ""
-	if len(resp.States) > 0 {
-		currentState = resp.States[0].State.String()
+	if st, err := getLatestState(resp); err == nil && st != nil {
+		currentState = st.State.String()
 	}
 
 	info := &SuperNodeInfo{
@@ -283,17 +271,19 @@ func getLatestState(supernode *sntypes.SuperNode) (*sntypes.SuperNodeStateRecord
 		return nil, fmt.Errorf("no state history exists for the supernode")
 	}
 
-	// Sort by height in descending order to get the latest first
-	sort.Slice(supernode.States, func(i, j int) bool {
-		return supernode.States[i].Height > supernode.States[j].Height
-	})
-
-	// Access the latest state safely
-	if supernode.States[0] == nil {
-		return nil, fmt.Errorf("latest state in history is nil")
+	var latest *sntypes.SuperNodeStateRecord
+	for _, s := range supernode.States {
+		if s == nil {
+			continue
+		}
+		if latest == nil || s.Height > latest.Height {
+			latest = s
+		}
 	}
-
-	return supernode.States[0], nil
+	if latest == nil {
+		return nil, fmt.Errorf("no valid state in history")
+	}
+	return latest, nil
 }
 
 func getLatestIP(supernode *sntypes.SuperNode) (string, error) {
@@ -306,15 +296,17 @@ func getLatestIP(supernode *sntypes.SuperNode) (string, error) {
 		return "", fmt.Errorf("no ip history exists for the supernode")
 	}
 
-	// Sort by height in descending order to get the latest first
-	sort.Slice(supernode.PrevIpAddresses, func(i, j int) bool {
-		return supernode.PrevIpAddresses[i].Height > supernode.PrevIpAddresses[j].Height
-	})
-
-	// Access the latest IP address safely
-	if supernode.PrevIpAddresses[0] == nil {
-		return "", fmt.Errorf("latest IP address in history is nil")
+	var latest *sntypes.IPAddressHistory
+	for _, r := range supernode.PrevIpAddresses {
+		if r == nil {
+			continue
+		}
+		if latest == nil || r.Height > latest.Height {
+			latest = r
+		}
 	}
-
-	return supernode.PrevIpAddresses[0].Address, nil
+	if latest == nil {
+		return "", fmt.Errorf("no valid IP address in history")
+	}
+	return latest.Address, nil
 }
