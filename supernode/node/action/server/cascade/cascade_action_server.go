@@ -7,11 +7,13 @@ import (
 	"os"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	cascadecommon "github.com/LumeraProtocol/supernode/v2/pkg/cascade"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type ActionServer struct {
@@ -74,6 +76,12 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 
 	ctx := stream.Context()
+	skipStorage := false
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := md.Get(cascadecommon.SkipArtifactStorageHeader); len(values) > 0 && values[0] == cascadecommon.SkipArtifactStorageHeaderValue {
+			skipStorage = true
+		}
+	}
 	logtrace.Info(ctx, "client streaming request to upload cascade input data received", fields)
 
 	const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
@@ -185,12 +193,15 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 
 	// Process the complete data
 	task := server.factory.NewCascadeRegistrationTask()
+	fields[cascadecommon.LogFieldSkipStorage] = skipStorage
+
 	err = task.Register(ctx, &cascadeService.RegisterRequest{
-		TaskID:   metadata.TaskId,
-		ActionID: metadata.ActionId,
-		DataHash: hash,
-		DataSize: totalSize,
-		FilePath: targetPath,
+		TaskID:              metadata.TaskId,
+		ActionID:            metadata.ActionId,
+		DataHash:            hash,
+		DataSize:            totalSize,
+		FilePath:            targetPath,
+		SkipArtifactStorage: skipStorage,
 	}, func(resp *cascadeService.RegisterResponse) error {
 		grpcResp := &pb.RegisterResponse{
 			EventType: pb.SupernodeEventType(resp.EventType),
@@ -308,21 +319,21 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		"chunk_size": chunkSize,
 	})
 
-    // Announce: file is ready to be served to the client
-    if err := stream.Send(&pb.DownloadResponse{
-        ResponseType: &pb.DownloadResponse_Event{
-            Event: &pb.DownloadEvent{
-                EventType: pb.SupernodeEventType_SERVE_READY,
-                Message:   "File available for download",
-            },
-        },
-    }); err != nil {
-        logtrace.Error(ctx, "failed to send serve-ready event", logtrace.Fields{logtrace.FieldError: err.Error()})
-        return err
-    }
+	// Announce: file is ready to be served to the client
+	if err := stream.Send(&pb.DownloadResponse{
+		ResponseType: &pb.DownloadResponse_Event{
+			Event: &pb.DownloadEvent{
+				EventType: pb.SupernodeEventType_SERVE_READY,
+				Message:   "File available for download",
+			},
+		},
+	}); err != nil {
+		logtrace.Error(ctx, "failed to send serve-ready event", logtrace.Fields{logtrace.FieldError: err.Error()})
+		return err
+	}
 
-    // Split and stream the file using adaptive chunk size
-    for i := 0; i < len(restoredFile); i += chunkSize {
+	// Split and stream the file using adaptive chunk size
+	for i := 0; i < len(restoredFile); i += chunkSize {
 		end := i + chunkSize
 		if end > len(restoredFile) {
 			end = len(restoredFile)
