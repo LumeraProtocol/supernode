@@ -14,8 +14,9 @@ import (
 
 type CascadeTask struct {
 	BaseTask
-	filePath string
-	actionId string
+	filePath            string
+	actionId            string
+	skipArtifactStorage bool
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
@@ -74,6 +75,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	var lastErr error
 	for idx, sn := range supernodes {
+		req.SkipArtifactStorage = t.skipArtifactStorage
 		// 1
 		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
@@ -103,21 +105,25 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 }
 
 func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {
-    client, err := factory.CreateClient(ctx, sn)
-    if err != nil {
-        return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
-    }
-    defer client.Close(ctx)
+	client, err := factory.CreateClient(ctx, sn)
+	if err != nil {
+		return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
+	}
+	defer client.Close(ctx)
 
-    // Emit connection established event for observability
-    t.LogEvent(ctx, event.SDKConnectionEstablished, "Connection to supernode established", event.EventData{
-        event.KeySupernode:        sn.GrpcEndpoint,
-        event.KeySupernodeAddress: sn.CosmosAddress,
-    })
+	// Emit connection established event for observability
+	t.LogEvent(ctx, event.SDKConnectionEstablished, "Connection to supernode established", event.EventData{
+		event.KeySupernode:        sn.GrpcEndpoint,
+		event.KeySupernodeAddress: sn.CosmosAddress,
+	})
 
-    req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
-        t.LogEvent(ctx, evt, msg, data)
-    }
+	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
+		if evt == event.SupernodeArtefactsStored {
+			t.skipArtifactStorage = true
+			req.SkipArtifactStorage = true
+		}
+		t.LogEvent(ctx, evt, msg, data)
+	}
 	// Use ctx directly; per-phase timers are applied inside the adapter
 	resp, err := client.RegisterCascade(ctx, req)
 	if err != nil {
