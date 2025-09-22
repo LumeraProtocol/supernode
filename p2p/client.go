@@ -5,6 +5,8 @@ package p2p
 import (
 	"context"
 	"time"
+
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 )
 
 // Client exposes the interfaces for p2p service
@@ -14,10 +16,11 @@ type Client interface {
 	// - localOnly will
 	Retrieve(ctx context.Context, key string, localOnly ...bool) ([]byte, error)
 
-	// BatchRetrieve retrieve data from the kademlia network by keys
+	// BatchRetrieve retrieve data from the kademlia network by keys.
+	// Returns the located values and a stats snapshot describing how the lookup proceeded.
 	// reqCount is the minimum number of keys that are actually required by the caller
-	// to successfully perform the reuquired operation
-	BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error)
+	// to successfully perform the required operation.
+	BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, BatchRetrieveStats, error)
 	// Store store data to the network, which will trigger the iterative store message
 	// - the base58 encoded identifier will be returned
 	Store(ctx context.Context, data []byte, typ int) (string, error)
@@ -59,3 +62,12 @@ type Client interface {
 	// GetLocalKeys returns a list of all keys stored locally
 	GetLocalKeys(ctx context.Context, from *time.Time, to time.Time) ([]string, error)
 }
+
+// BatchRetrieveStats exposes kademlia's retrieval statistics through the public
+// p2p client surface so that callers can introspect how many symbols were
+// located locally vs. over the network.
+type BatchRetrieveStats = kademlia.BatchRetrieveStats
+
+// BatchRetrieveCall captures per-node request/response counts for a batch
+// retrieval attempt.
+type BatchRetrieveCall = kademlia.BatchRetrieveCall

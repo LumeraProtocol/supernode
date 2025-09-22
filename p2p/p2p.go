@@ -143,13 +143,14 @@ func (s *p2p) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 }
 
 // BatchRetrieve retrive the data from the kademlia network
-func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error) {
+func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, BatchRetrieveStats, error) {
 
 	if !s.running {
-		return nil, errors.New("p2p service is not running")
+		return nil, BatchRetrieveStats{}, errors.New("p2p service is not running")
 	}
 
-	return s.dht.BatchRetrieve(ctx, keys, int32(reqCount), txID, localOnly...)
+	values, stats, err := s.dht.BatchRetrieve(ctx, keys, int32(reqCount), txID, localOnly...)
+	return values, stats, err
 }
 
 // Delete delete key in queries node

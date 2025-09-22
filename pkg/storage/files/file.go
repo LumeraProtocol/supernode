@@ -18,10 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
 
-	"github.com/disintegration/imaging"
-	"github.com/kolesa-team/go-webp/decoder"
-	"github.com/kolesa-team/go-webp/encoder"
-	"github.com/kolesa-team/go-webp/webp"
+    "github.com/disintegration/imaging"
 )
 
 // File represents a file.
@@ -205,7 +202,7 @@ func (file *File) LoadImage() (image.Image, error) {
 	}
 	defer f.Close()
 
-	img, _, err := image.Decode(f)
+    img, _, err := image.Decode(f)
 	if err != nil {
 		// Reset the reader to the beginning of the file
 		_, errSeek := f.Seek(0, io.SeekStart)
@@ -213,11 +210,11 @@ func (file *File) LoadImage() (image.Image, error) {
 			return nil, errors.Errorf("reset file reader: %w", errSeek)
 		}
 
-		var errWebp error
-		img, errWebp = webp.Decode(f, &decoder.Options{})
-		if errWebp != nil {
-			return nil, errors.Errorf("decode image(%s) - %w - tried webp as well: %w", f.Name(), err, errWebp)
-		}
+        var errWebp error
+        img, errWebp = tryDecodeWebP(f)
+        if errWebp != nil {
+            return nil, errors.Errorf("decode image(%s) - %w - tried webp as well: %w", f.Name(), err, errWebp)
+        }
 	}
 
 	return img, nil
@@ -261,15 +258,11 @@ func (file *File) SaveImage(img image.Image) error {
 			return errors.Errorf("encode gif(%s): %w", f.Name(), err)
 		}
 		return nil
-	case WEBP:
-		opts, err := encoder.NewLosslessEncoderOptions(encoder.PresetDefault, 0)
-		if err != nil {
-			return errors.Errorf("create lossless encoder option %w", err)
-		}
-		if err := webp.Encode(f, img, opts); err != nil {
-			return errors.Errorf("encode webp(%s): %w", f.Name(), err)
-		}
-		return nil
+    case WEBP:
+        if err := encodeWebP(f, img); err != nil {
+            return errors.Errorf("encode webp(%s): %w", f.Name(), err)
+        }
+        return nil
 
 	}
 
@@ -313,7 +306,7 @@ func (file *File) UpdateFormat() error {
 	defer f.Close()
 
 	// Try decoding with the standard library first
-	_, format, err := image.Decode(f)
+    _, format, err := image.Decode(f)
 	if err != nil {
 		// If standard decoding fails, reset the reader and try WebP decoding
 		_, errSeek := f.Seek(0, io.SeekStart)
@@ -321,11 +314,11 @@ func (file *File) UpdateFormat() error {
 			return errors.Errorf("reset file reader: %w", errSeek)
 		}
 
-		_, errWebp := webp.Decode(f, &decoder.Options{})
-		if errWebp != nil {
-			return errors.Errorf("decode image(%s) in updateFormat - tried webp as well: %w", f.Name(), errWebp)
-		}
-		format = "webp"
+        _, errWebp := tryDecodeWebP(f)
+        if errWebp != nil {
+            return errors.Errorf("decode image(%s) in updateFormat - tried webp as well: %w", f.Name(), errWebp)
+        }
+        format = "webp"
 	}
 
 	err = file.SetFormatFromExtension(format)

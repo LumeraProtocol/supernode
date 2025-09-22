@@ -48,6 +48,24 @@ const (
 	maxIterations = 4
 )
 
+// BatchRetrieveCall captures the size of a batch get request sent to a peer
+// and how many values that peer returned.
+type BatchRetrieveCall struct {
+	Node      string `json:"node"`
+	Requested int    `json:"requested_keys"`
+	Returned  int    `json:"returned_values"`
+}
+
+// BatchRetrieveStats summarises the outcome of a BatchRetrieve call including
+// local cache hits and the contribution of each network RPC.
+type BatchRetrieveStats struct {
+	TotalKeys    int                 `json:"total_keys"`
+	Required     int                 `json:"required_keys"`
+	FoundLocal   int                 `json:"found_local"`
+	FoundNetwork int                 `json:"found_network"`
+	Calls        []BatchRetrieveCall `json:"network_calls"`
+}
+
 // DHT represents the state of the queries node in the distributed hash table
 type DHT struct {
 	ht             *HashTable       // the hashtable for routing
@@ -657,11 +675,13 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 	return count, err
 }
 
-func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
+func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, stats BatchRetrieveStats, err error) {
 	start := time.Now()
 	result = make(map[string][]byte)
 	var resMap sync.Map
 	var foundLocalCount int32
+	stats.TotalKeys = len(keys)
+	stats.Required = int(required)
 
 	hexKeys := make([]string, len(keys))
 	globalClosestContacts := make(map[string]*NodeList)
@@ -704,7 +724,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	for i, key := range keys {
 		decoded := base58.Decode(key)
 		if len(decoded) != B/8 {
-			return nil, fmt.Errorf("invalid key: %v", key)
+			return nil, stats, fmt.Errorf("invalid key: %v", key)
 		}
 		hashes[i] = decoded
 		hexKeys[i] = hex.EncodeToString(decoded)
@@ -728,10 +748,11 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
 	if err != nil {
-		return nil, fmt.Errorf("fetch and add local keys: %v", err)
+		return nil, stats, fmt.Errorf("fetch and add local keys: %v", err)
 	}
+	stats.FoundLocal = int(foundLocalCount)
 	if foundLocalCount >= required {
-		return result, nil
+		return result, stats, nil
 	}
 
 	batchSize := batchRetrieveSize
@@ -741,6 +762,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	semaphore := make(chan struct{}, parallelBatches)
 	var wg sync.WaitGroup
+	var statsMu sync.Mutex
 	gctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -769,6 +791,8 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 			&networkFound,
 			cancel,
 			txID,
+			&stats,
+			&statsMu,
 		)
 	}
 
@@ -779,11 +803,12 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
 
+	stats.FoundNetwork = netFound
 	if totalFound < int(required) {
-		return result, errors.Errorf("insufficient symbols: required=%d, found=%d", required, totalFound)
+		return result, stats, errors.Errorf("insufficient symbols: required=%d, found=%d", required, totalFound)
 	}
 
-	return result, nil
+	return result, stats, nil
 }
 
 func (s *DHT) processBatch(
@@ -802,6 +827,8 @@ func (s *DHT) processBatch(
 	networkFound *int32,
 	cancel context.CancelFunc,
 	txID string,
+	stats *BatchRetrieveStats,
+	statsMu *sync.Mutex,
 ) {
 	defer wg.Done()
 	defer func() { <-semaphore }()
@@ -837,7 +864,7 @@ func (s *DHT) processBatch(
 
 		foundCount, newClosestContacts, batchErr := s.iterateBatchGetValues(
 			ctx, nodesSnap, batchKeys, batchHexKeys, fetchMap, resMap,
-			required, foundLocalCount+atomic.LoadInt32(networkFound),
+			required, foundLocalCount+atomic.LoadInt32(networkFound), stats,
 		)
 
 		if batchErr != nil {
@@ -888,22 +915,25 @@ func (s *DHT) processBatch(
 }
 
 func (s *DHT) iterateBatchGetValues(
-	ctx context.Context,
-	nodes map[string]*Node,
-	keys []string,
-	hexKeys []string,
-	fetchMap map[string][]int,
-	resMap *sync.Map,
-	req, alreadyFound int32,
+    ctx context.Context,
+    nodes map[string]*Node,
+    keys []string,
+    hexKeys []string,
+    fetchMap map[string][]int,
+    resMap *sync.Map,
+    req, alreadyFound int32,
+    stats *BatchRetrieveStats,
 ) (int, map[string]*NodeList, error) {
 
-	semaphore := make(chan struct{}, storeSameSymbolsBatchConcurrency)
-	closestContacts := make(map[string]*NodeList)
-	var wg sync.WaitGroup
-	contactsMap := make(map[string]map[string][]*Node)
-	var firstErr error
-	var mu sync.Mutex
-	foundCount := int32(0)
+    semaphore := make(chan struct{}, storeSameSymbolsBatchConcurrency)
+    closestContacts := make(map[string]*NodeList)
+    var wg sync.WaitGroup
+    contactsMap := make(map[string]map[string][]*Node)
+    var firstErr error
+    var mu sync.Mutex
+    // Protect concurrent writes to stats.Calls within this function
+    var statsMu sync.Mutex
+    foundCount := int32(0)
 
 	gctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -928,7 +958,7 @@ func (s *DHT) iterateBatchGetValues(
 		contactsMap[nodeID] = make(map[string][]*Node)
 
 		wg.Add(1)
-		go func(node *Node, nodeID string, indices []int) {
+		go func(node *Node, nodeID string, indices []int, st *BatchRetrieveStats, statsGuard *sync.Mutex) {
 			defer wg.Done()
 
 			select {
@@ -949,12 +979,18 @@ func (s *DHT) iterateBatchGetValues(
 					}
 				}
 			}
-			if len(requestKeys) == 0 {
+			requested := len(requestKeys)
+			if requested == 0 {
 				return
 			}
 
 			decompressedData, err := s.doBatchGetValuesCall(gctx, node, requestKeys)
 			if err != nil {
+				if st != nil && statsGuard != nil {
+					statsGuard.Lock()
+					st.Calls = append(st.Calls, BatchRetrieveCall{Node: node.String(), Requested: requested, Returned: 0})
+					statsGuard.Unlock()
+				}
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -963,9 +999,11 @@ func (s *DHT) iterateBatchGetValues(
 				return
 			}
 
+			returned := 0
 			// Merge values or closest contacts
 			for k, v := range decompressedData {
 				if len(v.Value) > 0 {
+					returned++
 					if _, loaded := resMap.LoadOrStore(k, v.Value); !loaded {
 						if atomic.AddInt32(&foundCount, 1) >= int32(req-alreadyFound) {
 							cancel()
@@ -976,7 +1014,12 @@ func (s *DHT) iterateBatchGetValues(
 					contactsMap[nodeID][k] = v.Closest
 				}
 			}
-		}(node, nodeID, idxs)
+			if st != nil && statsGuard != nil {
+				statsGuard.Lock()
+				st.Calls = append(st.Calls, BatchRetrieveCall{Node: node.String(), Requested: requested, Returned: returned})
+				statsGuard.Unlock()
+			}
+		}(node, nodeID, idxs, stats, &statsMu)
 	}
 
 	wg.Wait()

@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/crypto"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
@@ -76,7 +77,7 @@ func (task *CascadeRegistrationTask) Download(
 	// Notify: network retrieval phase begins
 	task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
 
-	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields)
+	filePath, tmpDir, retrieveStats, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
@@ -84,11 +85,12 @@ func (task *CascadeRegistrationTask) Download(
 	logtrace.Info(ctx, "File reconstructed and hash verified", fields)
 	// Notify: decode completed, file ready on disk
 	task.streamDownloadEvent(SupernodeEventTypeDecodeCompleted, "Decode completed", filePath, tmpDir, send)
+	logRetrievalSummary(ctx, fields, retrieveStats)
 
 	return nil
 }
 
-func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) (string, string, error) {
+func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields) (string, string, p2p.BatchRetrieveStats, error) {
 	logtrace.Info(ctx, "started downloading the artifacts", fields)
 
 	var layout codec.Layout
@@ -120,7 +122,7 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	}
 
 	if len(layout.Blocks) == 0 {
-		return "", "", errors.New("no symbols found in RQ metadata")
+		return "", "", p2p.BatchRetrieveStats{}, errors.New("no symbols found in RQ metadata")
 	}
 
 	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID)
@@ -131,7 +133,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	layout codec.Layout,
 	dataHash string,
 	actionID string,
-) (string, string, error) {
+) (string, string, p2p.BatchRetrieveStats, error) {
 
 	fields := logtrace.Fields{
 		logtrace.FieldActionID: actionID,
@@ -150,34 +152,69 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	logtrace.Info(ctx, "Symbols to be retrieved", fields)
 
 	// Progressive retrieval moved to helper for readability/testing
-	decodeInfo, err := task.retrieveAndDecodeProgressively(ctx, layout, actionID, fields)
+	decodeInfo, retrieveStats, err := task.retrieveAndDecodeProgressively(ctx, layout, actionID, fields)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to decode symbols progressively", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
+		return "", "", retrieveStats, fmt.Errorf("decode symbols using RaptorQ: %w", err)
 	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", "", fmt.Errorf("hash file: %w", err)
+		return "", "", retrieveStats, fmt.Errorf("hash file: %w", err)
 	}
 	if fileHash == nil {
 		fields[logtrace.FieldError] = "file hash is nil"
 		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", "", errors.New("file hash is nil")
+		return "", "", retrieveStats, errors.New("file hash is nil")
 	}
 
 	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
 	if err != nil {
 		logtrace.Error(ctx, "failed to verify hash", fields)
 		fields[logtrace.FieldError] = err.Error()
-		return "", decodeInfo.DecodeTmpDir, err
+		return "", decodeInfo.DecodeTmpDir, retrieveStats, err
 	}
 	logtrace.Info(ctx, "File successfully restored and hash verified", fields)
 
-	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, nil
+	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, retrieveStats, nil
+}
+
+func logRetrievalSummary(ctx context.Context, base logtrace.Fields, stats p2p.BatchRetrieveStats) {
+	summary := logtrace.Fields{}
+	if base != nil {
+		if method, ok := base[logtrace.FieldMethod]; ok {
+			summary[logtrace.FieldMethod] = method
+		}
+		if actionID, ok := base[logtrace.FieldActionID]; ok {
+			summary[logtrace.FieldActionID] = actionID
+		}
+	}
+	summary["total_keys"] = stats.TotalKeys
+	summary["required_keys"] = stats.Required
+	summary["local_keys_found"] = stats.FoundLocal
+	summary["network_keys_found"] = stats.FoundNetwork
+	requiredFromNetwork := stats.Required - stats.FoundLocal
+	if requiredFromNetwork < 0 {
+		requiredFromNetwork = 0
+	}
+	summary["required_from_network"] = requiredFromNetwork
+	summary["network_call_count"] = len(stats.Calls)
+	if len(stats.Calls) > 0 {
+		calls := make([]map[string]any, 0, len(stats.Calls))
+		for _, call := range stats.Calls {
+			calls = append(calls, map[string]any{
+				"node":            call.Node,
+				"requested_keys":  call.Requested,
+				"returned_values": call.Returned,
+			})
+		}
+		summary["network_calls"] = calls
+	}
+
+	logtrace.Info(ctx, "Cascade download retrieval summary", summary)
 }
 
 func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEventType, msg string, filePath string, tmpDir string, send func(resp *DownloadResponse) error) {

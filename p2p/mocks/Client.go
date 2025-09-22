@@ -5,6 +5,7 @@ package mocks
 import (
 	context "context"
 
+	p2p "github.com/LumeraProtocol/supernode/v2/p2p"
 	mock "github.com/stretchr/testify/mock"
 
 	time "time"
@@ -16,7 +17,7 @@ type Client struct {
 }
 
 // BatchRetrieve provides a mock function with given fields: ctx, keys, reqCount, txID, localOnly
-func (_m *Client) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error) {
+func (_m *Client) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, p2p.BatchRetrieveStats, error) {
 	_va := make([]interface{}, len(localOnly))
 	for _i := range localOnly {
 		_va[_i] = localOnly[_i]
@@ -35,14 +36,23 @@ func (_m *Client) BatchRetrieve(ctx context.Context, keys []string, reqCount int
 		}
 	}
 
-	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, []string, int, string, ...bool) error); ok {
+	var r1 p2p.BatchRetrieveStats
+	if rf, ok := ret.Get(1).(func(context.Context, []string, int, string, ...bool) p2p.BatchRetrieveStats); ok {
 		r1 = rf(ctx, keys, reqCount, txID, localOnly...)
 	} else {
-		r1 = ret.Error(1)
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(p2p.BatchRetrieveStats)
+		}
 	}
 
-	return r0, r1
+	var r2 error
+	if rf, ok := ret.Get(2).(func(context.Context, []string, int, string, ...bool) error); ok {
+		r2 = rf(ctx, keys, reqCount, txID, localOnly...)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 // Delete provides a mock function with given fields: ctx, key
