@@ -16,11 +16,10 @@ type LoggerFunc func(
 )
 
 type CascadeSupernodeRegisterRequest struct {
-	FilePath            string
-	ActionID            string
-	TaskId              string
-	SkipArtifactStorage bool
-	EventLogger         LoggerFunc
+	FilePath    string
+	ActionID    string
+	TaskId      string
+	EventLogger LoggerFunc
 }
 
 type CascadeSupernodeRegisterResponse struct {

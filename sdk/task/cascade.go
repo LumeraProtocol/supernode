@@ -14,9 +14,8 @@ import (
 
 type CascadeTask struct {
 	BaseTask
-	filePath            string
-	actionId            string
-	skipArtifactStorage bool
+	filePath string
+	actionId string
 }
 
 // NewCascadeTask creates a new CascadeTask using a BaseTask plus cascade-specific parameters
@@ -75,7 +74,6 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	var lastErr error
 	for idx, sn := range supernodes {
-		req.SkipArtifactStorage = t.skipArtifactStorage
 		// 1
 		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
@@ -118,10 +116,6 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 	})
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
-		if evt == event.SupernodeArtefactsStored {
-			t.skipArtifactStorage = true
-			req.SkipArtifactStorage = true
-		}
 		t.LogEvent(ctx, evt, msg, data)
 	}
 	// Use ctx directly; per-phase timers are applied inside the adapter

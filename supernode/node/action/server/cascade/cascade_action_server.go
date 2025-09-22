@@ -7,13 +7,11 @@ import (
 	"os"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
-	cascadecommon "github.com/LumeraProtocol/supernode/v2/pkg/cascade"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 type ActionServer struct {
@@ -76,12 +74,6 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 
 	ctx := stream.Context()
-	skipStorage := false
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if values := md.Get(cascadecommon.SkipArtifactStorageHeader); len(values) > 0 && values[0] == cascadecommon.SkipArtifactStorageHeaderValue {
-			skipStorage = true
-		}
-	}
 	logtrace.Info(ctx, "client streaming request to upload cascade input data received", fields)
 
 	const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
@@ -193,15 +185,12 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 
 	// Process the complete data
 	task := server.factory.NewCascadeRegistrationTask()
-	fields[cascadecommon.LogFieldSkipStorage] = skipStorage
-
 	err = task.Register(ctx, &cascadeService.RegisterRequest{
-		TaskID:              metadata.TaskId,
-		ActionID:            metadata.ActionId,
-		DataHash:            hash,
-		DataSize:            totalSize,
-		FilePath:            targetPath,
-		SkipArtifactStorage: skipStorage,
+		TaskID:   metadata.TaskId,
+		ActionID: metadata.ActionId,
+		DataHash: hash,
+		DataSize: totalSize,
+		FilePath: targetPath,
 	}, func(resp *cascadeService.RegisterResponse) error {
 		grpcResp := &pb.RegisterResponse{
 			EventType: pb.SupernodeEventType(resp.EventType),
@@ -303,19 +292,24 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	}
 	logtrace.Info(ctx, "streaming artefact file in chunks", fields)
 
-	restoredFile, err := readFileContentsInChunks(restoredFilePath)
+	// Open the restored file and stream directly from disk to avoid buffering entire file in memory
+	f, err := os.Open(restoredFilePath)
 	if err != nil {
-		logtrace.Error(ctx, "failed to read restored file", logtrace.Fields{
-			logtrace.FieldError: err.Error(),
-		})
+		logtrace.Error(ctx, "failed to open restored file", logtrace.Fields{logtrace.FieldError: err.Error()})
 		return err
 	}
-	logtrace.Info(ctx, "file has been read in chunks", fields)
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		logtrace.Error(ctx, "failed to stat restored file", logtrace.Fields{logtrace.FieldError: err.Error()})
+		return err
+	}
 
 	// Calculate optimal chunk size based on file size
-	chunkSize := calculateOptimalChunkSize(int64(len(restoredFile)))
+	chunkSize := calculateOptimalChunkSize(fi.Size())
 	logtrace.Info(ctx, "calculated optimal chunk size for download", logtrace.Fields{
-		"file_size":  len(restoredFile),
+		"file_size":  fi.Size(),
 		"chunk_size": chunkSize,
 	})
 
@@ -332,26 +326,25 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		return err
 	}
 
-	// Split and stream the file using adaptive chunk size
-	for i := 0; i < len(restoredFile); i += chunkSize {
-		end := i + chunkSize
-		if end > len(restoredFile) {
-			end = len(restoredFile)
-		}
-
-		err := stream.Send(&pb.DownloadResponse{
-			ResponseType: &pb.DownloadResponse_Chunk{
-				Chunk: &pb.DataChunk{
-					Data: restoredFile[i:end],
+	// Stream the file in fixed-size chunks
+	buf := make([]byte, chunkSize)
+	for {
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			if err := stream.Send(&pb.DownloadResponse{
+				ResponseType: &pb.DownloadResponse_Chunk{
+					Chunk: &pb.DataChunk{Data: buf[:n]},
 				},
-			},
-		})
-
-		if err != nil {
-			logtrace.Error(ctx, "failed to stream chunk", logtrace.Fields{
-				logtrace.FieldError: err.Error(),
-			})
-			return err
+			}); err != nil {
+				logtrace.Error(ctx, "failed to stream chunk", logtrace.Fields{logtrace.FieldError: err.Error()})
+				return err
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("chunked read failed: %w", readErr)
 		}
 	}
 
@@ -359,31 +352,4 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	logtrace.Info(ctx, "completed streaming all chunks", fields)
 	return nil
-}
-
-func readFileContentsInChunks(filePath string) ([]byte, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	buf := make([]byte, 1024*1024)
-	var fileBytes []byte
-
-	for {
-		n, readErr := f.Read(buf)
-		if n > 0 {
-			// Process chunk
-			fileBytes = append(fileBytes, buf[:n]...)
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return nil, fmt.Errorf("chunked read failed: %w", readErr)
-		}
-	}
-
-	return fileBytes, nil
 }
