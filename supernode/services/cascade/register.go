@@ -4,19 +4,17 @@ import (
 	"context"
 	"os"
 
-	cascadecommon "github.com/LumeraProtocol/supernode/v2/pkg/cascade"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 // RegisterRequest contains parameters for upload request
 type RegisterRequest struct {
-	TaskID              string
-	ActionID            string
-	DataHash            []byte
-	DataSize            int
-	FilePath            string
-	SkipArtifactStorage bool
+	TaskID   string
+	ActionID string
+	DataHash []byte
+	DataSize int
+	FilePath string
 }
 
 // RegisterResponse contains the result of upload
@@ -159,24 +157,13 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "Finalize simulation passed", "", send)
 
 	/* 11. Persist artefacts -------------------------------------------------------- */
-	// Persist artefacts to the P2P network unless explicitly skipped by the client.
-	// Aggregation model (context):
-	// - Each underlying StoreBatch returns (ratePct, requests) where requests is
-	//   the number of node RPCs. The aggregated success rate can be computed as a
-	//   weighted average by requests across metadata and symbol batches, yielding
-	//   an overall network success view for the action.
-	if req.SkipArtifactStorage {
-		fields[cascadecommon.LogFieldSkipStorage] = true
-		logtrace.Info(ctx, "Artifact storage skipped at client request", fields)
-		task.streamEvent(SupernodeEventTypeArtefactsStored, cascadecommon.ArtifactStorageSkippedMessage, "", send)
-	} else {
-		metrics, err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields)
-		if err != nil {
-			return err
-		}
-		// Emit single-line metrics via helper to keep Register clean
-		task.emitArtefactsStored(ctx, metrics, fields, send)
+    // Persist artefacts to the P2P network. P2P interfaces return error only;
+    // metrics are summarized at the cascade layer and emitted via event.
+	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
+		return err
 	}
+	// Emit compact analytics payload from centralized metrics collector
+	task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {

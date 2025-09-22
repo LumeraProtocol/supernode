@@ -69,6 +69,13 @@ type Network struct {
 	sem         *semaphore.Weighted
 
 	metrics sync.Map
+
+	// recent request tracking (last 10 entries overall and per IP)
+	recentMu              sync.Mutex
+	recentStoreOverall    []RecentBatchStoreEntry
+	recentStoreByIP       map[string][]RecentBatchStoreEntry
+	recentRetrieveOverall []RecentBatchRetrieveEntry
+	recentRetrieveByIP    map[string][]RecentBatchRetrieveEntry
 }
 
 // NewNetwork returns a network service
@@ -627,7 +634,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 // ---- retryable RPC helpers -------------------------------------------------
 
 func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
-	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~2 MB/s
+	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
 
 	retried := false
 	for {
@@ -895,15 +902,38 @@ func (s *Network) handleBatchFindValues(ctx context.Context, message *Message, r
 }
 
 func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, reqID string) (res []byte, err error) {
+	start := time.Now()
+	appended := false
 	defer func() {
 		if response, err := s.handlePanic(ctx, message.Sender, BatchGetValues); response != nil || err != nil {
 			res = response
+			if !appended {
+				s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
+					TimeUnix:   time.Now().UTC().Unix(),
+					SenderID:   string(message.Sender.ID),
+					SenderIP:   message.Sender.IP,
+					Requested:  0,
+					Found:      0,
+					DurationMS: time.Since(start).Milliseconds(),
+					Error:      "panic/recovered",
+				})
+			}
 		}
 	}()
 
 	request, ok := message.Data.(*BatchGetValuesRequest)
 	if !ok {
 		err := errors.New("invalid BatchGetValuesRequest")
+		s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
+			TimeUnix:   time.Now().UTC().Unix(),
+			SenderID:   string(message.Sender.ID),
+			SenderIP:   message.Sender.IP,
+			Requested:  0,
+			Found:      0,
+			DurationMS: time.Since(start).Milliseconds(),
+			Error:      err.Error(),
+		})
+		appended = true
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
@@ -924,6 +954,16 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 	values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, true)
 	if err != nil {
 		err = errors.Errorf("batch find values: %w", err)
+		s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
+			TimeUnix:   time.Now().UTC().Unix(),
+			SenderID:   string(message.Sender.ID),
+			SenderIP:   message.Sender.IP,
+			Requested:  len(keys),
+			Found:      count,
+			DurationMS: time.Since(start).Milliseconds(),
+			Error:      err.Error(),
+		})
+		appended = true
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
@@ -961,6 +1001,16 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 
 	// new a response message
 	resMsg := s.dht.newMessage(BatchGetValues, message.Sender, response)
+	s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
+		TimeUnix:   time.Now().UTC().Unix(),
+		SenderID:   string(message.Sender.ID),
+		SenderIP:   message.Sender.IP,
+		Requested:  len(keys),
+		Found:      count,
+		DurationMS: time.Since(start).Milliseconds(),
+		Error:      "",
+	})
+	appended = true
 	return s.encodeMesage(resMsg)
 }
 
@@ -1132,15 +1182,38 @@ func findTopHeaviestKeys(dataMap map[string][]byte, size int) (int, []string) {
 }
 
 func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (res []byte, err error) {
+	start := time.Now()
+	appended := false
 	defer func() {
 		if response, err := s.handlePanic(ctx, message.Sender, BatchStoreData); response != nil || err != nil {
 			res = response
+			if !appended {
+				s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
+					TimeUnix:   time.Now().UTC().Unix(),
+					SenderID:   string(message.Sender.ID),
+					SenderIP:   message.Sender.IP,
+					Keys:       0,
+					DurationMS: time.Since(start).Milliseconds(),
+					OK:         false,
+					Error:      "panic/recovered",
+				})
+			}
 		}
 	}()
 
 	request, ok := message.Data.(*BatchStoreDataRequest)
 	if !ok {
 		err := errors.New("invalid BatchStoreDataRequest")
+		s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
+			TimeUnix:   time.Now().UTC().Unix(),
+			SenderID:   string(message.Sender.ID),
+			SenderIP:   message.Sender.IP,
+			Keys:       0,
+			DurationMS: time.Since(start).Milliseconds(),
+			OK:         false,
+			Error:      err.Error(),
+		})
+		appended = true
 		return s.generateResponseMessage(BatchStoreData, message.Sender, ResultFailed, err.Error())
 	}
 
@@ -1156,6 +1229,16 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 
 	if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
 		err = errors.Errorf("batch store the data: %w", err)
+		s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
+			TimeUnix:   time.Now().UTC().Unix(),
+			SenderID:   string(message.Sender.ID),
+			SenderIP:   message.Sender.IP,
+			Keys:       len(request.Data),
+			DurationMS: time.Since(start).Milliseconds(),
+			OK:         false,
+			Error:      err.Error(),
+		})
+		appended = true
 		return s.generateResponseMessage(BatchStoreData, message.Sender, ResultFailed, err.Error())
 	}
 
@@ -1173,6 +1256,16 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 
 	// new a response message
 	resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)
+	s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
+		TimeUnix:   time.Now().UTC().Unix(),
+		SenderID:   string(message.Sender.ID),
+		SenderIP:   message.Sender.IP,
+		Keys:       len(request.Data),
+		DurationMS: time.Since(start).Milliseconds(),
+		OK:         true,
+		Error:      "",
+	})
+	appended = true
 	return s.encodeMesage(resMsg)
 }
 
@@ -1439,9 +1532,9 @@ func calcWriteDeadline(timeout time.Duration, sizeBytes int, targetMBps float64)
 	base := 2 * time.Second
 	cushion := 5 * time.Second
 
-	// Softer floor: assume ~2 MB/s; increase if you like.
+	// Softer floor: assume ~1 MB/s by default; increase if you like.
 	if targetMBps <= 0 {
-		targetMBps = 2.0
+		targetMBps = 1.0
 	}
 	est := time.Duration(sizeMB / targetMBps * float64(time.Second))
 

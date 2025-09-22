@@ -249,6 +249,92 @@
       },
       "title": "Per-handler counters from network layer"
     },
+    "P2PMetricsRecentBatchRetrieveEntry": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64"
+        },
+        "senderId": {
+          "type": "string"
+        },
+        "senderIp": {
+          "type": "string"
+        },
+        "requested": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "found": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "title": "Last handled BatchGetValues requests (most recent first)"
+    },
+    "P2PMetricsRecentBatchRetrieveList": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsRecentBatchRetrieveEntry"
+          }
+        }
+      }
+    },
+    "P2PMetricsRecentBatchStoreEntry": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64"
+        },
+        "senderId": {
+          "type": "string"
+        },
+        "senderIp": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "title": "Last handled BatchStoreData requests (most recent first)"
+    },
+    "P2PMetricsRecentBatchStoreList": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsRecentBatchStoreEntry"
+          }
+        }
+      },
+      "title": "Per-IP buckets: last 10 per sender IP"
+    },
     "ResourcesCPU": {
       "type": "object",
       "properties": {
@@ -364,6 +450,32 @@
         },
         "disk": {
           "$ref": "#/definitions/P2PMetricsDiskStatus"
+        },
+        "recentBatchStore": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsRecentBatchStoreEntry"
+          }
+        },
+        "recentBatchRetrieve": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsRecentBatchRetrieveEntry"
+          }
+        },
+        "recentBatchStoreByIp": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/P2PMetricsRecentBatchStoreList"
+          }
+        },
+        "recentBatchRetrieveByIp": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/P2PMetricsRecentBatchRetrieveList"
+          }
         }
       },
       "title": "P2P metrics and diagnostics (additive field)"
