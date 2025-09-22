@@ -934,16 +934,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 
 			if len(requestKeys) == 0 {
 				// No keys to request from this node (e.g., all keys already satisfied elsewhere).
-				// Treat as a successful, no-op call for metrics when there is no error.
-				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-					IP:         node.IP,
-					Address:    node.String(),
-					Keys:       0,
-					Success:    true,
-					Error:      "",
-					DurationMS: time.Since(callStart).Milliseconds(),
-					Noop:       true,
-				})
+				// Do not emit no-op retrieve metrics; skip silently.
 				return
 			}
 
@@ -1811,20 +1802,11 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					"size_before_compress": utils.BytesIntToMB(totalBytes),
 				})
 
-				// Skip empty payloads: avoid sending empty store RPCs, but record a noop metric for visibility.
+				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
 				if len(toStore) == 0 {
 					logtrace.Info(ctx, "Skipping store RPC with empty payload", logtrace.Fields{
 						logtrace.FieldModule: "dht",
 						"node":               receiver.String(),
-					})
-					p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-						IP:         receiver.IP,
-						Address:    receiver.String(),
-						Keys:       0,
-						Success:    true,
-						Error:      "",
-						DurationMS: time.Since(callStart).Milliseconds(),
-						Noop:       true,
 					})
 					return
 				}
