@@ -20,6 +20,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
+const targetRequiredPercent = 17
+
 type DownloadRequest struct {
 	ActionID string
 }
@@ -156,6 +158,11 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 
 	totalSymbols := len(allSymbols)
 	fields["totalSymbols"] = totalSymbols
+	// Compute target requirement (reporting only; does not change behavior)
+	targetRequiredCount := (totalSymbols*targetRequiredPercent + 99) / 100
+	if targetRequiredCount < 1 && totalSymbols > 0 {
+		targetRequiredCount = 1
+	}
 	logtrace.Info(ctx, "Retrieving all symbols for decode", fields)
 
 	// Enable retrieve metrics capture for this action
@@ -190,7 +197,13 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 
 	// Set minimal retrieve summary and emit event strictly from internal collector
 	cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
-	if b, err := json.MarshalIndent(cm.BuildDownloadEventPayloadFromCollector(actionID), "", "  "); err == nil {
+	payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
+	if retrieve, ok := payload["retrieve"].(map[string]any); ok {
+		retrieve["target_required_percent"] = targetRequiredPercent
+		retrieve["target_required_count"] = targetRequiredCount
+		retrieve["total_symbols"] = totalSymbols
+	}
+	if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
 		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
 	}
 

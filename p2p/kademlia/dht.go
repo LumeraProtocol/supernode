@@ -41,9 +41,9 @@ const (
 	defaultDeleteDataInterval                   = 11 * time.Hour
 	delKeysCountThreshold                       = 10
 	lowSpaceThreshold                           = 50 // GB
-	batchStoreSize                              = 2500
+	batchRetrieveSize                           = 1000
 	storeSameSymbolsBatchConcurrency            = 3
-	storeSymbolsBatchConcurrency                = 3.0
+	fetchSymbolsBatchConcurrency                = 6
 	minimumDataStoreSuccessRate                 = 75.0
 
 	maxIterations                  = 4
@@ -744,10 +744,10 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		return result, nil
 	}
 
-	batchSize := batchStoreSize
+	batchSize := batchRetrieveSize
 	var networkFound int32
 	totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
-	parallelBatches := int(math.Min(float64(totalBatches), storeSymbolsBatchConcurrency))
+	parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
 
 	semaphore := make(chan struct{}, parallelBatches)
 	var wg sync.WaitGroup
@@ -785,7 +785,10 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	wg.Wait()
 
 	netFound := int(atomic.LoadInt32(&networkFound))
-	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Duration(time.Since(start).Milliseconds())) // NEW
+	// Record batch retrieve stats for internal DHT snapshot window
+	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
+	// Also feed retrieve counts into the per-task collector for stream events
+	p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
 
 	return result, nil
 }
