@@ -199,6 +199,9 @@ func BuildStoreEventPayloadFromCollector(taskID string) map[string]any {
 type retrieveSession struct {
 	CallsByIP  map[string][]Call
 	FoundLocal int
+	FoundNet   int
+	Keys       int
+	Required   int
 	RetrieveMS int64
 	DecodeMS   int64
 }
@@ -234,6 +237,23 @@ func StopRetrieveCapture(taskID string) {
 	UnregisterFoundLocalHook(taskID)
 }
 
+// SetRetrieveBatchSummary sets counts for a retrieval attempt.
+func SetRetrieveBatchSummary(taskID string, keys, required, foundLocal, foundNet int, retrieveMS int64) {
+	if taskID == "" {
+		return
+	}
+	s := retrieveSessions.m[taskID]
+	if s == nil {
+		s = &retrieveSession{CallsByIP: map[string][]Call{}}
+		retrieveSessions.m[taskID] = s
+	}
+	s.Keys = keys
+	s.Required = required
+	s.FoundLocal = foundLocal
+	s.FoundNet = foundNet
+	s.RetrieveMS = retrieveMS
+}
+
 // SetRetrieveSummary sets timing info for retrieve/decode phases.
 func SetRetrieveSummary(taskID string, retrieveMS, decodeMS int64) {
 	if taskID == "" {
@@ -254,7 +274,10 @@ func BuildDownloadEventPayloadFromCollector(taskID string) map[string]any {
 	if s == nil {
 		return map[string]any{
 			"retrieve": map[string]any{
+				"keys":        0,
+				"required":    0,
 				"found_local": 0,
+				"found_net":   0,
 				"retrieve_ms": int64(0),
 				"decode_ms":   int64(0),
 				"calls_by_ip": map[string][]Call{},
@@ -263,7 +286,10 @@ func BuildDownloadEventPayloadFromCollector(taskID string) map[string]any {
 	}
 	return map[string]any{
 		"retrieve": map[string]any{
+			"keys":        s.Keys,
+			"required":    s.Required,
 			"found_local": s.FoundLocal,
+			"found_net":   s.FoundNet,
 			"retrieve_ms": s.RetrieveMS,
 			"decode_ms":   s.DecodeMS,
 			"calls_by_ip": s.CallsByIP,
