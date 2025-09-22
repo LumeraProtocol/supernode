@@ -487,6 +487,25 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 							if v, ok := retrieve["calls_by_ip"]; ok {
 								edata[event.KeyRetrieveCallsByIP] = v
 							}
+							// Optional additional retrieve fields
+							if v, ok := retrieve["keys"].(float64); ok {
+								edata[event.KeyRetrieveKeys] = int64(v)
+							}
+							if v, ok := retrieve["required"].(float64); ok {
+								edata[event.KeyRetrieveRequired] = int64(v)
+							}
+							if v, ok := retrieve["found_net"].(float64); ok {
+								edata[event.KeyRetrieveFoundNet] = int64(v)
+							}
+							if v, ok := retrieve["target_required_percent"].(float64); ok {
+								edata[event.KeyTargetRequiredPercent] = v
+							}
+							if v, ok := retrieve["target_required_count"].(float64); ok {
+								edata[event.KeyTargetRequiredCount] = int64(v)
+							}
+							if v, ok := retrieve["total_symbols"].(float64); ok {
+								edata[event.KeyTotalSymbols] = int64(v)
+							}
 						}
 					}
 				}

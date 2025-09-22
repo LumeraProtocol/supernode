@@ -45,4 +45,11 @@ const (
 	KeyRetrieveMS         EventDataKey = "retrieve_ms"
 	KeyDecodeMS           EventDataKey = "decode_ms"
 	KeyRetrieveCallsByIP  EventDataKey = "retrieve_calls_by_ip"
+	// Additional retrieve summary fields
+	KeyRetrieveKeys          EventDataKey = "retrieve_keys"
+	KeyRetrieveRequired      EventDataKey = "retrieve_required"
+	KeyRetrieveFoundNet      EventDataKey = "retrieve_found_net"
+	KeyTargetRequiredPercent EventDataKey = "target_required_percent"
+	KeyTargetRequiredCount   EventDataKey = "target_required_count"
+	KeyTotalSymbols          EventDataKey = "total_symbols"
 )
