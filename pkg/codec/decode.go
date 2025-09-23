@@ -39,9 +39,26 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 	defer processor.Free()
 
 	symbolsDir := filepath.Join(rq.symbolsBaseDir, req.ActionID)
+	// Ensure a clean scratch directory (avoid contamination from previous attempts)
+	if err := os.RemoveAll(symbolsDir); err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return DecodeResponse{}, fmt.Errorf("cleanup decode dir %s: %w", symbolsDir, err)
+	}
 	if err := os.MkdirAll(symbolsDir, 0o755); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return DecodeResponse{}, fmt.Errorf("mkdir %s: %w", symbolsDir, err)
+	}
+
+	// Validate layout before writing any symbols
+	if len(req.Layout.Blocks) == 0 {
+		fields[logtrace.FieldError] = "empty layout"
+		return DecodeResponse{}, fmt.Errorf("invalid layout: no blocks present")
+	}
+	for _, blk := range req.Layout.Blocks {
+		if len(blk.Symbols) == 0 {
+			fields[logtrace.FieldError] = fmt.Sprintf("block_%d has no symbols", blk.BlockID)
+			return DecodeResponse{}, fmt.Errorf("invalid layout: block %d has no symbols", blk.BlockID)
+		}
 	}
 
 	// Build symbol->block mapping from layout and ensure block directories exist

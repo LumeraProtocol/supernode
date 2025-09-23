@@ -163,7 +163,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if targetRequiredCount < 1 && totalSymbols > 0 {
 		targetRequiredCount = 1
 	}
-	logtrace.Info(ctx, "Retrieving all symbols for decode", fields)
+	logtrace.Info(ctx, "Retrieving target-required symbols for decode", fields)
 
 	// Enable retrieve metrics capture for this action
 	cm.StartRetrieveCapture(actionID)
@@ -173,7 +173,13 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	retrieveStart := time.Now()
 	// Tag context with metrics task ID (actionID)
 	ctxRetrieve := cm.WithTaskID(ctx, actionID)
-	symbols, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, totalSymbols, actionID)
+	// Retrieve only a fraction of symbols (targetRequiredCount) based on redundancy
+	// The DHT will short-circuit once it finds the required number across the provided keys
+	reqCount := targetRequiredCount
+	if reqCount > totalSymbols {
+		reqCount = totalSymbols
+	}
+	symbols, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, reqCount, actionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "batch retrieve failed", fields)

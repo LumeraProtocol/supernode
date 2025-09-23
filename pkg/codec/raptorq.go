@@ -17,7 +17,7 @@ const (
 	// Limit RaptorQ processor memory usage to ~2 GiB
 	rqMaxMemoryMB uint64 = 2 * 1024 // MB
 	// Concurrency tuned for 2 GiB limit and typical 8+ core CPUs
-	rqConcurrency uint64 = 6
+	rqConcurrency uint64 = 1
 	// Target single-block output for up to 1 GiB files with padding headroom (~1.25 GiB)
 	rqBlockSize int = 1280 * 1024 * 1024 // bytes (1,280 MiB)
 )
