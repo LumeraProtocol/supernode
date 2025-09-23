@@ -112,9 +112,9 @@ var defaultBackoffConfig = backoff.Config{
 func DefaultClientOptions() *ClientOptions {
 	return &ClientOptions{
 		MaxRecvMsgSize:        100 * MB,
-		MaxSendMsgSize:        100 * MB,        // 100MB
-		InitialWindowSize:     (int32)(1 * MB), // 1MB - controls initial frame size for streams
-		InitialConnWindowSize: (int32)(1 * MB), // 1MB - controls initial frame size for connection
+		MaxSendMsgSize:        100 * MB,          // 100MB
+		InitialWindowSize:     (int32)(32 * MB),  // 32MB - controls initial frame size for streams
+		InitialConnWindowSize: (int32)(128 * MB), // 128MB - controls initial frame size for connection
 		ConnWaitTime:          defaultConnWaitTime,
 
 		KeepAliveTime:      30 * time.Minute,

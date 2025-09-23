@@ -94,7 +94,7 @@ func DefaultServerOptions() *ServerOptions {
 	return &ServerOptions{
 		MaxRecvMsgSize:        100 * MB,
 		MaxSendMsgSize:        100 * MB,
-		InitialWindowSize:     (int32)(1 * MB),
+		InitialWindowSize:     (int32)(32 * MB),
 		InitialConnWindowSize: (int32)(1 * MB),
 		MaxConcurrentStreams:  1000,
 		GracefulShutdownTime:  defaultGracefulShutdownTimeout,
@@ -102,13 +102,13 @@ func DefaultServerOptions() *ServerOptions {
 		MaxConnectionIdle:     2 * time.Hour,
 		MaxConnectionAge:      2 * time.Hour,
 		MaxConnectionAgeGrace: 1 * time.Hour,
-		Time:                  1 * time.Hour,
+		Time:                  30 * time.Minute,
 		Timeout:               30 * time.Minute,
 		MinTime:               5 * time.Minute,
 		PermitWithoutStream:   true,
 
-		WriteBufferSize: 32 * KB,
-		ReadBufferSize:  32 * KB,
+		WriteBufferSize: 512 * KB,
+		ReadBufferSize:  512 * KB,
 	}
 }
 
