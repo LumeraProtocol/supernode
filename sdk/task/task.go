@@ -118,6 +118,20 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 
 // isServing pings the super-node once with a short timeout.
 func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
+	// Hard-skip specific supernodes for debugging: always report not serving
+	// Addresses to skip by Cosmos identity and/or endpoint
+	// switch sn.CosmosAddress {
+	// case "lumera1n70hju0sew704tmzfxkhy64uer6prjsmp9j8fx", // 65.108.231.223:4444
+	// 	"lumera1wmq0wu60a63cnx5fhln0m0zv6u5rq6dw0dhvhn": // 176.9.8.81:4444
+	// 	t.logger.Info(parent, "Skipping supernode by identity (forced)", "sn_addr", sn.CosmosAddress, "endpoint", sn.GrpcEndpoint)
+	// 	return false
+	// }
+	// switch sn.GrpcEndpoint {
+	// case "65.108.231.223:4444", "176.9.8.81:4444":
+	// 	t.logger.Info(parent, "Skipping supernode by endpoint (forced)", "sn_addr", sn.CosmosAddress, "endpoint", sn.GrpcEndpoint)
+	// 	return false
+	// }
+
 	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
 	defer cancel()
 
