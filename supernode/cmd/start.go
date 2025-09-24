@@ -146,7 +146,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
 
 		if isTestnet {
-			profilingAddr := "0.0.0.0:6060"
+			profilingAddr := "0.0.0.0:6062"
 
 			logtrace.Info(ctx, "Starting profiling server", logtrace.Fields{
 				"address":    profilingAddr,
