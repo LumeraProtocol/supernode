@@ -313,7 +313,14 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		"chunk_size": chunkSize,
 	})
 
-	// Announce: file is ready to be served to the client
+	// Pre-read first chunk to avoid any delay between SERVE_READY and first data
+	buf := make([]byte, chunkSize)
+	n, readErr := f.Read(buf)
+	if readErr != nil && readErr != io.EOF {
+		return fmt.Errorf("chunked read failed: %w", readErr)
+	}
+
+	// Announce: file is ready to be served to the client (right before first data)
 	if err := stream.Send(&pb.DownloadResponse{
 		ResponseType: &pb.DownloadResponse_Event{
 			Event: &pb.DownloadEvent{
@@ -326,10 +333,27 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		return err
 	}
 
-	// Stream the file in fixed-size chunks
-	buf := make([]byte, chunkSize)
+	// Send pre-read first chunk if available
+	if n > 0 {
+		if err := stream.Send(&pb.DownloadResponse{
+			ResponseType: &pb.DownloadResponse_Chunk{
+				Chunk: &pb.DataChunk{Data: buf[:n]},
+			},
+		}); err != nil {
+			logtrace.Error(ctx, "failed to stream first chunk", logtrace.Fields{logtrace.FieldError: err.Error()})
+			return err
+		}
+	}
+
+	// If EOF after first read, we're done
+	if readErr == io.EOF {
+		logtrace.Info(ctx, "completed streaming all chunks", fields)
+		return nil
+	}
+
+	// Continue streaming remaining chunks
 	for {
-		n, readErr := f.Read(buf)
+		n, readErr = f.Read(buf)
 		if n > 0 {
 			if err := stream.Send(&pb.DownloadResponse{
 				ResponseType: &pb.DownloadResponse_Chunk{
