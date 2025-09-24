@@ -446,6 +446,7 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 		bytesWritten   int64
 		chunkIndex     int
 		startedEmitted bool
+		downloadStart  time.Time
 	)
 
 	// 3. Receive streamed responses
@@ -509,7 +510,11 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 						}
 					}
 				}
-				in.EventLogger(ctx, toSdkEvent(x.Event.EventType), x.Event.Message, edata)
+				// Avoid blocking Recv loop on event handling; dispatch asynchronously
+				evtType := toSdkEvent(x.Event.EventType)
+				go func(ed event.EventData, et event.EventType, msg string) {
+					in.EventLogger(ctx, et, msg, ed)
+				}(edata, evtType, x.Event.Message)
 			}
 
 			// 3b. Actual data chunk
@@ -520,7 +525,10 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 			}
 			if !startedEmitted {
 				if in.EventLogger != nil {
-					in.EventLogger(ctx, event.SDKDownloadStarted, "Download started", event.EventData{event.KeyActionID: in.ActionID})
+					// mark start to compute throughput at completion
+					downloadStart = time.Now()
+					// Emit started asynchronously to avoid blocking
+					go in.EventLogger(ctx, event.SDKDownloadStarted, "Download started", event.EventData{event.KeyActionID: in.ActionID})
 				}
 				startedEmitted = true
 			}
@@ -538,7 +546,25 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 	a.logger.Info(ctx, "download complete", "bytes_written", bytesWritten, "path", in.OutputPath, "action_id", in.ActionID)
 
 	if in.EventLogger != nil {
-		in.EventLogger(ctx, event.SDKDownloadCompleted, "Download completed", event.EventData{event.KeyActionID: in.ActionID, event.KeyOutputPath: in.OutputPath})
+		// Compute metrics if we marked a start
+		var elapsed float64
+		var throughput float64
+		if !downloadStart.IsZero() {
+			elapsed = time.Since(downloadStart).Seconds()
+			mb := float64(bytesWritten) / (1024.0 * 1024.0)
+			if elapsed > 0 {
+				throughput = mb / elapsed
+			}
+		}
+		// Emit completion asynchronously with metrics
+		go in.EventLogger(ctx, event.SDKDownloadCompleted, "Download completed", event.EventData{
+			event.KeyActionID:       in.ActionID,
+			event.KeyOutputPath:     in.OutputPath,
+			event.KeyBytesTotal:     bytesWritten,
+			event.KeyChunks:         chunkIndex,
+			event.KeyElapsedSeconds: elapsed,
+			event.KeyThroughputMBS:  throughput,
+		})
 	}
 	return &CascadeSupernodeDownloadResponse{
 		Success:    true,
