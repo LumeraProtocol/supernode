@@ -44,19 +44,12 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 }
 
-type ProfilingConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Port        uint16 `yaml:"port"`
-	BindAddress string `yaml:"bind_address,omitempty"`
-}
-
 type Config struct {
 	SupernodeConfig    `yaml:"supernode"`
 	KeyringConfig      `yaml:"keyring"`
 	P2PConfig          `yaml:"p2p"`
 	LumeraClientConfig `yaml:"lumera"`
 	RaptorQConfig      `yaml:"raptorq"`
-	ProfilingConfig    `yaml:"profiling"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`

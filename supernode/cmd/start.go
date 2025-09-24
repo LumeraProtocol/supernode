@@ -142,31 +142,16 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}
 
-		// Start profiling server if enabled or on testnet
+		// Start profiling server on testnet only
 		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
-		shouldEnableProfiling := appConfig.ProfilingConfig.Enabled || isTestnet
 
-		if shouldEnableProfiling {
-			bindAddr := appConfig.ProfilingConfig.BindAddress
-			if bindAddr == "" {
-				if isTestnet {
-					bindAddr = "0.0.0.0" // Allow external access on testnet
-				} else {
-					bindAddr = "127.0.0.1" // Default to localhost
-				}
-			}
-			port := appConfig.ProfilingConfig.Port
-			if port == 0 {
-				port = 6060 // Default pprof port
-			}
-
-			profilingAddr := fmt.Sprintf("%s:%d", bindAddr, port)
+		if isTestnet {
+			profilingAddr := "0.0.0.0:6060"
 
 			logtrace.Info(ctx, "Starting profiling server", logtrace.Fields{
-				"address":      profilingAddr,
-				"chain_id":     appConfig.LumeraClientConfig.ChainID,
-				"is_testnet":   isTestnet,
-				"auto_enabled": isTestnet && !appConfig.ProfilingConfig.Enabled,
+				"address":    profilingAddr,
+				"chain_id":   appConfig.LumeraClientConfig.ChainID,
+				"is_testnet": isTestnet,
 			})
 
 			go func() {
