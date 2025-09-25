@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
@@ -77,51 +76,6 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		}
 	}
 
-	// Optionally rank supernodes by available memory to improve success for large files
-	// We keep a short timeout per status fetch to avoid delaying downloads.
-	type rankedSN struct {
-		sn        lumera.Supernode
-		availGB   float64
-		hasStatus bool
-	}
-	ranked := make([]rankedSN, 0, len(supernodes))
-	for _, sn := range supernodes {
-		ranked = append(ranked, rankedSN{sn: sn})
-	}
-
-	// Probe supernode status with short timeouts and close clients promptly
-	for i := range ranked {
-		sn := ranked[i].sn
-		// 2s status timeout to keep this pass fast
-		stx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		client, err := clientFactory.CreateClient(stx, sn)
-		if err != nil {
-			cancel()
-			continue
-		}
-		status, err := client.GetSupernodeStatus(stx)
-		_ = client.Close(stx)
-		cancel()
-		if err != nil {
-			continue
-		}
-		ranked[i].hasStatus = true
-		ranked[i].availGB = status.Resources.Memory.AvailableGB
-	}
-
-	// Sort: nodes with status first, higher available memory first
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].hasStatus != ranked[j].hasStatus {
-			return ranked[i].hasStatus && !ranked[j].hasStatus
-		}
-		return ranked[i].availGB > ranked[j].availGB
-	})
-
-	// Rebuild the supernodes list in the sorted order
-	for i := range ranked {
-		supernodes[i] = ranked[i].sn
-	}
-
 	// Try supernodes sequentially, one by one (now sorted)
 	var lastErr error
 	for idx, sn := range supernodes {
@@ -146,8 +100,8 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			continue
 		}
 
-    // Success; return to caller
-    return nil
+		// Success; return to caller
+		return nil
 	}
 
 	if lastErr != nil {
@@ -176,15 +130,15 @@ func (t *CascadeDownloadTask) attemptDownload(
 		t.LogEvent(ctx, evt, msg, data)
 	}
 
-    resp, err := client.Download(ctx, req)
-    if err != nil {
-        return fmt.Errorf("download from %s: %w", sn.CosmosAddress, err)
-    }
-    if !resp.Success {
-        return fmt.Errorf("download rejected by %s: %s", sn.CosmosAddress, resp.Message)
-    }
+	resp, err := client.Download(ctx, req)
+	if err != nil {
+		return fmt.Errorf("download from %s: %w", sn.CosmosAddress, err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("download rejected by %s: %s", sn.CosmosAddress, resp.Message)
+	}
 
-    return nil
+	return nil
 }
 
 // downloadResult holds the result of a successful download attempt

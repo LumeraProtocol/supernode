@@ -10,7 +10,7 @@ import (
 	cascademocks "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/mocks"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
+	"github.com/golang/mock/gomock"
 )
 
 func TestRegister_Success(t *testing.T) {

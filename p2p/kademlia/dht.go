@@ -42,9 +42,10 @@ const (
 	delKeysCountThreshold                       = 10
 	lowSpaceThreshold                           = 50 // GB
 	batchRetrieveSize                           = 1000
-	storeSameSymbolsBatchConcurrency            = 3
-	fetchSymbolsBatchConcurrency                = 6
-	minimumDataStoreSuccessRate                 = 75.0
+
+    storeSameSymbolsBatchConcurrency            = 3
+    fetchSymbolsBatchConcurrency                = 6
+    minimumDataStoreSuccessRate                 = 75.0
 
 	maxIterations                  = 4
 	macConcurrentNetworkStoreCalls = 16
@@ -124,7 +125,7 @@ func (s *DHT) ConnPoolSnapshot() map[string]int64 {
 
 // Options contains configuration options for the queries node
 type Options struct {
-	ID []byte
+    ID []byte
 
 	// The queries IPv4 or IPv6 address
 	IP string
@@ -139,8 +140,11 @@ type Options struct {
 	// Lumera client for interacting with the blockchain
 	LumeraClient lumera.Client
 
-	// Keyring for credentials
-	Keyring keyring.Keyring
+    // Keyring for credentials
+    Keyring keyring.Keyring
+
+    // MetricsDisabled gates DHT-level metrics emission (p2pmetrics hooks and snapshots)
+    MetricsDisabled bool
 }
 
 // NewDHT returns a new DHT node
@@ -739,7 +743,9 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		return nil, fmt.Errorf("fetch and add local keys: %v", err)
 	}
 	// Report how many were found locally, for event metrics
-	p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
+    if !s.options.MetricsDisabled {
+        p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
+    }
 	if foundLocalCount >= required {
 		return result, nil
 	}
@@ -788,7 +794,9 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	// Record batch retrieve stats for internal DHT snapshot window
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
 	// Also feed retrieve counts into the per-task collector for stream events
-	p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
+    if !s.options.MetricsDisabled {
+        p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
+    }
 
 	return result, nil
 }
@@ -946,14 +954,16 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 				mu.Unlock()
 				// record failed RPC per-node
-				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-					IP:         node.IP,
-					Address:    node.String(),
-					Keys:       0,
-					Success:    false,
-					Error:      err.Error(),
-					DurationMS: time.Since(callStart).Milliseconds(),
-				})
+                if !s.options.MetricsDisabled {
+                    p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+                        IP:         node.IP,
+                        Address:    node.String(),
+                        Keys:       0,
+                        Success:    false,
+                        Error:      err.Error(),
+                        DurationMS: time.Since(callStart).Milliseconds(),
+                    })
+                }
 				return
 			}
 
@@ -976,14 +986,16 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			}
 
 			// record successful RPC per-node (returned may be 0). Success is true when no error.
-			p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-				IP:         node.IP,
-				Address:    node.String(),
-				Keys:       returned,
-				Success:    true,
-				Error:      "",
-				DurationMS: time.Since(callStart).Milliseconds(),
-			})
+                if !s.options.MetricsDisabled {
+                    p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+                        IP:         node.IP,
+                        Address:    node.String(),
+                        Keys:       returned,
+                        Success:    true,
+                        Error:      "",
+                        DurationMS: time.Since(callStart).Milliseconds(),
+                    })
+                }
 		}(node, nodeID)
 	}
 
@@ -1713,14 +1725,16 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 		}
 
 		// Emit per-node store RPC call via metrics bridge (no P2P API coupling)
-		p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-			IP:         nodeIP,
-			Address:    nodeAddr,
-			Keys:       response.KeysCount,
-			Success:    errMsg == "" && response.Error == nil,
-			Error:      errMsg,
-			DurationMS: response.DurationMS,
-		})
+    if !s.options.MetricsDisabled {
+        p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+            IP:         nodeIP,
+            Address:    nodeAddr,
+            Keys:       response.KeysCount,
+            Success:    errMsg == "" && response.Error == nil,
+            Error:      errMsg,
+            DurationMS: response.DurationMS,
+        })
+    }
 
 	}
 

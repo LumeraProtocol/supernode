@@ -11,6 +11,7 @@ import (
 //go:generate mockgen -destination=mocks/rq_mock.go -package=cascadeadaptormocks -source=rq.go
 type CodecService interface {
 	EncodeInput(ctx context.Context, taskID string, path string, dataSize int) (EncodeResult, error)
+	PrepareDecode(ctx context.Context, actionID string, layout codec.Layout) (blockPaths []string, Write func(block int, symbolID string, data []byte) (string, error), Cleanup func() error, ws *codec.Workspace, err error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
 }
 
@@ -70,7 +71,11 @@ func (c *codecImpl) Decode(ctx context.Context, req DecodeRequest) (DecodeRespon
 	}
 
 	return DecodeResponse{
-		FilePath:     resp.Path,
+		FilePath:     resp.FilePath,
 		DecodeTmpDir: resp.DecodeTmpDir,
 	}, nil
+}
+
+func (c *codecImpl) PrepareDecode(ctx context.Context, actionID string, layout codec.Layout) (blockPaths []string, Write func(block int, symbolID string, data []byte) (string, error), Cleanup func() error, ws *codec.Workspace, err error) {
+	return
 }

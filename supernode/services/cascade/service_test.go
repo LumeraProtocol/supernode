@@ -8,8 +8,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
 	cascadeadaptormocks "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors/mocks"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 )
 
 func TestNewCascadeService(t *testing.T) {

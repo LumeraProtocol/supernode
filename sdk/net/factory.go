@@ -39,9 +39,10 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 	// Tuned for 1GB max files with 4MB chunks
 	// Reduce in-flight memory by aligning windows and msg sizes to chunk size.
 	opts := client.DefaultClientOptions()
-	opts.MaxRecvMsgSize = 8 * 1024 * 1024         // 8MB: supports 4MB chunks + overhead
-	opts.MaxSendMsgSize = 8 * 1024 * 1024         // 8MB: supports 4MB chunks + overhead
-	opts.InitialWindowSize = 4 * 1024 * 1024      // 4MB per-stream window ≈ chunk size
+	opts.MaxRecvMsgSize = 12 * 1024 * 1024 // 8MB: supports 4MB chunks + overhead
+	opts.MaxSendMsgSize = 12 * 1024 * 1024 // 8MB: supports 4MB chunks + overhead
+	// Increase per-stream window to provide headroom for first data chunk + events
+	opts.InitialWindowSize = 12 * 1024 * 1024     // 8MB per-stream window
 	opts.InitialConnWindowSize = 64 * 1024 * 1024 // 64MB per-connection window
 
 	return &ClientFactory{

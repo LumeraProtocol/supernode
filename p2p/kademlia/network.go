@@ -2,7 +2,6 @@ package kademlia
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -951,7 +950,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		i++
 	}
 
-	values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, true)
+	values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, false)
 	if err != nil {
 		err = errors.Errorf("batch find values: %w", err)
 		s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
@@ -976,17 +975,8 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 
 	for i, key := range keys {
 		val := KeyValWithClosest{
-			Value: values[i],
-		}
-		if len(val.Value) == 0 {
-			decodedKey, err := hex.DecodeString(keys[i])
-			if err != nil {
-				err = errors.Errorf("batch find vals: decode key: %w - key %s", err, keys[i])
-				return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
-			}
-
-			nodes, _ := s.dht.ht.closestContacts(Alpha, decodedKey, []*Node{message.Sender})
-			val.Closest = nodes.Nodes
+			Value:   values[i],
+			Closest: make([]*Node, 0), // for compatibility, not used - each node now has full view of the whole network
 		}
 
 		request.Data[key] = val

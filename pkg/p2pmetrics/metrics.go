@@ -197,6 +197,7 @@ func BuildStoreEventPayloadFromCollector(taskID string) map[string]any {
 
 // Retrieve session
 type retrieveSession struct {
+	mu         sync.RWMutex
 	CallsByIP  map[string][]Call
 	FoundLocal int
 	FoundNet   int
@@ -208,33 +209,94 @@ type retrieveSession struct {
 
 var retrieveSessions = struct{ m map[string]*retrieveSession }{m: map[string]*retrieveSession{}}
 
-// RegisterRetrieveBridge hooks retrieve callbacks into the retrieve collector.
+// internal event channel for retrieve metrics (per task)
+type retrieveEvent struct {
+	typ  int // 0: per-node call, 1: found-local update
+	call Call
+	n    int
+}
+
+var retrieveEventChans = struct {
+	mu sync.Mutex
+	m  map[string]chan retrieveEvent
+}{m: map[string]chan retrieveEvent{}}
+
+// StartRetrieveCapture hooks retrieve callbacks into a buffered channel and a
+// single goroutine that serializes updates to avoid concurrent map writes.
 func StartRetrieveCapture(taskID string) {
+	// Create or get session upfront
+	s := retrieveSessions.m[taskID]
+	if s == nil {
+		s = &retrieveSession{CallsByIP: map[string][]Call{}}
+		retrieveSessions.m[taskID] = s
+	}
+
+	// Per-task buffered channel
+	ch := make(chan retrieveEvent, 4096)
+	retrieveEventChans.mu.Lock()
+	retrieveEventChans.m[taskID] = ch
+	retrieveEventChans.mu.Unlock()
+
+	// Worker goroutine to serialize writes
+	go func(taskID string, ch <-chan retrieveEvent) {
+		for ev := range ch {
+			sess := retrieveSessions.m[taskID]
+			if sess == nil {
+				sess = &retrieveSession{CallsByIP: map[string][]Call{}}
+				retrieveSessions.m[taskID] = sess
+			}
+			switch ev.typ {
+			case 0: // per-node call
+				key := ev.call.IP
+				if key == "" {
+					key = ev.call.Address
+				}
+				sess.mu.Lock()
+				if sess.CallsByIP == nil {
+					sess.CallsByIP = map[string][]Call{}
+				}
+				sess.CallsByIP[key] = append(sess.CallsByIP[key], ev.call)
+				sess.mu.Unlock()
+			case 1: // found-local update
+				sess.FoundLocal = ev.n
+			}
+		}
+	}(taskID, ch)
+
+	// Register hooks that enqueue events (non-blocking)
 	RegisterRetrieveHook(taskID, func(c Call) {
-		s := retrieveSessions.m[taskID]
-		if s == nil {
-			s = &retrieveSession{CallsByIP: map[string][]Call{}}
-			retrieveSessions.m[taskID] = s
+		retrieveEventChans.mu.Lock()
+		ch, ok := retrieveEventChans.m[taskID]
+		retrieveEventChans.mu.Unlock()
+		if ok {
+			select {
+			case ch <- retrieveEvent{typ: 0, call: c}:
+			default: // drop if buffer is full
+			}
 		}
-		key := c.IP
-		if key == "" {
-			key = c.Address
-		}
-		s.CallsByIP[key] = append(s.CallsByIP[key], c)
 	})
 	RegisterFoundLocalHook(taskID, func(n int) {
-		s := retrieveSessions.m[taskID]
-		if s == nil {
-			s = &retrieveSession{CallsByIP: map[string][]Call{}}
-			retrieveSessions.m[taskID] = s
+		retrieveEventChans.mu.Lock()
+		ch, ok := retrieveEventChans.m[taskID]
+		retrieveEventChans.mu.Unlock()
+		if ok {
+			select {
+			case ch <- retrieveEvent{typ: 1, n: n}:
+			default:
+			}
 		}
-		s.FoundLocal = n
 	})
 }
 
 func StopRetrieveCapture(taskID string) {
 	UnregisterRetrieveHook(taskID)
 	UnregisterFoundLocalHook(taskID)
+	retrieveEventChans.mu.Lock()
+	if ch, ok := retrieveEventChans.m[taskID]; ok {
+		delete(retrieveEventChans.m, taskID)
+		close(ch)
+	}
+	retrieveEventChans.mu.Unlock()
 }
 
 // SetRetrieveBatchSummary sets counts for a retrieval attempt.
@@ -284,6 +346,16 @@ func BuildDownloadEventPayloadFromCollector(taskID string) map[string]any {
 			},
 		}
 	}
+	// Create a snapshot copy of CallsByIP to avoid concurrent map access
+	s.mu.RLock()
+	callsCopy := make(map[string][]Call, len(s.CallsByIP))
+	for k, v := range s.CallsByIP {
+		vv := make([]Call, len(v))
+		copy(vv, v)
+		callsCopy[k] = vv
+	}
+	s.mu.RUnlock()
+
 	return map[string]any{
 		"retrieve": map[string]any{
 			"keys":        s.Keys,
@@ -292,7 +364,7 @@ func BuildDownloadEventPayloadFromCollector(taskID string) map[string]any {
 			"found_net":   s.FoundNet,
 			"retrieve_ms": s.RetrieveMS,
 			"decode_ms":   s.DecodeMS,
-			"calls_by_ip": s.CallsByIP,
+			"calls_by_ip": callsCopy,
 		},
 	}
 }

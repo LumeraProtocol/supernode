@@ -1,5 +1,5 @@
 .PHONY: build build-release build-sncli build-sn-manager
-.PHONY: install-lumera setup-supernodes system-test-setup 
+.PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
 
@@ -140,7 +140,7 @@ test-e2e:
 # Run cascade e2e tests only
 test-cascade:
 	@echo "Running cascade e2e tests..."
-	@cd tests/system && go test -tags=system_test -v -run TestCascadeE2E .
+	@cd tests/system && go mod tidy && go test -tags=system_test -v -run TestCascadeE2E .
 
 # Run sn-manager e2e tests only
 test-sn-manager:
