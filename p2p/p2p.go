@@ -40,14 +40,15 @@ type P2P interface {
 
 // p2p structure to implements interface
 type p2p struct {
-	store        kademlia.Store // the store for kademlia network
-	metaStore    kademlia.MetaStore
-	dht          *kademlia.DHT // the kademlia network
-	config       *Config       // the service configuration
-	running      bool          // if the kademlia network is ready
-	lumeraClient lumera.Client
-	keyring      keyring.Keyring // Add the keyring field
-	rqstore      rqstore.Store
+    store        kademlia.Store // the store for kademlia network
+    metaStore    kademlia.MetaStore
+    dht          *kademlia.DHT // the kademlia network
+    config       *Config       // the service configuration
+    running      bool          // if the kademlia network is ready
+    lumeraClient lumera.Client
+    keyring      keyring.Keyring // Add the keyring field
+    rqstore      rqstore.Store
+    metricsDisabled bool
 }
 
 // Run the kademlia network
@@ -226,14 +227,15 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 // configure the distributed hash table for p2p service
 func (s *p2p) configure(ctx context.Context) error {
 	// new the queries storage
-	kadOpts := &kademlia.Options{
-		LumeraClient:   s.lumeraClient,
-		Keyring:        s.keyring, // Pass the keyring
-		BootstrapNodes: []*kademlia.Node{},
-		IP:             s.config.ListenAddress,
-		Port:           s.config.Port,
-		ID:             []byte(s.config.ID),
-	}
+    kadOpts := &kademlia.Options{
+        LumeraClient:   s.lumeraClient,
+        Keyring:        s.keyring, // Pass the keyring
+        BootstrapNodes: []*kademlia.Node{},
+        IP:             s.config.ListenAddress,
+        Port:           s.config.Port,
+        ID:             []byte(s.config.ID),
+        MetricsDisabled: s.metricsDisabled,
+    }
 
 	if len(kadOpts.ID) == 0 {
 		errors.Errorf("node id is empty")
@@ -251,25 +253,26 @@ func (s *p2p) configure(ctx context.Context) error {
 }
 
 // New returns a new p2p instance.
-func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr keyring.Keyring, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
-	store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
-	if err != nil {
-		return nil, errors.Errorf("new kademlia store: %w", err)
-	}
+func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr keyring.Keyring, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore, metricsDisabled bool) (P2P, error) {
+    store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
+    if err != nil {
+        return nil, errors.Errorf("new kademlia store: %w", err)
+    }
 
 	meta, err := meta.NewStore(ctx, config.DataDir)
 	if err != nil {
 		return nil, errors.Errorf("new kademlia meta store: %w", err)
 	}
 
-	return &p2p{
-		store:        store,
-		metaStore:    meta,
-		config:       config,
-		lumeraClient: lumeraClient,
-		keyring:      kr, // Store the keyring
-		rqstore:      rqstore,
-	}, nil
+    return &p2p{
+        store:        store,
+        metaStore:    meta,
+        config:       config,
+        lumeraClient: lumeraClient,
+        keyring:      kr, // Store the keyring
+        rqstore:      rqstore,
+        metricsDisabled: metricsDisabled,
+    }, nil
 }
 
 // LocalStore store data into the kademlia network
