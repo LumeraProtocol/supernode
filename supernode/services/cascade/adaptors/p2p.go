@@ -39,13 +39,14 @@ type P2PService interface {
 
 // p2pImpl is the default implementation of the P2PService interface.
 type p2pImpl struct {
-	p2p     p2p.Client
-	rqStore rqstore.Store
+    p2p             p2p.Client
+    rqStore         rqstore.Store
+    metricsDisabled bool
 }
 
 // NewP2PService returns a concrete implementation of P2PService.
-func NewP2PService(client p2p.Client, store rqstore.Store) P2PService {
-	return &p2pImpl{p2p: client, rqStore: store}
+func NewP2PService(client p2p.Client, store rqstore.Store, metricsDisabled bool) P2PService {
+    return &p2pImpl{p2p: client, rqStore: store, metricsDisabled: metricsDisabled}
 }
 
 type StoreArtefactsRequest struct {
@@ -58,9 +59,11 @@ type StoreArtefactsRequest struct {
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
 	logtrace.Info(ctx, "About to store artefacts (metadata + symbols)", logtrace.Fields{"taskID": req.TaskID, "id_files": len(req.IDFiles)})
 
-	// Enable per-node store RPC capture for this task
-	cm.StartStoreCapture(req.TaskID)
-	defer cm.StopStoreCapture(req.TaskID)
+    // Optionally enable per-node store RPC capture for this task
+    if !p.metricsDisabled {
+        cm.StartStoreCapture(req.TaskID)
+        defer cm.StopStoreCapture(req.TaskID)
+    }
 
 	start := time.Now()
 	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles)

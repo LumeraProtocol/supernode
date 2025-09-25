@@ -165,9 +165,11 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	logtrace.Info(ctx, "Retrieving target-required symbols for decode", fields)
 
-	// Enable retrieve metrics capture for this action
-	cm.StartRetrieveCapture(actionID)
-	defer cm.StopRetrieveCapture(actionID)
+    
+    if !task.config.MetricsDisabled {
+        cm.StartRetrieveCapture(actionID)
+        defer cm.StopRetrieveCapture(actionID)
+    }
 
 	// Measure symbols batch retrieve duration
 	retrieveStart := time.Now()
@@ -201,17 +203,22 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	decodeMS := time.Since(decodeStart).Milliseconds()
 
-	// Set minimal retrieve summary and emit event strictly from internal collector
-	cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
-	payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
-	if retrieve, ok := payload["retrieve"].(map[string]any); ok {
-		retrieve["target_required_percent"] = targetRequiredPercent
-		retrieve["target_required_count"] = targetRequiredCount
-		retrieve["total_symbols"] = totalSymbols
-	}
-	if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
-		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
-	}
+    // Set minimal retrieve summary and emit event strictly from internal collector
+    if !task.config.MetricsDisabled {
+        cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
+        payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
+        if retrieve, ok := payload["retrieve"].(map[string]any); ok {
+            retrieve["target_required_percent"] = targetRequiredPercent
+            retrieve["target_required_count"] = targetRequiredCount
+            retrieve["total_symbols"] = totalSymbols
+        }
+        if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
+            task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
+        }
+    } else {
+        // Send minimal hardcoded event when metrics disabled
+        task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "Download completed (metrics disabled)", "", "", send)
+    }
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {

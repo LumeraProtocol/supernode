@@ -1,11 +1,11 @@
 package cascade
 
 import (
-	"context"
-	"os"
+    "context"
+    "os"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
+    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+    "github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
 // RegisterRequest contains parameters for upload request
@@ -162,8 +162,10 @@ func (task *CascadeRegistrationTask) Register(
 	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return err
 	}
-	// Emit compact analytics payload from centralized metrics collector
-	task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
+    // Emit compact analytics payload from centralized metrics collector (optional)
+    if !task.config.MetricsDisabled {
+        task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
+    }
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
