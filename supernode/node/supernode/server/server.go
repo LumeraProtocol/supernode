@@ -48,8 +48,8 @@ func (server *Server) Run(ctx context.Context) error {
 
 	// Set up gRPC logging
 	logtrace.SetGRPCLogger()
-	logtrace.Info(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.config.Identity})
-	logtrace.Info(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.config.ListenAddresses})
+	logtrace.Debug(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.config.Identity})
+	logtrace.Debug(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.config.ListenAddresses})
 
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -74,7 +74,7 @@ func (server *Server) Run(ctx context.Context) error {
 		address := addr // Create a new variable to avoid closure issues
 
 		group.Go(func() error {
-			logtrace.Info(ctx, "Starting gRPC server", logtrace.Fields{logtrace.FieldModule: "server", "address": address})
+			logtrace.Debug(ctx, "Starting gRPC server", logtrace.Fields{logtrace.FieldModule: "server", "address": address})
 			return server.grpcServer.Serve(ctx, address, opts)
 		})
 	}

@@ -145,7 +145,7 @@ func (rq *raptorQ) PrepareDecode(
 		return os.RemoveAll(symbolsDir)
 	}
 
-	logtrace.Info(ctx, "prepare decode workspace created", logtrace.Fields{
+	logtrace.Debug(ctx, "prepare decode workspace created", logtrace.Fields{
 		"symbols_dir": symbolsDir,
 		"blocks":      len(blockDirs),
 	})
@@ -164,7 +164,7 @@ func (rq *raptorQ) DecodeFromPrepared(
 		logtrace.FieldModule:   "rq",
 		logtrace.FieldActionID: ws.ActionID,
 	}
-	logtrace.Info(ctx, "RaptorQ decode (prepared) requested", fields)
+	logtrace.Debug(ctx, "RaptorQ decode (prepared) requested", fields)
 
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
@@ -184,7 +184,7 @@ func (rq *raptorQ) DecodeFromPrepared(
 		fields[logtrace.FieldError] = err.Error()
 		return DecodeResponse{}, fmt.Errorf("write layout file: %w", err)
 	}
-	logtrace.Info(ctx, "layout.json written (prepared)", fields)
+	logtrace.Debug(ctx, "layout.json written (prepared)", fields)
 
 	// Decode to output (idempotent-safe: overwrite on success)
 	outputPath := filepath.Join(ws.SymbolsDir, "output")
@@ -194,64 +194,64 @@ func (rq *raptorQ) DecodeFromPrepared(
 		return DecodeResponse{}, fmt.Errorf("raptorq decode: %w", err)
 	}
 
-	logtrace.Info(ctx, "RaptorQ decoding completed successfully (prepared)", logtrace.Fields{
+	logtrace.Debug(ctx, "RaptorQ decoding completed successfully (prepared)", logtrace.Fields{
 		"output_path": outputPath,
 	})
 	return DecodeResponse{FilePath: outputPath, DecodeTmpDir: ws.SymbolsDir}, nil
 }
 
 func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error) {
-    fields := logtrace.Fields{
-        logtrace.FieldMethod:   "Decode",
-        logtrace.FieldModule:   "rq",
-        logtrace.FieldActionID: req.ActionID,
-    }
-    logtrace.Info(ctx, "RaptorQ decode request received", fields)
+	fields := logtrace.Fields{
+		logtrace.FieldMethod:   "Decode",
+		logtrace.FieldModule:   "rq",
+		logtrace.FieldActionID: req.ActionID,
+	}
+	logtrace.Debug(ctx, "RaptorQ decode request received", fields)
 
-    // 1) Validate layout (the check)
-    if len(req.Layout.Blocks) == 0 {
-        fields[logtrace.FieldError] = "empty layout"
-        return DecodeResponse{}, fmt.Errorf("invalid layout: no blocks present")
-    }
-    for _, blk := range req.Layout.Blocks {
-        if len(blk.Symbols) == 0 {
-            fields[logtrace.FieldError] = fmt.Sprintf("block_%d has no symbols", blk.BlockID)
-            return DecodeResponse{}, fmt.Errorf("invalid layout: block %d has no symbols", blk.BlockID)
-        }
-    }
+	// 1) Validate layout (the check)
+	if len(req.Layout.Blocks) == 0 {
+		fields[logtrace.FieldError] = "empty layout"
+		return DecodeResponse{}, fmt.Errorf("invalid layout: no blocks present")
+	}
+	for _, blk := range req.Layout.Blocks {
+		if len(blk.Symbols) == 0 {
+			fields[logtrace.FieldError] = fmt.Sprintf("block_%d has no symbols", blk.BlockID)
+			return DecodeResponse{}, fmt.Errorf("invalid layout: block %d has no symbols", blk.BlockID)
+		}
+	}
 
-    // 2) Prepare workspace (functionality)
-    _, Write, Cleanup, ws, err := rq.PrepareDecode(ctx, req.ActionID, req.Layout)
-    if err != nil {
-        fields[logtrace.FieldError] = err.Error()
-        return DecodeResponse{}, fmt.Errorf("prepare decode workspace: %w", err)
-    }
+	// 2) Prepare workspace (functionality)
+	_, Write, Cleanup, ws, err := rq.PrepareDecode(ctx, req.ActionID, req.Layout)
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return DecodeResponse{}, fmt.Errorf("prepare decode workspace: %w", err)
+	}
 
-    // Ensure workspace cleanup on failure. On success, caller cleans up via returned path.
-    success := false
-    defer func() {
-        if !success && Cleanup != nil {
-            _ = Cleanup()
-        }
-    }()
+	// Ensure workspace cleanup on failure. On success, caller cleans up via returned path.
+	success := false
+	defer func() {
+		if !success && Cleanup != nil {
+			_ = Cleanup()
+		}
+	}()
 
-    // 3) Persist provided in-memory symbols via Write (functionality)
-    if len(req.Symbols) > 0 {
-        for id, data := range req.Symbols {
-            if _, werr := Write(-1, id, data); werr != nil {
-                fields[logtrace.FieldError] = werr.Error()
-                return DecodeResponse{}, werr
-            }
-        }
-        logtrace.Info(ctx, "symbols persisted via Write()", fields)
-    }
+	// 3) Persist provided in-memory symbols via Write (functionality)
+	if len(req.Symbols) > 0 {
+		for id, data := range req.Symbols {
+			if _, werr := Write(-1, id, data); werr != nil {
+				fields[logtrace.FieldError] = werr.Error()
+				return DecodeResponse{}, werr
+			}
+		}
+		logtrace.Debug(ctx, "symbols persisted via Write()", fields)
+	}
 
-    // 4) Decode using the prepared workspace (functionality)
-    resp, derr := rq.DecodeFromPrepared(ctx, ws, req.Layout)
-    if derr != nil {
-        fields[logtrace.FieldError] = derr.Error()
-        return DecodeResponse{}, derr
-    }
-    success = true
-    return resp, nil
+	// 4) Decode using the prepared workspace (functionality)
+	resp, derr := rq.DecodeFromPrepared(ctx, ws, req.Layout)
+	if derr != nil {
+		fields[logtrace.FieldError] = derr.Error()
+		return DecodeResponse{}, derr
+	}
+	success = true
+	return resp, nil
 }

@@ -257,7 +257,7 @@ func (s *SQLiteStore) GetSHExecutionMetrics(ctx context.Context, from time.Time)
 	if err != nil {
 		return m, err
 	}
-	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
+	logtrace.Debug(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	challenges := make(map[string]SHChallengeMetric)
 	for _, row := range rows {
@@ -361,11 +361,11 @@ func (s *SQLiteStore) GetSHExecutionMetrics(ctx context.Context, from time.Time)
 		}
 	}
 
-	logtrace.Info(ctx, "self-healing execution metrics challenges count", logtrace.Fields{"challenges": len(challenges)})
+	logtrace.Debug(ctx, "self-healing execution metrics challenges count", logtrace.Fields{"challenges": len(challenges)})
 
 	for _, challenge := range challenges {
 
-		logtrace.Info(ctx, "self-healing challenge metric", logtrace.Fields{
+		logtrace.Debug(ctx, "self-healing challenge metric", logtrace.Fields{
 			"challenge-id": challenge.ChallengeID,
 			"is-accepted":  challenge.IsAccepted,
 			"is-verified":  challenge.IsVerified,
@@ -475,7 +475,7 @@ func (s *SQLiteStore) GetLastNSHChallenges(ctx context.Context, n int) (types.Se
 	if err != nil {
 		return challenges, err
 	}
-	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
+	logtrace.Debug(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	challengesInserted := 0
 	for _, row := range rows {
@@ -507,7 +507,7 @@ func (s *SQLiteStore) GetSHChallengeReport(ctx context.Context, challengeID stri
 	if err != nil {
 		return challenges, err
 	}
-	logtrace.Info(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
+	logtrace.Debug(ctx, "self-healing execution metrics row count", logtrace.Fields{"rows": len(rows)})
 
 	for _, row := range rows {
 		if row.ChallengeID == challengeID {

@@ -48,7 +48,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		return EncodeResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)
 	}
 	defer processor.Free()
-	logtrace.Info(ctx, "RaptorQ processor created", fields)
+	logtrace.Debug(ctx, "RaptorQ processor created", fields)
 
 	/* ---------- 1.  run the encoder ---------- */
 	// Deterministic: force single block
@@ -60,7 +60,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		os.Remove(req.Path)
 		return EncodeResponse{}, fmt.Errorf("mkdir %s: %w", symbolsDir, err)
 	}
-	logtrace.Info(ctx, "RaptorQ processor encoding", fields)
+	logtrace.Debug(ctx, "RaptorQ processor encoding", fields)
 
 	resp, err := processor.EncodeFile(req.Path, symbolsDir, blockSize)
 	if err != nil {
@@ -74,7 +74,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 
 	/* ---------- 2.  read the layout JSON ---------- */
 	layoutData, err := os.ReadFile(resp.LayoutFilePath)
-	logtrace.Info(ctx, "RaptorQ processor layout file", logtrace.Fields{
+	logtrace.Debug(ctx, "RaptorQ processor layout file", logtrace.Fields{
 		"layout-file": resp.LayoutFilePath})
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()

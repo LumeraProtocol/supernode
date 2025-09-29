@@ -124,7 +124,7 @@ func NewMigrationMetaStore(ctx context.Context, dataDir string, cloud cloud.Stor
 	go handler.startLastAccessedUpdateWorker(ctx)
 	go handler.startInsertWorker(ctx)
 	go handler.startMigrationExecutionWorker(ctx)
-	logtrace.Info(ctx, "MigrationMetaStore workers started", logtrace.Fields{})
+	logtrace.Debug(ctx, "MigrationMetaStore workers started", logtrace.Fields{})
 
 	return handler, nil
 }
@@ -348,7 +348,7 @@ func (d *MigrationMetaStore) startLastAccessedUpdateWorker(ctx context.Context) 
 		case <-d.updateTicker.C:
 			d.commitLastAccessedUpdates(ctx)
 		case <-ctx.Done():
-			logtrace.Info(ctx, "Shutting down last accessed update worker", logtrace.Fields{})
+			logtrace.Debug(ctx, "Shutting down last accessed update worker", logtrace.Fields{})
 			return
 		}
 	}
@@ -414,7 +414,7 @@ func (d *MigrationMetaStore) commitLastAccessedUpdates(ctx context.Context) {
 		d.updates.Delete(k)
 	}
 
-	logtrace.Info(ctx, "Committed last accessed updates", logtrace.Fields{"count": len(keysToUpdate)})
+	logtrace.Debug(ctx, "Committed last accessed updates", logtrace.Fields{"count": len(keysToUpdate)})
 }
 
 func PostKeysInsert(updates []UpdateMessage) {
@@ -437,7 +437,7 @@ func (d *MigrationMetaStore) startInsertWorker(ctx context.Context) {
 		case <-d.insertTicker.C:
 			d.commitInserts(ctx)
 		case <-ctx.Done():
-			logtrace.Info(ctx, "Shutting down insert meta keys worker", logtrace.Fields{})
+			logtrace.Debug(ctx, "Shutting down insert meta keys worker", logtrace.Fields{})
 			d.commitInserts(ctx)
 			return
 		}
@@ -501,7 +501,7 @@ func (d *MigrationMetaStore) commitInserts(ctx context.Context) {
 		d.inserts.Delete(k)
 	}
 
-	logtrace.Info(ctx, "Committed inserts", logtrace.Fields{"count": len(keysToUpdate)})
+	logtrace.Debug(ctx, "Committed inserts", logtrace.Fields{"count": len(keysToUpdate)})
 }
 
 // startMigrationExecutionWorker starts the worker that executes a migration
@@ -511,7 +511,7 @@ func (d *MigrationMetaStore) startMigrationExecutionWorker(ctx context.Context) 
 		case <-d.migrationExecutionTicker.C:
 			d.checkAndExecuteMigration(ctx)
 		case <-ctx.Done():
-			logtrace.Info(ctx, "Shutting down data migration worker", logtrace.Fields{})
+			logtrace.Debug(ctx, "Shutting down data migration worker", logtrace.Fields{})
 			return
 		}
 	}
@@ -544,7 +544,7 @@ func (d *MigrationMetaStore) checkAndExecuteMigration(ctx context.Context) {
 	//return
 	//}
 
-	logtrace.Info(ctx, "Starting data migration", logtrace.Fields{"islow": isLow})
+	logtrace.Debug(ctx, "Starting data migration", logtrace.Fields{"islow": isLow})
 	// Step 1: Fetch pending migrations
 	var migrations Migrations
 
@@ -553,11 +553,11 @@ func (d *MigrationMetaStore) checkAndExecuteMigration(ctx context.Context) {
 		logtrace.Error(ctx, "Failed to fetch pending migrations", logtrace.Fields{logtrace.FieldError: err})
 		return
 	}
-	logtrace.Info(ctx, "Fetched pending migrations", logtrace.Fields{"count": len(migrations)})
+	logtrace.Debug(ctx, "Fetched pending migrations", logtrace.Fields{"count": len(migrations)})
 
 	// Iterate over each migration
 	for _, migration := range migrations {
-		logtrace.Info(ctx, "Processing migration", logtrace.Fields{"migration_id": migration.ID})
+		logtrace.Debug(ctx, "Processing migration", logtrace.Fields{"migration_id": migration.ID})
 
 		if err := d.ProcessMigrationInBatches(ctx, migration); err != nil {
 			logtrace.Error(ctx, "Failed to process migration", logtrace.Fields{logtrace.FieldError: err, "migration_id": migration.ID})
@@ -579,7 +579,7 @@ func (d *MigrationMetaStore) ProcessMigrationInBatches(ctx context.Context, migr
 	}
 
 	if totalKeys < minKeysToMigrate {
-		logtrace.Info(ctx, "Skipping migration due to insufficient keys", logtrace.Fields{"migration_id": migration.ID, "keys-count": totalKeys})
+		logtrace.Debug(ctx, "Skipping migration due to insufficient keys", logtrace.Fields{"migration_id": migration.ID, "keys-count": totalKeys})
 		return nil
 	}
 
@@ -630,7 +630,7 @@ func (d *MigrationMetaStore) ProcessMigrationInBatches(ctx context.Context, migr
 		}
 	}
 
-	logtrace.Info(ctx, "Migration processed successfully", logtrace.Fields{"migration_id": migration.ID, "tota-keys-count": totalKeys, "migrated_in_current_iteration": nonMigratedKeys})
+	logtrace.Debug(ctx, "Migration processed successfully", logtrace.Fields{"migration_id": migration.ID, "tota-keys-count": totalKeys, "migrated_in_current_iteration": nonMigratedKeys})
 
 	return nil
 }
@@ -683,7 +683,7 @@ func (d *MigrationMetaStore) uploadInBatches(ctx context.Context, keys []string,
 			continue
 		}
 
-		logtrace.Info(ctx, "Successfully uploaded and deleted records for batch", logtrace.Fields{"batch": i + 1, "total_batches": batches})
+		logtrace.Debug(ctx, "Successfully uploaded and deleted records for batch", logtrace.Fields{"batch": i + 1, "total_batches": batches})
 	}
 
 	return lastError
@@ -823,7 +823,7 @@ func (d *MigrationMetaStore) InsertMetaMigrationData(ctx context.Context, migrat
 func (d *MigrationMetaStore) batchSetMigrated(keys []string) error {
 	if len(keys) == 0 {
 		// log.P2P().Info("no keys provided for batch update (is_migrated)")
-		logtrace.Info(context.Background(), "No keys provided for batch update (is_migrated)", logtrace.Fields{})
+		logtrace.Debug(context.Background(), "No keys provided for batch update (is_migrated)", logtrace.Fields{})
 		return nil
 	}
 

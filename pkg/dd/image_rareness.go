@@ -56,7 +56,7 @@ func (c *ddServerClientImpl) ImageRarenessScore(ctx context.Context, req Rarenes
 		logtrace.FieldMethod:  "ImageRarenessScore",
 		logtrace.FieldRequest: req,
 	}
-	logtrace.Info(ctx, "getting image rareness score", fields)
+	logtrace.Debug(ctx, "getting image rareness score", fields)
 
 	res, err := c.ddService.ImageRarenessScore(ctx, &ddService.RarenessScoreRequest{ImageFilepath: req.Filepath})
 	if err != nil {
@@ -65,7 +65,7 @@ func (c *ddServerClientImpl) ImageRarenessScore(ctx context.Context, req Rarenes
 		return ImageRarenessScoreResponse{}, fmt.Errorf("dd image rareness score error: %w", err)
 	}
 
-	logtrace.Info(ctx, "successfully got image rareness score", fields)
+	logtrace.Debug(ctx, "successfully got image rareness score", fields)
 	return toImageRarenessScoreResponse(res), nil
 }
 

@@ -203,7 +203,7 @@ func (s *Server) createListener(ctx context.Context, address string) (net.Listen
 	if err != nil {
 		return nil, errors.Errorf("failed to create listener: %w", err).WithField("address", address)
 	}
-	logtrace.Info(ctx, "gRPC server listening", logtrace.Fields{"address": address})
+	logtrace.Debug(ctx, "gRPC server listening", logtrace.Fields{"address": address})
 	return lis, nil
 }
 
@@ -256,7 +256,7 @@ func (s *Server) Serve(ctx context.Context, address string, opts *ServerOptions)
 	// Wait for context cancellation or error
 	select {
 	case <-ctx.Done():
-		logtrace.Info(ctx, "Shutting down gRPC server", logtrace.Fields{"address": address})
+		logtrace.Debug(ctx, "Shutting down gRPC server", logtrace.Fields{"address": address})
 		return s.Stop(opts.GracefulShutdownTime)
 	case err := <-serveErr:
 		return err

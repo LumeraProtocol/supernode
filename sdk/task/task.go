@@ -126,7 +126,7 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 		PeerType:           t.config.Account.PeerType,
 	}).CreateClient(ctx, sn)
 	if err != nil {
-		logtrace.Info(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
+		logtrace.Debug(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
 		return false
 	}
 	defer client.Close(ctx)

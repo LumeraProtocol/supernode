@@ -34,7 +34,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 			logtrace.FieldMethod:        info.FullMethod,
 			logtrace.FieldCorrelationID: correlationID,
 		}
-		logtrace.Info(ctx, "received gRPC request", fields)
+		logtrace.Debug(ctx, "received gRPC request", fields)
 
 		resp, err := handler(ctx, req)
 
@@ -42,7 +42,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 			fields[logtrace.FieldError] = err.Error()
 			logtrace.Error(ctx, "gRPC request failed", fields)
 		} else {
-			logtrace.Info(ctx, "gRPC request processed successfully", fields)
+			logtrace.Debug(ctx, "gRPC request processed successfully", fields)
 		}
 
 		return resp, err

@@ -43,9 +43,9 @@ const (
 	lowSpaceThreshold                           = 50 // GB
 	batchRetrieveSize                           = 1000
 
-    storeSameSymbolsBatchConcurrency            = 3
-    fetchSymbolsBatchConcurrency                = 6
-    minimumDataStoreSuccessRate                 = 75.0
+	storeSameSymbolsBatchConcurrency = 3
+	fetchSymbolsBatchConcurrency     = 6
+	minimumDataStoreSuccessRate      = 75.0
 
 	maxIterations                  = 4
 	macConcurrentNetworkStoreCalls = 16
@@ -104,7 +104,7 @@ func (s *DHT) bootstrapIgnoreList(ctx context.Context) error {
 	}
 
 	if added > 0 {
-		logtrace.Info(ctx, "Ignore list bootstrapped from replication info", logtrace.Fields{
+		logtrace.Debug(ctx, "Ignore list bootstrapped from replication info", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"ignored_count":      added,
 		})
@@ -125,7 +125,7 @@ func (s *DHT) ConnPoolSnapshot() map[string]int64 {
 
 // Options contains configuration options for the queries node
 type Options struct {
-    ID []byte
+	ID []byte
 
 	// The queries IPv4 or IPv6 address
 	IP string
@@ -140,11 +140,11 @@ type Options struct {
 	// Lumera client for interacting with the blockchain
 	LumeraClient lumera.Client
 
-    // Keyring for credentials
-    Keyring keyring.Keyring
+	// Keyring for credentials
+	Keyring keyring.Keyring
 
-    // MetricsDisabled gates DHT-level metrics emission (p2pmetrics hooks and snapshots)
-    MetricsDisabled bool
+	// MetricsDisabled gates DHT-level metrics emission (p2pmetrics hooks and snapshots)
+	MetricsDisabled bool
 }
 
 // NewDHT returns a new DHT node
@@ -362,7 +362,7 @@ func (s *DHT) Store(ctx context.Context, data []byte, typ int) (string, error) {
 // measured success rate for node RPCs is below the configured minimum, an error
 // is returned. Metrics are not returned through the API.
 func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error {
-	logtrace.Info(ctx, "Store DB batch begin", logtrace.Fields{
+	logtrace.Debug(ctx, "Store DB batch begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		logtrace.FieldTaskID: taskID,
 		"records":            len(values),
@@ -370,7 +370,7 @@ func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID s
 	if err := s.store.StoreBatch(ctx, values, typ, true); err != nil {
 		return fmt.Errorf("store batch: %v", err)
 	}
-	logtrace.Info(ctx, "Store DB batch done, store network batch begin", logtrace.Fields{
+	logtrace.Debug(ctx, "Store DB batch done, store network batch begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		logtrace.FieldTaskID: taskID,
 	})
@@ -380,7 +380,7 @@ func (s *DHT) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID s
 		return fmt.Errorf("iterate batch store: %v", err)
 	}
 
-	logtrace.Info(ctx, "Store network batch workers done", logtrace.Fields{
+	logtrace.Debug(ctx, "Store network batch workers done", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		logtrace.FieldTaskID: taskID,
 	})
@@ -426,13 +426,13 @@ func (s *DHT) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 		return nil, errors.Errorf("retrieve from peer: %w", err)
 	}
 	if len(peerValue) > 0 {
-		logtrace.Info(ctx, "Not found locally, retrieved from other nodes", logtrace.Fields{
+		logtrace.Debug(ctx, "Not found locally, retrieved from other nodes", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"key":                dbKey,
 			"data_len":           len(peerValue),
 		})
 	} else {
-		logtrace.Info(ctx, "Not found locally, not found in other nodes", logtrace.Fields{
+		logtrace.Debug(ctx, "Not found locally, not found in other nodes", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"key":                dbKey,
 		})
@@ -531,7 +531,7 @@ func (s *DHT) GetValueFromNode(ctx context.Context, target []byte, n *Node) ([]b
 
 	response, err := s.network.Call(cctx, request, false)
 	if err != nil {
-		logtrace.Info(ctx, "Network call request failed", logtrace.Fields{
+		logtrace.Debug(ctx, "Network call request failed", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			logtrace.FieldError:  err.Error(),
 			"request":            request.String(),
@@ -573,7 +573,7 @@ func (s *DHT) doMultiWorkers(ctx context.Context, iterativeType int, target []by
 			// update the running goroutines
 			number++
 
-			logtrace.Info(ctx, "Start work for node", logtrace.Fields{
+			logtrace.Debug(ctx, "Start work for node", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"iterate_type":       iterativeType,
 				"node":               node.String(),
@@ -600,7 +600,7 @@ func (s *DHT) doMultiWorkers(ctx context.Context, iterativeType int, target []by
 				// send the request and receive the response
 				response, err := s.network.Call(ctx, request, false)
 				if err != nil {
-					logtrace.Info(ctx, "Network call request failed", logtrace.Fields{
+					logtrace.Debug(ctx, "Network call request failed", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 						logtrace.FieldError:  err.Error(),
 						"request":            request.String(),
@@ -637,7 +637,7 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 
 		batchHexKeys := hexKeys[start:end]
 
-		logtrace.Info(ctx, "Processing batch of local keys", logtrace.Fields{
+		logtrace.Debug(ctx, "Processing batch of local keys", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"batch_size":         len(batchHexKeys),
 			"total_keys":         len(hexKeys),
@@ -743,9 +743,9 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		return nil, fmt.Errorf("fetch and add local keys: %v", err)
 	}
 	// Report how many were found locally, for event metrics
-    if !s.options.MetricsDisabled {
-        p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
-    }
+	if !s.options.MetricsDisabled {
+		p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
+	}
 	if foundLocalCount >= required {
 		return result, nil
 	}
@@ -794,9 +794,9 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	// Record batch retrieve stats for internal DHT snapshot window
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
 	// Also feed retrieve counts into the per-task collector for stream events
-    if !s.options.MetricsDisabled {
-        p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
-    }
+	if !s.options.MetricsDisabled {
+		p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
+	}
 
 	return result, nil
 }
@@ -907,7 +907,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 	defer cancel()
 	for nodeID, node := range nodes {
 		if s.ignorelist.Banned(node) {
-			logtrace.Info(ctx, "Ignore banned node in iterate batch get values", logtrace.Fields{
+			logtrace.Debug(ctx, "Ignore banned node in iterate batch get values", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"node":               node.String(),
 			})
@@ -954,16 +954,16 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 				mu.Unlock()
 				// record failed RPC per-node
-                if !s.options.MetricsDisabled {
-                    p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-                        IP:         node.IP,
-                        Address:    node.String(),
-                        Keys:       0,
-                        Success:    false,
-                        Error:      err.Error(),
-                        DurationMS: time.Since(callStart).Milliseconds(),
-                    })
-                }
+				if !s.options.MetricsDisabled {
+					p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+						IP:         node.IP,
+						Address:    node.String(),
+						Keys:       0,
+						Success:    false,
+						Error:      err.Error(),
+						DurationMS: time.Since(callStart).Milliseconds(),
+					})
+				}
 				return
 			}
 
@@ -986,22 +986,22 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			}
 
 			// record successful RPC per-node (returned may be 0). Success is true when no error.
-                if !s.options.MetricsDisabled {
-                    p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-                        IP:         node.IP,
-                        Address:    node.String(),
-                        Keys:       returned,
-                        Success:    true,
-                        Error:      "",
-                        DurationMS: time.Since(callStart).Milliseconds(),
-                    })
-                }
+			if !s.options.MetricsDisabled {
+				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+					IP:         node.IP,
+					Address:    node.String(),
+					Keys:       returned,
+					Success:    true,
+					Error:      "",
+					DurationMS: time.Since(callStart).Milliseconds(),
+				})
+			}
 		}(node, nodeID)
 	}
 
 	wg.Wait()
 
-	logtrace.Info(ctx, "Iterate batch get values done", logtrace.Fields{
+	logtrace.Debug(ctx, "Iterate batch get values done", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"found_count":        atomic.LoadInt32(&foundCount),
 	})
@@ -1083,7 +1083,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	// find the closest contacts for the target node from queries route tables
 	nl, _ := s.ht.closestContacts(Alpha, target, igList)
 	if len(igList) > 0 {
-		logtrace.Info(ctx, "Closest contacts", logtrace.Fields{
+		logtrace.Debug(ctx, "Closest contacts", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"nodes":              nl.String(),
 			"ignored":            s.ignorelist.String(),
@@ -1093,7 +1093,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	if nl.Len() == 0 {
 		return nil, nil
 	}
-	logtrace.Info(ctx, "Iterate start", logtrace.Fields{
+	logtrace.Debug(ctx, "Iterate start", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"type":               iterativeType,
@@ -1107,7 +1107,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	if iterativeType == IterateFindNode {
 		hashedTargetID, _ := utils.Blake3Hash(target)
 		bucket := s.ht.bucketIndex(s.ht.self.HashedID, hashedTargetID)
-		logtrace.Info(ctx, "Bucket for target", logtrace.Fields{
+		logtrace.Debug(ctx, "Bucket for target", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"target":             sKey,
 		})
@@ -1131,7 +1131,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 	// Set a maximum number of iterations to prevent indefinite looping
 	maxIterations := 5 // Adjust the maximum iterations as needed
 
-	logtrace.Info(ctx, "Begin iteration", logtrace.Fields{
+	logtrace.Debug(ctx, "Begin iteration", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1142,7 +1142,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 		case <-ctx.Done():
 			return nil, fmt.Errorf("iterate cancelled: %w", ctx.Err())
 		case <-timeout:
-			logtrace.Info(ctx, "Iteration timed out", logtrace.Fields{
+			logtrace.Debug(ctx, "Iteration timed out", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 			})
 			return nil, nil
@@ -1174,7 +1174,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 
 			// Stop search if no more nodes to contact
 			if !searchRest && len(nl.Nodes) == 0 {
-				logtrace.Info(ctx, "Search stopped", logtrace.Fields{
+				logtrace.Debug(ctx, "Search stopped", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
 					"task_id":            taskID,
 					"key":                sKey,
@@ -1186,7 +1186,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 			nl.Comparator = target
 			nl.Sort()
 
-			logtrace.Info(ctx, "Iterate sorted nodes", logtrace.Fields{
+			logtrace.Debug(ctx, "Iterate sorted nodes", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"id":                 base58.Encode(s.ht.self.ID),
 				"iterate":            iterativeType,
@@ -1223,7 +1223,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 
 		}
 	}
-	logtrace.Info(ctx, "Finish iteration without results", logtrace.Fields{
+	logtrace.Debug(ctx, "Finish iteration without results", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1244,7 +1244,7 @@ func (s *DHT) handleResponses(ctx context.Context, responses <-chan *Message, nl
 			v, ok := response.Data.(*FindValueResponse)
 			if ok {
 				if v.Status.Result == ResultOk && len(v.Value) > 0 {
-					logtrace.Info(ctx, "Iterate found value from network", logtrace.Fields{
+					logtrace.Debug(ctx, "Iterate found value from network", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 					})
 					return nl, v.Value
@@ -1274,7 +1274,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 	// nl will have the closest nodes to the target value, it will ignore the nodes in igList
 	nl, _ := s.ht.closestContacts(Alpha, target, igList)
 	if len(igList) > 0 {
-		logtrace.Info(ctx, "Closest contacts", logtrace.Fields{
+		logtrace.Debug(ctx, "Closest contacts", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"nodes":              nl.String(),
 			"ignored":            s.ignorelist.String(),
@@ -1289,7 +1289,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 	searchRest := false
 	// keep track of contacted nodes so that we don't hit them again
 	contacted := make(map[string]bool)
-	logtrace.Info(ctx, "Begin iteration", logtrace.Fields{
+	logtrace.Debug(ctx, "Begin iteration", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1298,7 +1298,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 	var closestNode *Node
 	var iterationCount int
 	for iterationCount = 0; iterationCount < maxIterations; iterationCount++ {
-		logtrace.Info(ctx, "Begin find value", logtrace.Fields{
+		logtrace.Debug(ctx, "Begin find value", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"task_id":            taskID,
 			"nl":                 nl.Len(),
@@ -1318,7 +1318,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 
 		// if the closest node is the same as the last iteration  and we don't want to search rest of nodes, we are done
 		if !searchRest && (closestNode != nil && bytes.Equal(nl.Nodes[0].ID, closestNode.ID)) {
-			logtrace.Info(ctx, "Closest node is the same as the last iteration", logtrace.Fields{
+			logtrace.Debug(ctx, "Closest node is the same as the last iteration", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"task_id":            taskID,
 				"key":                sKey,
@@ -1337,7 +1337,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 
 		nl.Sort()
 
-		logtrace.Info(ctx, "Iteration progress", logtrace.Fields{
+		logtrace.Debug(ctx, "Iteration progress", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"task_id":            taskID,
 			"key":                sKey,
@@ -1346,7 +1346,7 @@ func (s *DHT) iterateFindValue(ctx context.Context, iterativeType int, target []
 		})
 	}
 
-	logtrace.Info(ctx, "Finished iterations without results", logtrace.Fields{
+	logtrace.Debug(ctx, "Finished iterations without results", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"task_id":            taskID,
 		"key":                sKey,
@@ -1526,7 +1526,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 	for i := Alpha; i < nl.Len() && finalStoreCount < int32(Alpha); i++ {
 		n := nl.Nodes[i]
 		if s.ignorelist.Banned(n) {
-			logtrace.Info(ctx, "Ignore banned node during sequential store", logtrace.Fields{
+			logtrace.Debug(ctx, "Ignore banned node during sequential store", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"node":               n.String(),
 				"task_id":            taskID,
@@ -1559,7 +1559,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 	skey, _ := utils.Blake3Hash(data)
 
 	if finalStoreCount >= int32(Alpha) {
-		logtrace.Info(ctx, "Store data to alpha nodes success", logtrace.Fields{
+		logtrace.Debug(ctx, "Store data to alpha nodes success", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"task_id":            taskID,
 			"len_total_nodes":    nl.Len(),
@@ -1569,7 +1569,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 		return nil
 	}
 
-	logtrace.Info(ctx, "Store data to alpha nodes failed", logtrace.Fields{
+	logtrace.Debug(ctx, "Store data to alpha nodes failed", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"task_id":            taskID,
 		"store_count":        finalStoreCount,
@@ -1582,7 +1582,7 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 func (s *DHT) removeNode(ctx context.Context, node *Node) {
 	// ensure this is not itself address
 	if bytes.Equal(node.ID, s.ht.self.ID) {
-		logtrace.Info(ctx, "Trying to remove itself", logtrace.Fields{
+		logtrace.Debug(ctx, "Trying to remove itself", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 		})
 		return
@@ -1598,7 +1598,7 @@ func (s *DHT) removeNode(ctx context.Context, node *Node) {
 			"bucket":             index,
 		})
 	} else {
-		logtrace.Info(ctx, "Removed node from bucket success", logtrace.Fields{
+		logtrace.Debug(ctx, "Removed node from bucket success", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"node":               node.String(),
 			"bucket":             index,
@@ -1656,7 +1656,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
 
-	logtrace.Info(ctx, "Iterate batch store begin", logtrace.Fields{
+	logtrace.Debug(ctx, "Iterate batch store begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"task_id":            id,
 		"keys":               len(values),
@@ -1725,16 +1725,16 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 		}
 
 		// Emit per-node store RPC call via metrics bridge (no P2P API coupling)
-    if !s.options.MetricsDisabled {
-        p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-            IP:         nodeIP,
-            Address:    nodeAddr,
-            Keys:       response.KeysCount,
-            Success:    errMsg == "" && response.Error == nil,
-            Error:      errMsg,
-            DurationMS: response.DurationMS,
-        })
-    }
+		if !s.options.MetricsDisabled {
+			p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+				IP:         nodeIP,
+				Address:    nodeAddr,
+				Keys:       response.KeysCount,
+				Success:    errMsg == "" && response.Error == nil,
+				Error:      errMsg,
+				DurationMS: response.DurationMS,
+			})
+		}
 
 	}
 
@@ -1743,14 +1743,14 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 
 		successRate := float64(successful) / float64(requests) * 100
 		if successRate >= minimumDataStoreSuccessRate {
-			logtrace.Info(ctx, "Successful store operations", logtrace.Fields{
+			logtrace.Debug(ctx, "Successful store operations", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
 			})
 			return nil
 		} else {
-			logtrace.Info(ctx, "Failed to achieve desired success rate", logtrace.Fields{
+			logtrace.Debug(ctx, "Failed to achieve desired success rate", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
@@ -1777,12 +1777,12 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 	var wg sync.WaitGroup
 
 	for key, node := range nodes {
-		logtrace.Info(ctx, "Node", logtrace.Fields{
+		logtrace.Debug(ctx, "Node", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"port":               node.String(),
 		})
 		if s.ignorelist.Banned(node) {
-			logtrace.Info(ctx, "Ignoring banned node in batch store network call", logtrace.Fields{
+			logtrace.Debug(ctx, "Ignoring banned node in batch store network call", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"node":               node.String(),
 			})
@@ -1810,7 +1810,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					totalBytes += len(values[idx])
 				}
 
-				logtrace.Info(ctx, "Batch store to node", logtrace.Fields{
+				logtrace.Debug(ctx, "Batch store to node", logtrace.Fields{
 					logtrace.FieldModule:   "dht",
 					"keys":                 len(toStore),
 					"size_before_compress": utils.BytesIntToMB(totalBytes),
@@ -1818,7 +1818,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 
 				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
 				if len(toStore) == 0 {
-					logtrace.Info(ctx, "Skipping store RPC with empty payload", logtrace.Fields{
+					logtrace.Debug(ctx, "Skipping store RPC with empty payload", logtrace.Fields{
 						logtrace.FieldModule: "dht",
 						"node":               receiver.String(),
 					})
@@ -1835,7 +1835,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 						s.metrics.IncHotPathBanIncr()
 					}
 
-					logtrace.Info(ctx, "Network call batch store request failed", logtrace.Fields{
+					logtrace.Debug(ctx, "Network call batch store request failed", logtrace.Fields{
 						logtrace.FieldModule: "p2p",
 						logtrace.FieldError:  err.Error(),
 						"request":            request.String(),
@@ -1856,7 +1856,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 }
 
 func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[string]*Node, contacted map[string]bool, txid string) (chan *MessageWithError, bool) {
-	logtrace.Info(ctx, "Batch find node begin", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find node begin", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"task_id":            txid,
 		"nodes_count":        len(nodes),
@@ -1879,7 +1879,7 @@ func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[str
 			continue
 		}
 		if s.ignorelist.Banned(node) {
-			logtrace.Info(ctx, "Ignoring banned node in batch find call", logtrace.Fields{
+			logtrace.Debug(ctx, "Ignoring banned node in batch find call", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"node":               node.String(),
 				"txid":               txid,
@@ -1927,7 +1927,7 @@ func (s *DHT) batchFindNode(ctx context.Context, payload [][]byte, nodes map[str
 	}
 	wg.Wait()
 	close(responses)
-	logtrace.Info(ctx, "Batch find node done", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find node done", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"nodes_count":        len(nodes),
 		"len_resp":           len(responses),
