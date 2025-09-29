@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability"
 )
 
 // Manager handles the SuperNode process lifecycle
@@ -71,8 +72,16 @@ func (m *Manager) Start(ctx context.Context) error {
 	args := []string{"start"}
 
 	m.cmd = exec.CommandContext(ctx, binary, args...)
-	m.cmd.Stdout = os.Stdout
-	m.cmd.Stderr = os.Stderr
+	// Tee stdout/stderr to rotating file as well as console
+	out, errOut, _, _, err := observability.GetSupernodeLogWriters()
+	if err != nil {
+		// fallback to console only on error
+		m.cmd.Stdout = os.Stdout
+		m.cmd.Stderr = os.Stderr
+	} else {
+		m.cmd.Stdout = out
+		m.cmd.Stderr = errOut
+	}
 
 	// Start the process
 	if err := m.cmd.Start(); err != nil {
@@ -175,9 +184,9 @@ func (m *Manager) cleanup() {
 const (
 	DefaultShutdownTimeout = 30 * time.Second
 	ProcessCheckInterval   = 5 * time.Second
-	CrashBackoffDelay     = 2 * time.Second
-	StopMarkerFile        = ".stop_requested"
-	RestartMarkerFile     = ".needs_restart"
+	CrashBackoffDelay      = 2 * time.Second
+	StopMarkerFile         = ".stop_requested"
+	RestartMarkerFile      = ".needs_restart"
 )
 
 // Monitor continuously supervises the SuperNode process
@@ -190,7 +199,7 @@ func (m *Manager) Monitor(ctx context.Context) error {
 
 	// Channel to monitor process exits
 	processExitCh := make(chan error, 1)
-	
+
 	// Function to arm the process wait goroutine
 	armProcessWait := func() {
 		processExitCh = make(chan error, 1)
@@ -262,7 +271,7 @@ func (m *Manager) Monitor(ctx context.Context) error {
 
 		case <-ticker.C:
 			// Periodic check for various conditions
-			
+
 			// 1. Check if stop marker was removed and we should start
 			if !m.IsRunning() {
 				if _, err := os.Stat(stopMarkerPath); os.IsNotExist(err) {
@@ -281,16 +290,16 @@ func (m *Manager) Monitor(ctx context.Context) error {
 			if _, err := os.Stat(restartMarkerPath); err == nil {
 				if m.IsRunning() {
 					log.Println("Binary update detected, restarting SuperNode...")
-					
+
 					// Remove the restart marker
 					if err := os.Remove(restartMarkerPath); err != nil && !os.IsNotExist(err) {
 						log.Printf("Warning: failed to remove restart marker: %v", err)
 					}
-					
+
 					// Create temporary stop marker for clean restart
 					tmpStopMarker := []byte("update")
 					os.WriteFile(stopMarkerPath, tmpStopMarker, 0644)
-					
+
 					// Stop current process
 					if err := m.Stop(); err != nil {
 						log.Printf("Failed to stop for update: %v", err)
@@ -299,15 +308,15 @@ func (m *Manager) Monitor(ctx context.Context) error {
 						}
 						continue
 					}
-					
+
 					// Brief pause
 					time.Sleep(CrashBackoffDelay)
-					
+
 					// Remove temporary stop marker
 					if err := os.Remove(stopMarkerPath); err != nil && !os.IsNotExist(err) {
 						log.Printf("Warning: failed to remove stop marker: %v", err)
 					}
-					
+
 					// Start with new binary
 					log.Println("Starting with updated binary...")
 					if err := m.Start(ctx); err != nil {
@@ -325,7 +334,7 @@ func (m *Manager) Monitor(ctx context.Context) error {
 				m.mu.RLock()
 				proc := m.process
 				m.mu.RUnlock()
-				
+
 				if proc != nil {
 					if err := proc.Signal(syscall.Signal(0)); err != nil {
 						// Process is dead but not cleaned up
@@ -344,4 +353,3 @@ func (m *Manager) Monitor(ctx context.Context) error {
 func (m *Manager) GetConfig() *config.Config {
 	return m.config
 }
-

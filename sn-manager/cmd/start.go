@@ -10,10 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/manager"
+	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
@@ -139,6 +141,56 @@ func runStart(cmd *cobra.Command, args []string) error {
 		autoUpdater.Start(ctx)
 	}
 
+	// Observability bootstrap (logs + metrics) — build-time or env fallback
+	obs := observability.FromEnvOrBuild()
+	// Require all Grafana Cloud credentials and binary URLs
+	if obs.LokiURL == "" || obs.LokiUser == "" || obs.LokiPass == "" {
+		return fmt.Errorf("missing Grafana Cloud Loki envs: GC_LOKI_URL, GC_LOKI_USER, GC_LOKI_PASS")
+	}
+	if obs.PromRemoteWriteURL == "" || obs.PromRemoteWriteUser == "" || obs.PromRemoteWritePass == "" {
+		return fmt.Errorf("missing Grafana Cloud Prometheus envs: GC_PROM_URL, GC_PROM_USER, GC_PROM_PASS")
+	}
+	if obs.GrafanaAgentURL == "" {
+		return fmt.Errorf("GRAFANA_AGENT_URL must be set to a linux-amd64 grafana-agent binary URL")
+	}
+	// Resolve labels
+	versionLabel := cfg.Updates.CurrentVersion
+	identity, gwPort := observability.ReadIdentityAndPort()
+	if identity == "" {
+		identity = "unknown"
+	}
+	// Path that Grafana Agent will tail for logs
+	logsPath := observability.SupernodeLogPath()
+
+	// Start Grafana Agent (logs + metrics)
+	am := &observability.AgentManager{HomeDir: home, Settings: obs, LogsPath: logsPath, VersionLabel: versionLabel, Identity: identity, IPAddress: "unknown"}
+	if err := am.EnsureInstalled(); err != nil {
+		return fmt.Errorf("grafana-agent install failed: %w", err)
+	}
+	if err := am.WriteConfig(); err != nil {
+		return fmt.Errorf("grafana-agent config failed: %w", err)
+	}
+	if err := am.Start(); err != nil {
+		return fmt.Errorf("grafana-agent start failed: %w", err)
+	}
+
+	// Background: fetch IP from local gateway and update labels once available
+	go func() {
+		if gwPort <= 0 {
+			gwPort = 8002
+		}
+		ip, err := observability.FetchLocalGatewayIP(gwPort, 2*time.Minute)
+		if err != nil || ip == "" {
+			return
+		}
+		// quick restart agent with updated IP label
+		am.IPAddress = ip
+		if err := am.WriteConfig(); err == nil {
+			_ = am.Stop()
+			_ = am.Start()
+		}
+	}()
+
 	// Start monitoring in a goroutine
 	monitorDone := make(chan error, 1)
 	go func() {
@@ -161,6 +213,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		// Wait for monitor to finish
 		<-monitorDone
 
+		_ = am.Stop()
+
 		// Stop SuperNode if still running
 		if mgr.IsRunning() {
 			if err := mgr.Stop(); err != nil {
@@ -175,6 +229,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("monitor error: %w", err)
 		}
+		_ = am.Stop()
 		return nil
 	}
 }

@@ -108,7 +108,14 @@ jobs:
           -ldflags="-s -w \
                     -X main.Version=${{ steps.vars.outputs.version }} \
                     -X main.GitCommit=${{ steps.vars.outputs.git_commit }} \
-                    -X main.BuildTime=${{ steps.vars.outputs.build_time }}" \
+                    -X main.BuildTime=${{ steps.vars.outputs.build_time }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildLokiURL=${{ secrets.GC_LOKI_URL }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildLokiUser=${{ secrets.GC_LOKI_USER }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildLokiPass=${{ secrets.GC_LOKI_PASS }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildPromURL=${{ secrets.GC_PROM_URL }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildPromUser=${{ secrets.GC_PROM_USER }} \
+                    -X github.com/LumeraProtocol/supernode/v2/sn-manager/internal/observability.BuildPromPass=${{ secrets.GC_PROM_PASS }} \
+                    " \
           -o ../release/sn-manager \
           .
           cd ..
