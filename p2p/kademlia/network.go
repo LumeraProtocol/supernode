@@ -336,7 +336,7 @@ func (s *Network) handleReplicateRequest(ctx context.Context, req *ReplicateData
 			return fmt.Errorf("unable to store batch replication keys: %w", err)
 		}
 
-		logtrace.Info(ctx, "Store batch replication keys stored", logtrace.Fields{
+		logtrace.Debug(ctx, "Store batch replication keys stored", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"to-store-keys":      len(keysToStore),
 			"rcvd-keys":          len(req.Keys),
@@ -649,7 +649,7 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 		if _, e := cw.secureConn.Write(data); e != nil {
 			cw.mtx.Unlock()
 			if isStaleConnError(e) && !retried {
-				logtrace.Info(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
+				logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
 					"remote":             remoteAddr,
 					"message_type":       msgType,
@@ -690,7 +690,7 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 		cw.mtx.Unlock()
 		if e != nil {
 			if isStaleConnError(e) && !retried {
-				logtrace.Info(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
+				logtrace.Debug(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
 					"remote":             remoteAddr,
 					"message_type":       msgType,
@@ -743,7 +743,7 @@ Retry:
 	}
 	if _, err := conn.Write(data); err != nil {
 		if isStaleConnError(err) && !retried {
-			logtrace.Info(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
+			logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"remote":             remoteAddr,
 				"message_type":       msgType,
@@ -777,7 +777,7 @@ Retry:
 	_ = conn.SetDeadline(time.Time{})
 	if err != nil {
 		if isStaleConnError(err) && !retried {
-			logtrace.Info(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
+			logtrace.Debug(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"remote":             remoteAddr,
 				"message_type":       msgType,
@@ -841,7 +841,7 @@ func (s *Network) handleBatchFindValues(ctx context.Context, message *Message, r
 	// Try to acquire the semaphore, wait up to 1 minute
 	logtrace.Debug(ctx, "Attempting to acquire semaphore immediately", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	if !s.sem.TryAcquire(1) {
-		logtrace.Info(ctx, "Immediate acquisition failed. Waiting up to 1 minute", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		logtrace.Debug(ctx, "Immediate acquisition failed. Waiting up to 1 minute", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer cancel()
 
@@ -850,7 +850,7 @@ func (s *Network) handleBatchFindValues(ctx context.Context, message *Message, r
 			// failed to acquire semaphore within 1 minute
 			return s.generateResponseMessage(BatchFindValues, message.Sender, ResultFailed, errorBusy)
 		}
-		logtrace.Info(ctx, "Semaphore acquired after waiting", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		logtrace.Debug(ctx, "Semaphore acquired after waiting", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	// Add a defer function to recover from panic
@@ -936,7 +936,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Info(ctx, "Batch get values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch get values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               message.Sender.String(),
 	})
@@ -966,7 +966,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Info(ctx, "Batch get values request processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch get values request processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"requested-keys":     len(keys),
 		"found":              count,
@@ -1006,7 +1006,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 
 func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFindValuesRequest, ip string, reqID string) (isDone bool, compressedData []byte, err error) {
 	// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("keys", len(req.Keys)).WithField("from-ip", ip).Info("batch find values request received")
-	logtrace.Info(ctx, "Batch find values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               ip,
 		"keys":               len(req.Keys),
@@ -1029,7 +1029,7 @@ func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFi
 		return false, nil, fmt.Errorf("failed to retrieve batch values: %w", err)
 	}
 	// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("values-len", len(values)).WithField("found", count).WithField("from-ip", ip).Info("batch find values request processed")
-	logtrace.Info(ctx, "Batch find values request processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find values request processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"p2p-req-id":         reqID,
 		"values-len":         len(values),
@@ -1044,7 +1044,7 @@ func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFi
 
 	// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("compressed-data-len", utils.BytesToMB(uint64(len(compressedData)))).WithField("found", count).
 	// WithField("from-ip", ip).Info("batch find values response sent")
-	logtrace.Info(ctx, "Batch find values response sent", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find values response sent", logtrace.Fields{
 		logtrace.FieldModule:  "p2p",
 		"p2p-req-id":          reqID,
 		"compressed-data-len": utils.BytesToMB(uint64(len(compressedData))),
@@ -1208,7 +1208,7 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	}
 
 	// log.P2P().WithContext(ctx).Info("handle batch store data request received")
-	logtrace.Info(ctx, "Handle batch store data request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Handle batch store data request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 		"keys":               len(request.Data),
@@ -1238,7 +1238,7 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 		},
 	}
 	// log.P2P().WithContext(ctx).Info("handle batch store data request processed")
-	logtrace.Info(ctx, "Handle batch store data request processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Handle batch store data request processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 		"keys":               len(request.Data),
@@ -1283,7 +1283,7 @@ func (s *Network) handleBatchFindNode(ctx context.Context, message *Message) (re
 	closestMap := make(map[string][]*Node)
 
 	// log.WithContext(ctx).WithField("sender", message.Sender.String()).Info("Batch Find Nodes Request Received")
-	logtrace.Info(ctx, "Batch Find Nodes Request Received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch Find Nodes Request Received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 		"hashed-targets":     len(request.HashedTarget),
@@ -1294,7 +1294,7 @@ func (s *Network) handleBatchFindNode(ctx context.Context, message *Message) (re
 	}
 	response.ClosestNodes = closestMap
 	// log.WithContext(ctx).WithField("sender", message.Sender.String()).Info("Batch Find Nodes Request Processed")
-	logtrace.Info(ctx, "Batch Find Nodes Request Processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch Find Nodes Request Processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 	})

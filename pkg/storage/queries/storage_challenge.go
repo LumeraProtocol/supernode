@@ -97,7 +97,7 @@ func (s *SQLiteStore) GetMetricsDataByStorageChallengeID(ctx context.Context, ch
 		return storageChallengeMessages, err
 	}
 	// log.WithContext(ctx).WithField("rows", len(scMetrics)).Info("storage-challenge metrics row count")
-	logtrace.Info(ctx, "storage-challenge metrics row count", logtrace.Fields{
+	logtrace.Debug(ctx, "storage-challenge metrics row count", logtrace.Fields{
 		"rows": len(scMetrics),
 	})
 
@@ -210,13 +210,13 @@ func (s *SQLiteStore) GetSCSummaryStats(from time.Time) (scMetrics metrics.SCMet
 		return scMetrics, err
 	}
 	// log.WithField("observer_evaluations", len(observersEvaluations)).Info("observer evaluations retrieved")
-	logtrace.Info(context.Background(), "observer evaluations retrieved", logtrace.Fields{
+	logtrace.Debug(context.Background(), "observer evaluations retrieved", logtrace.Fields{
 		"observer_evaluations": len(observersEvaluations),
 	})
 
 	observerEvaluationMetrics := processObserverEvaluations(observersEvaluations)
 	// log.WithField("observer_evaluation_metrics", len(observerEvaluationMetrics)).Info("observer evaluation metrics retrieved")
-	logtrace.Info(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{
+	logtrace.Debug(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{
 		"observer_evaluation_metrics": len(observerEvaluationMetrics),
 	})
 

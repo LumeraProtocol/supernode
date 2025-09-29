@@ -25,7 +25,7 @@ type SuperNodeTask struct {
 func (task *SuperNodeTask) RunHelper(ctx context.Context, clean TaskCleanerFunc) error {
 	ctx = task.context(ctx)
 	logtrace.Debug(ctx, "Start task", logtrace.Fields{})
-	defer logtrace.Info(ctx, "Task canceled", logtrace.Fields{})
+	defer logtrace.Debug(ctx, "Task canceled", logtrace.Fields{})
 	defer task.Cancel()
 
 	task.SetStatusNotifyFunc(func(status *state.Status) {

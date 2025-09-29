@@ -16,7 +16,7 @@ const (
 )
 
 func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
-	logtrace.Info(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
@@ -38,12 +38,12 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 	}
 
 	for _, dir := range dirs {
-		logtrace.Info(ctx, "rq_symbols worker: start scanning dir & storing raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
+		logtrace.Debug(ctx, "rq_symbols worker: start scanning dir & storing raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
 		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
 			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		}
 
-		logtrace.Info(ctx, "rq_symbols worker: scanned dir & stored raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
+		logtrace.Debug(ctx, "rq_symbols worker: scanned dir & stored raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
 	}
 
 	return nil
@@ -66,7 +66,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 	}
 	sort.Strings(keys)
 
-	logtrace.Info(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
+	logtrace.Debug(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
 
 	// Batch-flush at loadSymbolsBatchSize
 	for start := 0; start < len(keys); {

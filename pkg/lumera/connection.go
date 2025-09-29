@@ -127,7 +127,7 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 	if firstCand.useTLS {
 		scheme = "tls"
 	}
-	logtrace.Info(ctx, "gRPC connection established", logtrace.Fields{
+	logtrace.Debug(ctx, "gRPC connection established", logtrace.Fields{
 		"target": firstCand.target,
 		"scheme": scheme,
 	})

@@ -39,7 +39,7 @@ func (task *CascadeRegistrationTask) Download(
 	send func(resp *DownloadResponse) error,
 ) (err error) {
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
-	logtrace.Info(ctx, "Cascade download request received", fields)
+	logtrace.Debug(ctx, "Cascade download request received", fields)
 
 	// Ensure task status is finalized regardless of outcome
 	defer func() {
@@ -56,7 +56,7 @@ func (task *CascadeRegistrationTask) Download(
 		fields[logtrace.FieldError] = err
 		return task.wrapErr(ctx, "failed to get action", err, fields)
 	}
-	logtrace.Info(ctx, "Action retrieved", fields)
+	logtrace.Debug(ctx, "Action retrieved", fields)
 	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "Action retrieved", "", "", send)
 
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
@@ -65,14 +65,14 @@ func (task *CascadeRegistrationTask) Download(
 		fields[logtrace.FieldActionState] = actionDetails.GetAction().State
 		return task.wrapErr(ctx, "action not found", err, fields)
 	}
-	logtrace.Info(ctx, "Action state validated", fields)
+	logtrace.Debug(ctx, "Action state validated", fields)
 
 	metadata, err := task.decodeCascadeMetadata(ctx, actionDetails.GetAction().Metadata, fields)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
 	}
-	logtrace.Info(ctx, "Cascade metadata decoded", fields)
+	logtrace.Debug(ctx, "Cascade metadata decoded", fields)
 	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", "", send)
 
 	// Notify: network retrieval phase begins
@@ -83,7 +83,7 @@ func (task *CascadeRegistrationTask) Download(
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
 	}
-	logtrace.Info(ctx, "File reconstructed and hash verified", fields)
+	logtrace.Debug(ctx, "File reconstructed and hash verified", fields)
 	// Notify: decode completed, file ready on disk
 	task.streamDownloadEvent(SupernodeEventTypeDecodeCompleted, "Decode completed", filePath, tmpDir, send)
 
@@ -91,7 +91,7 @@ func (task *CascadeRegistrationTask) Download(
 }
 
 func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields, send func(resp *DownloadResponse) error) (string, string, error) {
-	logtrace.Info(ctx, "started downloading the artifacts", fields)
+	logtrace.Debug(ctx, "started downloading the artifacts", fields)
 
 	var (
 		layout         codec.Layout
@@ -109,7 +109,7 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		// Parse index file to get layout IDs
 		indexData, err := task.parseIndexFile(indexFile)
 		if err != nil {
-			logtrace.Info(ctx, "failed to parse index file", fields)
+			logtrace.Debug(ctx, "failed to parse index file", fields)
 			continue
 		}
 
@@ -117,14 +117,14 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		var netMS, decMS int64
 		layout, netMS, decMS, layoutAttempts, err = task.retrieveLayoutFromIndex(ctx, indexData, fields)
 		if err != nil {
-			logtrace.Info(ctx, "failed to retrieve layout from index", fields)
+			logtrace.Debug(ctx, "failed to retrieve layout from index", fields)
 			continue
 		}
 		layoutFetchMS = netMS
 		layoutDecodeMS = decMS
 
 		if len(layout.Blocks) > 0 {
-			logtrace.Info(ctx, "layout file retrieved via index", fields)
+			logtrace.Debug(ctx, "layout file retrieved via index", fields)
 			break
 		}
 	}
@@ -163,13 +163,12 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if targetRequiredCount < 1 && totalSymbols > 0 {
 		targetRequiredCount = 1
 	}
-	logtrace.Info(ctx, "Retrieving target-required symbols for decode", fields)
+	logtrace.Debug(ctx, "Retrieving target-required symbols for decode", fields)
 
-    
-    if !task.config.MetricsDisabled {
-        cm.StartRetrieveCapture(actionID)
-        defer cm.StopRetrieveCapture(actionID)
-    }
+	if !task.config.MetricsDisabled {
+		cm.StartRetrieveCapture(actionID)
+		defer cm.StopRetrieveCapture(actionID)
+	}
 
 	// Measure symbols batch retrieve duration
 	retrieveStart := time.Now()
@@ -203,22 +202,22 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	decodeMS := time.Since(decodeStart).Milliseconds()
 
-    // Set minimal retrieve summary and emit event strictly from internal collector
-    if !task.config.MetricsDisabled {
-        cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
-        payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
-        if retrieve, ok := payload["retrieve"].(map[string]any); ok {
-            retrieve["target_required_percent"] = targetRequiredPercent
-            retrieve["target_required_count"] = targetRequiredCount
-            retrieve["total_symbols"] = totalSymbols
-        }
-        if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
-            task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
-        }
-    } else {
-        // Send minimal hardcoded event when metrics disabled
-        task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "Download completed (metrics disabled)", "", "", send)
-    }
+	// Set minimal retrieve summary and emit event strictly from internal collector
+	if !task.config.MetricsDisabled {
+		cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
+		payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
+		if retrieve, ok := payload["retrieve"].(map[string]any); ok {
+			retrieve["target_required_percent"] = targetRequiredPercent
+			retrieve["target_required_count"] = targetRequiredCount
+			retrieve["total_symbols"] = totalSymbols
+		}
+		if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
+			task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
+		}
+	} else {
+		// Send minimal hardcoded event when metrics disabled
+		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "Download completed (metrics disabled)", "", "", send)
+	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
 	if err != nil {
@@ -238,7 +237,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		fields[logtrace.FieldError] = err.Error()
 		return "", decodeInfo.DecodeTmpDir, err
 	}
-	logtrace.Info(ctx, "File successfully restored and hash verified", fields)
+	logtrace.Debug(ctx, "File successfully restored and hash verified", fields)
 
 	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, nil
 }

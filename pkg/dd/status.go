@@ -26,7 +26,7 @@ func (c *ddServerClientImpl) GetStatus(ctx context.Context, req GetStatusRequest
 		logtrace.FieldMethod:  "GetStatus",
 		logtrace.FieldRequest: req,
 	}
-	logtrace.Info(ctx, "getting status", fields)
+	logtrace.Debug(ctx, "getting status", fields)
 
 	res, err := c.ddService.GetStatus(ctx, &ddService.GetStatusRequest{})
 	if err != nil {
@@ -35,7 +35,7 @@ func (c *ddServerClientImpl) GetStatus(ctx context.Context, req GetStatusRequest
 		return GetStatusResponse{}, fmt.Errorf("dd get status error: %w", err)
 	}
 
-	logtrace.Info(ctx, "successfully got status", fields)
+	logtrace.Debug(ctx, "successfully got status", fields)
 	return GetStatusResponse{
 		Version:     res.GetVersion(),
 		TaskCount:   res.GetTaskCount(),

@@ -75,7 +75,7 @@ func (cv *ConfigVerifier) VerifyConfig(ctx context.Context) (*VerificationResult
 	// Check 5: Verify all required ports are available
 	cv.checkPortsAvailable(result)
 
-	logtrace.Info(ctx, "Config verification completed", logtrace.Fields{
+	logtrace.Debug(ctx, "Config verification completed", logtrace.Fields{
 		"valid":    result.IsValid(),
 		"errors":   len(result.Errors),
 		"warnings": len(result.Warnings),

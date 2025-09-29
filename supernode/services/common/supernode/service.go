@@ -54,7 +54,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		logtrace.FieldMethod: "GetStatus",
 		logtrace.FieldModule: "SupernodeStatusService",
 	}
-	logtrace.Info(ctx, "status request received", fields)
+	logtrace.Debug(ctx, "status request received", fields)
 
 	var resp StatusResponse
 	resp.Version = Version

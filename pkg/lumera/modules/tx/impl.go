@@ -103,7 +103,7 @@ func (m *module) SimulateTransaction(ctx context.Context, msgs []types.Msg, acco
 		return nil, fmt.Errorf("simulation error: %w", err)
 	}
 
-	logtrace.Info(ctx, fmt.Sprintf("simulation complete | gasUsed=%d", simRes.GasInfo.GasUsed), nil)
+	logtrace.Debug(ctx, fmt.Sprintf("simulation complete | gasUsed=%d", simRes.GasInfo.GasUsed), nil)
 	return simRes, nil
 }
 
@@ -143,7 +143,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	logtrace.Info(ctx, "transaction signed successfully", nil)
+	logtrace.Debug(ctx, "transaction signed successfully", nil)
 
 	// Encode signed transaction
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
@@ -273,7 +273,7 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	// Step 3: Calculate fee based on adjusted gas
 	fee := m.CalculateFee(gasToUse, config)
 
-	logtrace.Info(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d adjustedGas=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
+	logtrace.Debug(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d adjustedGas=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
 
 	// Step 4: Build and sign transaction
 	txBytes, err := m.BuildAndSignTransaction(ctx, msgs, accountInfo, gasToUse, fee, config)
@@ -288,7 +288,7 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	}
 
 	if result != nil && result.TxResponse != nil && result.TxResponse.Code == 0 && len(result.TxResponse.Events) == 0 {
-		logtrace.Info(ctx, "Transaction broadcast successful, waiting for inclusion to get events...", nil)
+		logtrace.Debug(ctx, "Transaction broadcast successful, waiting for inclusion to get events...", nil)
 
 		// Retry 5 times with 1 second intervals
 		var txResp *sdktx.GetTxResponse
@@ -298,7 +298,7 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 			txResp, err = m.GetTransaction(ctx, result.TxResponse.TxHash)
 			if err == nil && txResp != nil && txResp.TxResponse != nil {
 				// Successfully got the transaction with events
-				logtrace.Info(ctx, fmt.Sprintf("Retrieved transaction with %d events", len(txResp.TxResponse.Events)), nil)
+				logtrace.Debug(ctx, fmt.Sprintf("Retrieved transaction with %d events", len(txResp.TxResponse.Events)), nil)
 				result.TxResponse = txResp.TxResponse
 				break
 			}

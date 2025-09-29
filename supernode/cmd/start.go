@@ -46,7 +46,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Log configuration info
 		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
-		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
+		logtrace.Debug(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
 		kr, err := initKeyringFromConfig(appConfig)
@@ -61,7 +61,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Verify config matches chain registration before starting services
-		logtrace.Info(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
+		logtrace.Debug(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
 		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
 		verificationResult, err := configVerifier.VerifyConfig(ctx)
 		if err != nil {
@@ -76,7 +76,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Warn(ctx, "Config verification warnings", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
 
-		logtrace.Info(ctx, "Configuration verification successful", logtrace.Fields{})
+		logtrace.Debug(ctx, "Configuration verification successful", logtrace.Fields{})
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
@@ -84,14 +84,14 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to initialize RaptorQ store", logtrace.Fields{"error": err.Error()})
 		}
 
-        // Manually set the disable flag at the highest level
-        disableMetrics := true
+		// Manually set the disable flag at the highest level
+		disableMetrics := true
 
-        // Initialize P2P service with explicit disable flag
-        p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil, disableMetrics)
-        if err != nil {
-            logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
-        }
+		// Initialize P2P service with explicit disable flag
+		p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil, disableMetrics)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
+		}
 
 		// Initialize the supernode
 		supernodeInstance, err := NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
@@ -100,19 +100,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Configure cascade service
-        cService := cascadeService.NewCascadeService(
-            &cascadeService.Config{
-                Config: common.Config{
-                    SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
-                },
-                RqFilesDir: appConfig.GetRaptorQFilesDir(),
-                MetricsDisabled: disableMetrics,
-            },
-            lumeraClient,
-            *p2pService,
-            codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
-            rqStore,
-        )
+		cService := cascadeService.NewCascadeService(
+			&cascadeService.Config{
+				Config: common.Config{
+					SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
+				},
+				RqFilesDir:      appConfig.GetRaptorQFilesDir(),
+				MetricsDisabled: disableMetrics,
+			},
+			lumeraClient,
+			*p2pService,
+			codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
+			rqStore,
+		)
 
 		// Create cascade action server
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
@@ -152,7 +152,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if isTestnet {
 			profilingAddr := "0.0.0.0:8082"
 
-			logtrace.Info(ctx, "Starting profiling server", logtrace.Fields{
+			logtrace.Debug(ctx, "Starting profiling server", logtrace.Fields{
 				"address":    profilingAddr,
 				"chain_id":   appConfig.LumeraClientConfig.ChainID,
 				"is_testnet": isTestnet,
@@ -178,7 +178,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Wait for termination signal
 		sig := <-sigCh
-		logtrace.Info(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
+		logtrace.Debug(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
 
 		// Graceful shutdown
 		if err := supernodeInstance.Stop(ctx); err != nil {
@@ -208,9 +208,9 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 	// Create P2P config using helper function
 	p2pConfig := createP2PConfig(config, address.String())
 
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
+	logtrace.Debug(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
-    p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst, metricsDisabled)
+	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst, metricsDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize p2p service: %w", err)
 	}

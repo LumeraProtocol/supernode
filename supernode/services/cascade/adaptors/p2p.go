@@ -39,14 +39,14 @@ type P2PService interface {
 
 // p2pImpl is the default implementation of the P2PService interface.
 type p2pImpl struct {
-    p2p             p2p.Client
-    rqStore         rqstore.Store
-    metricsDisabled bool
+	p2p             p2p.Client
+	rqStore         rqstore.Store
+	metricsDisabled bool
 }
 
 // NewP2PService returns a concrete implementation of P2PService.
 func NewP2PService(client p2p.Client, store rqstore.Store, metricsDisabled bool) P2PService {
-    return &p2pImpl{p2p: client, rqStore: store, metricsDisabled: metricsDisabled}
+	return &p2pImpl{p2p: client, rqStore: store, metricsDisabled: metricsDisabled}
 }
 
 type StoreArtefactsRequest struct {
@@ -57,13 +57,13 @@ type StoreArtefactsRequest struct {
 }
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
-	logtrace.Info(ctx, "About to store artefacts (metadata + symbols)", logtrace.Fields{"taskID": req.TaskID, "id_files": len(req.IDFiles)})
+	logtrace.Debug(ctx, "About to store artefacts (metadata + symbols)", logtrace.Fields{"taskID": req.TaskID, "id_files": len(req.IDFiles)})
 
-    // Optionally enable per-node store RPC capture for this task
-    if !p.metricsDisabled {
-        cm.StartStoreCapture(req.TaskID)
-        defer cm.StopStoreCapture(req.TaskID)
-    }
+	// Optionally enable per-node store RPC capture for this task
+	if !p.metricsDisabled {
+		cm.StartStoreCapture(req.TaskID)
+		defer cm.StopStoreCapture(req.TaskID)
+	}
 
 	start := time.Now()
 	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles)
@@ -71,7 +71,7 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 		return errors.Wrap(err, "error storing artefacts")
 	}
 	dur := time.Since(start).Milliseconds()
-	logtrace.Info(ctx, "artefacts have been stored", logtrace.Fields{"taskID": req.TaskID, "symbols_first_pass": firstPassSymbols, "symbols_total": totalSymbols, "id_files_count": len(req.IDFiles)})
+	logtrace.Debug(ctx, "artefacts have been stored", logtrace.Fields{"taskID": req.TaskID, "symbols_first_pass": firstPassSymbols, "symbols_total": totalSymbols, "id_files_count": len(req.IDFiles)})
 	// Record store summary for later event emission
 	cm.SetStoreSummary(req.TaskID, firstPassSymbols, totalSymbols, len(req.IDFiles), dur)
 	return nil
@@ -101,7 +101,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	if targetCount < 1 && totalAvailable > 0 {
 		targetCount = 1
 	}
-	logtrace.Info(ctx, "first-pass target coverage (symbols)", logtrace.Fields{
+	logtrace.Debug(ctx, "first-pass target coverage (symbols)", logtrace.Fields{
 		"total_symbols":  totalAvailable,
 		"target_percent": storeSymbolsPercent,
 		"target_count":   targetCount,
@@ -117,7 +117,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 		sort.Strings(keys) // deterministic order inside the sample
 	}
 
-	logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
+	logtrace.Debug(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
 
 	/* stream in fixed-size batches -------------------------------------- */
 
@@ -188,7 +188,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	if totalAvailable > 0 {
 		achievedPct = (float64(totalSymbols) / float64(totalAvailable)) * 100.0
 	}
-	logtrace.Info(ctx, "first-pass achieved coverage (symbols)",
+	logtrace.Debug(ctx, "first-pass achieved coverage (symbols)",
 		logtrace.Fields{"achieved_symbols": totalSymbols, "achieved_percent": achievedPct})
 
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
@@ -228,7 +228,7 @@ func walkSymbolTree(root string) ([]string, error) {
 // storeSymbolsInP2P loads a batch of symbols and stores them via P2P.
 // Returns (ratePct, requests, count, error) where `count` is the number of symbols in this batch.
 func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fileKeys []string) (int, error) {
-	logtrace.Info(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
+	logtrace.Debug(ctx, "loading batch symbols", logtrace.Fields{"count": len(fileKeys)})
 
 	symbols, err := utils.LoadSymbols(root, fileKeys)
 	if err != nil {
@@ -242,12 +242,12 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	if err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID); err != nil {
 		return len(symbols), fmt.Errorf("p2p store batch: %w", err)
 	}
-	logtrace.Info(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
+	logtrace.Debug(ctx, "stored batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
 		return len(symbols), fmt.Errorf("delete symbols: %w", err)
 	}
-	logtrace.Info(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
+	logtrace.Debug(ctx, "deleted batch symbols", logtrace.Fields{"count": len(symbols)})
 
 	// No per-RPC metrics propagated from p2p
 	return len(symbols), nil
