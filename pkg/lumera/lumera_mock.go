@@ -15,6 +15,7 @@ import (
 	action "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	action_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
 	auth "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	bank "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	node "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	supernode "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	tx "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
@@ -85,6 +86,20 @@ func (m *MockClient) Auth() auth.Module {
 func (mr *MockClientMockRecorder) Auth() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Auth", reflect.TypeOf((*MockClient)(nil).Auth))
+}
+
+// Bank mocks base method.
+func (m *MockClient) Bank() bank.Module {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Bank")
+	ret0, _ := ret[0].(bank.Module)
+	return ret0
+}
+
+// Bank indicates an expected call of Bank.
+func (mr *MockClientMockRecorder) Bank() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bank", reflect.TypeOf((*MockClient)(nil).Bank))
 }
 
 // Close mocks base method.

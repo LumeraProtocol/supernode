@@ -7,6 +7,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
@@ -18,6 +19,7 @@ type Client interface {
 	Action() action.Module
 	ActionMsg() action_msg.Module
 	SuperNode() supernode.Module
+	Bank() bank.Module
 	Tx() tx.Module
 	Node() node.Module
 
