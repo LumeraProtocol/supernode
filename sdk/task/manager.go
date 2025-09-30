@@ -107,11 +107,7 @@ func (m *ManagerImpl) CreateCascadeTask(ctx context.Context, filePath string, ac
 		return "", err
 	}
 
-	// Check peer connectivity before creating task
-	if err := m.checkSupernodesPeerConnectivity(taskCtx, action.Height); err != nil {
-		cancel() // Clean up if peer check fails
-		return "", err
-	}
+	// Peer connectivity is now validated during discovery health checks
 
 	taskID := uuid.New().String()[:8]
 
@@ -280,11 +276,7 @@ func (m *ManagerImpl) CreateDownloadTask(ctx context.Context, actionID string, o
 		return "", fmt.Errorf("no filename found in cascade metadata")
 	}
 
-	// Check peer connectivity before creating task
-	if err := m.checkSupernodesPeerConnectivity(taskCtx, action.Height); err != nil {
-		cancel() // Clean up if peer check fails
-		return "", err
-	}
+	// Peer connectivity is now validated during discovery health checks
 
 	// Ensure the output path includes the correct filename
 	finalOutputPath := path.Join(outputDir, action.ID, metadata.FileName)

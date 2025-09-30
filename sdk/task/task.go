@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"sync"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	plumera "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
+	snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
@@ -85,10 +89,6 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 		return nil, errors.New("no supernodes found")
 	}
 
-	if len(sns) > 10 {
-		sns = sns[:10]
-	}
-
 	// Keep only SERVING nodes (done in parallel – keeps latency flat)
 	healthy := make(lumera.Supernodes, 0, len(sns))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -131,6 +131,45 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	}
 	defer client.Close(ctx)
 
+	// First check gRPC health
 	resp, err := client.HealthCheck(ctx)
-	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING
+	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		return false
+	}
+
+	// Then check P2P peers count via status (include P2P metrics)
+	status, err := client.GetSupernodeStatus(snsvc.WithIncludeP2PMetrics(ctx))
+	if err != nil {
+		return false
+	}
+	if status.Network.PeersCount <= 1 {
+		return false
+	}
+
+	// Finally, ensure the supernode account has a positive balance in the default fee denom.
+	// Use pkg/lumera to query bank balance from the chain.
+	cfg, err := plumera.NewConfig(t.config.Lumera.GRPCAddr, t.config.Lumera.ChainID, t.config.Account.KeyName, t.keyring)
+	if err != nil {
+		logtrace.Debug(ctx, "Failed to build lumera client config for balance check", logtrace.Fields{"error": err.Error()})
+		return false
+	}
+	lc, err := plumera.NewClient(ctx, cfg)
+	if err != nil {
+		logtrace.Debug(ctx, "Failed to create lumera client for balance check", logtrace.Fields{"error": err.Error()})
+		return false
+	}
+	defer lc.Close()
+
+	denom := txmod.DefaultFeeDenom // base denom (micro), e.g., "ulume"
+	bal, err := lc.Bank().Balance(ctx, sn.CosmosAddress, denom)
+	if err != nil || bal == nil || bal.Balance == nil {
+		return false
+	}
+	// Require at least 1 LUME = 10^6 micro (ulume)
+	min := sdkmath.NewInt(1_000_000)
+	if bal.Balance.Amount.LT(min) {
+		return false
+	}
+
+	return true
 }
