@@ -78,6 +78,14 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		logtrace.Debug(ctx, "Configuration verification successful", logtrace.Fields{})
 
+		// Set Datadog host to identity and service to latest IP address from chain
+		logtrace.SetDatadogHost(appConfig.SupernodeConfig.Identity)
+		if snInfo, err := lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, appConfig.SupernodeConfig.Identity); err == nil && snInfo != nil {
+			if ip := strings.TrimSpace(snInfo.LatestAddress); ip != "" {
+				logtrace.SetDatadogService(ip)
+			}
+		}
+
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
 		if err != nil {
