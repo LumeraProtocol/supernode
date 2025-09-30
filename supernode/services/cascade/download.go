@@ -24,6 +24,9 @@ const targetRequiredPercent = 17
 
 type DownloadRequest struct {
 	ActionID string
+	// Signature is required for private downloads. For public cascade
+	// actions (metadata.Public == true), this is ignored.
+	Signature string
 }
 
 type DownloadResponse struct {
@@ -33,6 +36,12 @@ type DownloadResponse struct {
 	DownloadedDir string
 }
 
+// Download retrieves a cascade artefact by action ID.
+//
+// Authorization behavior:
+//   - If the cascade metadata has Public = true, signature verification is skipped
+//     and the file is downloadable by anyone.
+//   - If Public = false, a valid download signature is required.
 func (task *CascadeRegistrationTask) Download(
 	ctx context.Context,
 	req *DownloadRequest,
@@ -53,17 +62,19 @@ func (task *CascadeRegistrationTask) Download(
 
 	actionDetails, err := task.LumeraClient.GetAction(ctx, req.ActionID)
 	if err != nil {
-		fields[logtrace.FieldError] = err
+		// Ensure error is logged as string for consistency
+		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to get action", err, fields)
 	}
 	logtrace.Info(ctx, "Action retrieved", fields)
 	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "Action retrieved", "", "", send)
 
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
+		// Return a clearer error message when action is not yet finalized
 		err = errors.New("action is not in a valid state")
 		fields[logtrace.FieldError] = "action state is not done yet"
 		fields[logtrace.FieldActionState] = actionDetails.GetAction().State
-		return task.wrapErr(ctx, "action not found", err, fields)
+		return task.wrapErr(ctx, "action not finalized yet", err, fields)
 	}
 	logtrace.Info(ctx, "Action state validated", fields)
 
@@ -75,6 +86,24 @@ func (task *CascadeRegistrationTask) Download(
 	logtrace.Info(ctx, "Cascade metadata decoded", fields)
 	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", "", send)
 
+	// Enforce download authorization based on metadata.Public
+	// - If public: skip signature verification; allow anonymous downloads
+	// - If private: require a valid signature
+	if !metadata.Public {
+		if req.Signature == "" {
+			fields[logtrace.FieldError] = "missing signature for private download"
+			// Provide a descriptive message without a fabricated root error
+			return task.wrapErr(ctx, "private cascade requires a download signature", nil, fields)
+		}
+		if err := task.VerifyDownloadSignature(ctx, req.ActionID, req.Signature); err != nil {
+			fields[logtrace.FieldError] = err.Error()
+			return task.wrapErr(ctx, "failed to verify download signature", err, fields)
+		}
+		logtrace.Info(ctx, "Download signature verified for private cascade", fields)
+	} else {
+		logtrace.Info(ctx, "Public cascade: skipping download signature verification", fields)
+	}
+
 	// Notify: network retrieval phase begins
 	task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
 
@@ -82,6 +111,12 @@ func (task *CascadeRegistrationTask) Download(
 	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields, send)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
+		// Ensure temporary decode directory is cleaned if decode failed after being created
+		if tmpDir != "" {
+			if cerr := task.CleanupDownload(ctx, tmpDir); cerr != nil {
+				logtrace.Warn(ctx, "cleanup of tmp dir after error failed", logtrace.Fields{"tmp_dir": tmpDir, logtrace.FieldError: cerr.Error()})
+			}
+		}
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
 	}
 	logtrace.Info(ctx, "File reconstructed and hash verified", fields)
@@ -144,6 +179,10 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID, send)
 }
 
+// restoreFileFromLayout reconstructs the original file from the provided layout
+// and a subset of retrieved symbols. The method deduplicates symbol identifiers
+// before network retrieval to avoid redundant requests and ensure the requested
+// count reflects unique symbols only.
 func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	ctx context.Context,
 	layout codec.Layout,
@@ -155,9 +194,16 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	fields := logtrace.Fields{
 		logtrace.FieldActionID: actionID,
 	}
-	var allSymbols []string
+	// Deduplicate symbols across blocks to avoid redundant requests
+	symSet := make(map[string]struct{})
 	for _, block := range layout.Blocks {
-		allSymbols = append(allSymbols, block.Symbols...)
+		for _, s := range block.Symbols {
+			symSet[s] = struct{}{}
+		}
+	}
+	allSymbols := make([]string, 0, len(symSet))
+	for s := range symSet {
+		allSymbols = append(allSymbols, s)
 	}
 	sort.Strings(allSymbols)
 
@@ -327,18 +373,20 @@ func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context
 	return codec.Layout{}, totalFetchMS, totalDecodeMS, attempts, errors.New("no valid layout found in index")
 }
 
-func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, actionID string) error {
-	if actionID == "" {
-		return errors.New("actionID is empty")
+// CleanupDownload removes the temporary directory created during decode.
+// The parameter is a directory path (not an action ID).
+func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, dirPath string) error {
+	if dirPath == "" {
+		return errors.New("directory path is empty")
 	}
 
-	// For now, we use actionID as the directory path to maintain compatibility
-	logtrace.Info(ctx, "Cleanup download directory", logtrace.Fields{"dir": actionID})
-	if err := os.RemoveAll(actionID); err != nil {
-		logtrace.Warn(ctx, "Cleanup download directory failed", logtrace.Fields{"dir": actionID, logtrace.FieldError: err.Error()})
-		return errors.Errorf("failed to delete download directory: %s, :%s", actionID, err.Error())
+	// For now, we use tmp directory path as provided by decoder
+	logtrace.Info(ctx, "Cleanup download directory", logtrace.Fields{"dir": dirPath})
+	if err := os.RemoveAll(dirPath); err != nil {
+		logtrace.Warn(ctx, "Cleanup download directory failed", logtrace.Fields{"dir": dirPath, logtrace.FieldError: err.Error()})
+		return errors.Errorf("failed to delete download directory: %s, :%s", dirPath, err.Error())
 	}
-	logtrace.Info(ctx, "Cleanup download directory completed", logtrace.Fields{"dir": actionID})
+	logtrace.Info(ctx, "Cleanup download directory completed", logtrace.Fields{"dir": dirPath})
 
 	return nil
 }

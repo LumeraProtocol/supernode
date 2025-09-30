@@ -10,7 +10,7 @@ replace (
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/LumeraProtocol/lumera v1.7.0
+	github.com/LumeraProtocol/lumera v1.7.2
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -34,7 +34,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spf13/cobra v1.8.1
-	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
 	go.uber.org/ratelimit v0.3.1
@@ -166,6 +165,7 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/viper v1.19.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
