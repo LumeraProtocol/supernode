@@ -275,6 +275,8 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 // GetBatchValuesFromNode get values from node in bateches
 func (s *DHT) GetBatchValuesFromNode(ctx context.Context, keys []string, n *Node) (bool, map[string][]byte, []string, error) {
 	logtrace.Debug(ctx, "sending batch fetch request", logtrace.Fields{"node-ip": n.IP, "keys": len(keys)})
+	// Minimal per-RPC visibility for background replication path
+	logtrace.Info(ctx, "RPC BatchFindValues send", logtrace.Fields{"node": n.String(), "keys": len(keys)})
 
 	messageType := BatchFindValues
 
@@ -349,6 +351,7 @@ func (s *DHT) GetBatchValuesFromNode(ctx context.Context, keys []string, n *Node
 		}
 		logtrace.Debug(ctx, "batch fetch response rcvd and keys verified", logtrace.Fields{"node-ip": n.IP, "received-keys": len(decompressedMap), "verified-keys": len(retMap), "failed-keys": len(failedKeys)})
 
+		logtrace.Info(ctx, "RPC BatchFindValues completed", logtrace.Fields{"node": n.String(), "received_keys": len(decompressedMap), "verified_keys": len(retMap)})
 		return v.Done, retMap, failedKeys, nil
 	}
 
