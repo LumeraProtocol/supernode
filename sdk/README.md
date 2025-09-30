@@ -221,11 +221,13 @@ if err != nil {
 // taskID can be used to track the download progress
 ```
 
+Note: If the action's cascade metadata sets `public: true`, the signature may be left empty to allow anonymous download.
+
 **Parameters:**
 - `ctx context.Context`: Context for the operation
 - `actionID string`: ID of the action to download
 - `outputDir string`: Directory where the downloaded file will be saved
-- `signature string`: Base64-encoded signature for download authorization
+- `signature string`: Base64-encoded signature for download authorization (leave empty for public cascades)
 
 **Signature Creation for Download:**
 The download signature is created by combining the action ID with the creator's address, signing it, and base64 encoding the result.

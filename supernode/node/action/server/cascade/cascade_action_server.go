@@ -229,21 +229,8 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	task := server.factory.NewCascadeRegistrationTask()
 
-	// Verify signature if provided
-	if req.GetSignature() != "" {
-		// Cast to concrete type to access helper method
-		if cascadeTask, ok := task.(*cascadeService.CascadeRegistrationTask); ok {
-			err := cascadeTask.VerifyDownloadSignature(ctx, req.GetActionId(), req.GetSignature())
-			if err != nil {
-				fields[logtrace.FieldError] = err.Error()
-				logtrace.Error(ctx, "signature verification failed", fields)
-				return fmt.Errorf("signature verification failed: %w", err)
-			}
-		} else {
-			logtrace.Error(ctx, "unable to cast task to CascadeRegistrationTask", fields)
-			return fmt.Errorf("unable to verify signature: task type assertion failed")
-		}
-	}
+	// Authorization is enforced inside the task based on metadata.Public.
+	// If public, signature is skipped; if private, signature is required.
 
 	var restoredFilePath string
 	var tmpDir string
@@ -260,7 +247,8 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	}()
 
 	err := task.Download(ctx, &cascadeService.DownloadRequest{
-		ActionID: req.GetActionId(),
+		ActionID:  req.GetActionId(),
+		Signature: req.GetSignature(),
 	}, func(resp *cascadeService.DownloadResponse) error {
 		grpcResp := &pb.DownloadResponse{
 			ResponseType: &pb.DownloadResponse_Event{
