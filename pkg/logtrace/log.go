@@ -45,6 +45,9 @@ func Setup(serviceName string) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Initialize Datadog forwarding (minimal integration in separate file)
+	SetupDatadog(serviceName)
 }
 
 // getLogLevel returns the log level from environment variable LOG_LEVEL
@@ -129,6 +132,9 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 	case zapcore.FatalLevel:
 		logger.Fatal(message, zapFields...)
 	}
+
+	// Forward to Datadog (non-blocking, best-effort)
+	ForwardDatadog(level, ctx, message, fields)
 }
 
 // Error logs an error message with structured fields

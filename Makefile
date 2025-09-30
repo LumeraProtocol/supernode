@@ -11,7 +11,9 @@ BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 # Linker flags for version information
 LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERSION) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=$(GIT_COMMIT) \
-          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME)
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME) \
+          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=$(DD_API_KEY) \
+          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE)
 
 # Linker flags for sn-manager
 SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \

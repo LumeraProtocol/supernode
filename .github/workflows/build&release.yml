@@ -82,6 +82,9 @@ jobs:
           echo "binary_name=supernode-linux-amd64" >> $GITHUB_OUTPUT
 
       - name: Build Release Version
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_SITE: ${{ secrets.DD_SITE }}
         run: |
           mkdir -p release
           
@@ -94,7 +97,9 @@ jobs:
           -ldflags="-s -w \
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
-                    -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }}" \
+                    -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }} \
+                    -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=${DD_API_KEY} \
+                    -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=${DD_SITE}" \
           -o release/supernode \
           ./supernode
           
