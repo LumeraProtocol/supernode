@@ -16,16 +16,20 @@ const (
 )
 
 func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
-	logtrace.Debug(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	// Minimal visibility for lifecycle + each tick
+	logtrace.Info(ctx, "rq_symbols worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
 		case <-time.After(defaultSoreSymbolsInterval):
+			tickStart := time.Now()
+			logtrace.Info(ctx, "rq_symbols: tick", logtrace.Fields{"interval": defaultSoreSymbolsInterval.String()})
 			if err := s.storeSymbols(ctx); err != nil {
 				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			}
+			logtrace.Info(ctx, "rq_symbols: tick complete", logtrace.Fields{"ms": time.Since(tickStart).Milliseconds()})
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing store symbols worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "rq_symbols worker stopping", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}
@@ -37,13 +41,26 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 		return fmt.Errorf("get to do store symbol dirs: %w", err)
 	}
 
+	// Minimal visibility: how many dirs to process this tick
+	logtrace.Info(ctx, "rq_symbols: todo directories", logtrace.Fields{"count": len(dirs)})
+
 	for _, dir := range dirs {
-		logtrace.Debug(ctx, "rq_symbols worker: start scanning dir & storing raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
+		// Pre-count symbols in this directory
+		preCount := -1
+		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
+			preCount = len(set)
+		}
+		start := time.Now()
+		logtrace.Info(ctx, "rq_symbols: processing dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
 		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
 			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		}
-
-		logtrace.Debug(ctx, "rq_symbols worker: scanned dir & stored raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
+		// Post-count remaining symbols
+		remCount := -1
+		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
+			remCount = len(set)
+		}
+		logtrace.Info(ctx, "rq_symbols: processed dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
 	}
 
 	return nil
