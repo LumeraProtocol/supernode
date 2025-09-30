@@ -310,7 +310,9 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	}
 
 	if len(result.TxResponse.Events) == 0 {
-		logtrace.Error(ctx, "Failed to retrieve transaction events after 5 attempts", nil)
+		logtrace.Error(ctx, "Failed to retrieve transaction events after 5 attempts", logtrace.Fields{
+			"response": result.TxResponse.String,
+		})
 	}
 
 	return result, nil
