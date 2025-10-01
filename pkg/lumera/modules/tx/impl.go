@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -117,7 +116,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		WithCodec(encCfg.Codec).
 		WithTxConfig(encCfg.TxConfig).
 		WithKeyring(config.Keyring).
-		WithBroadcastMode("sync")
+		WithBroadcastMode("block")
 
 	// Create transaction factory
 	factory := tx.Factory{}.
@@ -285,34 +284,6 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	result, err := m.BroadcastTransaction(ctx, txBytes)
 	if err != nil {
 		return result, fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	if result != nil && result.TxResponse != nil && result.TxResponse.Code == 0 && len(result.TxResponse.Events) == 0 {
-		logtrace.Debug(ctx, "Transaction broadcast successful, waiting for inclusion to get events...", nil)
-
-		// Retry 5 times with 1 second intervals
-		var txResp *sdktx.GetTxResponse
-		for i := 0; i < 5; i++ {
-			time.Sleep(1 * time.Second)
-
-			txResp, err = m.GetTransaction(ctx, result.TxResponse.TxHash)
-			if err == nil && txResp != nil && txResp.TxResponse != nil {
-				// Successfully got the transaction with events
-				logtrace.Debug(ctx, fmt.Sprintf("Retrieved transaction with %d events", len(txResp.TxResponse.Events)), nil)
-				result.TxResponse = txResp.TxResponse
-				break
-			}
-
-			if err != nil {
-				logtrace.Warn(ctx, fmt.Sprintf("Attempt %d: failed to query transaction: %v", i+1, err), nil)
-			}
-		}
-	}
-
-	if len(result.TxResponse.Events) == 0 {
-		logtrace.Error(ctx, "Failed to retrieve transaction events after 5 attempts", logtrace.Fields{
-			"response": result.TxResponse.String,
-		})
 	}
 
 	return result, nil
