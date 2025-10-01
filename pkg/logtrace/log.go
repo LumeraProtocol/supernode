@@ -16,7 +16,10 @@ type ContextKey string
 // CorrelationIDKey is the key for storing correlation ID in context
 const CorrelationIDKey ContextKey = "correlation_id"
 
-var logger *zap.Logger
+var (
+	logger   *zap.Logger
+	minLevel zapcore.Level = zapcore.InfoLevel // effective minimum log level
+)
 
 // Setup initializes the logger for readable output in all modes.
 func Setup(serviceName string) {
@@ -34,7 +37,11 @@ func Setup(serviceName string) {
 	config.DisableStacktrace = true
 
 	// Always respect the LOG_LEVEL environment variable.
-	config.Level = zap.NewAtomicLevelAt(getLogLevel())
+	lvl := getLogLevel()
+	config.Level = zap.NewAtomicLevelAt(lvl)
+	// Persist the effective minimum so non-core sinks (e.g., Datadog) can
+	// filter entries consistently with the console logger.
+	minLevel = lvl
 
 	// Build the logger from the customized config.
 	if tracingEnabled {
@@ -133,8 +140,12 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 		logger.Fatal(message, zapFields...)
 	}
 
-	// Forward to Datadog (non-blocking, best-effort)
-	ForwardDatadog(level, ctx, message, fields)
+	// Forward to Datadog (non-blocking, best-effort) only if level is enabled
+	// for the current configuration. This prevents forwarding debug entries
+	// when the logger is configured for info and above.
+	if level >= minLevel {
+		ForwardDatadog(level, ctx, message, fields)
+	}
 }
 
 // Error logs an error message with structured fields
