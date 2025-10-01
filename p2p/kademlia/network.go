@@ -595,7 +595,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	// Log raw RPC start (reduce noise: Info only for high-signal messages)
 	startFields := logtrace.Fields{
 		logtrace.FieldModule: "p2p",
-		"remote":             remoteddr,
+		"remote":             remoteAddr,
 		"message":            msgName(request.MessageType),
 		"timeout_ms":         int64(timeout / time.Millisecond),
 	}
