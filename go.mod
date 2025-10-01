@@ -5,6 +5,7 @@ go 1.24.7
 replace (
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.14.0
 	github.com/bytedance/sonic/loader => github.com/bytedance/sonic/loader v0.3.0
+	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
 )
 
 require (
