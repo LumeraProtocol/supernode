@@ -22,13 +22,9 @@ func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(defaultSoreSymbolsInterval):
-			tickStart := time.Now()
-			// Keep tick logs at debug to avoid noise; actual work will log at info in storeSymbols
-			logtrace.Debug(ctx, "rq_symbols: tick", logtrace.Fields{"interval": defaultSoreSymbolsInterval.String()})
 			if err := s.storeSymbols(ctx); err != nil {
 				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			}
-			logtrace.Debug(ctx, "rq_symbols: tick complete", logtrace.Fields{"ms": time.Since(tickStart).Milliseconds()})
 		case <-ctx.Done():
 			logtrace.Debug(ctx, "rq_symbols worker stopping", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
