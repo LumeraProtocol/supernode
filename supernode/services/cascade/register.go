@@ -46,7 +46,7 @@ func (task *CascadeRegistrationTask) Register(
 ) (err error) {
 
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
-	logtrace.Debug(ctx, "Cascade registration request received", fields)
+	logtrace.Info(ctx, "Cascade registration request received", fields)
 
 	// Ensure task status and resources are finalized regardless of outcome
 	defer func() {
@@ -78,14 +78,14 @@ func (task *CascadeRegistrationTask) Register(
 	fields[logtrace.FieldCreator] = action.Creator
 	fields[logtrace.FieldStatus] = action.State
 	fields[logtrace.FieldPrice] = action.Price
-	logtrace.Debug(ctx, "Action retrieved", fields)
+	logtrace.Info(ctx, "Action retrieved", fields)
 	task.streamEvent(SupernodeEventTypeActionRetrieved, "Action retrieved", "", send)
 
 	/* 2. Verify action fee -------------------------------------------------------- */
 	if err := task.verifyActionFee(ctx, action, req.DataSize, fields); err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Action fee verified", fields)
+	logtrace.Info(ctx, "Action fee verified", fields)
 	task.streamEvent(SupernodeEventTypeActionFeeVerified, "Action fee verified", "", send)
 
 	/* 3. Ensure this super-node is eligible -------------------------------------- */
@@ -93,7 +93,7 @@ func (task *CascadeRegistrationTask) Register(
 	if err := task.ensureIsTopSupernode(ctx, uint64(action.BlockHeight), fields); err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Top supernode eligibility confirmed", fields)
+	logtrace.Info(ctx, "Top supernode eligibility confirmed", fields)
 	task.streamEvent(SupernodeEventTypeTopSupernodeCheckPassed, "Top supernode eligibility confirmed", "", send)
 
 	/* 4. Decode cascade metadata -------------------------------------------------- */
@@ -101,14 +101,14 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Cascade metadata decoded", fields)
+	logtrace.Info(ctx, "Cascade metadata decoded", fields)
 	task.streamEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", send)
 
 	/* 5. Verify data hash --------------------------------------------------------- */
 	if err := task.verifyDataHash(ctx, req.DataHash, cascadeMeta.DataHash, fields); err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Data hash verified", fields)
+	logtrace.Info(ctx, "Data hash verified", fields)
 	task.streamEvent(SupernodeEventTypeDataHashVerified, "Data hash verified", "", send)
 
 	/* 6. Encode the raw data ------------------------------------------------------ */
@@ -116,7 +116,9 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Input encoded", fields)
+	// Promote to Info and include symbols directory for quick visibility
+	fields["symbols_dir"] = encResp.SymbolsDir
+	logtrace.Info(ctx, "Input encoded", fields)
 	task.streamEvent(SupernodeEventTypeInputEncoded, "Input encoded", "", send)
 
 	/* 7. Signature verification + layout decode ---------------------------------- */
@@ -126,7 +128,7 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "Signature verified", fields)
+	logtrace.Info(ctx, "Signature verified", fields)
 	task.streamEvent(SupernodeEventTypeSignatureVerified, "Signature verified", "", send)
 
 	/* 8. Generate RQ-ID files ----------------------------------------------------- */
@@ -134,25 +136,27 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
-	logtrace.Debug(ctx, "RQID files generated", fields)
+	// Include count of ID files generated for visibility
+	fields["id_files_count"] = len(rqidResp.RedundantMetadataFiles)
+	logtrace.Info(ctx, "RQID files generated", fields)
 	task.streamEvent(SupernodeEventTypeRQIDsGenerated, "RQID files generated", "", send)
 
 	/* 9. Consistency checks ------------------------------------------------------- */
 	if err := verifyIDs(layout, encResp.Metadata); err != nil {
 		return task.wrapErr(ctx, "failed to verify IDs", err, fields)
 	}
-	logtrace.Debug(ctx, "RQIDs verified", fields)
+	logtrace.Info(ctx, "RQIDs verified", fields)
 	task.streamEvent(SupernodeEventTypeRqIDsVerified, "RQIDs verified", "", send)
 
 	/* 10. Simulate finalize to avoid storing artefacts if it would fail ---------- */
 	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Debug(ctx, "Finalize simulation failed", fields)
+		logtrace.Info(ctx, "Finalize simulation failed", fields)
 		// Emit explicit simulation failure event for client visibility
 		task.streamEvent(SupernodeEventTypeFinalizeSimulationFailed, "Finalize simulation failed", "", send)
 		return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
 	}
-	logtrace.Debug(ctx, "Finalize simulation passed", fields)
+	logtrace.Info(ctx, "Finalize simulation passed", fields)
 	// Transmit as a standard event so SDK can propagate it (dedicated type)
 	task.streamEvent(SupernodeEventTypeFinalizeSimulated, "Finalize simulation passed", "", send)
 
@@ -170,12 +174,12 @@ func (task *CascadeRegistrationTask) Register(
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Debug(ctx, "Finalize action error", fields)
+		logtrace.Info(ctx, "Finalize action error", fields)
 		return task.wrapErr(ctx, "failed to finalize action", err, fields)
 	}
 	txHash := resp.TxResponse.TxHash
 	fields[logtrace.FieldTxHash] = txHash
-	logtrace.Debug(ctx, "Action finalized", fields)
+	logtrace.Info(ctx, "Action finalized", fields)
 	task.streamEvent(SupernodeEventTypeActionFinalized, "Action finalized", txHash, send)
 
 	return nil

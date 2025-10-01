@@ -573,9 +573,9 @@ func getExecTimeout(messageType int, isLong bool) time.Duration {
 
 // Call sends the request to target and receive the response
 func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Message, error) {
-	timeout := getExecTimeout(request.MessageType, isLong)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+    timeout := getExecTimeout(request.MessageType, isLong)
+    ctx, cancel := context.WithTimeout(ctx, timeout)
+    defer cancel()
 
 	if request.Receiver != nil && request.Receiver.Port == 50052 {
 		logtrace.Error(ctx, "Invalid receiver port", logtrace.Fields{logtrace.FieldModule: "p2p"})
@@ -589,9 +589,16 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 		return nil, errors.New("secure transport credentials are not set")
 	}
 
-	// pool key: bech32@ip:port (bech32 identity is your invariant)
-	idStr := string(request.Receiver.ID)
-	remoteAddr := fmt.Sprintf("%s@%s:%d", idStr, strings.TrimSpace(request.Receiver.IP), request.Receiver.Port)
+    // pool key: bech32@ip:port (bech32 identity is your invariant)
+    idStr := string(request.Receiver.ID)
+    remoteAddr := fmt.Sprintf("%s@%s:%d", idStr, strings.TrimSpace(request.Receiver.IP), request.Receiver.Port)
+    // Log raw RPC start (one line per outgoing request)
+    logtrace.Info(ctx, "RPC call start", logtrace.Fields{
+        logtrace.FieldModule: "p2p",
+        "remote":            remoteAddr,
+        "message":           msgName(request.MessageType),
+        "timeout_ms":        int64(timeout / time.Millisecond),
+    })
 
 	// try get from pool
 	s.connPoolMtx.Lock()
@@ -633,7 +640,8 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 // ---- retryable RPC helpers -------------------------------------------------
 
 func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
-	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
+    start := time.Now()
+    writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
 
 	retried := false
 	for {
@@ -685,10 +693,10 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("set read deadline: %w", e)
 		}
-		r, e := decode(cw.secureConn)
-		_ = cw.secureConn.SetDeadline(time.Time{})
-		cw.mtx.Unlock()
-		if e != nil {
+        r, e := decode(cw.secureConn)
+        _ = cw.secureConn.SetDeadline(time.Time{})
+        cw.mtx.Unlock()
+        if e != nil {
 			if isStaleConnError(e) && !retried {
 				logtrace.Debug(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
 					logtrace.FieldModule: "p2p",
@@ -716,15 +724,23 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 			}
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("conn read: %w", e)
-		}
-		return r, nil
-	}
+        }
+        // Single-line completion for successful outbound RPC
+        logtrace.Info(ctx, "RPC ok", logtrace.Fields{
+            logtrace.FieldModule: "p2p",
+            "remote":            remoteAddr,
+            "message":           msgName(msgType),
+            "ms":                time.Since(start).Milliseconds(),
+        })
+        return r, nil
+}
 }
 
 func (s *Network) rpcOnceNonWrapper(ctx context.Context, conn net.Conn, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
-	sizeMB := float64(len(data)) / (1024.0 * 1024.0) // data is your gob-encoded message
-	throughputFloor := 8.0                           // MB/s (~64 Mbps)
-	est := time.Duration(sizeMB / throughputFloor * float64(time.Second))
+    start := time.Now()
+    sizeMB := float64(len(data)) / (1024.0 * 1024.0) // data is your gob-encoded message
+    throughputFloor := 8.0                           // MB/s (~64 Mbps)
+    est := time.Duration(sizeMB / throughputFloor * float64(time.Second))
 	base := 1 * time.Second
 	cushion := 5 * time.Second
 
@@ -773,9 +789,9 @@ Retry:
 		s.dropFromPool(remoteAddr, conn)
 		return nil, errors.Errorf("set read deadline: %w", err)
 	}
-	resp, err := decode(conn)
-	_ = conn.SetDeadline(time.Time{})
-	if err != nil {
+    resp, err := decode(conn)
+    _ = conn.SetDeadline(time.Time{})
+    if err != nil {
 		if isStaleConnError(err) && !retried {
 			logtrace.Debug(ctx, "Stale pooled connection on read; redialing", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
@@ -800,8 +816,14 @@ Retry:
 		}
 		s.dropFromPool(remoteAddr, conn)
 		return nil, errors.Errorf("conn read: %w", err)
-	}
-	return resp, nil
+    }
+    logtrace.Info(ctx, "RPC ok", logtrace.Fields{
+        logtrace.FieldModule: "p2p",
+        "remote":            remoteAddr,
+        "message":           msgName(msgType),
+        "ms":                time.Since(start).Milliseconds(),
+    })
+    return resp, nil
 }
 
 // classify stale pooled sockets (not timeouts)
@@ -966,12 +988,12 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Debug(ctx, "Batch get values request processed", logtrace.Fields{
-		logtrace.FieldModule: "p2p",
-		"requested-keys":     len(keys),
-		"found":              count,
-		"sender":             message.Sender.String(),
-	})
+    logtrace.Info(ctx, "Batch get values request processed", logtrace.Fields{
+        logtrace.FieldModule: "p2p",
+        "requested-keys":     len(keys),
+        "found":              count,
+        "sender":             message.Sender.String(),
+    })
 
 	for i, key := range keys {
 		val := KeyValWithClosest{
@@ -1208,11 +1230,11 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	}
 
 	// log.P2P().WithContext(ctx).Info("handle batch store data request received")
-	logtrace.Debug(ctx, "Handle batch store data request received", logtrace.Fields{
-		logtrace.FieldModule: "p2p",
-		"sender":             message.Sender.String(),
-		"keys":               len(request.Data),
-	})
+    logtrace.Info(ctx, "Handle batch store data request received", logtrace.Fields{
+        logtrace.FieldModule: "p2p",
+        "sender":             message.Sender.String(),
+        "keys":               len(request.Data),
+    })
 
 	// add the sender to queries hash table
 	s.dht.addNode(ctx, message.Sender)
@@ -1238,11 +1260,11 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 		},
 	}
 	// log.P2P().WithContext(ctx).Info("handle batch store data request processed")
-	logtrace.Debug(ctx, "Handle batch store data request processed", logtrace.Fields{
-		logtrace.FieldModule: "p2p",
-		"sender":             message.Sender.String(),
-		"keys":               len(request.Data),
-	})
+    logtrace.Info(ctx, "Handle batch store data request processed", logtrace.Fields{
+        logtrace.FieldModule: "p2p",
+        "sender":             message.Sender.String(),
+        "keys":               len(request.Data),
+    })
 
 	// new a response message
 	resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)

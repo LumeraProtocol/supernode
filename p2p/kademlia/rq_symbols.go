@@ -16,18 +16,19 @@ const (
 )
 
 func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
-	// Minimal visibility for lifecycle + each tick
-	logtrace.Debug(ctx, "rq_symbols worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
+    // Minimal visibility for lifecycle + each tick
+    logtrace.Debug(ctx, "rq_symbols worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
-		case <-time.After(defaultSoreSymbolsInterval):
-			tickStart := time.Now()
-			logtrace.Debug(ctx, "rq_symbols: tick", logtrace.Fields{"interval": defaultSoreSymbolsInterval.String()})
-			if err := s.storeSymbols(ctx); err != nil {
-				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
-			}
-			logtrace.Debug(ctx, "rq_symbols: tick complete", logtrace.Fields{"ms": time.Since(tickStart).Milliseconds()})
+        case <-time.After(defaultSoreSymbolsInterval):
+            tickStart := time.Now()
+            // Keep tick logs at debug to avoid noise; actual work will log at info in storeSymbols
+            logtrace.Debug(ctx, "rq_symbols: tick", logtrace.Fields{"interval": defaultSoreSymbolsInterval.String()})
+            if err := s.storeSymbols(ctx); err != nil {
+                logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+            }
+            logtrace.Debug(ctx, "rq_symbols: tick complete", logtrace.Fields{"ms": time.Since(tickStart).Milliseconds()})
 		case <-ctx.Done():
 			logtrace.Debug(ctx, "rq_symbols worker stopping", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
@@ -36,13 +37,15 @@ func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
 }
 
 func (s *DHT) storeSymbols(ctx context.Context) error {
-	dirs, err := s.rqstore.GetToDoStoreSymbolDirs()
-	if err != nil {
-		return fmt.Errorf("get to do store symbol dirs: %w", err)
-	}
+    dirs, err := s.rqstore.GetToDoStoreSymbolDirs()
+    if err != nil {
+        return fmt.Errorf("get to do store symbol dirs: %w", err)
+    }
 
-	// Minimal visibility: how many dirs to process this tick
-	logtrace.Debug(ctx, "rq_symbols: todo directories", logtrace.Fields{"count": len(dirs)})
+    // Minimal visibility: how many dirs to process this tick
+    if len(dirs) > 0 {
+        logtrace.Info(ctx, "rq_symbols: todo directories", logtrace.Fields{"count": len(dirs)})
+    }
 
 	for _, dir := range dirs {
 		// Pre-count symbols in this directory
@@ -50,17 +53,17 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
 			preCount = len(set)
 		}
-		start := time.Now()
-		logtrace.Debug(ctx, "rq_symbols: processing dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
-		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
-			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
-		}
-		// Post-count remaining symbols
-		remCount := -1
-		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
-			remCount = len(set)
-		}
-		logtrace.Debug(ctx, "rq_symbols: processed dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
+        start := time.Now()
+        logtrace.Info(ctx, "rq_symbols: processing dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
+        if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
+            logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+        }
+        // Post-count remaining symbols
+        remCount := -1
+        if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
+            remCount = len(set)
+        }
+        logtrace.Info(ctx, "rq_symbols: processed dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
 	}
 
 	return nil
@@ -83,7 +86,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 	}
 	sort.Strings(keys)
 
-	logtrace.Debug(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
+    logtrace.Info(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
 
 	// Batch-flush at loadSymbolsBatchSize
 	for start := 0; start < len(keys); {
