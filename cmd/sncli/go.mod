@@ -11,8 +11,8 @@ replace (
 
 require (
 	github.com/BurntSushi/toml v1.4.0
-	github.com/LumeraProtocol/lumera v1.7.0
-	github.com/LumeraProtocol/supernode/v2 v2.1.0
+	github.com/LumeraProtocol/lumera v1.7.2
+	github.com/LumeraProtocol/supernode/v2 v2.3.52
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/spf13/cobra v1.9.1
 	google.golang.org/grpc v1.71.0
@@ -66,6 +66,7 @@ require (
 	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/dgraph-io/badger/v4 v4.2.0 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect

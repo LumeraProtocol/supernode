@@ -134,7 +134,7 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 			Actual:  "not_registered",
 			Message: fmt.Sprintf("Supernode not registered on chain for address %s", cv.config.SupernodeConfig.Identity),
 		})
-		return nil, nil
+		return nil, err
 	}
 	return sn, nil
 }

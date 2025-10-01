@@ -65,10 +65,14 @@ The supernode will connect to the Lumera network and begin participating in the 
 		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
 		verificationResult, err := configVerifier.VerifyConfig(ctx)
 		if err != nil {
-			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"error": err.Error()})
+			logFields := logtrace.Fields{"error": err.Error()}
+			if verificationResult != nil {
+				logFields["summary"] = verificationResult.Summary()
+			}
+			logtrace.Fatal(ctx, "Config verification failed", logFields)
 		}
 
-		if !verificationResult.IsValid() {
+		if verificationResult != nil && !verificationResult.IsValid() {
 			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
 
