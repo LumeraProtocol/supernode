@@ -936,7 +936,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Info(ctx, "Batch get values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch get values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               message.Sender.String(),
 	})
@@ -966,7 +966,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Info(ctx, "Batch get values request processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch get values request processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"requested-keys":     len(keys),
 		"found":              count,
@@ -1006,7 +1006,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 
 func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFindValuesRequest, ip string, reqID string) (isDone bool, compressedData []byte, err error) {
 	// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("keys", len(req.Keys)).WithField("from-ip", ip).Info("batch find values request received")
-	logtrace.Info(ctx, "Batch find values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               ip,
 		"keys":               len(req.Keys),
@@ -1015,7 +1015,7 @@ func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFi
 	if len(req.Keys) > 0 {
 		// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("keys[0]", req.Keys[0]).WithField("keys[len]", req.Keys[len(req.Keys)-1]).
 		// 	WithField("from-ip", ip).Debug("first & last batch keys")
-		logtrace.Info(ctx, "First & last batch keys", logtrace.Fields{
+		logtrace.Debug(ctx, "First & last batch keys", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"p2p-req-id":         reqID,
 			"keys[0]":            req.Keys[0],
@@ -1208,7 +1208,7 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	}
 
 	// log.P2P().WithContext(ctx).Info("handle batch store data request received")
-	logtrace.Info(ctx, "Handle batch store data request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Handle batch store data request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 		"keys":               len(request.Data),
@@ -1238,7 +1238,7 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 		},
 	}
 	// log.P2P().WithContext(ctx).Info("handle batch store data request processed")
-	logtrace.Info(ctx, "Handle batch store data request processed", logtrace.Fields{
+	logtrace.Debug(ctx, "Handle batch store data request processed", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"sender":             message.Sender.String(),
 		"keys":               len(request.Data),
