@@ -187,18 +187,18 @@ func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionI
 	for k, v := range f {
 		lf[k] = v
 	}
-    logtrace.Info(ctx, "storeArtefacts invoked", lf)
+	logtrace.Info(ctx, "store: first-pass begin", lf)
 
-    if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
-        IDFiles:    idFiles,
-        SymbolsDir: symbolsDir,
-        TaskID:     task.ID(),
-        ActionID:   actionID,
-    }, f); err != nil {
-        // Log and wrap to ensure a proper error line and context
-        return task.wrapErr(ctx, "failed to store artefacts", err, lf)
-    }
-    return nil
+	if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
+		IDFiles:    idFiles,
+		SymbolsDir: symbolsDir,
+		TaskID:     task.ID(),
+		ActionID:   actionID,
+	}, f); err != nil {
+		// Log and wrap to ensure a proper error line and context
+		return task.wrapErr(ctx, "failed to store artefacts", err, lf)
+	}
+	return nil
 }
 
 func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, err error, f logtrace.Fields) error {

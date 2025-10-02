@@ -47,8 +47,12 @@ func (task *CascadeRegistrationTask) Download(
 	req *DownloadRequest,
 	send func(resp *DownloadResponse) error,
 ) (err error) {
+	// Seed correlation ID from actionID for downstream logs
+	if req != nil && req.ActionID != "" {
+		ctx = logtrace.CtxWithCorrelationID(ctx, req.ActionID)
+	}
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
-    logtrace.Info(ctx, "Cascade download request received", fields)
+	logtrace.Info(ctx, "download: request", fields)
 
 	// Ensure task status is finalized regardless of outcome
 	defer func() {
@@ -66,7 +70,7 @@ func (task *CascadeRegistrationTask) Download(
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "failed to get action", err, fields)
 	}
-    logtrace.Info(ctx, "Action retrieved", fields)
+	logtrace.Info(ctx, "download: action fetched", fields)
 	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "Action retrieved", "", "", send)
 
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
@@ -76,14 +80,14 @@ func (task *CascadeRegistrationTask) Download(
 		fields[logtrace.FieldActionState] = actionDetails.GetAction().State
 		return task.wrapErr(ctx, "action not finalized yet", err, fields)
 	}
-    logtrace.Info(ctx, "Action state validated", fields)
+	logtrace.Info(ctx, "download: action state ok", fields)
 
 	metadata, err := task.decodeCascadeMetadata(ctx, actionDetails.GetAction().Metadata, fields)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
 	}
-    logtrace.Info(ctx, "Cascade metadata decoded", fields)
+	logtrace.Info(ctx, "download: metadata decoded", fields)
 	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", "", send)
 
 	// Enforce download authorization based on metadata.Public
@@ -99,15 +103,15 @@ func (task *CascadeRegistrationTask) Download(
 			fields[logtrace.FieldError] = err.Error()
 			return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 		}
-        logtrace.Info(ctx, "Download signature verified for private cascade", fields)
-    } else {
-        logtrace.Info(ctx, "Public cascade: skipping download signature verification", fields)
-    }
+		logtrace.Info(ctx, "download: signature verified", fields)
+	} else {
+		logtrace.Info(ctx, "download: public cascade (no signature)", fields)
+	}
 
 	// Notify: network retrieval phase begins
-    task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
+	task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
 
-    logtrace.Info(ctx, "Starting network retrieval of artefacts", logtrace.Fields{logtrace.FieldActionID: actionDetails.GetAction().ActionID})
+	logtrace.Info(ctx, "download: network retrieval start", logtrace.Fields{logtrace.FieldActionID: actionDetails.GetAction().ActionID})
 	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields, send)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -214,7 +218,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if targetRequiredCount < 1 && totalSymbols > 0 {
 		targetRequiredCount = 1
 	}
-    logtrace.Info(ctx, "Retrieving target-required symbols for decode", logtrace.Fields{"total_symbols": totalSymbols, "target_required_percent": targetRequiredPercent, "target_required_count": targetRequiredCount})
+	logtrace.Info(ctx, "download: plan symbols", logtrace.Fields{"total_symbols": totalSymbols, "target_required_percent": targetRequiredPercent, "target_required_count": targetRequiredCount})
 
 	if !task.config.MetricsDisabled {
 		cm.StartRetrieveCapture(actionID)
@@ -232,7 +236,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		reqCount = totalSymbols
 	}
 	rStart := time.Now()
-    logtrace.Info(ctx, "RPC BatchRetrieve symbols", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
+	logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
 	symbols, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, reqCount, actionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -240,12 +244,12 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", fmt.Errorf("batch retrieve symbols: %w", err)
 	}
 	retrieveMS := time.Since(retrieveStart).Milliseconds()
-    logtrace.Info(ctx, "RPC BatchRetrieve completed", logtrace.Fields{"action_id": actionID, "received": len(symbols), "ms": time.Since(rStart).Milliseconds()})
+	logtrace.Info(ctx, "download: batch retrieve ok", logtrace.Fields{"action_id": actionID, "received": len(symbols), "ms": time.Since(rStart).Milliseconds()})
 
 	// Measure decode duration
 	decodeStart := time.Now()
 	dStart := time.Now()
-    logtrace.Info(ctx, "RQ Decode start", logtrace.Fields{"action_id": actionID})
+	logtrace.Info(ctx, "download: decode start", logtrace.Fields{"action_id": actionID})
 	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
 		ActionID: actionID,
 		Symbols:  symbols,
@@ -257,7 +261,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
 	}
 	decodeMS := time.Since(decodeStart).Milliseconds()
-    logtrace.Info(ctx, "RQ Decode completed", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
+	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
 
 	// Set minimal retrieve summary and emit event strictly from internal collector
 	if !task.config.MetricsDisabled {
@@ -304,7 +308,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 			}
 		}
 	}
-    logtrace.Info(ctx, "File successfully restored and hash verified", fields)
+	logtrace.Info(ctx, "download: file verified", fields)
 
 	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, nil
 }

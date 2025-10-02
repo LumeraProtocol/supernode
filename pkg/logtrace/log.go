@@ -86,6 +86,11 @@ func CtxWithCorrelationID(ctx context.Context, correlationID string) context.Con
 	return context.WithValue(ctx, CorrelationIDKey, correlationID)
 }
 
+// CorrelationIDFromContext returns the correlation ID from context or "unknown".
+func CorrelationIDFromContext(ctx context.Context) string {
+	return extractCorrelationID(ctx)
+}
+
 // extractCorrelationID retrieves the correlation ID from context
 func extractCorrelationID(ctx context.Context) string {
 	if correlationID, ok := ctx.Value(CorrelationIDKey).(string); ok {

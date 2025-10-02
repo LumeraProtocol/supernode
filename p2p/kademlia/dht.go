@@ -817,7 +817,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	wg.Wait()
 
 	netFound := int(atomic.LoadInt32(&networkFound))
-	logtrace.Info(ctx, "DHT BatchRetrieve complete", logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds()})
+	logtrace.Info(ctx, "dht: batch retrieve summary", logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds()})
 	// Record batch retrieve stats for internal DHT snapshot window
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
 	// Also feed retrieve counts into the per-task collector for stream events
@@ -1072,12 +1072,12 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 
 func (s *DHT) doBatchGetValuesCall(ctx context.Context, node *Node, requestKeys map[string]KeyValWithClosest) (map[string]KeyValWithClosest, error) {
 	request := s.newMessage(BatchGetValues, node, &BatchGetValuesRequest{Data: requestKeys})
-	logtrace.Info(ctx, "RPC BatchGetValues send", logtrace.Fields{"node": node.String(), "keys": len(requestKeys)})
+	logtrace.Info(ctx, "dht: batch get send", logtrace.Fields{"node": node.String(), "keys": len(requestKeys)})
 	response, err := s.network.Call(ctx, request, false)
 	if err != nil {
 		return nil, fmt.Errorf("network call request %s failed: %w", request.String(), err)
 	}
-	logtrace.Info(ctx, "RPC BatchGetValues completed", logtrace.Fields{"node": node.String()})
+	logtrace.Info(ctx, "dht: batch get ok", logtrace.Fields{"node": node.String()})
 
 	resp, ok := response.Data.(*BatchGetValuesResponse)
 	if !ok {
@@ -1685,7 +1685,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
 
-	logtrace.Info(ctx, "Iterate batch store begin", logtrace.Fields{
+	logtrace.Info(ctx, "dht: batch store start", logtrace.Fields{
 		logtrace.FieldModule: "dht",
 		"task_id":            id,
 		"keys":               len(values),
@@ -1773,14 +1773,14 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 
 		successRate := float64(successful) / float64(requests) * 100
 		if successRate >= minimumDataStoreSuccessRate {
-			logtrace.Info(ctx, "Successful store operations", logtrace.Fields{
+			logtrace.Info(ctx, "dht: batch store ok", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
 			})
 			return nil
 		} else {
-			logtrace.Info(ctx, "Failed to achieve desired success rate", logtrace.Fields{
+			logtrace.Info(ctx, "dht: batch store below threshold", logtrace.Fields{
 				logtrace.FieldModule: "dht",
 				"task_id":            id,
 				"success_rate":       fmt.Sprintf("%.2f%%", successRate),
@@ -1837,7 +1837,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					totalBytes += len(values[idx])
 				}
 
-				logtrace.Info(ctx, "RPC BatchStoreData send", logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes)})
+				logtrace.Info(ctx, "dht: batch store RPC send", logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes)})
 
 				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
 				if len(toStore) == 0 {
@@ -1863,7 +1863,7 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					return
 				}
 
-				logtrace.Info(ctx, "RPC BatchStoreData completed", logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur})
+				logtrace.Info(ctx, "dht: batch store RPC ok", logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur})
 				responses <- &MessageWithError{Message: response, KeysCount: len(toStore), Receiver: receiver, DurationMS: dur}
 			}
 		}(node, key)

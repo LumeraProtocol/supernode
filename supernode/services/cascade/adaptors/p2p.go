@@ -57,7 +57,7 @@ type StoreArtefactsRequest struct {
 }
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
-    logtrace.Info(ctx, "StoreArtefacts start", logtrace.Fields{"taskID": req.TaskID, "actionID": req.ActionID, "id_files": len(req.IDFiles), "symbols_dir": req.SymbolsDir})
+	logtrace.Info(ctx, "store: p2p start", logtrace.Fields{"taskID": req.TaskID, "actionID": req.ActionID, "id_files": len(req.IDFiles), "symbols_dir": req.SymbolsDir})
 
 	// Optionally enable per-node store RPC capture for this task
 	if !p.metricsDisabled {
@@ -78,10 +78,10 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 			remaining = len(keys)
 		}
 	}
-    logtrace.Info(ctx, "StoreArtefacts completed", logtrace.Fields{"taskID": req.TaskID, "symbols_first_pass": firstPassSymbols, "symbols_total_available": totalSymbols, "id_files_count": len(req.IDFiles), "symbols_left_on_disk": remaining, "ms": dur})
-    if remaining == 0 {
-        logtrace.Info(ctx, "Symbols directory is empty after first-pass", logtrace.Fields{"taskID": req.TaskID, "dir": req.SymbolsDir})
-    }
+	logtrace.Info(ctx, "store: first-pass complete", logtrace.Fields{"taskID": req.TaskID, "symbols_first_pass": firstPassSymbols, "symbols_total_available": totalSymbols, "id_files_count": len(req.IDFiles), "symbols_left_on_disk": remaining, "ms": dur})
+	if remaining == 0 {
+		logtrace.Info(ctx, "store: dir empty after first-pass", logtrace.Fields{"taskID": req.TaskID, "dir": req.SymbolsDir})
+	}
 	// Record store summary for later event emission
 	cm.SetStoreSummary(req.TaskID, firstPassSymbols, totalSymbols, len(req.IDFiles), dur)
 	return nil
@@ -111,12 +111,12 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	if targetCount < 1 && totalAvailable > 0 {
 		targetCount = 1
 	}
-    logtrace.Info(ctx, "Symbols discovered in directory", logtrace.Fields{"total_symbols": totalAvailable, "dir": symbolsDir})
-    logtrace.Info(ctx, "first-pass target coverage (symbols)", logtrace.Fields{
-        "total_symbols":  totalAvailable,
-        "target_percent": storeSymbolsPercent,
-        "target_count":   targetCount,
-    })
+	logtrace.Info(ctx, "store: symbols discovered", logtrace.Fields{"total_symbols": totalAvailable, "dir": symbolsDir})
+	logtrace.Info(ctx, "store: target coverage", logtrace.Fields{
+		"total_symbols":  totalAvailable,
+		"target_percent": storeSymbolsPercent,
+		"target_count":   targetCount,
+	})
 
 	/* down-sample if we exceed the “big directory” threshold ------------- */
 	if len(keys) > loadSymbolsBatchSize {
@@ -127,8 +127,8 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 		}
 		sort.Strings(keys) // deterministic order inside the sample
 	}
-    logtrace.Info(ctx, "first-pass selected symbols", logtrace.Fields{"selected": len(keys), "of_total": totalAvailable, "dir": symbolsDir})
-    logtrace.Info(ctx, "storing RaptorQ symbols", logtrace.Fields{"count": len(keys)})
+	logtrace.Info(ctx, "store: selected symbols", logtrace.Fields{"selected": len(keys), "of_total": totalAvailable, "dir": symbolsDir})
+	logtrace.Info(ctx, "store: sending symbols", logtrace.Fields{"count": len(keys)})
 
 	/* stream in fixed-size batches -------------------------------------- */
 
@@ -164,7 +164,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 			payload = append(payload, symBytes...)
 
 			// Send as the same data type you use for symbols
-            logtrace.Info(ctx, "RPC StoreBatch (first-batch): metadata + symbols", logtrace.Fields{"taskID": taskID, "metadata_count": len(metadataFiles), "symbols_in_batch": len(symBytes), "payload_total": len(payload)})
+			logtrace.Info(ctx, "store: batch send (first)", logtrace.Fields{"taskID": taskID, "metadata_count": len(metadataFiles), "symbols_in_batch": len(symBytes), "payload_total": len(payload)})
 			bctx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
 			bctx = cm.WithTaskID(bctx, taskID)
 			err = p.p2p.StoreBatch(bctx, payload, storage.P2PDataRaptorQSymbol, taskID)
@@ -172,7 +172,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 			if err != nil {
 				return totalSymbols, totalAvailable, fmt.Errorf("p2p store batch (first): %w", err)
 			}
-            logtrace.Info(ctx, "RPC StoreBatch completed (first-batch)", logtrace.Fields{"taskID": taskID, "symbols_stored": len(symBytes)})
+			logtrace.Info(ctx, "store: batch ok (first)", logtrace.Fields{"taskID": taskID, "symbols_stored": len(symBytes)})
 
 			totalSymbols += len(symBytes)
 			// No per-RPC metrics propagated from p2p
@@ -185,11 +185,11 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 			}
 			// Log remaining symbols in directory after deletion
 			if rem, werr := walkSymbolTree(symbolsDir); werr == nil {
-                if left := len(rem); left > 0 {
-                    logtrace.Info(ctx, "symbols left after first-batch", logtrace.Fields{"taskID": taskID, "left": left})
-                } else {
-                    logtrace.Info(ctx, "Symbols directory is empty after first-batch", logtrace.Fields{"taskID": taskID, "dir": symbolsDir})
-                }
+				if left := len(rem); left > 0 {
+					logtrace.Info(ctx, "store: remaining after first batch", logtrace.Fields{"taskID": taskID, "left": left})
+				} else {
+					logtrace.Info(ctx, "store: dir empty after first batch", logtrace.Fields{"taskID": taskID, "dir": symbolsDir})
+				}
 			}
 
 			firstBatchProcessed = true
@@ -209,19 +209,18 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	if totalAvailable > 0 {
 		achievedPct = (float64(totalSymbols) / float64(totalAvailable)) * 100.0
 	}
-    logtrace.Info(ctx, "first-pass achieved coverage (symbols)",
-        logtrace.Fields{"achieved_symbols": totalSymbols, "achieved_percent": achievedPct})
+	logtrace.Info(ctx, "store: coverage", logtrace.Fields{"achieved_symbols": totalSymbols, "achieved_percent": achievedPct})
 
 	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
 		return totalSymbols, totalAvailable, fmt.Errorf("update first-batch flag: %w", err)
 	}
 	// Final remaining count after first pass flagged
 	if rem, werr := walkSymbolTree(symbolsDir); werr == nil {
-        if left := len(rem); left > 0 {
-            logtrace.Info(ctx, "first-pass completed; symbols remaining on disk", logtrace.Fields{"taskID": taskID, "left": left, "dir": symbolsDir})
-        } else {
-            logtrace.Info(ctx, "first-pass completed; directory empty", logtrace.Fields{"taskID": taskID, "dir": symbolsDir})
-        }
+		if left := len(rem); left > 0 {
+			logtrace.Info(ctx, "store: remaining after first-pass", logtrace.Fields{"taskID": taskID, "left": left, "dir": symbolsDir})
+		} else {
+			logtrace.Info(ctx, "store: directory empty after first-pass", logtrace.Fields{"taskID": taskID, "dir": symbolsDir})
+		}
 	}
 
 	return totalSymbols, totalAvailable, nil
@@ -268,11 +267,11 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	symCtx = cm.WithTaskID(symCtx, taskID)
 	defer cancel()
 
-    logtrace.Info(ctx, "RPC StoreBatch (symbols batch)", logtrace.Fields{"taskID": taskID, "symbols_in_batch": len(symbols)})
+	logtrace.Info(ctx, "store: batch send (symbols)", logtrace.Fields{"taskID": taskID, "symbols_in_batch": len(symbols)})
 	if err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID); err != nil {
 		return len(symbols), fmt.Errorf("p2p store batch: %w", err)
 	}
-    logtrace.Info(ctx, "RPC StoreBatch completed (symbols batch)", logtrace.Fields{"taskID": taskID, "symbols_stored": len(symbols)})
+	logtrace.Info(ctx, "store: batch ok (symbols)", logtrace.Fields{"taskID": taskID, "symbols_stored": len(symbols)})
 
 	if err := utils.DeleteSymbols(ctx, root, fileKeys); err != nil {
 		return len(symbols), fmt.Errorf("delete symbols: %w", err)

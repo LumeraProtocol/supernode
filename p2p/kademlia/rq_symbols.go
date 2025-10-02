@@ -40,26 +40,28 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 
 	// Minimal visibility: how many dirs to process this tick
 	if len(dirs) > 0 {
-		logtrace.Info(ctx, "rq_symbols: todo directories", logtrace.Fields{"count": len(dirs)})
+		logtrace.Info(ctx, "worker: symbols todo", logtrace.Fields{"count": len(dirs)})
 	}
 
 	for _, dir := range dirs {
+		// Use txid as correlation id so worker logs join with register flow
+		wctx := logtrace.CtxWithCorrelationID(ctx, dir.TXID)
 		// Pre-count symbols in this directory
 		preCount := -1
 		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
 			preCount = len(set)
 		}
 		start := time.Now()
-		logtrace.Info(ctx, "rq_symbols: processing dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
-		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
-			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+		logtrace.Info(wctx, "worker: dir start", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
+		if err := s.scanDirAndStoreSymbols(wctx, dir.Dir, dir.TXID); err != nil {
+			logtrace.Error(wctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		}
 		// Post-count remaining symbols
 		remCount := -1
 		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
 			remCount = len(set)
 		}
-		logtrace.Info(ctx, "rq_symbols: processed dir", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
+		logtrace.Info(wctx, "worker: dir done", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
 	}
 
 	return nil
@@ -108,7 +110,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 // ---------------------------------------------------------------------
 func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, keys []string) error {
 	// Per-batch visibility for background worker
-	logtrace.Info(ctx, "rq_symbols: worker StoreBatch send", logtrace.Fields{"dir": dir, "keys": len(keys)})
+	logtrace.Info(ctx, "worker: batch send", logtrace.Fields{"dir": dir, "keys": len(keys)})
 
 	start := time.Now()
 	loaded, err := utils.LoadSymbols(dir, keys)
@@ -120,7 +122,7 @@ func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, keys []string) 
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
 
-	logtrace.Info(ctx, "rq_symbols: worker StoreBatch completed", logtrace.Fields{"dir": dir, "keys": len(loaded), "ms": time.Since(start).Milliseconds()})
+	logtrace.Info(ctx, "worker: batch ok", logtrace.Fields{"dir": dir, "keys": len(loaded), "ms": time.Since(start).Milliseconds()})
 
 	if err := utils.DeleteSymbols(ctx, dir, keys); err != nil {
 		return fmt.Errorf("delete symbols: %w", err)
