@@ -592,6 +592,18 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	// pool key: bech32@ip:port (bech32 identity is your invariant)
 	idStr := string(request.Receiver.ID)
 	remoteAddr := fmt.Sprintf("%s@%s:%d", idStr, strings.TrimSpace(request.Receiver.IP), request.Receiver.Port)
+	// Log raw RPC start (reduce noise: Info only for high-signal messages)
+	startFields := logtrace.Fields{
+		logtrace.FieldModule: "p2p",
+		"remote":             remoteAddr,
+		"message":            msgName(request.MessageType),
+		"timeout_ms":         int64(timeout / time.Millisecond),
+	}
+	if isHighSignalMsg(request.MessageType) {
+		logtrace.Info(ctx, fmt.Sprintf("RPC %s start remote=%s timeout_ms=%d", msgName(request.MessageType), remoteAddr, int64(timeout/time.Millisecond)), startFields)
+	} else {
+		logtrace.Debug(ctx, fmt.Sprintf("RPC %s start remote=%s timeout_ms=%d", msgName(request.MessageType), remoteAddr, int64(timeout/time.Millisecond)), startFields)
+	}
 
 	// try get from pool
 	s.connPoolMtx.Lock()
@@ -633,6 +645,7 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 // ---- retryable RPC helpers -------------------------------------------------
 
 func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
+	start := time.Now()
 	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
 
 	retried := false
@@ -717,11 +730,18 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("conn read: %w", e)
 		}
+		// Single-line completion for successful outbound RPC
+		if isHighSignalMsg(msgType) {
+			logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds()})
+		} else {
+			logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds()})
+		}
 		return r, nil
 	}
 }
 
 func (s *Network) rpcOnceNonWrapper(ctx context.Context, conn net.Conn, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
+	start := time.Now()
 	sizeMB := float64(len(data)) / (1024.0 * 1024.0) // data is your gob-encoded message
 	throughputFloor := 8.0                           // MB/s (~64 Mbps)
 	est := time.Duration(sizeMB / throughputFloor * float64(time.Second))
@@ -800,6 +820,11 @@ Retry:
 		}
 		s.dropFromPool(remoteAddr, conn)
 		return nil, errors.Errorf("conn read: %w", err)
+	}
+	if isHighSignalMsg(msgType) {
+		logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds()})
+	} else {
+		logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds()})
 	}
 	return resp, nil
 }
@@ -936,7 +961,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		return s.generateResponseMessage(BatchGetValues, message.Sender, ResultFailed, err.Error())
 	}
 
-	logtrace.Info(ctx, "Batch get values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch get values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               message.Sender.String(),
 	})
@@ -1006,7 +1031,7 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 
 func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFindValuesRequest, ip string, reqID string) (isDone bool, compressedData []byte, err error) {
 	// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("keys", len(req.Keys)).WithField("from-ip", ip).Info("batch find values request received")
-	logtrace.Info(ctx, "Batch find values request received", logtrace.Fields{
+	logtrace.Debug(ctx, "Batch find values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from":               ip,
 		"keys":               len(req.Keys),
@@ -1015,7 +1040,7 @@ func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFi
 	if len(req.Keys) > 0 {
 		// log.WithContext(ctx).WithField("p2p-req-id", reqID).WithField("keys[0]", req.Keys[0]).WithField("keys[len]", req.Keys[len(req.Keys)-1]).
 		// 	WithField("from-ip", ip).Debug("first & last batch keys")
-		logtrace.Info(ctx, "First & last batch keys", logtrace.Fields{
+		logtrace.Debug(ctx, "First & last batch keys", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"p2p-req-id":         reqID,
 			"keys[0]":            req.Keys[0],
@@ -1465,6 +1490,18 @@ func msgName(t int) string {
 		return "Replicate"
 	default:
 		return fmt.Sprintf("Type_%d", t)
+	}
+}
+
+// isHighSignalMsg returns true for message types that are heavy and relevant
+// to artefact store/retrieve visibility. Lightweight chatter like Ping or
+// FindNode is excluded to avoid log noise at Info level.
+func isHighSignalMsg(t int) bool {
+	switch t {
+	case BatchStoreData, BatchGetValues, BatchFindValues:
+		return true
+	default:
+		return false
 	}
 }
 

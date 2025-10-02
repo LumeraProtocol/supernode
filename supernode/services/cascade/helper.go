@@ -36,7 +36,7 @@ func (task *CascadeRegistrationTask) fetchAction(ctx context.Context, actionID s
 	if res.GetAction().ActionID == "" {
 		return nil, task.wrapErr(ctx, "action not found", errors.New(""), f)
 	}
-	logtrace.Info(ctx, "action has been retrieved", f)
+	logtrace.Debug(ctx, "action has been retrieved", f)
 
 	return res.GetAction(), nil
 }
@@ -46,7 +46,7 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 	if err != nil {
 		return task.wrapErr(ctx, "failed to get top SNs", err, f)
 	}
-	logtrace.Info(ctx, "Fetched Top Supernodes", f)
+	logtrace.Debug(ctx, "Fetched Top Supernodes", f)
 
 	if !supernode.Exists(top.Supernodes, task.config.SupernodeAccountAddress) {
 		// Build information about supernodes for better error context
@@ -54,7 +54,7 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 		for i, sn := range top.Supernodes {
 			addresses[i] = sn.SupernodeAccount
 		}
-		logtrace.Info(ctx, "Supernode not in top list", logtrace.Fields{
+		logtrace.Debug(ctx, "Supernode not in top list", logtrace.Fields{
 			"currentAddress": task.config.SupernodeAccountAddress,
 			"topSupernodes":  addresses,
 		})
@@ -78,7 +78,7 @@ func (task *CascadeRegistrationTask) verifyDataHash(ctx context.Context, dh []by
 	if string(b64) != expected {
 		return task.wrapErr(ctx, "data hash doesn't match", errors.New(""), f)
 	}
-	logtrace.Info(ctx, "request data-hash has been matched with the action data-hash", f)
+	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", f)
 
 	return nil
 }
@@ -110,7 +110,7 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexFileB64), creatorSigBytes); err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify creator signature", err, f)
 	}
-	logtrace.Info(ctx, "creator signature successfully verified", f)
+	logtrace.Debug(ctx, "creator signature successfully verified", f)
 
 	// Decode index file to get the layout signature
 	indexFile, err := decodeIndexFile(indexFileB64)
@@ -132,7 +132,7 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigBytes); err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify layout signature", err, f)
 	}
-	logtrace.Info(ctx, "layout signature successfully verified", f)
+	logtrace.Debug(ctx, "layout signature successfully verified", f)
 
 	return encodedMeta, indexFile.LayoutSignature, nil
 }
@@ -187,14 +187,18 @@ func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionI
 	for k, v := range f {
 		lf[k] = v
 	}
-	logtrace.Info(ctx, "storeArtefacts invoked", lf)
+    logtrace.Info(ctx, "storeArtefacts invoked", lf)
 
-	return task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
-		IDFiles:    idFiles,
-		SymbolsDir: symbolsDir,
-		TaskID:     task.ID(),
-		ActionID:   actionID,
-	}, f)
+    if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{
+        IDFiles:    idFiles,
+        SymbolsDir: symbolsDir,
+        TaskID:     task.ID(),
+        ActionID:   actionID,
+    }, f); err != nil {
+        // Log and wrap to ensure a proper error line and context
+        return task.wrapErr(ctx, "failed to store artefacts", err, lf)
+    }
+    return nil
 }
 
 func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, err error, f logtrace.Fields) error {
@@ -228,7 +232,7 @@ func (task *CascadeRegistrationTask) emitArtefactsStored(
 	b, _ := json.MarshalIndent(payload, "", "  ")
 	msg := string(b)
 	fields["metrics_json"] = msg
-	logtrace.Info(ctx, "artefacts have been stored", fields)
+	logtrace.Debug(ctx, "artefacts have been stored", fields)
 	task.streamEvent(SupernodeEventTypeArtefactsStored, msg, "", send)
 	// No central state to clear; adaptor returns calls inline
 }
@@ -293,7 +297,7 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	requiredFee := sdk.NewCoin("ulume", math.NewInt(amount))
 
 	// Log the calculated fee
-	logtrace.Info(ctx, "calculated required fee", logtrace.Fields{
+	logtrace.Debug(ctx, "calculated required fee", logtrace.Fields{
 		"fee":       requiredFee.String(),
 		"dataBytes": dataSize,
 	})
@@ -391,6 +395,6 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 		return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 	}
 
-	logtrace.Info(ctx, "download signature successfully verified", fields)
+	logtrace.Debug(ctx, "download signature successfully verified", fields)
 	return nil
 }

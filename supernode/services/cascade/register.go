@@ -116,6 +116,8 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
+	// Promote to Info and include symbols directory for quick visibility
+	fields["symbols_dir"] = encResp.SymbolsDir
 	logtrace.Info(ctx, "Input encoded", fields)
 	task.streamEvent(SupernodeEventTypeInputEncoded, "Input encoded", "", send)
 
@@ -134,6 +136,8 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
+	// Include count of ID files generated for visibility
+	fields["id_files_count"] = len(rqidResp.RedundantMetadataFiles)
 	logtrace.Info(ctx, "RQID files generated", fields)
 	task.streamEvent(SupernodeEventTypeRQIDsGenerated, "RQID files generated", "", send)
 
@@ -147,7 +151,7 @@ func (task *CascadeRegistrationTask) Register(
 	/* 10. Simulate finalize to avoid storing artefacts if it would fail ---------- */
 	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqidResp.RQIDs); err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Debug(ctx, "Finalize simulation failed", fields)
+		logtrace.Info(ctx, "Finalize simulation failed", fields)
 		// Emit explicit simulation failure event for client visibility
 		task.streamEvent(SupernodeEventTypeFinalizeSimulationFailed, "Finalize simulation failed", "", send)
 		return task.wrapErr(ctx, "finalize action simulation failed", err, fields)
@@ -170,7 +174,7 @@ func (task *CascadeRegistrationTask) Register(
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		logtrace.Debug(ctx, "Finalize action error", fields)
+		logtrace.Info(ctx, "Finalize action error", fields)
 		return task.wrapErr(ctx, "failed to finalize action", err, fields)
 	}
 	txHash := resp.TxResponse.TxHash
