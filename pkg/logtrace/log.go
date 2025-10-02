@@ -16,6 +16,9 @@ type ContextKey string
 // CorrelationIDKey is the key for storing correlation ID in context
 const CorrelationIDKey ContextKey = "correlation_id"
 
+// OriginKey marks which phase produced the log (first_pass | worker | download)
+const OriginKey ContextKey = "origin"
+
 var (
 	logger   *zap.Logger
 	minLevel zapcore.Level = zapcore.InfoLevel // effective minimum log level
@@ -89,6 +92,22 @@ func CtxWithCorrelationID(ctx context.Context, correlationID string) context.Con
 // CorrelationIDFromContext returns the correlation ID from context or "unknown".
 func CorrelationIDFromContext(ctx context.Context) string {
 	return extractCorrelationID(ctx)
+}
+
+// CtxWithOrigin stores a phase/origin tag in context
+func CtxWithOrigin(ctx context.Context, origin string) context.Context {
+	if origin == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, OriginKey, origin)
+}
+
+// OriginFromContext returns the origin tag from context or ""
+func OriginFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(OriginKey).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // extractCorrelationID retrieves the correlation ID from context

@@ -187,6 +187,8 @@ func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionI
 	for k, v := range f {
 		lf[k] = v
 	}
+	// Tag the flow as first-pass just before handing over to P2P
+	ctx = logtrace.CtxWithOrigin(ctx, "first_pass")
 	logtrace.Info(ctx, "store: first-pass begin", lf)
 
 	if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{

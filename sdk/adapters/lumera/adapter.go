@@ -13,6 +13,7 @@ import (
 	lumeraclient "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -25,6 +26,8 @@ type Client interface {
 	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)
 	DecodeCascadeMetadata(ctx context.Context, action Action) (actiontypes.CascadeMetadata, error)
 	VerifySignature(ctx context.Context, accountAddr string, data []byte, signature []byte) error
+	// GetBalance returns the bank balance for the given address and denom.
+	GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
 }
 
 // SuperNodeInfo contains supernode information with latest address
@@ -211,6 +214,22 @@ func (a *Adapter) VerifySignature(ctx context.Context, accountAddr string, data,
 	}
 	a.logger.Debug(ctx, "Signature verified successfully", "accountAddr", accountAddr)
 	return nil
+}
+
+// GetBalance fetches the balance for a given address and denom via the underlying lumera client.
+func (a *Adapter) GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error) {
+	a.logger.Debug(ctx, "Querying bank balance", "address", address, "denom", denom)
+	resp, err := a.client.Bank().Balance(ctx, address, denom)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to query bank balance", "address", address, "denom", denom, "error", err)
+		return nil, fmt.Errorf("failed to query bank balance: %w", err)
+	}
+	if resp == nil || resp.Balance == nil {
+		a.logger.Error(ctx, "Nil balance response", "address", address, "denom", denom)
+		return nil, fmt.Errorf("nil balance response for %s %s", address, denom)
+	}
+	a.logger.Debug(ctx, "Successfully fetched bank balance", "amount", resp.Balance.Amount.String(), "denom", resp.Balance.Denom)
+	return resp, nil
 }
 
 // DecodeCascadeMetadata decodes the raw metadata bytes into CascadeMetadata

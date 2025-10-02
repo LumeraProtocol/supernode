@@ -9,7 +9,6 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	plumera "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
@@ -146,22 +145,8 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 		return false
 	}
 
-	// Finally, ensure the supernode account has a positive balance in the default fee denom.
-	// Use pkg/lumera to query bank balance from the chain.
-	cfg, err := plumera.NewConfig(t.config.Lumera.GRPCAddr, t.config.Lumera.ChainID, t.config.Account.KeyName, t.keyring)
-	if err != nil {
-		logtrace.Debug(ctx, "Failed to build lumera client config for balance check", logtrace.Fields{"error": err.Error()})
-		return false
-	}
-	lc, err := plumera.NewClient(ctx, cfg)
-	if err != nil {
-		logtrace.Debug(ctx, "Failed to create lumera client for balance check", logtrace.Fields{"error": err.Error()})
-		return false
-	}
-	defer lc.Close()
-
 	denom := txmod.DefaultFeeDenom // base denom (micro), e.g., "ulume"
-	bal, err := lc.Bank().Balance(ctx, sn.CosmosAddress, denom)
+	bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
 	if err != nil || bal == nil || bal.Balance == nil {
 		return false
 	}

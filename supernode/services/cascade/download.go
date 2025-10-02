@@ -47,9 +47,10 @@ func (task *CascadeRegistrationTask) Download(
 	req *DownloadRequest,
 	send func(resp *DownloadResponse) error,
 ) (err error) {
-	// Seed correlation ID from actionID for downstream logs
+	// Seed correlation ID and origin from actionID for downstream logs
 	if req != nil && req.ActionID != "" {
 		ctx = logtrace.CtxWithCorrelationID(ctx, req.ActionID)
+		ctx = logtrace.CtxWithOrigin(ctx, "download")
 	}
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "download: request", fields)

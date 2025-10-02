@@ -817,7 +817,11 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	wg.Wait()
 
 	netFound := int(atomic.LoadInt32(&networkFound))
-	logtrace.Info(ctx, "dht: batch retrieve summary", logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds()})
+{
+    f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+    logtrace.Info(ctx, "dht: batch retrieve summary", f)
+}
 	// Record batch retrieve stats for internal DHT snapshot window
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
 	// Also feed retrieve counts into the per-task collector for stream events
@@ -1072,12 +1076,20 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 
 func (s *DHT) doBatchGetValuesCall(ctx context.Context, node *Node, requestKeys map[string]KeyValWithClosest) (map[string]KeyValWithClosest, error) {
 	request := s.newMessage(BatchGetValues, node, &BatchGetValuesRequest{Data: requestKeys})
-	logtrace.Info(ctx, "dht: batch get send", logtrace.Fields{"node": node.String(), "keys": len(requestKeys)})
+{
+    f := logtrace.Fields{"node": node.String(), "keys": len(requestKeys), logtrace.FieldRole: "client"}
+    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+    logtrace.Info(ctx, "dht: batch get send", f)
+}
 	response, err := s.network.Call(ctx, request, false)
 	if err != nil {
 		return nil, fmt.Errorf("network call request %s failed: %w", request.String(), err)
 	}
-	logtrace.Info(ctx, "dht: batch get ok", logtrace.Fields{"node": node.String()})
+{
+    f := logtrace.Fields{"node": node.String(), logtrace.FieldRole: "client"}
+    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+    logtrace.Info(ctx, "dht: batch get ok", f)
+}
 
 	resp, ok := response.Data.(*BatchGetValuesResponse)
 	if !ok {
@@ -1685,12 +1697,11 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
 
-	logtrace.Info(ctx, "dht: batch store start", logtrace.Fields{
-		logtrace.FieldModule: "dht",
-		"task_id":            id,
-		"keys":               len(values),
-		"len_nodes":          len(s.ht.nodes()),
-	})
+{
+    f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
+    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+    logtrace.Info(ctx, "dht: batch store start", f)
+}
 	for i := 0; i < len(values); i++ {
 		target, _ := utils.Blake3Hash(values[i])
 		hashes[i] = target
@@ -1837,7 +1848,11 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					totalBytes += len(values[idx])
 				}
 
-				logtrace.Info(ctx, "dht: batch store RPC send", logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes)})
+                {
+                    f := logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes), logtrace.FieldRole: "client"}
+                    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+                    logtrace.Info(ctx, "dht: batch store RPC send", f)
+                }
 
 				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
 				if len(toStore) == 0 {
@@ -1863,7 +1878,11 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					return
 				}
 
-				logtrace.Info(ctx, "dht: batch store RPC ok", logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur})
+                {
+                    f := logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur, logtrace.FieldRole: "client"}
+                    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
+                    logtrace.Info(ctx, "dht: batch store RPC ok", f)
+                }
 				responses <- &MessageWithError{Message: response, KeysCount: len(toStore), Receiver: receiver, DurationMS: dur}
 			}
 		}(node, key)

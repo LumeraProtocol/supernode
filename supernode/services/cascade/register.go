@@ -44,9 +44,10 @@ func (task *CascadeRegistrationTask) Register(
 	req *RegisterRequest,
 	send func(resp *RegisterResponse) error,
 ) (err error) {
-	// Seed correlation ID from actionID so logs across layers can be joined
+	// Seed correlation ID and origin so logs across layers can be joined and filtered
 	if req != nil && req.ActionID != "" {
 		ctx = logtrace.CtxWithCorrelationID(ctx, req.ActionID)
+		ctx = logtrace.CtxWithOrigin(ctx, "first_pass")
 	}
 
 	fields := logtrace.Fields{logtrace.FieldMethod: "Register", logtrace.FieldRequest: req}
