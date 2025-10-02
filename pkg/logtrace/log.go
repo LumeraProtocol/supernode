@@ -93,12 +93,10 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 		Setup("unknown-service") // Fallback if Setup wasn't called
 	}
 
-	// Always enrich logs with the correlation ID.
-	// allFields := make(Fields, len(fields)+1)
-	// for k, v := range fields {
-	// 	allFields[k] = v
-	// }
-	// allFields[FieldCorrelationID] = extractCorrelationID(ctx)
+	// Drop early if below the configured level (keeps Datadog in sync)
+	if !logger.Core().Enabled(level) {
+		return
+	}
 
 	// Convert the map to a slice of zap.Field
 	zapFields := make([]zap.Field, 0, len(fields))
@@ -119,18 +117,12 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 		}
 	}
 
-	// Log with the structured fields.
-	switch level {
-	case zapcore.DebugLevel:
-		logger.Debug(message, zapFields...)
-	case zapcore.InfoLevel:
-		logger.Info(message, zapFields...)
-	case zapcore.WarnLevel:
-		logger.Warn(message, zapFields...)
-	case zapcore.ErrorLevel:
-		logger.Error(message, zapFields...)
-	case zapcore.FatalLevel:
-		logger.Fatal(message, zapFields...)
+	// Log with the structured fields using a level check/write
+	if ce := logger.Check(level, message); ce != nil {
+		ce.Write(zapFields...)
+	} else {
+		// Should not happen due to early Enabled check, but guard anyway
+		return
 	}
 
 	// Forward to Datadog (non-blocking, best-effort)
