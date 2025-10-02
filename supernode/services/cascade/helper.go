@@ -19,7 +19,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/golang/protobuf/proto"
+	gogoproto "github.com/cosmos/gogoproto/proto"
 	json "github.com/json-iterator/go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,7 +67,7 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 
 func (task *CascadeRegistrationTask) decodeCascadeMetadata(ctx context.Context, raw []byte, f logtrace.Fields) (actiontypes.CascadeMetadata, error) {
 	var meta actiontypes.CascadeMetadata
-	if err := proto.Unmarshal(raw, &meta); err != nil {
+	if err := gogoproto.Unmarshal(raw, &meta); err != nil {
 		return meta, task.wrapErr(ctx, "failed to unmarshal cascade metadata", err, f)
 	}
 	return meta, nil

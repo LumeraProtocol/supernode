@@ -13,7 +13,7 @@ import (
 	lumeraclient "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/golang/protobuf/proto"
+	gogoproto "github.com/cosmos/gogoproto/proto"
 )
 
 //go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=lumera_mock.go
@@ -220,7 +220,7 @@ func (a *Adapter) DecodeCascadeMetadata(ctx context.Context, action Action) (act
 	}
 
 	var meta actiontypes.CascadeMetadata
-	if err := proto.Unmarshal(action.Metadata, &meta); err != nil {
+	if err := gogoproto.Unmarshal(action.Metadata, &meta); err != nil {
 		a.logger.Error(ctx, "Failed to unmarshal cascade metadata", "actionID", action.ID, "error", err)
 		return meta, fmt.Errorf("failed to unmarshal cascade metadata: %w", err)
 	}
