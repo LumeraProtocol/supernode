@@ -184,13 +184,11 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Fund the account with tokens for transactions
 	t.Logf("Funding test address %s with %s", recoveredAddress, fundAmount)
-	cli.FundAddress(recoveredAddress, fundAmount)      // ulume tokens for action fees
-	cli.FundAddress(recoveredAddress, "10000000stake") // stake tokens
+	cli.FundAddress(recoveredAddress, fundAmount) // ulume tokens for action fees
 
 	// Fund user account
 	t.Logf("Funding user address %s with %s", userAddress, fundAmount)
-	cli.FundAddress(userAddress, fundAmount)      // ulume tokens for action fees
-	cli.FundAddress(userAddress, "10000000stake") // stake tokens
+	cli.FundAddress(userAddress, fundAmount) // ulume tokens for action fees
 
 	sut.AwaitNextBlock(t) // Wait for funding transaction to be processed
 
