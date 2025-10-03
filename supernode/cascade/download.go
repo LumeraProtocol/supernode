@@ -195,27 +195,41 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(ctx context.Context, 
 	if reqCount > totalSymbols {
 		reqCount = totalSymbols
 	}
-	rStart := time.Now()
-	logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
-	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, reqCount, actionID)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "batch retrieve failed", fields)
-		return "", "", fmt.Errorf("batch retrieve symbols: %w", err)
-	}
-	retrieveMS := time.Since(retrieveStart).Milliseconds()
-	logtrace.Info(ctx, "download: batch retrieve ok", logtrace.Fields{"action_id": actionID, "received": len(symbols), "ms": time.Since(rStart).Milliseconds()})
-	decodeStart := time.Now()
-	dStart := time.Now()
-	logtrace.Info(ctx, "download: decode start", logtrace.Fields{"action_id": actionID})
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{ActionID: actionID, Symbols: symbols, Layout: layout})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "decode failed", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
-	}
-	decodeMS := time.Since(decodeStart).Milliseconds()
-	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
+    rStart := time.Now()
+    logtrace.Info(ctx, "download: prepare decode", logtrace.Fields{"action_id": actionID})
+    _, writeSymbol, cleanup, ws, perr := task.RQ.PrepareDecode(ctx, actionID, layout)
+    if perr != nil {
+        fields[logtrace.FieldError] = perr.Error()
+        logtrace.Error(ctx, "prepare decode failed", fields)
+        return "", "", fmt.Errorf("prepare decode workspace: %w", perr)
+    }
+    writer := func(symbolID string, data []byte) error {
+        _, werr := writeSymbol(-1, symbolID, data)
+        return werr
+    }
+    logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
+    // We ignore the returned map since symbols are streamed to disk via writer
+    resultMap, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, reqCount, actionID, writer)
+    if err != nil {
+        fields[logtrace.FieldError] = err.Error()
+        logtrace.Error(ctx, "batch retrieve failed", fields)
+        if cleanup != nil { _ = cleanup() }
+        return "", "", fmt.Errorf("batch retrieve symbols: %w", err)
+    }
+    retrieveMS := time.Since(retrieveStart).Milliseconds()
+    logtrace.Info(ctx, "download: batch retrieve ok", logtrace.Fields{"action_id": actionID, "received": len(resultMap), "ms": time.Since(rStart).Milliseconds()})
+    decodeStart := time.Now()
+    dStart := time.Now()
+    logtrace.Info(ctx, "download: decode start", logtrace.Fields{"action_id": actionID})
+    decodeInfo, derr := task.RQ.DecodeFromPrepared(ctx, ws, layout)
+    if derr != nil {
+        fields[logtrace.FieldError] = derr.Error()
+        logtrace.Error(ctx, "decode failed", fields)
+        if cleanup != nil { _ = cleanup() }
+        return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", derr)
+    }
+    decodeMS := time.Since(decodeStart).Milliseconds()
+    logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
 	// Emit timing metrics for network retrieval and decode phases
 	logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
 

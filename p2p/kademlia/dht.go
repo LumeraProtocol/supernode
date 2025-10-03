@@ -682,8 +682,8 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 	return count, err
 }
 
-func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
-	logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
+func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, writer func(symbolID string, data []byte) error, localOnly ...bool) (result map[string][]byte, err error) {
+    logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
 	result = make(map[string][]byte)
 	var resMap sync.Map
 	var foundLocalCount int32
@@ -805,34 +805,35 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 			break
 		}
 
-		wg.Add(1)
-		go func(start, end int) {
-			defer wg.Done()
+        wg.Add(1)
+        go func(start, end int) {
+            defer wg.Done()
 
-			if err := sem.Acquire(gctx, 1); err != nil {
-				return
-			}
-			defer sem.Release(1)
+            if err := sem.Acquire(gctx, 1); err != nil {
+                return
+            }
+            defer sem.Release(1)
 
-			if atomic.LoadInt32(&networkFound)+int32(foundLocalCount) >= int32(required) {
-				return
-			}
+            if atomic.LoadInt32(&networkFound)+int32(foundLocalCount) >= int32(required) {
+                return
+            }
 
-			s.processBatch(
-				gctx,
-				keys[start:end],
-				hexKeys[start:end],
-				globalClosestContacts,
-				&closestMu,
-				knownNodes, &knownMu,
-				&resMap,
-				required,
-				foundLocalCount,
-				&networkFound,
-				cancel,
-				txID,
-			)
-		}(start, end)
+            s.processBatch(
+                gctx,
+                keys[start:end],
+                hexKeys[start:end],
+                globalClosestContacts,
+                &closestMu,
+                knownNodes, &knownMu,
+                &resMap,
+                required,
+                foundLocalCount,
+                &networkFound,
+                cancel,
+                txID,
+                writer,
+            )
+        }(start, end)
 	}
 
 	wg.Wait()
@@ -866,6 +867,7 @@ func (s *DHT) processBatch(
 	networkFound *int32,
 	cancel context.CancelFunc,
 	txID string,
+	writer func(symbolID string, data []byte) error,
 ) {
 	select {
 	case <-ctx.Done():
@@ -893,14 +895,14 @@ func (s *DHT) processBatch(
 		}
 	}
 
-	foundCount, batchErr := s.iterateBatchGetValues(
-		ctx, knownNodes, batchHexKeys, fetchMap, resMap, required, foundLocalCount+atomic.LoadInt32(networkFound),
-	)
-	if batchErr != nil {
-		logtrace.Error(ctx, "Iterate batch get values failed", logtrace.Fields{
-			logtrace.FieldModule: "dht", "txid": txID, logtrace.FieldError: batchErr.Error(),
-		})
-	}
+    foundCount, batchErr := s.iterateBatchGetValues(
+        ctx, knownNodes, batchHexKeys, fetchMap, resMap, required, foundLocalCount+atomic.LoadInt32(networkFound), writer,
+    )
+    if batchErr != nil {
+        logtrace.Error(ctx, "Iterate batch get values failed", logtrace.Fields{
+            logtrace.FieldModule: "dht", "txid": txID, logtrace.FieldError: batchErr.Error(),
+        })
+    }
 
 	atomic.AddInt32(networkFound, int32(foundCount))
 	if atomic.LoadInt32(networkFound)+int32(foundLocalCount) >= int32(required) {
@@ -909,8 +911,8 @@ func (s *DHT) processBatch(
 }
 
 func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node, hexKeys []string, fetchMap map[string][]int,
-	resMap *sync.Map, req, alreadyFound int32) (int, error) {
-	sem := semaphore.NewWeighted(int64(storeSameSymbolsBatchConcurrency))
+    resMap *sync.Map, req, alreadyFound int32, writer func(symbolID string, data []byte) error) (int, error) {
+    sem := semaphore.NewWeighted(int64(storeSameSymbolsBatchConcurrency))
 	var wg sync.WaitGroup
 	var firstErr error
 	var mu sync.Mutex // To protect the firstErr
@@ -918,12 +920,11 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 
 	gctx, cancel := context.WithCancel(ctx) // Create a cancellable context
 	defer cancel()
-
-	for nodeID := range fetchMap {
-		node, ok := nodes[nodeID]
-		if !ok {
-			continue
-		}
+    for nodeID := range fetchMap {
+        node, ok := nodes[nodeID]
+        if !ok {
+            continue
+        }
 
 		if s.ignorelist.Banned(node) {
 			logtrace.Debug(ctx, "Ignore banned node in iterate batch get values", logtrace.Fields{
@@ -979,6 +980,16 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				if len(v.Value) > 0 {
 					_, loaded := resMap.LoadOrStore(k, v.Value)
 					if !loaded {
+						if writer != nil {
+							// decode k (hex) back to base58 key if your writer expects that
+							// or just pass the hex; you control the writer side.
+							if err := writer(k, v.Value); err != nil {
+								// you can choose to log and continue, or treat as failure
+								// here we'll log and continue to avoid losing the rest
+								logtrace.Error(ctx, "writer error", logtrace.Fields{"key": k, logtrace.FieldError: err.Error()})
+							}
+						}
+
 						atomic.AddInt32(&foundCount, 1)
 						returned++
 						if atomic.LoadInt32(&foundCount) >= int32(req-alreadyFound) {

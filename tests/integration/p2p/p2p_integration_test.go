@@ -122,7 +122,9 @@ func TestP2PBasicIntegration(t *testing.T) {
 		}
 
 		// Now try batch retrieve
-		retrieved, err := services[0].BatchRetrieve(ctx, expectedKeys, batchSize, taskID)
+		retrieved, err := services[0].BatchRetrieve(ctx, expectedKeys, batchSize, taskID, func(symbolID string, data []byte) error {
+			return nil
+		})
 		require.NoError(t, err)
 		require.Equal(t, batchSize, len(retrieved), "Expected %d items, got %d", batchSize, len(retrieved))
 
