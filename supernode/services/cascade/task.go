@@ -1,23 +1,21 @@
 package cascade
 
 import (
-	"context"
+    "context"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/base"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/storage"
+    "github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
+    "github.com/LumeraProtocol/supernode/v2/supernode/services/common/base"
 )
 
 // CascadeRegistrationTask is the task for cascade registration
 type CascadeRegistrationTask struct {
-	*CascadeService
+    *CascadeService
 
-	*base.SuperNodeTask
-	storage *storage.StorageHandler
+    *base.SuperNodeTask
 
-	Asset            *files.File
-	dataHash         string
-	creatorSignature []byte
+    Asset            *files.File
+    dataHash         string
+    creatorSignature []byte
 }
 
 const (

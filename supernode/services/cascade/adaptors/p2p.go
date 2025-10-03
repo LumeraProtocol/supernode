@@ -15,7 +15,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/storage"
 	"github.com/pkg/errors"
 )
 
@@ -26,6 +25,10 @@ const (
 
 	storeBatchContextTimeout = 3 * time.Minute
 )
+
+// Local P2P data type identifier used when storing via P2P.
+// Value must remain stable to preserve DB semantics.
+const P2PDataRaptorQSymbol = 1
 
 // P2PService defines the interface for storing data in the P2P layer.
 //
@@ -38,8 +41,8 @@ type P2PService interface {
 
 // p2pImpl is the default implementation of the P2PService interface.
 type p2pImpl struct {
-	p2p             p2p.Client
-	rqStore         rqstore.Store
+	p2p     p2p.Client
+	rqStore rqstore.Store
 }
 
 // NewP2PService returns a concrete implementation of P2PService.
@@ -157,7 +160,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 			// Send as the same data type you use for symbols
 			logtrace.Info(ctx, "store: batch send (first)", logtrace.Fields{"taskID": taskID, "metadata_count": len(metadataFiles), "symbols_in_batch": len(symBytes), "payload_total": len(payload)})
 			bctx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
-			err = p.p2p.StoreBatch(bctx, payload, storage.P2PDataRaptorQSymbol, taskID)
+			err = p.p2p.StoreBatch(bctx, payload, P2PDataRaptorQSymbol, taskID)
 			cancel()
 			if err != nil {
 				return totalSymbols, totalAvailable, fmt.Errorf("p2p store batch (first): %w", err)
@@ -217,6 +220,8 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 
 }
 
+// walkSymbolTree returns relative file keys for symbols under `root`,
+// skipping JSON layout files.
 func walkSymbolTree(root string) ([]string, error) {
 	var keys []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -224,7 +229,7 @@ func walkSymbolTree(root string) ([]string, error) {
 			return err // propagate I/O errors
 		}
 		if d.IsDir() {
-			return nil // skip directory nodes
+			return nil // skip directories
 		}
 		// ignore layout json if present
 		if strings.EqualFold(filepath.Ext(d.Name()), ".json") {
@@ -257,7 +262,7 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	defer cancel()
 
 	logtrace.Info(ctx, "store: batch send (symbols)", logtrace.Fields{"taskID": taskID, "symbols_in_batch": len(symbols)})
-	if err := c.p2p.StoreBatch(symCtx, symbols, storage.P2PDataRaptorQSymbol, taskID); err != nil {
+	if err := c.p2p.StoreBatch(symCtx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return len(symbols), fmt.Errorf("p2p store batch: %w", err)
 	}
 	logtrace.Info(ctx, "store: batch ok (symbols)", logtrace.Fields{"taskID": taskID, "symbols_stored": len(symbols)})
