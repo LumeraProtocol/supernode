@@ -4,8 +4,8 @@
 # Samples heap every 30 seconds during cascade downloads
 
 # Configuration - modify these as needed
-PROFILE_URL="http://localhost:6062/debug/pprof/heap"
-INTERVAL=30
+PROFILE_URL="http://157.180.8.121:4444:8082/debug/pprof/heap"
+INTERVAL=10
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 PROFILE_DIR="profiles_${TIMESTAMP}"
 
