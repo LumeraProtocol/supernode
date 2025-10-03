@@ -1,27 +1,25 @@
 package cascade
 
 import (
-	"bytes"
-	"context"
-	"encoding/base64"
-	"fmt"
-	"strconv"
-	"strings"
+    "context"
+    "encoding/base64"
+    "fmt"
+    "strconv"
 
-	"cosmossdk.io/math"
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
-	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
-	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
+    "cosmossdk.io/math"
+    actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+    "github.com/LumeraProtocol/supernode/v2/pkg/codec"
+    "github.com/LumeraProtocol/supernode/v2/pkg/errors"
+    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+    "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+    "github.com/LumeraProtocol/supernode/v2/pkg/utils"
+    "github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+    "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/golang/protobuf/proto"
-	json "github.com/json-iterator/go"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+    sdk "github.com/cosmos/cosmos-sdk/types"
+    json "github.com/json-iterator/go"
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
 )
 
 // layout stats helpers removed to keep download metrics minimal.
@@ -64,23 +62,8 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 	return nil
 }
 
-func (task *CascadeRegistrationTask) decodeCascadeMetadata(ctx context.Context, raw []byte, f logtrace.Fields) (actiontypes.CascadeMetadata, error) {
-	var meta actiontypes.CascadeMetadata
-	if err := proto.Unmarshal(raw, &meta); err != nil {
-		return meta, task.wrapErr(ctx, "failed to unmarshal cascade metadata", err, f)
-	}
-	return meta, nil
-}
-
-func (task *CascadeRegistrationTask) verifyDataHash(ctx context.Context, dh []byte, expected string, f logtrace.Fields) error {
-	b64 := utils.B64Encode(dh)
-	if string(b64) != expected {
-		return task.wrapErr(ctx, "data hash doesn't match", errors.New(""), f)
-	}
-	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", f)
-
-	return nil
-}
+// decodeCascadeMetadata moved to cascadekit.UnmarshalCascadeMetadata
+// verifyDataHash moved to cascadekit.VerifyB64DataHash
 
 func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, path string, dataSize int, f logtrace.Fields) (*adaptors.EncodeResult, error) {
 	resp, err := task.RQ.EncodeInput(ctx, actionID, path, dataSize)
@@ -91,11 +74,11 @@ func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID s
 }
 
 func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.Context, encoded string, creator string,
-	encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
+    encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
 
-	// Extract index file and creator signature from encoded data
-	// The signatures field contains: Base64(index_file).creators_signature
-	indexFileB64, creatorSig, err := extractIndexFileAndSignature(encoded)
+    // Extract index file and creator signature from encoded data
+    // The signatures field contains: Base64(index_file).creators_signature
+    indexFileB64, creatorSig, err := cascadekit.ExtractIndexAndCreatorSig(encoded)
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract index file and creator signature", err, f)
 	}
@@ -111,8 +94,8 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	}
 	logtrace.Debug(ctx, "creator signature successfully verified", f)
 
-	// Decode index file to get the layout signature
-	indexFile, err := decodeIndexFile(indexFileB64)
+    // Decode index file to get the layout signature
+    indexFile, err := cascadekit.DecodeIndexB64(indexFileB64)
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode index file", err, f)
 	}
@@ -133,42 +116,36 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	}
 	logtrace.Debug(ctx, "layout signature successfully verified", f)
 
-	return encodedMeta, indexFile.LayoutSignature, nil
+    return encodedMeta, indexFile.LayoutSignature, nil
 }
 
 func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata,
-	sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (GenRQIdentifiersFilesResponse, error) {
-	// The signatures field contains: Base64(index_file).creators_signature
-	// This full format will be used for ID generation to match chain expectations
+    sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
+    // The signatures field contains: Base64(index_file).creators_signature
+    // This full format will be used for ID generation to match chain expectations
 
-	// Generate layout files
-	layoutRes, err := GenRQIdentifiersFiles(ctx, GenRQIdentifiersFilesRequest{
-		Metadata:         encodedMeta,
-		CreatorSNAddress: creator,
-		RqMax:            uint32(meta.RqIdsMax),
-		Signature:        sig,
-		IC:               uint32(meta.RqIdsIc),
-	})
-	if err != nil {
-		return GenRQIdentifiersFilesResponse{},
-			task.wrapErr(ctx, "failed to generate layout files", err, f)
-	}
+    // Generate layout files (redundant metadata files)
+    layoutRes, err := cascadekit.GenerateLayoutFiles(ctx, encodedMeta, sig, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+    if err != nil {
+        return cascadekit.GenRQIdentifiersFilesResponse{},
+            task.wrapErr(ctx, "failed to generate layout files", err, f)
+    }
 
-	// Generate index files using full signatures format for ID generation (matches chain expectation)
-	indexIDs, indexFiles, err := GenIndexFiles(ctx, layoutRes.RedundantMetadataFiles, sig, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
-	if err != nil {
-		return GenRQIdentifiersFilesResponse{},
-			task.wrapErr(ctx, "failed to generate index files", err, f)
-	}
+    // Generate index files using full signatures format for ID generation (matches chain expectation)
+    indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(ctx, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+    if err != nil {
+        return cascadekit.GenRQIdentifiersFilesResponse{},
+            task.wrapErr(ctx, "failed to generate index files", err, f)
+    }
 
-	// Store layout files and index files separately in P2P
-	allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
+    // Store layout files and index files separately in P2P
+    allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
 
-	// Return index IDs (sent to chain) and all files (stored in P2P)
-	return GenRQIdentifiersFilesResponse{
-		RQIDs:                  indexIDs,
-		RedundantMetadataFiles: allFiles,
-	}, nil
+    // Return index IDs (sent to chain) and all files (stored in P2P)
+    return cascadekit.GenRQIdentifiersFilesResponse{
+        RQIDs:                  indexIDs,
+        RedundantMetadataFiles: allFiles,
+    }, nil
 }
 
 // storeArtefacts persists cascade artefacts (ID files + RaptorQ symbols) via the
@@ -233,46 +210,9 @@ func (task *CascadeRegistrationTask) emitArtefactsStored(
 	task.streamEvent(SupernodeEventTypeArtefactsStored, msg, "", send)
 }
 
-// extractSignatureAndFirstPart extracts the signature and first part from the encoded data
-// data is expected to be in format: b64(JSON(Layout)).Signature
-func extractSignatureAndFirstPart(data string) (encodedMetadata string, signature string, err error) {
-	parts := strings.Split(data, ".")
-	if len(parts) < 2 {
-		return "", "", errors.New("invalid data format")
-	}
+// Removed legacy helpers; functionality is centralized in cascadekit.
 
-	// The first part is the base64 encoded data
-	return parts[0], parts[1], nil
-}
-
-func decodeMetadataFile(data string) (layout codec.Layout, err error) {
-	// Decode the base64 encoded data
-	decodedData, err := utils.B64Decode([]byte(data))
-	if err != nil {
-		return layout, errors.Errorf("failed to decode data: %w", err)
-	}
-
-	// Unmarshal the decoded data into a layout
-	if err := json.Unmarshal(decodedData, &layout); err != nil {
-		return layout, errors.Errorf("failed to unmarshal data: %w", err)
-	}
-
-	return layout, nil
-}
-
-func verifyIDs(ticketMetadata, metadata codec.Layout) error {
-	// Verify that the symbol identifiers match between versions
-	if err := utils.EqualStrList(ticketMetadata.Blocks[0].Symbols, metadata.Blocks[0].Symbols); err != nil {
-		return errors.Errorf("symbol identifiers don't match: %w", err)
-	}
-
-	// Verify that the block hashes match
-	if ticketMetadata.Blocks[0].Hash != metadata.Blocks[0].Hash {
-		return errors.New("block hashes don't match")
-	}
-
-	return nil
-}
+//
 
 // verifyActionFee checks if the action fee is sufficient for the given data size
 // It fetches action parameters, calculates the required fee, and compares it with the action price
@@ -310,55 +250,11 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	return nil
 }
 
-func parseRQMetadataFile(data []byte) (layout codec.Layout, signature string, counter string, err error) {
-	decompressed, err := utils.ZstdDecompress(data)
-	if err != nil {
-		return layout, "", "", errors.Errorf("decompress rq metadata file: %w", err)
-	}
+//
 
-	// base64EncodeMetadata.Signature.Counter
-	parts := bytes.Split(decompressed, []byte{SeparatorByte})
-	if len(parts) != 3 {
-		return layout, "", "", errors.New("invalid rq metadata format: expecting 3 parts (layout, signature, counter)")
-	}
+//
 
-	layoutJson, err := utils.B64Decode(parts[0])
-	if err != nil {
-		return layout, "", "", errors.Errorf("base64 decode failed: %w", err)
-	}
-
-	if err := json.Unmarshal(layoutJson, &layout); err != nil {
-		return layout, "", "", errors.Errorf("unmarshal layout: %w", err)
-	}
-
-	signature = string(parts[1])
-	counter = string(parts[2])
-
-	return layout, signature, counter, nil
-}
-
-// extractIndexFileAndSignature extracts index file and creator signature from signatures field
-// data is expected to be in format: Base64(index_file).creators_signature
-func extractIndexFileAndSignature(data string) (indexFileB64 string, creatorSignature string, err error) {
-	parts := strings.Split(data, ".")
-	if len(parts) < 2 {
-		return "", "", errors.New("invalid signatures format")
-	}
-	return parts[0], parts[1], nil
-}
-
-// decodeIndexFile decodes base64 encoded index file
-func decodeIndexFile(data string) (IndexFile, error) {
-	var indexFile IndexFile
-	decodedData, err := utils.B64Decode([]byte(data))
-	if err != nil {
-		return indexFile, errors.Errorf("failed to decode index file: %w", err)
-	}
-	if err := json.Unmarshal(decodedData, &indexFile); err != nil {
-		return indexFile, errors.Errorf("failed to unmarshal index file: %w", err)
-	}
-	return indexFile, nil
-}
+//
 
 // VerifyDownloadSignature verifies the download signature for actionID.creatorAddress
 func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context, actionID, signature string) error {
@@ -376,9 +272,9 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	creatorAddress := actionDetails.GetAction().Creator
 	fields["creator_address"] = creatorAddress
 
-	// Create the expected signature data: actionID.creatorAddress
-	signatureData := fmt.Sprintf("%s.%s", actionID, creatorAddress)
-	fields["signature_data"] = signatureData
+    // Create the expected signature data: actionID (creator address not included in payload)
+    signatureData := fmt.Sprintf("%s", actionID)
+    fields["signature_data"] = signatureData
 
 	// Decode the base64 signature
 	signatureBytes, err := base64.StdEncoding.DecodeString(signature)

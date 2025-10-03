@@ -2,7 +2,48 @@
 
 The Lumera Supernode SDK is a comprehensive toolkit  for interacting with the Lumera Protocol's supernode network to perform cascade operations
 
+## Cascade End-to-End
+
+This walks through building Cascade metadata, submitting the on‑chain action, starting Cascade, and downloading the result using the SDK (sdk/action), low‑level helpers (pkg/cascadekit), and the Lumera client (pkg/lumera).
+
+1) Build metadata (+ price, expiration)
+```
+meta, price, expiration, err := client.BuildCascadeMetadataFromFile(ctx, filePath, /*public=*/false)
+if err != nil { /* handle */ }
+```
+Under the hood: encodes file to a single‑block layout, signs layout/index (creator key), computes blake3(data), picks a random ic (1..100), derives max from chain params, computes price from file size + fee params, and expiration from chain duration (+1h buffer).
+
+2) Submit RequestAction (via pkg/lumera)
+```
+b, _ := json.Marshal(meta)
+resp, err := lumeraClient.ActionMsg().RequestAction(ctx, "CASCADE", string(b), price, expiration)
+if err != nil { /* handle */ }
+// Extract actionID from tx events or query later
+```
+
+3) Start Cascade
+```
+sig, _ := client.GenerateStartCascadeSignatureFromFile(ctx, filePath)
+taskID, err := client.StartCascade(ctx, filePath, actionID, sig)
+```
+
+4) Download Cascade
+```
+// Public (meta.Public == true): empty signature
+taskID, _ := client.DownloadCascade(ctx, actionID, outDir, "")
+
+// Private: sign only the actionID with the creator's key (helper shown)
+dlSig, _ := client.GenerateDownloadSignature(ctx, actionID, creatorAddr)
+taskID, _ = client.DownloadCascade(ctx, actionID, outDir, dlSig)
+```
+
+Notes
+- Public downloads require no signature.
+- The SDK derives ic/max/price/expiration internally; you don’t need to fetch params yourself.
+
 ## Table of Contents
+
+- [Cascade End-to-End](#cascade-end-to-end)
 
 - [Configuration](#configuration)
 - [Client Initialization](#client-initialization)
@@ -230,20 +271,11 @@ Note: If the action's cascade metadata sets `public: true`, the signature may be
 - `signature string`: Base64-encoded signature for download authorization (leave empty for public cascades)
 
 **Signature Creation for Download:**
-The download signature is created by combining the action ID with the creator's address, signing it, and base64 encoding the result.
+For private cascades, sign only the action ID with the creator's key and base64‑encode the result.
 
 ```go
-// Create signature data: actionID.creatorAddress
-signatureData := fmt.Sprintf("%s.%s", actionID, creatorAddress)
-
-// Sign the signature data
-signedSignature, err := keyring.SignBytes(keyring, keyName, []byte(signatureData))
-if err != nil {
-    // Handle error
-}
-
-// Base64 encode the signature
-signature := base64.StdEncoding.EncodeToString(signedSignature)
+sig, err := client.GenerateDownloadSignature(ctx, actionID, creatorAddress)
+// Pass `sig` to DownloadCascade
 ```
 
 **Returns:**

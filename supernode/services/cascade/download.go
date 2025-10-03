@@ -1,15 +1,15 @@
 package cascade
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"sort"
-	"time"
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
+    "sort"
+    "time"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/crypto"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
@@ -82,7 +82,7 @@ func (task *CascadeRegistrationTask) Download(
 	}
 	logtrace.Info(ctx, "download: action state ok", fields)
 
-	metadata, err := task.decodeCascadeMetadata(ctx, actionDetails.GetAction().Metadata, fields)
+metadata, err := cascadekit.UnmarshalCascadeMetadata(actionDetails.GetAction().Metadata)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
@@ -150,8 +150,8 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		}
 		logtrace.Debug(ctx, "Retrieve index file completed", logtrace.Fields{"index_id": indexID, "bytes": len(indexFile), "ms": time.Since(iStart).Milliseconds()})
 
-		// Parse index file to get layout IDs
-		indexData, err := task.parseIndexFile(indexFile)
+        // Parse index file to get layout IDs
+        indexData, err := cascadekit.ParseCompressedIndexFile(indexFile)
 		if err != nil {
 			logtrace.Warn(ctx, "failed to parse index file", logtrace.Fields{"index_id": indexID, logtrace.FieldError: err.Error()})
 			continue
@@ -260,8 +260,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	// Emit minimal JSON payload (metrics system removed)
 	minPayload := map[string]any{
 		"retrieve": map[string]any{
-			"retrieve_ms":            retrieveMS,
-			"decode_ms":              decodeMS,
+			"retrieve_ms":             retrieveMS,
+			"decode_ms":               decodeMS,
 			"target_required_percent": targetRequiredPercent,
 			"target_required_count":   targetRequiredCount,
 			"total_symbols":           totalSymbols,
@@ -283,13 +283,15 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
-	err = task.verifyDataHash(ctx, fileHash, dataHash, fields)
-	if err != nil {
-		logtrace.Error(ctx, "failed to verify hash", fields)
-		fields[logtrace.FieldError] = err.Error()
-		return "", decodeInfo.DecodeTmpDir, err
-	}
-	// Log the state of the temporary decode directory
+    err = cascadekit.VerifyB64DataHash(fileHash, dataHash)
+    if err != nil {
+        logtrace.Error(ctx, "failed to verify hash", fields)
+        fields[logtrace.FieldError] = err.Error()
+        return "", decodeInfo.DecodeTmpDir, err
+    }
+    // Preserve original debug log for successful hash match
+    logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
+    // Log the state of the temporary decode directory
 	if decodeInfo.DecodeTmpDir != "" {
 		if set, derr := utils.ReadDirFilenames(decodeInfo.DecodeTmpDir); derr == nil {
 			if left := len(set); left > 0 {
@@ -314,24 +316,10 @@ func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEven
 }
 
 // parseIndexFile parses compressed index file to extract IndexFile structure
-func (task *CascadeRegistrationTask) parseIndexFile(data []byte) (IndexFile, error) {
-	decompressed, err := utils.ZstdDecompress(data)
-	if err != nil {
-		return IndexFile{}, errors.Errorf("decompress index file: %w", err)
-	}
-
-	// Parse decompressed data: base64IndexFile.signature.counter
-	parts := bytes.Split(decompressed, []byte{SeparatorByte})
-	if len(parts) < 2 {
-		return IndexFile{}, errors.New("invalid index file format")
-	}
-
-	// Decode the base64 index file
-	return decodeIndexFile(string(parts[0]))
-}
+// parseIndexFile moved to cascadekit.ParseCompressedIndexFile
 
 // retrieveLayoutFromIndex retrieves layout file using layout IDs from index file
-func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context, indexData IndexFile, fields logtrace.Fields) (codec.Layout, int64, int64, int, error) {
+func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context, indexData cascadekit.IndexFile, fields logtrace.Fields) (codec.Layout, int64, int64, int, error) {
 	// Try to retrieve layout files using layout IDs from index file
 	var (
 		totalFetchMS  int64
@@ -351,7 +339,7 @@ func (task *CascadeRegistrationTask) retrieveLayoutFromIndex(ctx context.Context
 		}
 
 		t1 := time.Now()
-		layout, _, _, err := parseRQMetadataFile(layoutFile)
+		layout, _, _, err := cascadekit.ParseRQMetadataFile(layoutFile)
 		decMS := time.Since(t1).Milliseconds()
 		totalDecodeMS += decMS
 		if err != nil {

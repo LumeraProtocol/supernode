@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
@@ -102,17 +103,18 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeTopSupernodeCheckPassed, "Top supernode eligibility confirmed", "", send)
 
 	/* 4. Decode cascade metadata -------------------------------------------------- */
-	cascadeMeta, err := task.decodeCascadeMetadata(ctx, action.Metadata, fields)
+	cascadeMeta, err := cascadekit.UnmarshalCascadeMetadata(action.Metadata)
 	if err != nil {
-		return err
+		return task.wrapErr(ctx, "failed to unmarshal cascade metadata", err, fields)
 	}
 	logtrace.Info(ctx, "register: metadata decoded", fields)
 	task.streamEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", send)
 
 	/* 5. Verify data hash --------------------------------------------------------- */
-	if err := task.verifyDataHash(ctx, req.DataHash, cascadeMeta.DataHash, fields); err != nil {
+	if err := cascadekit.VerifyB64DataHash(req.DataHash, cascadeMeta.DataHash); err != nil {
 		return err
 	}
+	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
 	logtrace.Info(ctx, "register: data hash matched", fields)
 	task.streamEvent(SupernodeEventTypeDataHashVerified, "Data hash verified", "", send)
 
@@ -147,7 +149,7 @@ func (task *CascadeRegistrationTask) Register(
 	task.streamEvent(SupernodeEventTypeRQIDsGenerated, "RQID files generated", "", send)
 
 	/* 9. Consistency checks ------------------------------------------------------- */
-	if err := verifyIDs(layout, encResp.Metadata); err != nil {
+	if err := cascadekit.VerifySingleBlockIDs(layout, encResp.Metadata); err != nil {
 		return task.wrapErr(ctx, "failed to verify IDs", err, fields)
 	}
 	logtrace.Info(ctx, "register: rqids validated", fields)
@@ -171,8 +173,8 @@ func (task *CascadeRegistrationTask) Register(
 	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return err
 	}
-    // Emit artefacts stored event (metrics payload removed; logs preserved)
-    task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
+	// Emit artefacts stored event (metrics payload removed; logs preserved)
+	task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {

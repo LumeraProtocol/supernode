@@ -2,7 +2,14 @@ package action
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
@@ -12,6 +19,10 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/net"
 	"github.com/LumeraProtocol/supernode/v2/sdk/task"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
@@ -29,6 +40,16 @@ type Client interface {
 	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*pb.StatusResponse, error)
 	// DownloadCascade downloads cascade to outputDir, filename determined by action ID
 	DownloadCascade(ctx context.Context, actionID, outputDir, signature string) (string, error)
+	// BuildCascadeMetadataFromFile encodes the file to produce a single-block layout,
+	// generates the cascade signatures, computes the blake3 data hash (base64),
+	// and returns CascadeMetadata (with signatures) along with price and expiration time.
+	// Internally derives ic (random in [1..100]), max (from chain params), price (GetActionFee),
+	// and expiration (params duration + 1h buffer).
+	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error)
+	// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key; returns base64 signature.
+	GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error)
+	// GenerateDownloadSignature signs the payload "actionID.creatorAddress"; returns base64 signature.
+	GenerateDownloadSignature(ctx context.Context, actionID, creatorAddr string) (string, error)
 }
 
 // ClientImpl implements the Client interface
@@ -215,4 +236,121 @@ func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir, s
 	)
 
 	return taskID, nil
+}
+
+// BuildCascadeMetadataFromFile produces Cascade metadata (including signatures) from a local file path.
+// It uses a temporary RaptorQ workspace, enforces single-block layout via the codec, and cleans up after.
+// BuildCascadeMetadataFromFile builds Cascade metadata, price and expiration from a file path.
+func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error) {
+	if filePath == "" {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("file path is empty")
+	}
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("stat file: %w", err)
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("read file: %w", err)
+	}
+
+	// Create temp workspace for codec symbols; remove after
+	baseDir, err := os.MkdirTemp("", "rq_files_*")
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(baseDir)
+
+	rq := codec.NewRaptorQCodec(baseDir)
+	// Use a simple task ID with epoch to avoid collisions
+	taskID := fmt.Sprintf("sdk-%d", time.Now().UnixNano())
+	enc, err := rq.Encode(ctx, codec.EncodeRequest{TaskID: taskID, Path: filePath, DataSize: int(fi.Size())})
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq encode: %w", err)
+	}
+
+	// Derive `max` from chain params, then create signatures and index IDs
+	paramsResp, err := c.lumeraClient.GetActionParams(ctx)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("get action params: %w", err)
+	}
+	// Use MaxDdAndFingerprints as the count for rq_ids generation (chain maps this to rq_ids_max for Cascade)
+	var max uint32
+	if paramsResp != nil && paramsResp.Params.MaxDdAndFingerprints > 0 {
+		max = uint32(paramsResp.Params.MaxDdAndFingerprints)
+	} else {
+		// Fallback to a sane default if params missing
+		max = 50
+	}
+	// Pick a random initial counter in [1,100]
+	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
+	ic := uint32(rnd.Int64() + 1) // 1..100
+	signatures, _, err := cascadekit.CreateSignaturesWithKeyring(enc.Metadata, c.keyring, c.config.Account.KeyName, ic, max)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create signatures: %w", err)
+	}
+
+	// Compute data hash (blake3) as base64
+	dataHashB64, err := cascadekit.ComputeBlake3DataHashB64(data)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("hash data: %w", err)
+	}
+
+	// Derive file name from path
+	fileName := filepath.Base(filePath)
+
+	// Build metadata proto
+	meta := cascadekit.NewCascadeMetadata(dataHashB64, fileName, uint64(ic), signatures, public)
+
+	// Fetch params (already fetched) to get denom and expiration duration
+	denom := paramsResp.Params.BaseActionFee.Denom
+	exp := paramsResp.Params.ExpirationDuration
+
+	// Compute data size in KB for fee
+	kb := int(fi.Size()) / 1024
+	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.Itoa(kb))
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("get action fee: %w", err)
+	}
+	price := feeResp.Amount + denom
+
+	// Expiration: now + chain duration + 1h buffer (to avoid off-by-margin rejections)
+	expirationUnix := time.Now().Add(exp).Add(1 * time.Hour).Unix()
+	expirationTime := fmt.Sprintf("%d", expirationUnix)
+
+	return meta, price, expirationTime, nil
+}
+
+// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key.
+// Returns base64-encoded signature suitable for StartCascade.
+func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	hash, err := cascadekit.ComputeBlake3Hash(data)
+	if err != nil {
+		return "", fmt.Errorf("blake3: %w", err)
+	}
+	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, hash)
+	if err != nil {
+		return "", fmt.Errorf("sign hash: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+// GenerateDownloadSignature signs the payload "actionID" and returns base64 signature.
+func (c *ClientImpl) GenerateDownloadSignature(ctx context.Context, actionID, creatorAddr string) (string, error) {
+	if actionID == "" {
+		return "", fmt.Errorf("actionID is empty")
+	}
+	if creatorAddr == "" {
+		return "", fmt.Errorf("creator address is empty")
+	}
+	// Sign only the actionID; creatorAddr is provided but not included in payload.
+	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, []byte(actionID))
+	if err != nil {
+		return "", fmt.Errorf("sign download payload: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
 }

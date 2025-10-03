@@ -92,8 +92,8 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to initialize RaptorQ store", logtrace.Fields{"error": err.Error()})
 		}
 
-        // Initialize P2P service
-        p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil)
+		// Initialize P2P service
+		p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
 		}
@@ -105,18 +105,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Configure cascade service
-        cService := cascadeService.NewCascadeService(
-            &cascadeService.Config{
-                Config: common.Config{
-                    SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
-                },
-                RqFilesDir: appConfig.GetRaptorQFilesDir(),
-            },
-            lumeraClient,
-            *p2pService,
-            codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
-            rqStore,
-        )
+		cService := cascadeService.NewCascadeService(
+			&cascadeService.Config{
+				Config: common.Config{
+					SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
+				},
+				RqFilesDir: appConfig.GetRaptorQFilesDir(),
+			},
+			lumeraClient,
+			*p2pService,
+			codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
+			rqStore,
+		)
 
 		// Create cascade action server
 		cascadeActionServer := cascade.NewCascadeActionServer(cService)
@@ -153,7 +153,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start profiling server on testnet only
 		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
 
-		if isTestnet {
+		if isTestnet && os.Getenv("INTEGRATION_TEST") != "true" {
 			profilingAddr := "0.0.0.0:8082"
 
 			logtrace.Debug(ctx, "Starting profiling server", logtrace.Fields{
@@ -214,7 +214,7 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 
 	logtrace.Debug(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
-    p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
+	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize p2p service: %w", err)
 	}
