@@ -76,8 +76,7 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 			StorageVolumes:  make([]*pb.StatusResponse_Resources_Storage, 0, len(status.Resources.Storage)),
 			HardwareSummary: status.Resources.HardwareSummary,
 		},
-		RunningTasks:       make([]*pb.StatusResponse_ServiceTasks, 0, len(status.RunningTasks)),
-		RegisteredServices: status.RegisteredServices,
+		RegisteredServices: nil,
 		Network: &pb.StatusResponse_Network{
 			PeersCount:    status.Network.PeersCount,
 			PeerAddresses: status.Network.PeerAddresses,
@@ -98,14 +97,14 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 		response.Resources.StorageVolumes = append(response.Resources.StorageVolumes, storageInfo)
 	}
 
-	// Convert service tasks
-	for _, service := range status.RunningTasks {
-		serviceTask := &pb.StatusResponse_ServiceTasks{
-			ServiceName: service.ServiceName,
-			TaskIds:     service.TaskIDs,
-			TaskCount:   service.TaskCount,
+	// Populate registered services from server registrations
+	if len(s.services) > 0 {
+		response.RegisteredServices = make([]string, 0, len(s.services)+1)
+		for _, svc := range s.services {
+			response.RegisteredServices = append(response.RegisteredServices, svc.Name)
 		}
-		response.RunningTasks = append(response.RunningTasks, serviceTask)
+		// Also include health service
+		response.RegisteredServices = append(response.RegisteredServices, "grpc.health.v1.Health")
 	}
 
 	// Map optional P2P metrics
@@ -173,8 +172,6 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 		pbpm.Disk.AllMb = pm.Disk.AllMB
 		pbpm.Disk.UsedMb = pm.Disk.UsedMB
 		pbpm.Disk.FreeMb = pm.Disk.FreeMB
-
-    // Detailed recent per-request lists removed from API
 
 		response.P2PMetrics = pbpm
 	}

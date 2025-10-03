@@ -3,15 +3,14 @@ package supernode
 // StatusResponse represents the complete system status information
 // with clear organization of resources and services
 type StatusResponse struct {
-	Version            string         // Supernode version
-	UptimeSeconds      uint64         // Uptime in seconds
-	Resources          Resources      // System resource information
-	RunningTasks       []ServiceTasks // Services with currently running tasks
-	RegisteredServices []string       // All registered/available services
-	Network            NetworkInfo    // P2P network information
-	Rank               int32          // Rank in the top supernodes list (0 if not in top list)
-	IPAddress          string         // Supernode IP address with port (e.g., "192.168.1.1:4445")
-	P2PMetrics         P2PMetrics     // Detailed P2P metrics snapshot
+	Version            string      // Supernode version
+	UptimeSeconds      uint64      // Uptime in seconds
+	Resources          Resources   // System resource information
+	RegisteredServices []string    // All registered/available services
+	Network            NetworkInfo // P2P network information
+	Rank               int32       // Rank in the top supernodes list (0 if not in top list)
+	IPAddress          string      // Supernode IP address with port (e.g., "192.168.1.1:4445")
+	P2PMetrics         P2PMetrics  // Detailed P2P metrics snapshot
 }
 
 // Resources contains system resource metrics
@@ -45,13 +44,6 @@ type StorageInfo struct {
 	UsagePercent   float64 // Storage usage percentage (0-100)
 }
 
-// ServiceTasks contains task information for a specific service
-type ServiceTasks struct {
-	ServiceName string   // Name of the service (e.g., "cascade")
-	TaskIDs     []string // List of currently running task IDs
-	TaskCount   int32    // Total number of running tasks
-}
-
 // NetworkInfo contains P2P network information
 type NetworkInfo struct {
 	PeersCount    int32    // Number of connected peers in P2P network
@@ -60,12 +52,12 @@ type NetworkInfo struct {
 
 // P2PMetrics mirrors the proto P2P metrics for status API
 type P2PMetrics struct {
-    DhtMetrics              DhtMetrics
-    NetworkHandleMetrics    map[string]HandleCounters
-    ConnPoolMetrics         map[string]int64
-    BanList                 []BanEntry
-    Database                DatabaseStats
-    Disk                    DiskStatus
+	DhtMetrics           DhtMetrics
+	NetworkHandleMetrics map[string]HandleCounters
+	ConnPoolMetrics      map[string]int64
+	BanList              []BanEntry
+	Database             DatabaseStats
+	Disk                 DiskStatus
 }
 
 type StoreSuccessPoint struct {
@@ -116,16 +108,4 @@ type DiskStatus struct {
 	AllMB  float64
 	UsedMB float64
 	FreeMB float64
-}
-
-// Removed: recent per-request lists from public API
-
-// TaskProvider interface defines the contract for services to provide
-// their running task information to the status service
-type TaskProvider interface {
-	// GetServiceName returns the unique name identifier for this service
-	GetServiceName() string
-
-	// GetRunningTasks returns a list of currently active task IDs
-	GetRunningTasks() []string
 }

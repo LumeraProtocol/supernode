@@ -126,7 +126,6 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Create supernode status service
 		statusService := supernodeService.NewSupernodeStatusService(*p2pService, lumeraClient, appConfig)
-		statusService.RegisterTaskProvider(cService)
 
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusService)

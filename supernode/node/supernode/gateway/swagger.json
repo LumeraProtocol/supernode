@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "supernode/supernode.proto",
+    "title": "supernode/service.proto",
     "version": "version not set"
   },
   "tags": [
@@ -55,6 +55,15 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "includeP2pMetrics",
+            "description": "Optional: include detailed P2P metrics in the response\nMaps to query param via grpc-gateway: /api/v1/status?include_p2p_metrics=true",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
         "tags": [
           "SupernodeService"
         ]
@@ -169,25 +178,7 @@
       },
       "title": "System resource information"
     },
-    "StatusResponseServiceTasks": {
-      "type": "object",
-      "properties": {
-        "serviceName": {
-          "type": "string"
-        },
-        "taskIds": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "taskCount": {
-          "type": "integer",
-          "format": "int32"
-        }
-      },
-      "title": "ServiceTasks contains task information for a specific service"
-    },
+    
     "protobufAny": {
       "type": "object",
       "properties": {
@@ -260,14 +251,6 @@
         },
         "resources": {
           "$ref": "#/definitions/StatusResponseResources"
-        },
-        "runningTasks": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/StatusResponseServiceTasks"
-          },
-          "title": "Services with currently running tasks"
         },
         "registeredServices": {
           "type": "array",

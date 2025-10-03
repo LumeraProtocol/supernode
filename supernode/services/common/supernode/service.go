@@ -19,32 +19,24 @@ var Version = "dev"
 // SupernodeStatusService provides centralized status information
 // by collecting system metrics and aggregating task information from registered services
 type SupernodeStatusService struct {
-	taskProviders []TaskProvider    // List of registered services that provide task information
-	metrics       *MetricsCollector // System metrics collector for CPU and memory stats
-	storagePaths  []string          // Paths to monitor for storage metrics
-	startTime     time.Time         // Service start time for uptime calculation
-	p2pService    p2p.Client        // P2P service for network information
-	lumeraClient  lumera.Client     // Lumera client for blockchain queries
-	config        *config.Config    // Supernode configuration
+	metrics      *MetricsCollector // System metrics collector for CPU and memory stats
+	storagePaths []string          // Paths to monitor for storage metrics
+	startTime    time.Time         // Service start time for uptime calculation
+	p2pService   p2p.Client        // P2P service for network information
+	lumeraClient lumera.Client     // Lumera client for blockchain queries
+	config       *config.Config    // Supernode configuration
 }
 
 // NewSupernodeStatusService creates a new supernode status service instance
 func NewSupernodeStatusService(p2pService p2p.Client, lumeraClient lumera.Client, cfg *config.Config) *SupernodeStatusService {
 	return &SupernodeStatusService{
-		taskProviders: make([]TaskProvider, 0),
-		metrics:       NewMetricsCollector(),
-		storagePaths:  []string{"/"}, // Default to monitoring root filesystem
-		startTime:     time.Now(),
-		p2pService:    p2pService,
-		lumeraClient:  lumeraClient,
-		config:        cfg,
+		metrics:      NewMetricsCollector(),
+		storagePaths: []string{"/"}, // Default to monitoring root filesystem
+		startTime:    time.Now(),
+		p2pService:   p2pService,
+		lumeraClient: lumeraClient,
+		config:       cfg,
 	}
-}
-
-// RegisterTaskProvider registers a service as a task provider
-// This allows the service to report its running tasks in status responses
-func (s *SupernodeStatusService) RegisterTaskProvider(provider TaskProvider) {
-	s.taskProviders = append(s.taskProviders, provider)
 }
 
 // GetStatus returns the current system status including all registered services
@@ -99,25 +91,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 	// Collect storage metrics
 	resp.Resources.Storage = s.metrics.CollectStorageMetrics(ctx, s.storagePaths)
 
-	// Collect service information from all registered providers
-	resp.RunningTasks = make([]ServiceTasks, 0, len(s.taskProviders))
-	resp.RegisteredServices = make([]string, 0, len(s.taskProviders))
-
-	for _, provider := range s.taskProviders {
-		serviceName := provider.GetServiceName()
-		tasks := provider.GetRunningTasks()
-
-		// Add to registered services list
-		resp.RegisteredServices = append(resp.RegisteredServices, serviceName)
-
-		// Add all services to running tasks (even with 0 tasks)
-		serviceTask := ServiceTasks{
-			ServiceName: serviceName,
-			TaskIDs:     tasks,
-			TaskCount:   int32(len(tasks)),
-		}
-		resp.RunningTasks = append(resp.RunningTasks, serviceTask)
-	}
+	// Task tracking removed; RegisteredServices populated at server layer
 
 	// Initialize network info
 	resp.Network = NetworkInfo{
@@ -218,7 +192,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 					}
 				}
 
-            // Detailed recent per-request lists removed from API mapping
+				// Detailed recent per-request lists removed from API mapping
 			}
 
 			// DHT rolling metrics snapshot is attached at top-level under dht_metrics
@@ -282,12 +256,6 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 			resp.IPAddress = supernodeInfo.LatestAddress
 		}
 
-	}
-
-	// Log summary statistics
-	totalTasks := 0
-	for _, service := range resp.RunningTasks {
-		totalTasks += int(service.TaskCount)
 	}
 
 	return resp, nil
