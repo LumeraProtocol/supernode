@@ -1,6 +1,6 @@
 # Cascade Artefacts Storage Flow
 
-This document explains, in depth, how Cascade artefacts (ID files + RaptorQ symbols) are persisted to the P2P network, the control flow from the API to the P2P layer, what metrics are collected, and which background workers continue the process after the API call returns.
+This document explains how Cascade artefacts (ID files + RaptorQ symbols) are persisted to the P2P network, the control flow from the API to the P2P layer, and which background workers continue the process after the API call returns.
 
 ## Scope & Terminology
 
@@ -50,14 +50,13 @@ Function: `supernode/services/cascade/helper.go::storeArtefacts`
   - `SymbolsDir string`: filesystem directory where symbols were written.
   - `TaskID string` and `ActionID string`: identifiers for logging and DB association.
 
-Returns `StoreArtefactsMetrics` with separate metrics for metadata and symbols plus an aggregated view.
+Does not return metrics; logs provide visibility.
 
 ## P2P Adaptor: StoreArtefacts
 
 Implementation: `supernode/services/cascade/adaptors/p2p.go`
 
-1) Store metadata (ID files) using `p2p.Client.StoreBatch(...)`:
-   - Returns `metaRatePct` and `metaRequests` (count of per‑node RPCs attempted during this batch store).
+1) Store metadata (ID files) using `p2p.Client.StoreBatch(...)`.
 
 2) Store symbols using `storeCascadeSymbols(...)`:
    - Records the symbol directory in a small SQLite store: `rqStore.StoreSymbolDirectory(taskID, symbolsDir)`.
@@ -65,12 +64,10 @@ Implementation: `supernode/services/cascade/adaptors/p2p.go`
    - Streams symbols in fixed‑size batches of 2,500 files:
      - Each batch loads files, calls `p2p.Client.StoreBatch(...)` with a 5‑minute timeout, and deletes successfully uploaded files.
    - Marks “first batch stored” for this action: `rqStore.UpdateIsFirstBatchStored(actionID)`.
-   - Returns `(symRatePct, symCount, symRequests)`.
+   - Logs counts and timings; no metrics are returned.
 
-3) Aggregation and return:
-   - Computes item‑weighted aggregate success rate across metadata and symbols: `aggRate = (metaRate*metaCount + symRate*symCount) / (metaCount + symCount)`.
-   - Total requests = `metaRequests + symRequests`.
-   - Returns `StoreArtefactsMetrics` with all fields populated.
+3) Return:
+   - No metrics aggregation; return indicates success/failure only.
 
 Notes:
 - This adaptor only performs a first pass of symbol storage. For large directories it may downsample; the background worker completes the remaining symbols later (see Background Worker section).
@@ -83,9 +80,7 @@ Notes:
 - Network store: `DHT.IterateBatchStore(ctx, values, typ, taskID)`:
   - For each value, compute its Blake3 hash; compute the top‑K closest nodes from the routing table.
   - Build a node→items map and invoke `batchStoreNetwork(...)` with bounded concurrency (a goroutine per node, limited via a semaphore; all joined before returning).
-  - Tally per‑node RPC attempts (requests) and successes to compute `successRatePct`.
-  - If the measured rate is below `minimumDataStoreSuccessRate` (75%), return an error along with `(ratePct, requests)`.
-  - Otherwise, return `(ratePct, requests, nil)`.
+  - If the measured success rate is below an internal threshold, DHT returns an error.
 
 Important distinctions:
 - `requests` is the number of per‑node RPCs attempted; it is not the number of items in the batch.
@@ -93,13 +88,7 @@ Important distinctions:
 
 ## Metrics & Events
 
-Returned metrics (from `StoreArtefacts`):
-
-- Metadata: `MetaRate` (%), `MetaRequests`, `MetaCount`.
-- Symbols: `SymRate` (%), `SymRequests`, `SymCount`.
-- Aggregate: `AggregatedRate` (item‑weighted), `TotalRequests`.
-
-`Register` logs and emits a single event line summarizing these metrics via `emitArtefactsStored(...)`, then proceeds to finalize the action on chain.
+`Register` logs and emits an informational event (Artefacts stored), then proceeds to finalize the action on chain.
 
 ## Background Worker (Symbols Continuation)
 
@@ -161,4 +150,3 @@ These values can be tuned in:
 - First pass deletes uploaded symbol files per batch (`utils.DeleteSymbols`) after a successful store batch.
 - Background worker also deletes files after each batch store.
 - The uploaded raw input file is removed by `Register` in a `defer` block regardless of outcome.
-

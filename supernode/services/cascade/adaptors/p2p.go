@@ -13,7 +13,6 @@ import (
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	cm "github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common/storage"
@@ -41,12 +40,11 @@ type P2PService interface {
 type p2pImpl struct {
 	p2p             p2p.Client
 	rqStore         rqstore.Store
-	metricsDisabled bool
 }
 
 // NewP2PService returns a concrete implementation of P2PService.
-func NewP2PService(client p2p.Client, store rqstore.Store, metricsDisabled bool) P2PService {
-	return &p2pImpl{p2p: client, rqStore: store, metricsDisabled: metricsDisabled}
+func NewP2PService(client p2p.Client, store rqstore.Store) P2PService {
+	return &p2pImpl{p2p: client, rqStore: store}
 }
 
 type StoreArtefactsRequest struct {
@@ -58,12 +56,6 @@ type StoreArtefactsRequest struct {
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
 	logtrace.Info(ctx, "store: p2p start", logtrace.Fields{"taskID": req.TaskID, "actionID": req.ActionID, "id_files": len(req.IDFiles), "symbols_dir": req.SymbolsDir})
-
-	// Optionally enable per-node store RPC capture for this task
-	if !p.metricsDisabled {
-		cm.StartStoreCapture(req.TaskID)
-		defer cm.StopStoreCapture(req.TaskID)
-	}
 
 	start := time.Now()
 	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles)
@@ -82,8 +74,7 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 	if remaining == 0 {
 		logtrace.Info(ctx, "store: dir empty after first-pass", logtrace.Fields{"taskID": req.TaskID, "dir": req.SymbolsDir})
 	}
-	// Record store summary for later event emission
-	cm.SetStoreSummary(req.TaskID, firstPassSymbols, totalSymbols, len(req.IDFiles), dur)
+	// Metrics collection removed; logs retained
 	return nil
 }
 
@@ -166,7 +157,6 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 			// Send as the same data type you use for symbols
 			logtrace.Info(ctx, "store: batch send (first)", logtrace.Fields{"taskID": taskID, "metadata_count": len(metadataFiles), "symbols_in_batch": len(symBytes), "payload_total": len(payload)})
 			bctx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
-			bctx = cm.WithTaskID(bctx, taskID)
 			err = p.p2p.StoreBatch(bctx, payload, storage.P2PDataRaptorQSymbol, taskID)
 			cancel()
 			if err != nil {
@@ -264,7 +254,6 @@ func (c *p2pImpl) storeSymbolsInP2P(ctx context.Context, taskID, root string, fi
 	}
 
 	symCtx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
-	symCtx = cm.WithTaskID(symCtx, taskID)
 	defer cancel()
 
 	logtrace.Info(ctx, "store: batch send (symbols)", logtrace.Fields{"taskID": taskID, "symbols_in_batch": len(symbols)})

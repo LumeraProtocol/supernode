@@ -11,7 +11,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
-	snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
@@ -136,8 +135,8 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 		return false
 	}
 
-	// Then check P2P peers count via status (include P2P metrics)
-	status, err := client.GetSupernodeStatus(snsvc.WithIncludeP2PMetrics(ctx))
+	// Then check P2P peers count via status
+	status, err := client.GetSupernodeStatus(ctx)
 	if err != nil {
 		return false
 	}

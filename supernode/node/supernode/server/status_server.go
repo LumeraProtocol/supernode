@@ -174,68 +174,7 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 		pbpm.Disk.UsedMb = pm.Disk.UsedMB
 		pbpm.Disk.FreeMb = pm.Disk.FreeMB
 
-		// Recent batch store
-		for _, e := range pm.RecentBatchStore {
-			pbpm.RecentBatchStore = append(pbpm.RecentBatchStore, &pb.StatusResponse_P2PMetrics_RecentBatchStoreEntry{
-				TimeUnix:   e.TimeUnix,
-				SenderId:   e.SenderID,
-				SenderIp:   e.SenderIP,
-				Keys:       int32(e.Keys),
-				DurationMs: e.DurationMS,
-				Ok:         e.OK,
-				Error:      e.Error,
-			})
-		}
-		// Recent batch retrieve
-		for _, e := range pm.RecentBatchRetrieve {
-			pbpm.RecentBatchRetrieve = append(pbpm.RecentBatchRetrieve, &pb.StatusResponse_P2PMetrics_RecentBatchRetrieveEntry{
-				TimeUnix:   e.TimeUnix,
-				SenderId:   e.SenderID,
-				SenderIp:   e.SenderIP,
-				Requested:  int32(e.Requested),
-				Found:      int32(e.Found),
-				DurationMs: e.DurationMS,
-				Error:      e.Error,
-			})
-		}
-
-		// Per-IP buckets
-		if pm.RecentBatchStoreByIP != nil {
-			pbpm.RecentBatchStoreByIp = map[string]*pb.StatusResponse_P2PMetrics_RecentBatchStoreList{}
-			for ip, list := range pm.RecentBatchStoreByIP {
-				pbList := &pb.StatusResponse_P2PMetrics_RecentBatchStoreList{}
-				for _, e := range list {
-					pbList.Entries = append(pbList.Entries, &pb.StatusResponse_P2PMetrics_RecentBatchStoreEntry{
-						TimeUnix:   e.TimeUnix,
-						SenderId:   e.SenderID,
-						SenderIp:   e.SenderIP,
-						Keys:       int32(e.Keys),
-						DurationMs: e.DurationMS,
-						Ok:         e.OK,
-						Error:      e.Error,
-					})
-				}
-				pbpm.RecentBatchStoreByIp[ip] = pbList
-			}
-		}
-		if pm.RecentBatchRetrieveByIP != nil {
-			pbpm.RecentBatchRetrieveByIp = map[string]*pb.StatusResponse_P2PMetrics_RecentBatchRetrieveList{}
-			for ip, list := range pm.RecentBatchRetrieveByIP {
-				pbList := &pb.StatusResponse_P2PMetrics_RecentBatchRetrieveList{}
-				for _, e := range list {
-					pbList.Entries = append(pbList.Entries, &pb.StatusResponse_P2PMetrics_RecentBatchRetrieveEntry{
-						TimeUnix:   e.TimeUnix,
-						SenderId:   e.SenderID,
-						SenderIp:   e.SenderIP,
-						Requested:  int32(e.Requested),
-						Found:      int32(e.Found),
-						DurationMs: e.DurationMS,
-						Error:      e.Error,
-					})
-				}
-				pbpm.RecentBatchRetrieveByIp[ip] = pbList
-			}
-		}
+    // Detailed recent per-request lists removed from API
 
 		response.P2PMetrics = pbpm
 	}

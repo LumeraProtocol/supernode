@@ -60,7 +60,7 @@ func NewCascadeService(config *Config, lumera lumera.Client, p2pClient p2p.Clien
         config:           config,
         SuperNodeService: base.NewSuperNodeService(p2pClient),
         LumeraClient:     adaptors.NewLumeraClient(lumera),
-        P2P:              adaptors.NewP2PService(p2pClient, rqstore, config.MetricsDisabled),
+        P2P:              adaptors.NewP2PService(p2pClient, rqstore),
         RQ:               adaptors.NewCodecService(codec),
     }
 }

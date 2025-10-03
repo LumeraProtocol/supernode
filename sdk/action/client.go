@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
-	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
@@ -26,7 +26,7 @@ type Client interface {
 	GetTask(ctx context.Context, taskID string) (*task.TaskEntry, bool)
 	SubscribeToEvents(ctx context.Context, eventType event.EventType, handler event.Handler) error
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler) error
-	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*supernodeservice.SupernodeStatusresponse, error)
+	GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*pb.StatusResponse, error)
 	// DownloadCascade downloads cascade to outputDir, filename determined by action ID
 	DownloadCascade(ctx context.Context, actionID, outputDir, signature string) (string, error)
 }
@@ -151,7 +151,7 @@ func (c *ClientImpl) SubscribeToAllEvents(ctx context.Context, handler event.Han
 }
 
 // GetSupernodeStatus retrieves the status of a specific supernode by its address
-func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*supernodeservice.SupernodeStatusresponse, error) {
+func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress string) (*pb.StatusResponse, error) {
 	if supernodeAddress == "" {
 		c.logger.Error(ctx, "Empty supernode address provided")
 		return nil, fmt.Errorf("supernode address cannot be empty")

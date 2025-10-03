@@ -23,7 +23,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/memory"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
@@ -125,7 +124,7 @@ func (s *DHT) ConnPoolSnapshot() map[string]int64 {
 
 // Options contains configuration options for the queries node
 type Options struct {
-	ID []byte
+    ID []byte
 
 	// The queries IPv4 or IPv6 address
 	IP string
@@ -143,8 +142,6 @@ type Options struct {
 	// Keyring for credentials
 	Keyring keyring.Keyring
 
-	// MetricsDisabled gates DHT-level metrics emission (p2pmetrics hooks and snapshots)
-	MetricsDisabled bool
 }
 
 // NewDHT returns a new DHT node
@@ -474,17 +471,7 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 	dhtStats["peers_count"] = len(s.ht.nodes())
 	dhtStats["peers"] = s.ht.nodes()
 	dhtStats["network"] = s.network.HandleMetricsSnapshot()
-	// Include recent request snapshots for observability
-	if s.network != nil {
-		if overall, byIP := s.network.RecentBatchStoreSnapshot(); len(overall) > 0 || len(byIP) > 0 {
-			dhtStats["recent_batch_store_overall"] = overall
-			dhtStats["recent_batch_store_by_ip"] = byIP
-		}
-		if overall, byIP := s.network.RecentBatchRetrieveSnapshot(); len(overall) > 0 || len(byIP) > 0 {
-			dhtStats["recent_batch_retrieve_overall"] = overall
-			dhtStats["recent_batch_retrieve_by_ip"] = byIP
-		}
-	}
+    // Removed: recent per-request snapshots (logs provide visibility)
 	dhtStats["database"] = dbStats
 
 	return dhtStats, nil
@@ -695,8 +682,7 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 }
 
 func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
-	start := time.Now()
-	logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
+    logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
 	result = make(map[string][]byte)
 	var resMap sync.Map
 	var foundLocalCount int32
@@ -768,23 +754,23 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	if err != nil {
 		return nil, fmt.Errorf("fetch and add local keys: %v", err)
 	}
-	// Report how many were found locally, for event metrics
-	if !s.options.MetricsDisabled {
-		p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
-	}
+		// Found locally count is logged via summary below; no external metrics
 	if foundLocalCount >= required {
 		return result, nil
 	}
 
-	batchSize := batchRetrieveSize
-	var networkFound int32
-	totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
-	parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
+        batchSize := batchRetrieveSize
+        var networkFound int32
+        totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
+        parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
 
-	semaphore := make(chan struct{}, parallelBatches)
-	var wg sync.WaitGroup
-	gctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+        semaphore := make(chan struct{}, parallelBatches)
+        var wg sync.WaitGroup
+        gctx, cancel := context.WithCancel(ctx)
+        defer cancel()
+
+        // Measure only the network retrieval phase (after local scan)
+        netStart := time.Now()
 
 	for start := 0; start < len(keys); start += batchSize {
 		end := start + batchSize
@@ -816,18 +802,15 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	wg.Wait()
 
-	netFound := int(atomic.LoadInt32(&networkFound))
-{
-    f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+        netFound := int(atomic.LoadInt32(&networkFound))
+{ 
+    f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(netStart).Milliseconds(), logtrace.FieldRole: "client"}
     if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
     logtrace.Info(ctx, "dht: batch retrieve summary", f)
 }
-	// Record batch retrieve stats for internal DHT snapshot window
-	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(start))
-	// Also feed retrieve counts into the per-task collector for stream events
-	if !s.options.MetricsDisabled {
-		p2pmetrics.SetRetrieveBatchSummary(p2pmetrics.TaskIDFromContext(ctx), len(keys), int(required), int(foundLocalCount), netFound, time.Since(start).Milliseconds())
-	}
+        // Record batch retrieve stats for internal DHT snapshot window (network phase only)
+        s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(netStart))
+		// No per-task metrics collector updates
 
 	return result, nil
 }
@@ -959,8 +942,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				defer func() { <-semaphore }()
 			}
 
-			callStart := time.Now()
-			indices := fetchMap[nodeID]
+				indices := fetchMap[nodeID]
 			requestKeys := make(map[string]KeyValWithClosest)
 			for _, idx := range indices {
 				if idx < len(hexKeys) {
@@ -984,19 +966,9 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 					firstErr = err
 				}
 				mu.Unlock()
-				// record failed RPC per-node
-				if !s.options.MetricsDisabled {
-					p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-						IP:         node.IP,
-						Address:    node.String(),
-						Keys:       0,
-						Success:    false,
-						Error:      err.Error(),
-						DurationMS: time.Since(callStart).Milliseconds(),
-					})
+					// per-node metrics removed; logs retained
+					return
 				}
-				return
-			}
 
 			returned := 0
 			for k, v := range decompressedData {
@@ -1016,19 +988,9 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 			}
 
-			// record successful RPC per-node (returned may be 0). Success is true when no error.
-			if !s.options.MetricsDisabled {
-				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-					IP:         node.IP,
-					Address:    node.String(),
-					Keys:       returned,
-					Success:    true,
-					Error:      "",
-					DurationMS: time.Since(callStart).Milliseconds(),
-				})
-			}
-		}(node, nodeID)
-	}
+				// per-node metrics removed; logs retained
+			}(node, nodeID)
+		}
 
 	wg.Wait()
 
@@ -1727,14 +1689,11 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	storeResponses := s.batchStoreNetwork(ctx, values, knownNodes, storageMap, typ)
 	for response := range storeResponses {
 		requests++
-		var nodeAddr string
-		var nodeIP string
+			var nodeAddr string
 		if response.Receiver != nil {
-			nodeAddr = response.Receiver.String()
-			nodeIP = response.Receiver.IP
+				nodeAddr = response.Receiver.String()
 		} else if response.Message != nil && response.Message.Sender != nil {
-			nodeAddr = response.Message.Sender.String()
-			nodeIP = response.Message.Sender.IP
+				nodeAddr = response.Message.Sender.String()
 		}
 
 		errMsg := ""
@@ -1765,17 +1724,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 			}
 		}
 
-		// Emit per-node store RPC call via metrics bridge (no P2P API coupling)
-		if !s.options.MetricsDisabled {
-			p2pmetrics.RecordStore(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
-				IP:         nodeIP,
-				Address:    nodeAddr,
-				Keys:       response.KeysCount,
-				Success:    errMsg == "" && response.Error == nil,
-				Error:      errMsg,
-				DurationMS: response.DurationMS,
-			})
-		}
+			// per-node store metrics removed; logs retained
 
 	}
 

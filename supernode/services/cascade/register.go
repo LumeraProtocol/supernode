@@ -171,10 +171,8 @@ func (task *CascadeRegistrationTask) Register(
 	if err := task.storeArtefacts(ctx, action.ActionID, rqidResp.RedundantMetadataFiles, encResp.SymbolsDir, fields); err != nil {
 		return err
 	}
-	// Emit compact analytics payload from centralized metrics collector (optional)
-	if !task.config.MetricsDisabled {
-		task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
-	}
+    // Emit artefacts stored event (metrics payload removed; logs preserved)
+    task.emitArtefactsStored(ctx, fields, encResp.Metadata, send)
 
 	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqidResp.RQIDs)
 	if err != nil {

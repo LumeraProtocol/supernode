@@ -14,7 +14,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/crypto"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	cm "github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
@@ -221,15 +220,9 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	logtrace.Info(ctx, "download: plan symbols", logtrace.Fields{"total_symbols": totalSymbols, "target_required_percent": targetRequiredPercent, "target_required_count": targetRequiredCount})
 
-	if !task.config.MetricsDisabled {
-		cm.StartRetrieveCapture(actionID)
-		defer cm.StopRetrieveCapture(actionID)
-	}
-
 	// Measure symbols batch retrieve duration
 	retrieveStart := time.Now()
-	// Tag context with metrics task ID (actionID)
-	ctxRetrieve := cm.WithTaskID(ctx, actionID)
+	// Use context as-is; metrics task tagging removed
 	// Retrieve only a fraction of symbols (targetRequiredCount) based on redundancy
 	// The DHT will short-circuit once it finds the required number across the provided keys
 	reqCount := targetRequiredCount
@@ -238,7 +231,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	}
 	rStart := time.Now()
 	logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
-	symbols, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, reqCount, actionID)
+	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, reqCount, actionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "batch retrieve failed", fields)
@@ -264,21 +257,18 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	decodeMS := time.Since(decodeStart).Milliseconds()
 	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
 
-	// Set minimal retrieve summary and emit event strictly from internal collector
-	if !task.config.MetricsDisabled {
-		cm.SetRetrieveSummary(actionID, retrieveMS, decodeMS)
-		payload := cm.BuildDownloadEventPayloadFromCollector(actionID)
-		if retrieve, ok := payload["retrieve"].(map[string]any); ok {
-			retrieve["target_required_percent"] = targetRequiredPercent
-			retrieve["target_required_count"] = targetRequiredCount
-			retrieve["total_symbols"] = totalSymbols
-		}
-		if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
-			task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
-		}
-	} else {
-		// Send minimal hardcoded event when metrics disabled
-		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, "Download completed (metrics disabled)", "", "", send)
+	// Emit minimal JSON payload (metrics system removed)
+	minPayload := map[string]any{
+		"retrieve": map[string]any{
+			"retrieve_ms":            retrieveMS,
+			"decode_ms":              decodeMS,
+			"target_required_percent": targetRequiredPercent,
+			"target_required_count":   targetRequiredCount,
+			"total_symbols":           totalSymbols,
+		},
+	}
+	if b, err := json.MarshalIndent(minPayload, "", "  "); err == nil {
+		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), "", "", send)
 	}
 
 	fileHash, err := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)

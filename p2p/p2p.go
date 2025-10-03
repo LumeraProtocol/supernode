@@ -47,8 +47,7 @@ type p2p struct {
 	running         bool          // if the kademlia network is ready
 	lumeraClient    lumera.Client
 	keyring         keyring.Keyring // Add the keyring field
-	rqstore         rqstore.Store
-	metricsDisabled bool
+    rqstore         rqstore.Store
 }
 
 // Run the kademlia network
@@ -228,13 +227,12 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 func (s *p2p) configure(ctx context.Context) error {
 	// new the queries storage
 	kadOpts := &kademlia.Options{
-		LumeraClient:    s.lumeraClient,
-		Keyring:         s.keyring, // Pass the keyring
-		BootstrapNodes:  []*kademlia.Node{},
-		IP:              s.config.ListenAddress,
-		Port:            s.config.Port,
-		ID:              []byte(s.config.ID),
-		MetricsDisabled: s.metricsDisabled,
+		LumeraClient:   s.lumeraClient,
+		Keyring:        s.keyring, // Pass the keyring
+		BootstrapNodes: []*kademlia.Node{},
+		IP:             s.config.ListenAddress,
+		Port:           s.config.Port,
+		ID:             []byte(s.config.ID),
 	}
 
 	if len(kadOpts.ID) == 0 {
@@ -253,7 +251,7 @@ func (s *p2p) configure(ctx context.Context) error {
 }
 
 // New returns a new p2p instance.
-func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr keyring.Keyring, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore, metricsDisabled bool) (P2P, error) {
+func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr keyring.Keyring, rqstore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (P2P, error) {
 	store, err := sqlite.NewStore(ctx, config.DataDir, cloud, mst)
 	if err != nil {
 		return nil, errors.Errorf("new kademlia store: %w", err)
@@ -270,9 +268,8 @@ func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr key
 		config:          config,
 		lumeraClient:    lumeraClient,
 		keyring:         kr, // Store the keyring
-		rqstore:         rqstore,
-		metricsDisabled: metricsDisabled,
-	}, nil
+        rqstore:         rqstore,
+    }, nil
 }
 
 // LocalStore store data into the kademlia network

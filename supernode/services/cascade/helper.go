@@ -14,7 +14,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-	cm "github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 
@@ -228,15 +227,10 @@ func (task *CascadeRegistrationTask) emitArtefactsStored(
 		fields = logtrace.Fields{}
 	}
 
-	// Build payload strictly from internal collector (no P2P snapshots)
-	payload := cm.BuildStoreEventPayloadFromCollector(task.ID())
-
-	b, _ := json.MarshalIndent(payload, "", "  ")
-	msg := string(b)
-	fields["metrics_json"] = msg
+	// Emit a minimal event message (metrics system removed)
+	msg := "Artefacts stored"
 	logtrace.Debug(ctx, "artefacts have been stored", fields)
 	task.streamEvent(SupernodeEventTypeArtefactsStored, msg, "", send)
-	// No central state to clear; adaptor returns calls inline
 }
 
 // extractSignatureAndFirstPart extracts the signature and first part from the encoded data

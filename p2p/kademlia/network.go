@@ -69,12 +69,6 @@ type Network struct {
 
 	metrics sync.Map
 
-	// recent request tracking (last 10 entries overall and per IP)
-	recentMu              sync.Mutex
-	recentStoreOverall    []RecentBatchStoreEntry
-	recentStoreByIP       map[string][]RecentBatchStoreEntry
-	recentRetrieveOverall []RecentBatchRetrieveEntry
-	recentRetrieveByIP    map[string][]RecentBatchRetrieveEntry
 }
 
 // NewNetwork returns a network service
@@ -956,40 +950,17 @@ func (s *Network) handleBatchFindValues(ctx context.Context, message *Message, r
 }
 
 func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, reqID string) (res []byte, err error) {
-	start := time.Now()
-	appended := false
-	defer func() {
-		if response, err := s.handlePanic(ctx, message.Sender, BatchGetValues); response != nil || err != nil {
-			res = response
-			if !appended {
-				s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
-					TimeUnix:   time.Now().UTC().Unix(),
-					SenderID:   string(message.Sender.ID),
-					SenderIP:   message.Sender.IP,
-					Requested:  0,
-					Found:      0,
-					DurationMS: time.Since(start).Milliseconds(),
-					Error:      "panic/recovered",
-				})
-			}
-		}
-	}()
+    defer func() {
+        if response, err := s.handlePanic(ctx, message.Sender, BatchGetValues); response != nil || err != nil {
+            res = response
+        }
+    }()
 
-	request, ok := message.Data.(*BatchGetValuesRequest)
-	if !ok {
-		err := errors.New("invalid BatchGetValuesRequest")
-		s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
-			TimeUnix:   time.Now().UTC().Unix(),
-			SenderID:   string(message.Sender.ID),
-			SenderIP:   message.Sender.IP,
-			Requested:  0,
-			Found:      0,
-			DurationMS: time.Since(start).Milliseconds(),
-			Error:      err.Error(),
-		})
-		appended = true
-		return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
-	}
+    request, ok := message.Data.(*BatchGetValuesRequest)
+    if !ok {
+        err := errors.New("invalid BatchGetValuesRequest")
+        return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
+    }
 
 	logtrace.Debug(ctx, "Batch get values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
@@ -1005,21 +976,11 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		i++
 	}
 
-	values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, false)
-	if err != nil {
-		err = errors.Errorf("batch find values: %w", err)
-		s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
-			TimeUnix:   time.Now().UTC().Unix(),
-			SenderID:   string(message.Sender.ID),
-			SenderIP:   message.Sender.IP,
-			Requested:  len(keys),
-			Found:      count,
-			DurationMS: time.Since(start).Milliseconds(),
-			Error:      err.Error(),
-		})
-		appended = true
-		return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
-	}
+    values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, false)
+    if err != nil {
+        err = errors.Errorf("batch find values: %w", err)
+        return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
+    }
 
     {
         f := logtrace.Fields{logtrace.FieldModule: "p2p", "requested-keys": len(keys), "found": count, "sender": message.Sender.String(), logtrace.FieldRole: "server"}
@@ -1044,19 +1005,9 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 	}
 
 	// new a response message
-	resMsg := s.dht.newMessage(BatchGetValues, message.Sender, response)
-	resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
-	s.appendRetrieveEntry(message.Sender.IP, RecentBatchRetrieveEntry{
-		TimeUnix:   time.Now().UTC().Unix(),
-		SenderID:   string(message.Sender.ID),
-		SenderIP:   message.Sender.IP,
-		Requested:  len(keys),
-		Found:      count,
-		DurationMS: time.Since(start).Milliseconds(),
-		Error:      "",
-	})
-	appended = true
-	return s.encodeMesage(resMsg)
+    resMsg := s.dht.newMessage(BatchGetValues, message.Sender, response)
+    resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
+    return s.encodeMesage(resMsg)
 }
 
 func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFindValuesRequest, ip string, reqID string) (isDone bool, compressedData []byte, err error) {
@@ -1227,40 +1178,17 @@ func findTopHeaviestKeys(dataMap map[string][]byte, size int) (int, []string) {
 }
 
 func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (res []byte, err error) {
-	start := time.Now()
-	appended := false
-	defer func() {
-		if response, err := s.handlePanic(ctx, message.Sender, BatchStoreData); response != nil || err != nil {
-			res = response
-			if !appended {
-				s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
-					TimeUnix:   time.Now().UTC().Unix(),
-					SenderID:   string(message.Sender.ID),
-					SenderIP:   message.Sender.IP,
-					Keys:       0,
-					DurationMS: time.Since(start).Milliseconds(),
-					OK:         false,
-					Error:      "panic/recovered",
-				})
-			}
-		}
-	}()
+    defer func() {
+        if response, err := s.handlePanic(ctx, message.Sender, BatchStoreData); response != nil || err != nil {
+            res = response
+        }
+    }()
 
-	request, ok := message.Data.(*BatchStoreDataRequest)
-	if !ok {
-		err := errors.New("invalid BatchStoreDataRequest")
-		s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
-			TimeUnix:   time.Now().UTC().Unix(),
-			SenderID:   string(message.Sender.ID),
-			SenderIP:   message.Sender.IP,
-			Keys:       0,
-			DurationMS: time.Since(start).Milliseconds(),
-			OK:         false,
-			Error:      err.Error(),
-		})
-		appended = true
-		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
-	}
+    request, ok := message.Data.(*BatchStoreDataRequest)
+    if !ok {
+        err := errors.New("invalid BatchStoreDataRequest")
+        return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
+    }
 
 	// log.P2P().WithContext(ctx).Info("handle batch store data request received")
     {
@@ -1272,20 +1200,10 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	// add the sender to queries hash table
 	s.dht.addNode(ctx, message.Sender)
 
-	if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
-		err = errors.Errorf("batch store the data: %w", err)
-		s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
-			TimeUnix:   time.Now().UTC().Unix(),
-			SenderID:   string(message.Sender.ID),
-			SenderIP:   message.Sender.IP,
-			Keys:       len(request.Data),
-			DurationMS: time.Since(start).Milliseconds(),
-			OK:         false,
-			Error:      err.Error(),
-		})
-		appended = true
-		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
-	}
+    if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
+        err = errors.Errorf("batch store the data: %w", err)
+        return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
+    }
 
 	response := &StoreDataResponse{
 		Status: ResponseStatus{
@@ -1300,19 +1218,9 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
     }
 
 	// new a response message
-	resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)
-	resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
-	s.appendStoreEntry(message.Sender.IP, RecentBatchStoreEntry{
-		TimeUnix:   time.Now().UTC().Unix(),
-		SenderID:   string(message.Sender.ID),
-		SenderIP:   message.Sender.IP,
-		Keys:       len(request.Data),
-		DurationMS: time.Since(start).Milliseconds(),
-		OK:         true,
-		Error:      "",
-	})
-	appended = true
-	return s.encodeMesage(resMsg)
+    resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)
+    resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
+    return s.encodeMesage(resMsg)
 }
 
 func (s *Network) handleBatchFindNode(ctx context.Context, message *Message) (res []byte, err error) {

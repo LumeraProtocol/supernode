@@ -1,186 +1,23 @@
-# P2P Metrics Capture — What Each Field Means and Where It’s Collected
+# P2P Metrics — Current Behavior
 
-This guide explains every field we emit in Cascade events, how it is measured, and exactly where it is captured in the code.
+We removed the custom per‑RPC metrics capture and the `pkg/p2pmetrics` package. Logs are the source of truth for store/retrieve visibility, and the Status API provides a rolling DHT snapshot for high‑level metrics.
 
-The design is minimal by intent:
-- Metrics are collected only for the first pass of Register (store) and for the active Download operation.
-- P2P APIs return errors only; per‑RPC details are captured via a small metrics package (`pkg/p2pmetrics`).
-- No aggregation; we only group raw RPC attempts by IP.
+What remains
+- Status API metrics: DHT rolling windows (store success, batch retrieve), network handle counters, ban list, DB/disk stats, and connection pool metrics.
+- Logs: detailed send/ok/fail lines for RPCs at both client and server.
 
----
+What was removed
+- Per‑RPC metrics capture and grouping by IP for events.
+- Metrics collectors and context tagging helpers.
+- Recent per‑request lists from the Status API.
 
-## Store (Register) Event
+Events
+- The supernode emits minimal events (e.g., artefacts stored, downloaded). These events no longer include metrics payloads. Use logs for detailed troubleshooting.
 
-Event payload shape
+Status API
+- To include P2P metrics and peer info, clients set `include_p2p_metrics=true` on `StatusRequest`.
+- The SDK adapter already includes this flag by default to populate peer count for eligibility checks.
 
-```json
-{
-  "store": {
-    "duration_ms": 9876,
-    "symbols_first_pass": 220,
-    "symbols_total": 1200,
-    "id_files_count": 14,
-    "success_rate_pct": 82.5,
-    "calls_by_ip": {
-      "10.0.0.5": [
-        {"ip": "10.0.0.5", "address": "A:4445", "keys": 100, "success": true,  "duration_ms": 120},
-        {"ip": "10.0.0.5", "address": "A:4445", "keys": 120, "success": false, "error": "timeout", "duration_ms": 300}
-      ]
-    }
-  }
-}
-```
-
-### Fields
-
-- `store.duration_ms`
-  - Meaning: End‑to‑end elapsed time of the first‑pass store phase (Register’s storage section only).
-  - Where captured: `supernode/services/cascade/adaptors/p2p.go`
-    - A `time.Now()` timestamp is taken just before the first‑pass store function and measured on return.
-
-- `store.symbols_first_pass`
-  - Meaning: Number of symbols sent during the Register first pass (across the combined first batch and any immediate first‑pass symbol batches).
-  - Where captured: `supernode/services/cascade/adaptors/p2p.go` via `p2pmetrics.SetStoreSummary(...)` using the value returned by `storeCascadeSymbolsAndData`.
-
-- `store.symbols_total`
-  - Meaning: Total symbols available in the symbol directory (before sampling). Used to contextualize the first‑pass coverage.
-  - Where captured: Computed in `storeCascadeSymbolsAndData` and included in `SetStoreSummary`.
-
-- `store.id_files_count`
-  - Meaning: Number of redundant metadata files (ID files) sent in the first combined batch.
-  - Where captured: `len(req.IDFiles)` in `StoreArtefacts`, passed to `SetStoreSummary`.
-
-- `store.calls_by_ip`
-  - Meaning: All raw network store RPC attempts grouped by the node IP.
-  - Each array entry is a single RPC attempt with:
-    - `ip` — Node IP (fallback to `address` if missing).
-    - `address` — Node string `IP:port`.
-    - `keys` — Number of items in that RPC attempt (metadata + first symbols for the first combined batch, symbols for subsequent batches within the first pass).
-    - `success` — True if there was no transport error and no error message returned by the node response. Note: this flag does not explicitly check the `ResultOk` status; in rare cases, a non‑OK response with an empty error message may appear as `success` in metrics. (Internal success‑rate enforcement still uses explicit response status.)
-    - `error` — Any error string captured; omitted when success.
-    - `duration_ms` — RPC duration in milliseconds.
-    - `noop` — Present and `true` when no store payload was sent to the node (empty batch for that node). Such entries are recorded as `success=true`, `keys=0`, with no `error`.
-  - Where captured:
-    - Emission point (P2P): `p2p/kademlia/dht.go::IterateBatchStore(...)`
-      - After each node RPC returns, we call `p2pmetrics.RecordStore(taskID, Call{...})`. For nodes with no payload, a `noop: true` entry is emitted without sending a wire RPC.
-      - `taskID` is read from the context via `p2pmetrics.TaskIDFromContext(ctx)`.
-    - Grouping: `pkg/p2pmetrics/metrics.go`
-      - `StartStoreCapture(taskID)` enables capture; `StopStoreCapture(taskID)` disables it.
-      - Calls are grouped by `ip` (fallback to `address`) without further aggregation.
-  
-- `store.success_rate_pct`
-  - Meaning: First‑pass store success rate computed from captured per‑RPC outcomes: successful responses divided by total recorded store RPC attempts, expressed as a percentage.
-  - Where captured: Computed in `pkg/p2pmetrics/metrics.go::BuildStoreEventPayloadFromCollector` from `calls_by_ip` data.
-
-### First‑Pass Success Threshold
-
-- Internal enforcement only: if DHT first‑pass success rate is below 75%, `IterateBatchStore` returns an error.
-- We also emit `store.success_rate_pct` for analytics; the threshold only affects control flow (errors), not the emitted metric.
-- Code: `p2p/kademlia/dht.go::IterateBatchStore`.
-
-### Scope Limits
-
-- Background worker (which continues storing remaining symbols) is NOT captured — we don’t set a metrics task ID on those paths.
-
----
-
-## Download Event
-
-Event payload shape
-
-```json
-{
-  "retrieve": {
-    "found_local": 42,
-    "retrieve_ms": 2000,
-    "decode_ms": 8000,
-    "calls_by_ip": {
-      "10.0.0.7": [
-        {"ip": "10.0.0.7", "address": "B:4445", "keys": 13, "success": true, "duration_ms": 90}
-      ]
-    }
-  }
-}
-```
-
-### Fields
-
-- `retrieve.found_local`
-  - Meaning: Number of items retrieved from local storage before any network calls.
-  - Where captured: `p2p/kademlia/dht.go::BatchRetrieve(...)`
-    - After `fetchAndAddLocalKeys`, we call `p2pmetrics.ReportFoundLocal(taskID, int(foundLocalCount))`.
-    - `taskID` is read from context with `p2pmetrics.TaskIDFromContext(ctx)`.
-
-- `retrieve.retrieve_ms`
-  - Meaning: Time spent in network batch‑retrieve.
-  - Where captured: `supernode/services/cascade/download.go`
-    - Timestamp before `BatchRetrieve`, measured after it returns.
-
-- `retrieve.decode_ms`
-  - Meaning: Time spent decoding symbols and reconstructing the file.
-  - Where captured: `supernode/services/cascade/download.go`
-    - Timestamp before decode, measured after it returns.
-
-- `retrieve.calls_by_ip`
-  - Meaning: All raw per‑RPC retrieve attempts grouped by node IP.
-  - Each array entry is a single RPC attempt with:
-    - `ip`, `address` — Identifiers as available.
-    - `keys` — Number of symbols returned by that node in that call.
-    - `success` — True if the RPC completed without error (even if `keys == 0`). Transport/status errors remain `success=false` with an `error` message.
-    - `error` — Error string when the RPC failed; omitted otherwise.
-    - `duration_ms` — RPC duration in milliseconds.
-    - `noop` — Present and `true` when no network request was actually sent to the node (e.g., all requested keys were already satisfied or deduped before issuing the call). Such entries are recorded as `success=true`, `keys=0`, with no `error`.
-  - Where captured:
-    - Emission point (P2P): `p2p/kademlia/dht.go::iterateBatchGetValues(...)`
-      - Each node attempt records a `p2pmetrics.RecordRetrieve(taskID, Call{...})`. For attempts where no network RPC is sent, a `noop: true` entry is emitted.
-      - `taskID` is extracted from context using `p2pmetrics.TaskIDFromContext(ctx)`.
-    - Grouping: `pkg/p2pmetrics/metrics.go` (same grouping/fallback as store).
-
-### Scope Limits
-
-- Metrics are captured only for the active Download call (context is tagged in `download.go`).
-
----
-
-## Context Tagging (Task ID)
-
-- We use an explicit, metrics‑only context key defined in `pkg/p2pmetrics` to tag P2P calls with a task ID.
-  - Setters: `p2pmetrics.WithTaskID(ctx, id)`.
-  - Getters: `p2pmetrics.TaskIDFromContext(ctx)`.
-- Where it is set:
-  - Store (first pass): `supernode/services/cascade/adaptors/p2p.go` wraps `StoreBatch` calls.
-  - Download: `supernode/services/cascade/download.go` wraps `BatchRetrieve` call.
-
----
-
-## Building and Emitting Events
-
-- Store
-  - `supernode/services/cascade/helper.go::emitArtefactsStored(...)`
-    - Builds `store` payload via `p2pmetrics.BuildStoreEventPayloadFromCollector(taskID)`.
-    - Includes `success_rate_pct` (first‑pass store success rate computed from captured per‑RPC outcomes) in addition to the minimal fields.
-    - Emits the event.
-
-- Download
-  - `supernode/services/cascade/download.go`
-    - Builds `retrieve` payload via `p2pmetrics.BuildDownloadEventPayloadFromCollector(actionID)`.
-    - Emits the event.
-
----
-
-## Quick File Map
-
-- Capture + grouping: `supernode/pkg/p2pmetrics/metrics.go`
-- Store adaptor: `supernode/supernode/services/cascade/adaptors/p2p.go`
-- Store event: `supernode/supernode/services/cascade/helper.go`
-- Download flow: `supernode/supernode/services/cascade/download.go`
-- DHT store calls: `supernode/p2p/kademlia/dht.go::IterateBatchStore`
-- DHT retrieve calls: `supernode/p2p/kademlia/dht.go::BatchRetrieve` and `iterateBatchGetValues`
-
----
-
-## Notes
-
-- No P2P stats/snapshots are used to build events.
-- No aggregation is performed; we only group raw RPC attempts by IP.
-- First‑pass success rate is enforced internally (75% threshold) but not emitted as a metric.
+References
+- Status proto: `proto/supernode/status.proto`
+- Service proto: `proto/supernode/service.proto`

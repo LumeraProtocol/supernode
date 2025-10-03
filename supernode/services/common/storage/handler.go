@@ -14,7 +14,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/files"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
@@ -75,8 +74,6 @@ func (h *StorageHandler) StoreBatch(ctx context.Context, list [][]byte, typ int)
 	}
 
 	logtrace.Debug(ctx, "task_id in storeList", logtrace.Fields{logtrace.FieldTaskID: taskID})
-	// Add taskID to context for metrics
-	ctx = p2pmetrics.WithTaskID(ctx, taskID)
 	return h.P2PClient.StoreBatch(ctx, list, typ, taskID)
 }
 
@@ -167,8 +164,6 @@ func (h *StorageHandler) storeSymbolsInP2P(ctx context.Context, taskID, root str
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	// Add taskID to context for metrics
-	ctx = p2pmetrics.WithTaskID(ctx, taskID)
 	if err := h.P2PClient.StoreBatch(ctx, symbols, P2PDataRaptorQSymbol, taskID); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
