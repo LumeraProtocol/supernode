@@ -51,6 +51,21 @@ func (mr *MockCodecServiceMockRecorder) Decode(ctx, req interface{}) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Decode", reflect.TypeOf((*MockCodecService)(nil).Decode), ctx, req)
 }
 
+// DecodeFromPrepared mocks base method.
+func (m *MockCodecService) DecodeFromPrepared(ctx context.Context, ws *codec.Workspace, layout codec.Layout) (adaptors.DecodeResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DecodeFromPrepared", ctx, ws, layout)
+	ret0, _ := ret[0].(adaptors.DecodeResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DecodeFromPrepared indicates an expected call of DecodeFromPrepared.
+func (mr *MockCodecServiceMockRecorder) DecodeFromPrepared(ctx, ws, layout interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DecodeFromPrepared", reflect.TypeOf((*MockCodecService)(nil).DecodeFromPrepared), ctx, ws, layout)
+}
+
 // EncodeInput mocks base method.
 func (m *MockCodecService) EncodeInput(ctx context.Context, taskID, path string, dataSize int) (adaptors.EncodeResult, error) {
 	m.ctrl.T.Helper()

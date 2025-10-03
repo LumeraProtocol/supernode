@@ -16,7 +16,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	cm "github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
 )
 
@@ -179,7 +178,20 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	if reqCount > totalSymbols {
 		reqCount = totalSymbols
 	}
-	symbols, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, reqCount, actionID)
+
+	_, writeSymbol, _, ws, perr := task.RQ.PrepareDecode(ctx, actionID, layout)
+	if perr != nil {
+		return "", "", fmt.Errorf("prepare decode: %w", perr)
+	}
+
+	// bridge to DHT: it expects SymbolWriter(string, []byte)
+	writer := func(symbolID string, data []byte) error {
+		// single-block: always write to block 0
+		_, err := writeSymbol(0, symbolID, data)
+		return err
+	}
+
+	_, err := task.P2PClient.BatchRetrieve(ctxRetrieve, allSymbols, reqCount, actionID, writer)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "batch retrieve failed", fields)
@@ -189,11 +201,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 
 	// Measure decode duration
 	decodeStart := time.Now()
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{
-		ActionID: actionID,
-		Symbols:  symbols,
-		Layout:   layout,
-	})
+	decodeInfo, err := task.RQ.DecodeFromPrepared(ctx, ws, layout)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "decode failed", fields)

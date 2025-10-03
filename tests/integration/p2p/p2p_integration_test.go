@@ -108,7 +108,7 @@ func TestP2PBasicIntegration(t *testing.T) {
 
 		// Add debug logging
 		log.Printf("Storing batch with keys: %v", expectedKeys)
-        err := services[0].StoreBatch(ctx, batchData, 0, taskID)
+		err := services[0].StoreBatch(ctx, batchData, 0, taskID)
 		require.NoError(t, err)
 
 		// Add immediate verification
@@ -122,7 +122,9 @@ func TestP2PBasicIntegration(t *testing.T) {
 		}
 
 		// Now try batch retrieve
-		retrieved, err := services[0].BatchRetrieve(ctx, expectedKeys, batchSize, taskID)
+		retrieved, err := services[0].BatchRetrieve(ctx, expectedKeys, batchSize, taskID, func(symbolID string, data []byte) error {
+			return nil
+		})
 		require.NoError(t, err)
 		require.Equal(t, batchSize, len(retrieved), "Expected %d items, got %d", batchSize, len(retrieved))
 

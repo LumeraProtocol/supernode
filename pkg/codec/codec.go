@@ -38,4 +38,7 @@ type Codec interface {
 	// Encode a file
 	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
+	PrepareDecode(ctx context.Context, actionID string, layout Layout) (blockPaths []string,
+		Write func(block int, symbolID string, data []byte) (string, error), Cleanup func() error, ws *Workspace, err error)
+	DecodeFromPrepared(ctx context.Context, ws *Workspace, layout Layout) (DecodeResponse, error)
 }

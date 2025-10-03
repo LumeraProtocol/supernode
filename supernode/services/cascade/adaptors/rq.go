@@ -13,6 +13,7 @@ type CodecService interface {
 	EncodeInput(ctx context.Context, taskID string, path string, dataSize int) (EncodeResult, error)
 	PrepareDecode(ctx context.Context, actionID string, layout codec.Layout) (blockPaths []string, Write func(block int, symbolID string, data []byte) (string, error), Cleanup func() error, ws *codec.Workspace, err error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
+	DecodeFromPrepared(ctx context.Context, ws *codec.Workspace, layout codec.Layout) (DecodeResponse, error)
 }
 
 // EncodeResult represents the outcome of encoding the input data.
@@ -78,4 +79,8 @@ func (c *codecImpl) Decode(ctx context.Context, req DecodeRequest) (DecodeRespon
 
 func (c *codecImpl) PrepareDecode(ctx context.Context, actionID string, layout codec.Layout) (blockPaths []string, Write func(block int, symbolID string, data []byte) (string, error), Cleanup func() error, ws *codec.Workspace, err error) {
 	return
+}
+
+func (c *codecImpl) DecodeFromPrepared(ctx context.Context, ws *codec.Workspace, layout codec.Layout) (DecodeResponse, error) {
+	return DecodeResponse{}, nil
 }

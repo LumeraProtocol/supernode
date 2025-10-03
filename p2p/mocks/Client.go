@@ -16,7 +16,7 @@ type Client struct {
 }
 
 // BatchRetrieve provides a mock function with given fields: ctx, keys, reqCount, txID, localOnly
-func (_m *Client) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error) {
+func (_m *Client) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, writer func(string, []byte) error, localOnly ...bool) (map[string][]byte, error) {
 	_va := make([]interface{}, len(localOnly))
 	for _i := range localOnly {
 		_va[_i] = localOnly[_i]
