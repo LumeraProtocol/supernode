@@ -236,6 +236,7 @@ func appendToBuf(r io.Reader, b *ring.Ring, stop <-chan struct{}) {
 func isLogNoise(text string) bool {
 	for _, v := range []string{
 		"\x1b[36mmodule=\x1b[0mrpc-server", // "module=rpc-server",
+		"Upgrading IAVL storage for faster queries",
 	} {
 		if strings.Contains(text, v) {
 			return true

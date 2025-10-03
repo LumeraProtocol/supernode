@@ -67,8 +67,10 @@ func TestCascadeE2E(t *testing.T) {
 	const actionType = "CASCADE" // The action type for fountain code processing
 	t.Log("Step 1: Starting all services")
 
-	// Update the genesis file with action parameters
-	sut.ModifyGenesisJSON(t, SetActionParams(t))
+	// Update the genesis file with required params before starting
+	// - Set staking bond denom to match ulume used by gentxs
+	// - Configure action module params used by the test
+	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t))
 
 	// Reset and start the blockchain
 	sut.StartChain(t)
@@ -119,7 +121,7 @@ func TestCascadeE2E(t *testing.T) {
 	args := []string{
 		"query",
 		"supernode",
-		"get-top-super-nodes-for-block",
+		"get-top-supernodes-for-block",
 		fmt.Sprint(queryHeight),
 		"--output", "json",
 	}
@@ -269,7 +271,8 @@ func TestCascadeE2E(t *testing.T) {
 	// Cascade signature creation process (high-level via action SDK)
 
 	// Build action client for metadata generation and cascade operations
-	accConfig := sdkconfig.AccountConfig{LocalCosmosAddress: recoveredAddress, KeyName: testKeyName, Keyring: keplrKeyring}
+	// Use the same account that submits RequestAction so signatures match the on-chain creator
+	accConfig := sdkconfig.AccountConfig{LocalCosmosAddress: userAddress, KeyName: userKeyName, Keyring: keplrKeyring}
 	lumraConfig := sdkconfig.LumeraConfig{GRPCAddr: lumeraGRPCAddr, ChainID: lumeraChainID}
 	actionConfig := sdkconfig.Config{Account: accConfig, Lumera: lumraConfig}
 	actionClient, err := action.NewClient(context.Background(), actionConfig, nil)
@@ -595,6 +598,16 @@ func SetActionParams(t *testing.T) GenesisMutator {
             "min_super_nodes": "1",
             "super_node_fee_share": "1.000000000000000000"
         }`))
+		require.NoError(t, err)
+		return state
+	}
+}
+
+// SetStakingBondDenomUlume sets the staking module bond denom to "ulume" in genesis
+func SetStakingBondDenomUlume(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+		state, err := sjson.SetBytes(genesis, "app_state.staking.params.bond_denom", "ulume")
 		require.NoError(t, err)
 		return state
 	}
