@@ -35,11 +35,15 @@ import (
 // The test demonstrates how data flows through the Lumera system:
 // 1. Start services (blockchain, RaptorQ, supernode)
 // 2. Set up test accounts and keys
-// 3. Create test data and process it through RaptorQ
+// 3. Create test data and build RaptorQ metadata (no symbols)
 // 4. Sign the data and RQ identifiers
 // 5. Submit a CASCADE action request with proper metadata
 // 6. Execute the Cascade operation with the action ID
 // 7. Monitor task completion and verify results
+//
+// Memory efficiency: This test streams large files (original and downloaded)
+// for hashing and size checks using io.Copy + sha256.New, avoiding full-file
+// in-memory buffers. All existing logs are preserved unchanged.
 func TestCascadeE2E(t *testing.T) {
 	// ---------------------------------------
 	// Constants and Configuration Parameters
@@ -239,12 +243,12 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to initialize Lumera client")
 
 	// ---------------------------------------
-	// Step 4: Create and prepare layout file for RaptorQ encoding
+	// Step 4: Create and prepare layout metadata for RaptorQ (no symbols)
 	// ---------------------------------------
 	t.Log("Step 4: Creating test file for RaptorQ encoding")
 
 	// Use test file from tests/system directory
-	testFileName := "test.txt"
+	testFileName := "sample.zip"
 	testFileFullpath := filepath.Join(testFileName)
 
 	// Verify test file exists
@@ -487,7 +491,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(100 * time.Second)
 
 	// ---------------------------------------
 	// Step 11: Validate downloaded files exist

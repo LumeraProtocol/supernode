@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	loadSymbolsBatchSize     = 3000
+	loadSymbolsBatchSize     = 1000
 	storeSymbolsPercent      = 18
 	storeBatchContextTimeout = 3 * time.Minute
 	P2PDataRaptorQSymbol     = 1

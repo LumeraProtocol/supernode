@@ -62,7 +62,7 @@ func Setup(serviceName string) {
 
 // getLogLevel returns the log level from environment variable LOG_LEVEL
 func getLogLevel() zapcore.Level {
-	levelStr := "info"
+	levelStr := "debug"
 	switch levelStr {
 	case "debug":
 		return zapcore.DebugLevel

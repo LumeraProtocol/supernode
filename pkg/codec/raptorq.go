@@ -15,7 +15,7 @@ const (
 	rqSymbolSize       uint16 = 65535
 	rqRedundancyFactor uint8  = 6
 	// Limit RaptorQ processor memory usage to ~2 GiB
-	rqMaxMemoryMB uint64 = 4 * 1024 // MB
+	rqMaxMemoryMB uint64 = 2 * 1024 // MB
 	// Concurrency tuned for 2 GiB limit and typical 8+ core CPUs
 	rqConcurrency uint64 = 1
 	// Target single-block output for up to 1 GiB files with padding headroom (~1.25 GiB)
