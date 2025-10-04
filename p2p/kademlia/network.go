@@ -131,17 +131,12 @@ func (s *Network) Stop(ctx context.Context) {
 }
 
 func (s *Network) encodeMesage(mesage *Message) ([]byte, error) {
-	// Gob-encode payload, then prefix with 8-byte header
+	// Return gob-encoded payload only; caller writes header + payload to the conn
 	payload, err := encodePayload(mesage)
 	if err != nil {
 		return nil, errors.Errorf("encode response: %w", err)
 	}
-	var header [8]byte
-	binary.PutUvarint(header[:], uint64(len(payload)))
-	out := make([]byte, 0, len(header)+len(payload))
-	out = append(out, header[:]...)
-	out = append(out, payload...)
-	return out, nil
+	return payload, nil
 }
 
 func (s *Network) handleFindNode(ctx context.Context, message *Message) (res []byte, err error) {
@@ -483,6 +478,19 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 
 		// write the response (transport write failures counted as well)
 		_ = conn.SetWriteDeadline(time.Now().Add(serverReadTimeout))
+		// response currently carries gob-encoded payload only; prefix with 8-byte header
+		var hdr [8]byte
+		binary.PutUvarint(hdr[:], uint64(len(response)))
+		if _, err := conn.Write(hdr[:]); err != nil {
+			s.markTransportWrite(mt, err)
+			logtrace.Error(ctx, "Write failed", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"p2p-req-id":         reqID,
+				"message-type":       mt,
+			})
+			return
+		}
 		if _, err := conn.Write(response); err != nil {
 			s.markTransportWrite(mt, err)
 			logtrace.Error(ctx, "Write failed", logtrace.Fields{
