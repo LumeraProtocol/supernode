@@ -248,7 +248,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Log("Step 4: Creating test file for RaptorQ encoding")
 
 	// Use test file from tests/system directory
-	testFileName := "sample.zip"
+	testFileName := "test.txt"
 	testFileFullpath := filepath.Join(testFileName)
 
 	// Verify test file exists

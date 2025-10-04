@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -645,26 +646,28 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 		s.connPoolMtx.Unlock()
 	}
 
-	// Encode once
-	data, err := encode(request)
+	// Encode once (payload only); write header and payload separately to avoid extra copies
+	payload, err := encodePayload(request)
 	if err != nil {
 		return nil, errors.Errorf("encode: %w", err)
 	}
+	var header [8]byte
+	binary.PutUvarint(header[:], uint64(len(payload)))
 
 	// Wrapper: lock whole RPC to prevent cross-talk; retry once on stale pooled socket
 	if cw, ok := conn.(*connWrapper); ok {
-		return s.rpcOnceWrapper(ctx, cw, remoteAddr, data, timeout, request.MessageType)
+		return s.rpcOnceWrapper(ctx, cw, remoteAddr, header[:], payload, timeout, request.MessageType)
 	}
 
 	// Non-wrapper fallback: one stale retry
-	return s.rpcOnceNonWrapper(ctx, conn, remoteAddr, data, timeout, request.MessageType)
+	return s.rpcOnceNonWrapper(ctx, conn, remoteAddr, header[:], payload, timeout, request.MessageType)
 }
 
 // ---- retryable RPC helpers -------------------------------------------------
 
-func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
+func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAddr string, header []byte, payload []byte, timeout time.Duration, msgType int) (*Message, error) {
 	start := time.Now()
-	writeDL := calcWriteDeadline(timeout, len(data), 1.0) // target ~1 MB/s
+	writeDL := calcWriteDeadline(timeout, len(header)+len(payload), 1.0) // target ~1 MB/s
 
 	retried := false
 	for {
@@ -677,7 +680,7 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("set write deadline: %w", e)
 		}
-		if _, e := cw.secureConn.Write(data); e != nil {
+		if _, e := cw.secureConn.Write(header); e != nil {
 			cw.mtx.Unlock()
 			if isStaleConnError(e) && !retried {
 				logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
@@ -703,7 +706,38 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 					continue // retry whole RPC under the new wrapper
 				}
 				// Non-wrapper fallback retry
-				return s.rpcOnceNonWrapper(ctx, fresh, remoteAddr, data, timeout, msgType)
+				return s.rpcOnceNonWrapper(ctx, fresh, remoteAddr, header, payload, timeout, msgType)
+			}
+			s.dropFromPool(remoteAddr, cw)
+			return nil, errors.Errorf("conn write: %w", e)
+		}
+		if _, e := cw.secureConn.Write(payload); e != nil {
+			cw.mtx.Unlock()
+			if isStaleConnError(e) && !retried {
+				logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"remote":             remoteAddr,
+					"message_type":       msgType,
+				})
+				s.dropFromPool(remoteAddr, cw)
+				fresh, derr := NewSecureClientConn(ctx, s.clientTC, remoteAddr)
+				if derr != nil {
+					logtrace.Error(ctx, "Retry redial failed (write)", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						"remote":             remoteAddr,
+						"message_type":       msgType,
+						logtrace.FieldError:  derr.Error(),
+					})
+					return nil, errors.Errorf("re-dial after write: %w", derr)
+				}
+				s.addToPool(remoteAddr, fresh)
+				if nw, ok := fresh.(*connWrapper); ok {
+					cw = nw
+					retried = true
+					continue // retry whole RPC under the new wrapper
+				}
+				// Non-wrapper fallback retry
+				return s.rpcOnceNonWrapper(ctx, fresh, remoteAddr, header, payload, timeout, msgType)
 			}
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("conn write: %w", e)
@@ -743,7 +777,7 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 					retried = true
 					continue // retry whole RPC
 				}
-				return s.rpcOnceNonWrapper(ctx, fresh, remoteAddr, data, timeout, msgType)
+				return s.rpcOnceNonWrapper(ctx, fresh, remoteAddr, header, payload, timeout, msgType)
 			}
 			s.dropFromPool(remoteAddr, cw)
 			return nil, errors.Errorf("conn read: %w", e)
@@ -762,10 +796,10 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 	}
 }
 
-func (s *Network) rpcOnceNonWrapper(ctx context.Context, conn net.Conn, remoteAddr string, data []byte, timeout time.Duration, msgType int) (*Message, error) {
+func (s *Network) rpcOnceNonWrapper(ctx context.Context, conn net.Conn, remoteAddr string, header []byte, payload []byte, timeout time.Duration, msgType int) (*Message, error) {
 	start := time.Now()
-	sizeMB := float64(len(data)) / (1024.0 * 1024.0) // data is your gob-encoded message
-	throughputFloor := 8.0                           // MB/s (~64 Mbps)
+	sizeMB := float64(len(header)+len(payload)) / (1024.0 * 1024.0) // total bytes to write
+	throughputFloor := 8.0                                          // MB/s (~64 Mbps)
 	est := time.Duration(sizeMB / throughputFloor * float64(time.Second))
 	base := 1 * time.Second
 	cushion := 5 * time.Second
@@ -783,7 +817,33 @@ Retry:
 		s.dropFromPool(remoteAddr, conn)
 		return nil, errors.Errorf("set write deadline: %w", err)
 	}
-	if _, err := conn.Write(data); err != nil {
+	if _, err := conn.Write(header); err != nil {
+		if isStaleConnError(err) && !retried {
+			logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"remote":             remoteAddr,
+				"message_type":       msgType,
+			})
+			s.dropFromPool(remoteAddr, conn)
+			fresh, derr := NewSecureClientConn(ctx, s.clientTC, remoteAddr)
+			if derr != nil {
+				logtrace.Error(ctx, "Retry redial failed (write)", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"remote":             remoteAddr,
+					"message_type":       msgType,
+					logtrace.FieldError:  derr.Error(),
+				})
+				return nil, errors.Errorf("re-dial after write: %w", derr)
+			}
+			s.addToPool(remoteAddr, fresh)
+			conn = fresh
+			retried = true
+			goto Retry
+		}
+		s.dropFromPool(remoteAddr, conn)
+		return nil, errors.Errorf("conn write: %w", err)
+	}
+	if _, err := conn.Write(payload); err != nil {
 		if isStaleConnError(err) && !retried {
 			logtrace.Debug(ctx, "Stale pooled connection on write; redialing", logtrace.Fields{
 				logtrace.FieldModule: "p2p",

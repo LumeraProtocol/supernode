@@ -1660,9 +1660,8 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 // If the success rate is below `minimumDataStoreSuccessRate`, an error is
 // returned alongside the measured rate and request count.
 func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) error {
-	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
-	hashes := make([][]byte, len(values))
+	storageMap := make(map[string][]int)
 
 	{
 		f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
@@ -1673,19 +1672,11 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	}
 	for i := 0; i < len(values); i++ {
 		target, _ := utils.Blake3Hash(values[i])
-		hashes[i] = target
 		top6 := s.ht.closestContactsWithIncludingNode(Alpha, target, s.ignorelist.ToNodeList(), nil)
-
-		globalClosestContacts[base58.Encode(target)] = top6
 		// log.WithContext(ctx).WithField("top 6", top6).Info("iterate batch store begin")
 		s.addKnownNodes(ctx, top6.Nodes, knownNodes)
-	}
-
-	storageMap := make(map[string][]int) // This will store the index of the data in the values array that needs to be stored to the node
-	for i := 0; i < len(hashes); i++ {
-		storageNodes := globalClosestContacts[base58.Encode(hashes[i])]
-		for j := 0; j < len(storageNodes.Nodes); j++ {
-			storageMap[string(storageNodes.Nodes[j].ID)] = append(storageMap[string(storageNodes.Nodes[j].ID)], i)
+		for j := 0; j < len(top6.Nodes); j++ {
+			storageMap[string(top6.Nodes[j].ID)] = append(storageMap[string(top6.Nodes[j].ID)], i)
 		}
 	}
 
@@ -1731,8 +1722,6 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 			}
 		}
 
-		// per-node store metrics removed; logs retained
-
 	}
 
 	if requests > 0 {
@@ -1761,7 +1750,14 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 }
 
 func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[string]*Node, storageMap map[string][]int, typ int) chan *MessageWithError {
-	responses := make(chan *MessageWithError, len(nodes))
+	buf := len(nodes)
+	if buf > macConcurrentNetworkStoreCalls {
+		buf = macConcurrentNetworkStoreCalls
+	}
+	if buf < 1 {
+		buf = 1
+	}
+	responses := make(chan *MessageWithError, buf)
 	maxStore := macConcurrentNetworkStoreCalls
 	if ln := len(nodes); ln < maxStore {
 		maxStore = ln

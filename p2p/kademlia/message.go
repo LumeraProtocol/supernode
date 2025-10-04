@@ -167,39 +167,43 @@ type BatchGetValuesResponse struct {
 }
 
 // encode the message
-func encode(message *Message) ([]byte, error) {
+// encodePayload gob-encodes the message and returns only the payload bytes (no header).
+// Callers can write the 8-byte header and payload separately to avoid duplicating large buffers.
+func encodePayload(message *Message) ([]byte, error) {
 	var buf bytes.Buffer
-
-	encoder := gob.NewEncoder(&buf)
-	// encode the message with gob library
-	if err := encoder.Encode(message); err != nil {
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(message); err != nil {
 		return nil, err
 	}
-
 	// Check against absolute maximum first
 	const maxMessageSize = 500 * 1024 * 1024 // 500MB absolute max
 	if buf.Len() > maxMessageSize {
 		return nil, errors.New("message size exceeds absolute maximum")
 	}
-
 	if utils.BytesIntToMB(buf.Len()) > defaultMaxPayloadSize {
 		return nil, errors.New("payload too big")
 	}
+	return buf.Bytes(), nil
+}
 
+// encode builds the full on-wire message (header + payload) as a single slice.
+// Legacy callers may use this; new code should prefer encodePayload and write header+payload separately.
+func encode(message *Message) ([]byte, error) {
+	payload, err := encodePayload(message)
+	if err != nil {
+		return nil, err
+	}
 	var header [8]byte
-	// prepare the header
-	binary.PutUvarint(header[:], uint64(buf.Len()))
-
-	var data []byte
-	data = append(data, header[:]...)
-	data = append(data, buf.Bytes()...)
-
-	return data, nil
+	binary.PutUvarint(header[:], uint64(len(payload)))
+	out := make([]byte, 0, len(header)+len(payload))
+	out = append(out, header[:]...)
+	out = append(out, payload...)
+	return out, nil
 }
 
 // decode the message
 func decode(conn io.Reader) (*Message, error) {
-	// read the header
+	// read the header (fixed 8 bytes carrying a uvarint length)
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(conn, header); err != nil {
 		return nil, err
@@ -216,26 +220,23 @@ func decode(conn io.Reader) (*Message, error) {
 	if length > maxMessageSize {
 		return nil, errors.New("message size exceeds absolute maximum")
 	}
-
 	if utils.BytesToMB(length) > defaultMaxPayloadSize {
 		return nil, errors.New("payload too big")
 	}
 
-	// read the message body
-	data := make([]byte, length)
-	if _, err := io.ReadFull(conn, data); err != nil {
+	// Stream-decode directly from the connection without allocating a full buffer
+	lr := &io.LimitedReader{R: conn, N: int64(length)}
+	dec := gob.NewDecoder(lr)
+	msg := &Message{}
+	if err := dec.Decode(msg); err != nil {
 		return nil, err
 	}
-
-	// new a decoder
-	decoder := gob.NewDecoder(bytes.NewBuffer(data))
-	// decode the message structure
-	message := &Message{}
-	if err = decoder.Decode(message); err != nil {
-		return nil, err
+	// If gob didn't consume exactly 'length' bytes, drain the remainder to keep the stream aligned
+	if lr.N > 0 {
+		// best-effort drain; ignore errors to avoid perturbing the handler
+		_, _ = io.CopyN(io.Discard, lr, lr.N)
 	}
-
-	return message, nil
+	return msg, nil
 }
 
 // BatchStoreDataRequest defines the request data for store data

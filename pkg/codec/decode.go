@@ -173,9 +173,39 @@ func (rq *raptorQ) DecodeFromPrepared(
 	}
 	defer processor.Free()
 
-	// Write layout.json (idempotent)
+	// Write layout.json (idempotent). Important: encoder_parameters must be a JSON array, not base64 string.
+	// Go's encoding/json marshals []byte (aka []uint8) as base64 strings, which rq-go rejects.
+	// Use a wire struct that maps encoder_parameters to []int to produce a numeric array.
+	type blockOnDisk struct {
+		BlockID           int      `json:"block_id"`
+		EncoderParameters []int    `json:"encoder_parameters"`
+		OriginalOffset    int64    `json:"original_offset"`
+		Size              int64    `json:"size"`
+		Symbols           []string `json:"symbols"`
+		Hash              string   `json:"hash"`
+	}
+	type layoutOnDisk struct {
+		Blocks []blockOnDisk `json:"blocks"`
+	}
+	var lod layoutOnDisk
+	lod.Blocks = make([]blockOnDisk, len(layout.Blocks))
+	for i, b := range layout.Blocks {
+		// convert []uint8 (aka []byte) to []int so JSON encodes as numeric array
+		ep := make([]int, len(b.EncoderParameters))
+		for j := range b.EncoderParameters {
+			ep[j] = int(b.EncoderParameters[j])
+		}
+		lod.Blocks[i] = blockOnDisk{
+			BlockID:           b.BlockID,
+			EncoderParameters: ep,
+			OriginalOffset:    b.OriginalOffset,
+			Size:              b.Size,
+			Symbols:           b.Symbols,
+			Hash:              b.Hash,
+		}
+	}
 	layoutPath := filepath.Join(ws.SymbolsDir, "layout.json")
-	layoutBytes, err := json.Marshal(layout)
+	layoutBytes, err := json.Marshal(lod)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return DecodeResponse{}, fmt.Errorf("marshal layout: %w", err)
