@@ -491,7 +491,7 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Download response: %s", dtaskID)
 	require.NoError(t, err, "Failed to download cascade data using action ID")
 
-	time.Sleep(100 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// ---------------------------------------
 	// Step 11: Validate downloaded files exist
