@@ -1,0 +1,46 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Supernode API",
+    "version": "1.0.0",
+    "description": "Supernode status and metrics API"
+  },
+  "paths": {
+    "/api/v1/status": {
+      "get": {
+        "summary": "Get supernode status",
+        "description": "Returns system, network, and optional P2P metrics",
+        "parameters": [
+          {
+            "name": "include_p2p_metrics",
+            "in": "query",
+            "schema": { "type": "boolean" },
+            "required": false,
+            "description": "Optional: include detailed P2P metrics in the response\nMaps to query param via grpc-gateway: /api/v1/status?include_p2p_metrics=true"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string" },
+          "uptimeSeconds": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

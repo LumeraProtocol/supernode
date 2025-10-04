@@ -1,33 +1,34 @@
 package cmd
 
 import (
-	"context"
-	"reflect"
+    "context"
+    "reflect"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+    "github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
+    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 type service interface {
-	Run(context.Context) error
+    Run(context.Context) error
 }
 
 func RunServices(ctx context.Context, services ...service) error {
-	group, ctx := errgroup.WithContext(ctx)
+    group, ctx := errgroup.WithContext(ctx)
 
-	for _, service := range services {
-		service := service
+    for _, service := range services {
+        service := service
 
-		group.Go(func() error {
-			err := service.Run(ctx)
-			if err != nil {
-				logtrace.Error(ctx, "service stopped with an error", logtrace.Fields{"service": reflect.TypeOf(service).String(), "error": err})
-			} else {
-				logtrace.Debug(ctx, "service stopped", logtrace.Fields{"service": reflect.TypeOf(service).String()})
-			}
-			return err
-		})
-	}
+        group.Go(func() error {
+            err := service.Run(ctx)
+            if err != nil {
+                logtrace.Error(ctx, "service stopped with an error", logtrace.Fields{"service": reflect.TypeOf(service).String(), "error": err})
+            } else {
+                logtrace.Debug(ctx, "service stopped", logtrace.Fields{"service": reflect.TypeOf(service).String()})
+            }
+            return err
+        })
+    }
 
-	return group.Wait()
+    return group.Wait()
 }
+

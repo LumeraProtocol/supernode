@@ -15,7 +15,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
-	consmoskeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"github.com/spf13/cobra"
 )
@@ -36,15 +36,7 @@ var (
 	passphraseFile     string
 )
 
-// Default configuration values
-const (
-	DefaultKeyringBackend = "test"
-	DefaultKeyName        = "test-key"
-	DefaultSupernodeAddr  = "0.0.0.0"
-	DefaultSupernodePort  = 4444
-	DefaultLumeraGRPC     = "localhost:9090"
-	DefaultChainID        = "testing"
-)
+// Default configuration values centralized in config package
 
 // InitInputs holds all user inputs for initialization
 type InitInputs struct {
@@ -221,7 +213,7 @@ func gatherUserInputs() (InitInputs, error) {
 
 		// Step 5a: Determine keyring backend (how keys are stored securely)
 		// Options: 'test' (unencrypted), 'file' (encrypted file), 'os' (system keyring)
-		backend := DefaultKeyringBackend
+		backend := config.DefaultKeyringBackend
 		if keyringBackendFlag != "" {
 			backend = keyringBackendFlag
 		}
@@ -233,7 +225,7 @@ func gatherUserInputs() (InitInputs, error) {
 
 		// Step 5b: Set the name for the cryptographic key
 		// This name is used to reference the key in the keyring
-		keyName := DefaultKeyName
+		keyName := config.DefaultKeyName
 		if keyNameFlag != "" {
 			keyName = keyNameFlag
 
@@ -245,7 +237,7 @@ func gatherUserInputs() (InitInputs, error) {
 
 		// Step 5c: Configure the supernode's network binding address
 		// Determines which network interface the supernode will listen on
-		supernodeAddr := DefaultSupernodeAddr
+		supernodeAddr := config.DefaultSupernodeHost
 		if supernodeAddrFlag != "" {
 			supernodeAddr = supernodeAddrFlag
 
@@ -256,7 +248,7 @@ func gatherUserInputs() (InitInputs, error) {
 		}
 
 		// Step 5d: Set the port for supernode peer-to-peer communication
-		supernodePort := DefaultSupernodePort
+		supernodePort := int(config.DefaultSupernodePort)
 		if supernodePortFlag != 0 {
 			supernodePort = supernodePortFlag
 
@@ -268,7 +260,7 @@ func gatherUserInputs() (InitInputs, error) {
 
 		// Step 5e: Configure connection to the Lumera blockchain node
 		// This is the GRPC endpoint for blockchain interactions
-		lumeraGRPC := DefaultLumeraGRPC
+		lumeraGRPC := config.DefaultLumeraGRPC
 		if lumeraGrpcFlag != "" {
 			lumeraGRPC = lumeraGrpcFlag
 
@@ -280,7 +272,7 @@ func gatherUserInputs() (InitInputs, error) {
 
 		// Step 5f: Set the blockchain network identifier
 		// Must match the chain ID of the Lumera network you're connecting to
-		chainID := DefaultChainID
+		chainID := config.DefaultChainID
 		if chainIDFlag != "" {
 			chainID = chainIDFlag
 		}
@@ -419,7 +411,7 @@ func setupKeyring(keyName string, shouldRecover bool, mnemonic string) (string, 
 }
 
 // recoverExistingKey handles the recovery of an existing key from mnemonic
-func recoverExistingKey(kr consmoskeyring.Keyring, keyName, mnemonic string) (string, error) {
+func recoverExistingKey(kr cKeyring.Keyring, keyName, mnemonic string) (string, error) {
 	// Process and validate mnemonic using helper function
 	processedMnemonic, err := processAndValidateMnemonic(mnemonic)
 	if err != nil {
@@ -444,7 +436,7 @@ func recoverExistingKey(kr consmoskeyring.Keyring, keyName, mnemonic string) (st
 }
 
 // createNewKey handles the creation of a new key
-func createNewKey(kr consmoskeyring.Keyring, keyName string) (string, string, error) {
+func createNewKey(kr cKeyring.Keyring, keyName string) (string, string, error) {
 	// Generate mnemonic and create new account
 	keyMnemonic, _, err := keyring.CreateNewAccount(kr, keyName)
 	if err != nil {
@@ -497,7 +489,7 @@ func promptKeyringBackend(passedBackend string) (string, error) {
 		}
 		backend = passedBackend
 	} else {
-		backend = DefaultKeyringBackend
+		backend = config.DefaultKeyringBackend
 	}
 	prompt := &survey.Select{
 		Message: "Choose keyring backend:",
@@ -565,24 +557,24 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGRPC, passedC
 	if passedAddrs != "" {
 		supernodeAddr = passedAddrs
 	} else {
-		supernodeAddr = DefaultSupernodeAddr
+		supernodeAddr = config.DefaultSupernodeHost
 	}
 	var port string
 	if passedPort != 0 {
 		port = fmt.Sprintf("%d", passedPort)
 	} else {
-		port = fmt.Sprintf("%d", DefaultSupernodePort)
+		port = fmt.Sprintf("%d", config.DefaultSupernodePort)
 	}
 
 	if passedGRPC != "" {
 		lumeraGrpcAddr = passedGRPC
 	} else {
-		lumeraGrpcAddr = DefaultLumeraGRPC
+		lumeraGrpcAddr = config.DefaultLumeraGRPC
 	}
 	if passedChainID != "" {
 		chainID = passedChainID
 	} else {
-		chainID = DefaultChainID
+		chainID = config.DefaultChainID
 	}
 
 	// Supernode IP address
@@ -617,7 +609,6 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGRPC, passedC
 	if err != nil || supernodePort < 1 || supernodePort > 65535 {
 		return "", 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
 	}
-
 
 	// Lumera GRPC address (full address with port)
 	lumeraPrompt := &survey.Input{
