@@ -1795,10 +1795,21 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 				responses <- &MessageWithError{Error: ctx.Err(), Receiver: receiver}
 				return
 			default:
+				callStart := time.Now()
 				keysToStore := storageMap[key]
 				toStore := make([][]byte, len(keysToStore))
+				totalBytes := 0
 				for i, idx := range keysToStore {
 					toStore[i] = values[idx]
+					totalBytes += len(values[idx])
+				}
+
+				{
+					f := logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes), logtrace.FieldRole: "client"}
+					if o := logtrace.OriginFromContext(ctx); o != "" {
+						f[logtrace.FieldOrigin] = o
+					}
+					logtrace.Info(ctx, "dht: batch store RPC send", f)
 				}
 
 				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
@@ -1810,63 +1821,29 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					return
 				}
 
-				// Enforce a soft cap per RPC below the network encode limit to avoid "payload too big".
-				byteCap := (defaultMaxPayloadSize - 10) * 1024 * 1024 // leave 10MB headroom for gob/frame
-				startIdx := 0
-				for startIdx < len(toStore) {
-					// Build a chunk that fits under byteCap
-					chunkBytes := 0
-					endIdx := startIdx
-					for endIdx < len(toStore) {
-						nextSize := len(toStore[endIdx])
-						if chunkBytes+nextSize > byteCap {
-							break
-						}
-						chunkBytes += nextSize
-						endIdx++
-					}
-					if endIdx == startIdx { // single item larger than cap (unlikely for symbols/metadata); send it alone
-						endIdx = startIdx + 1
-						chunkBytes = len(toStore[startIdx])
+				data := &BatchStoreDataRequest{Data: toStore, Type: typ}
+				request := s.newMessage(BatchStoreData, receiver, data)
+				response, err := s.network.Call(ctx, request, false)
+				dur := time.Since(callStart).Milliseconds()
+				if err != nil {
+					if !isLocalCancel(err) {
+						s.ignorelist.IncrementCount(receiver)
+						s.metrics.IncHotPathBanIncr()
 					}
 
-					chunk := toStore[startIdx:endIdx]
-					// Log send per chunk
-					{
-						f := logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(chunk), "size_mb": utils.BytesIntToMB(chunkBytes), logtrace.FieldRole: "client"}
-						if o := logtrace.OriginFromContext(ctx); o != "" {
-							f[logtrace.FieldOrigin] = o
-						}
-						logtrace.Info(ctx, "dht: batch store RPC send", f)
-					}
-
-					callStart := time.Now()
-					data := &BatchStoreDataRequest{Data: chunk, Type: typ}
-					request := s.newMessage(BatchStoreData, receiver, data)
-					response, err := s.network.Call(ctx, request, false)
-					dur := time.Since(callStart).Milliseconds()
-					if err != nil {
-						if !isLocalCancel(err) {
-							s.ignorelist.IncrementCount(receiver)
-							s.metrics.IncHotPathBanIncr()
-						}
-
-						logtrace.Error(ctx, "RPC BatchStoreData failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node": receiver.String(), "ms": dur})
-						responses <- &MessageWithError{Error: err, Message: response, KeysCount: len(chunk), Receiver: receiver, DurationMS: dur}
-						return
-					}
-
-					{
-						f := logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(chunk), "ms": dur, logtrace.FieldRole: "client"}
-						if o := logtrace.OriginFromContext(ctx); o != "" {
-							f[logtrace.FieldOrigin] = o
-						}
-						logtrace.Info(ctx, "dht: batch store RPC ok", f)
-					}
-					responses <- &MessageWithError{Message: response, KeysCount: len(chunk), Receiver: receiver, DurationMS: dur}
-
-					startIdx = endIdx
+					logtrace.Error(ctx, "RPC BatchStoreData failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node": receiver.String(), "ms": dur})
+					responses <- &MessageWithError{Error: err, Message: response, KeysCount: len(toStore), Receiver: receiver, DurationMS: dur}
+					return
 				}
+
+				{
+					f := logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur, logtrace.FieldRole: "client"}
+					if o := logtrace.OriginFromContext(ctx); o != "" {
+						f[logtrace.FieldOrigin] = o
+					}
+					logtrace.Info(ctx, "dht: batch store RPC ok", f)
+				}
+				responses <- &MessageWithError{Message: response, KeysCount: len(toStore), Receiver: receiver, DurationMS: dur}
 			}
 		}(node, key)
 	}

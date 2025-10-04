@@ -22,6 +22,7 @@ const (
 	storeSymbolsPercent      = 18
 	storeBatchContextTimeout = 3 * time.Minute
 	P2PDataRaptorQSymbol     = 1
+	firstPassMetaChunk       = 32
 )
 
 type P2PService interface {
@@ -92,6 +93,31 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	}
 	logtrace.Info(ctx, "store: selected symbols", logtrace.Fields{"selected": len(keys), "of_total": totalAvailable, "dir": symbolsDir})
 	logtrace.Info(ctx, "store: sending symbols", logtrace.Fields{"count": len(keys)})
+	// Flush metadata first in small chunks; then proceed with symbol-only batches
+	if len(metadataFiles) > 0 {
+		for i := 0; i < len(metadataFiles); {
+			end := min(i+firstPassMetaChunk, len(metadataFiles))
+			chunk := metadataFiles[i:end]
+			if i == 0 {
+				logtrace.Info(ctx, "store: batch send (first)", logtrace.Fields{"taskID": taskID, "metadata_count": len(chunk), "symbols_in_batch": 0, "payload_total": len(chunk)})
+			} else {
+				logtrace.Info(ctx, "store: batch send (first-meta)", logtrace.Fields{"taskID": taskID, "metadata_count": len(chunk), "symbols_in_batch": 0, "payload_total": len(chunk)})
+			}
+			bctx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
+			err := p.p2p.StoreBatch(bctx, chunk, P2PDataRaptorQSymbol, taskID)
+			cancel()
+			if err != nil {
+				return 0, 0, fmt.Errorf("p2p store batch (first/meta): %w", err)
+			}
+			if i == 0 {
+				logtrace.Info(ctx, "store: batch ok (first)", logtrace.Fields{"taskID": taskID, "symbols_stored": 0})
+			} else {
+				logtrace.Info(ctx, "store: batch ok (first-meta)", logtrace.Fields{"taskID": taskID, "symbols_stored": 0})
+			}
+			i = end
+		}
+		metadataFiles = nil // ensure first symbol batch is not combined with metadata
+	}
 	totalSymbols := 0
 	firstBatchProcessed := false
 	for start := 0; start < len(keys); {
