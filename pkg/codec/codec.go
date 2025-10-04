@@ -1,5 +1,3 @@
-//go:generate mockgen -destination=codec_mock.go -package=codec -source=codec.go
-
 package codec
 
 import (
@@ -19,7 +17,7 @@ type Layout struct {
 // Block is the schema for each entry in the “blocks” array.
 type Block struct {
 	BlockID           int      `json:"block_id"`
-	EncoderParameters []int    `json:"encoder_parameters"`
+	EncoderParameters []uint8  `json:"encoder_parameters"`
 	OriginalOffset    int64    `json:"original_offset"`
 	Size              int64    `json:"size"`
 	Symbols           []string `json:"symbols"`
@@ -38,4 +36,7 @@ type Codec interface {
 	// Encode a file
 	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
+	// CreateMetadata builds the single-block layout metadata for the given file
+	// without generating RaptorQ symbols.
+	CreateMetadata(ctx context.Context, path string) (Layout, error)
 }
