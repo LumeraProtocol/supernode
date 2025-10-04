@@ -116,14 +116,14 @@ func ddForward(level zapcore.Level, ctx context.Context, msg string, fields Fiel
 	for k, v := range fields {
 		attrs[k] = v
 	}
-    // Attach correlation ID if present
-    if cid := extractCorrelationID(ctx); cid != "unknown" {
-        attrs["correlation_id"] = cid
-    }
-    // Attach origin/phase if present (first_pass | worker | download)
-    if o := OriginFromContext(ctx); o != "" {
-        attrs["origin"] = o
-    }
+	// Attach correlation ID if present
+	if cid := extractCorrelationID(ctx); cid != "unknown" {
+		attrs["correlation_id"] = cid
+	}
+	// Attach origin/phase if present (first_pass | worker | download)
+	if o := OriginFromContext(ctx); o != "" {
+		attrs["origin"] = o
+	}
 
 	entry := map[string]any{
 		"message":    msg,

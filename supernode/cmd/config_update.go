@@ -8,8 +8,8 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
-	"github.com/spf13/cobra"
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/spf13/cobra"
 )
 
 // configUpdateCmd represents the config update command
@@ -51,7 +51,7 @@ func promptParameterSelection() (string, error) {
 		Message: "Select parameter to update:",
 		Options: []string{
 			"Supernode IP Address",
-			"Supernode Port", 
+			"Supernode Port",
 			"Lumera GRPC Address",
 			"Chain ID",
 			"Key Name",
@@ -197,7 +197,7 @@ func updateKeyringBackend() error {
 	// Show warning
 	fmt.Println("⚠️  WARNING: Changing keyring backend will switch to a different keyring.")
 	fmt.Println("You will need to select a key from the new keyring or recover one.")
-	
+
 	var proceed bool
 	confirmPrompt := &survey.Confirm{
 		Message: "Do you want to continue?",
@@ -225,14 +225,14 @@ func updateKeyringBackend() error {
 
 	// Update keyring backend in config
 	appConfig.KeyringConfig.Backend = backend
-	
+
 	// Save config with new keyring backend
 	if err := saveConfig(); err != nil {
 		return err
 	}
 
 	fmt.Printf("Updated keyring backend to: %s\n", backend)
-	
+
 	// Reload config to get the new keyring settings
 	cfgFile := filepath.Join(baseDir, DefaultConfigFile)
 	reloadedConfig, err := config.LoadConfig(cfgFile, baseDir)
@@ -269,7 +269,7 @@ func selectKeyFromNewKeyring(kr cKeyring.Keyring, keyInfos []*cKeyring.Record) e
 func selectKeyFromKeyring(kr cKeyring.Keyring, keyInfos []*cKeyring.Record) error {
 	// Build options list with display format
 	options := []string{}
-	
+
 	// Add existing keys
 	for _, info := range keyInfos {
 		addr, err := info.GetAddress()
@@ -278,7 +278,7 @@ func selectKeyFromKeyring(kr cKeyring.Keyring, keyInfos []*cKeyring.Record) erro
 		}
 		options = append(options, fmt.Sprintf("%s (%s)", info.Name, addr.String()))
 	}
-	
+
 	// Always add option to recover new key
 	options = append(options, "Add new key (recover from mnemonic)")
 

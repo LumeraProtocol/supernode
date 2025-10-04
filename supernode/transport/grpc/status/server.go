@@ -23,15 +23,15 @@ import (
 
 // Server represents supernode server
 type Server struct {
-    identity     string
-    listenAddrs  string
-    port         int
-    services     []grpcserver.ServiceDesc
-    name         string
-    kr           keyring.Keyring
-    grpcServer   *grpcserver.Server
-    lumeraClient lumera.Client
-    healthServer *health.Server
+	identity     string
+	listenAddrs  string
+	port         int
+	services     []grpcserver.ServiceDesc
+	name         string
+	kr           keyring.Keyring
+	grpcServer   *grpcserver.Server
+	lumeraClient lumera.Client
+	healthServer *health.Server
 }
 
 // Run starts the server
@@ -45,12 +45,12 @@ func (server *Server) Run(ctx context.Context) error {
 
 	// Set up gRPC logging
 	logtrace.SetGRPCLogger()
-    logtrace.Debug(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.identity})
-    logtrace.Debug(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.listenAddrs})
+	logtrace.Debug(ctx, "Server identity configured", logtrace.Fields{logtrace.FieldModule: "server", "identity": server.identity})
+	logtrace.Debug(ctx, "Server listening", logtrace.Fields{logtrace.FieldModule: "server", "addresses": server.listenAddrs})
 
 	group, ctx := errgroup.WithContext(ctx)
 
-    addresses := strings.Split(server.listenAddrs, ",")
+	addresses := strings.Split(server.listenAddrs, ",")
 	if err := server.setupGRPCServer(); err != nil {
 		logtrace.Fatal(ctx, "Failed to setup gRPC server", logtrace.Fields{logtrace.FieldModule: "server", logtrace.FieldError: err.Error()})
 	}
@@ -67,7 +67,7 @@ func (server *Server) Run(ctx context.Context) error {
 	opts.WriteBufferSize = (8 * 1024 * 1024)         // 8MB TCP buffer
 
 	for _, address := range addresses {
-        addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.port))
+		addr := net.JoinHostPort(strings.TrimSpace(address), strconv.Itoa(server.port))
 		address := addr // Create a new variable to avoid closure issues
 
 		group.Go(func() error {
@@ -81,14 +81,14 @@ func (server *Server) Run(ctx context.Context) error {
 
 func (server *Server) setupGRPCServer() error {
 	// Create server credentials
-    serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
-        CommonOptions: ltc.CommonOptions{
-            Keyring:       server.kr,
-            LocalIdentity: server.identity,
-            PeerType:      securekeyx.Supernode,
-            Validator:     lumera.NewSecureKeyExchangeValidator(server.lumeraClient),
-        },
-    })
+	serverCreds, err := ltc.NewServerCreds(&ltc.ServerOptions{
+		CommonOptions: ltc.CommonOptions{
+			Keyring:       server.kr,
+			LocalIdentity: server.identity,
+			PeerType:      securekeyx.Supernode,
+			Validator:     lumera.NewSecureKeyExchangeValidator(server.lumeraClient),
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create server credentials: %w", err)
 	}
@@ -143,16 +143,16 @@ func (server *Server) Close() {
 
 // New returns a new Server instance.
 func New(identity, listenAddrs string, port int, name string, kr keyring.Keyring, lumeraClient lumera.Client, services ...grpcserver.ServiceDesc) (*Server, error) {
-    if listenAddrs == "" {
-        return nil, fmt.Errorf("listen addresses cannot be empty")
-    }
-    return &Server{
-        identity:     identity,
-        listenAddrs:  listenAddrs,
-        port:         port,
-        services:     services,
-        name:         name,
-        kr:           kr,
-        lumeraClient: lumeraClient,
-    }, nil
+	if listenAddrs == "" {
+		return nil, fmt.Errorf("listen addresses cannot be empty")
+	}
+	return &Server{
+		identity:     identity,
+		listenAddrs:  listenAddrs,
+		port:         port,
+		services:     services,
+		name:         name,
+		kr:           kr,
+		lumeraClient: lumeraClient,
+	}, nil
 }

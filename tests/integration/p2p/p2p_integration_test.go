@@ -203,8 +203,8 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 		require.NoError(t, err, "failed to create rqstore for node %d: %v", i, err)
 		rqStores = append(rqStores, rqStore)
 
-        // Disable metrics in integration tests by default
-        service, err := p2p.New(ctx, p2pConfig, mockClient, kr, rqStore, nil, nil)
+		// Disable metrics in integration tests by default
+		service, err := p2p.New(ctx, p2pConfig, mockClient, kr, rqStore, nil, nil)
 		require.NoError(t, err, "failed to create p2p service for node %d: %v", i, err)
 
 		// Start P2P service

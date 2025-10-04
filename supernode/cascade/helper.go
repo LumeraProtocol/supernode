@@ -1,24 +1,24 @@
 package cascade
 
 import (
-    "context"
-    "encoding/base64"
-    "strconv"
+	"context"
+	"encoding/base64"
+	"strconv"
 
-    "cosmossdk.io/math"
-    actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-    "github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
-    "github.com/LumeraProtocol/supernode/v2/pkg/codec"
-    "github.com/LumeraProtocol/supernode/v2/pkg/errors"
-    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-    "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-    "github.com/LumeraProtocol/supernode/v2/pkg/utils"
-    "github.com/LumeraProtocol/supernode/v2/supernode/cascade/adaptors"
+	"cosmossdk.io/math"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/supernode/cascade/adaptors"
 
-    sdk "github.com/cosmos/cosmos-sdk/types"
-    json "github.com/json-iterator/go"
-    "google.golang.org/grpc/codes"
-    "google.golang.org/grpc/status"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	json "github.com/json-iterator/go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func (task *CascadeRegistrationTask) fetchAction(ctx context.Context, actionID string, f logtrace.Fields) (*actiontypes.Action, error) {
@@ -79,14 +79,14 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode layout signature from base64", err, f)
 	}
-    layoutJSON, err := json.Marshal(encodedMeta)
-    if err != nil {
-        return codec.Layout{}, "", task.wrapErr(ctx, "failed to marshal layout", err, f)
-    }
-    layoutB64 := utils.B64Encode(layoutJSON)
-    if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigBytes); err != nil {
-        return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify layout signature", err, f)
-    }
+	layoutJSON, err := json.Marshal(encodedMeta)
+	if err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to marshal layout", err, f)
+	}
+	layoutB64 := utils.B64Encode(layoutJSON)
+	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigBytes); err != nil {
+		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify layout signature", err, f)
+	}
 	logtrace.Debug(ctx, "layout signature successfully verified", f)
 	return encodedMeta, indexFile.LayoutSignature, nil
 }

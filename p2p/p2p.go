@@ -40,14 +40,14 @@ type P2P interface {
 
 // p2p structure to implements interface
 type p2p struct {
-	store           kademlia.Store // the store for kademlia network
-	metaStore       kademlia.MetaStore
-	dht             *kademlia.DHT // the kademlia network
-	config          *Config       // the service configuration
-	running         bool          // if the kademlia network is ready
-	lumeraClient    lumera.Client
-	keyring         keyring.Keyring // Add the keyring field
-    rqstore         rqstore.Store
+	store        kademlia.Store // the store for kademlia network
+	metaStore    kademlia.MetaStore
+	dht          *kademlia.DHT // the kademlia network
+	config       *Config       // the service configuration
+	running      bool          // if the kademlia network is ready
+	lumeraClient lumera.Client
+	keyring      keyring.Keyring // Add the keyring field
+	rqstore      rqstore.Store
 }
 
 // Run the kademlia network
@@ -263,13 +263,13 @@ func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr key
 	}
 
 	return &p2p{
-		store:           store,
-		metaStore:       meta,
-		config:          config,
-		lumeraClient:    lumeraClient,
-		keyring:         kr, // Store the keyring
-        rqstore:         rqstore,
-    }, nil
+		store:        store,
+		metaStore:    meta,
+		config:       config,
+		lumeraClient: lumeraClient,
+		keyring:      kr, // Store the keyring
+		rqstore:      rqstore,
+	}, nil
 }
 
 // LocalStore store data into the kademlia network

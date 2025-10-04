@@ -53,9 +53,9 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 		}
 		start := time.Now()
 		logtrace.Info(wctx, "worker: dir start", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
-        if err := s.scanDirAndStoreSymbols(wctx, dir.Dir, dir.TXID); err != nil {
-            logtrace.Error(wctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
-        }
+		if err := s.scanDirAndStoreSymbols(wctx, dir.Dir, dir.TXID); err != nil {
+			logtrace.Error(wctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+		}
 		// Post-count remaining symbols
 		remCount := -1
 		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
@@ -86,17 +86,17 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 
 	logtrace.Info(ctx, "p2p-worker: storing ALL RaptorQ symbols", logtrace.Fields{"txid": txid, "dir": dir, "total": len(keys)})
 
-    // Batch-flush at loadSymbolsBatchSize
-    for start := 0; start < len(keys); {
-        end := start + loadSymbolsBatchSize
-        if end > len(keys) {
-            end = len(keys)
-        }
-        if err := s.storeSymbolsInP2P(ctx, txid, dir, keys[start:end]); err != nil {
-            return err
-        }
-        start = end
-    }
+	// Batch-flush at loadSymbolsBatchSize
+	for start := 0; start < len(keys); {
+		end := start + loadSymbolsBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		if err := s.storeSymbolsInP2P(ctx, txid, dir, keys[start:end]); err != nil {
+			return err
+		}
+		start = end
+	}
 
 	// Mark this directory as completed in rqstore
 	if err := s.rqstore.SetIsCompleted(txid); err != nil {
@@ -110,7 +110,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 // ---------------------------------------------------------------------
 func (s *DHT) storeSymbolsInP2P(ctx context.Context, txid, dir string, keys []string) error {
 	// Per-batch visibility for background worker
-    logtrace.Info(ctx, "worker: batch send", logtrace.Fields{"dir": dir, "keys": len(keys), logtrace.FieldTaskID: txid})
+	logtrace.Info(ctx, "worker: batch send", logtrace.Fields{"dir": dir, "keys": len(keys), logtrace.FieldTaskID: txid})
 
 	start := time.Now()
 	loaded, err := utils.LoadSymbols(dir, keys)
@@ -118,11 +118,11 @@ func (s *DHT) storeSymbolsInP2P(ctx context.Context, txid, dir string, keys []st
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-    if err := s.StoreBatch(ctx, loaded, 1, txid); err != nil {
-        return fmt.Errorf("p2p store batch: %w", err)
-    }
+	if err := s.StoreBatch(ctx, loaded, 1, txid); err != nil {
+		return fmt.Errorf("p2p store batch: %w", err)
+	}
 
-    logtrace.Info(ctx, "worker: batch ok", logtrace.Fields{"dir": dir, "keys": len(loaded), "ms": time.Since(start).Milliseconds(), logtrace.FieldTaskID: txid})
+	logtrace.Info(ctx, "worker: batch ok", logtrace.Fields{"dir": dir, "keys": len(loaded), "ms": time.Since(start).Milliseconds(), logtrace.FieldTaskID: txid})
 
 	if err := utils.DeleteSymbols(ctx, dir, keys); err != nil {
 		return fmt.Errorf("delete symbols: %w", err)
