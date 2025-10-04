@@ -131,13 +131,17 @@ func (s *Network) Stop(ctx context.Context) {
 }
 
 func (s *Network) encodeMesage(mesage *Message) ([]byte, error) {
-	// send the response to client
-	encoded, err := encode(mesage)
+	// Gob-encode payload, then prefix with 8-byte header
+	payload, err := encodePayload(mesage)
 	if err != nil {
 		return nil, errors.Errorf("encode response: %w", err)
 	}
-
-	return encoded, nil
+	var header [8]byte
+	binary.PutUvarint(header[:], uint64(len(payload)))
+	out := make([]byte, 0, len(header)+len(payload))
+	out = append(out, header[:]...)
+	out = append(out, payload...)
+	return out, nil
 }
 
 func (s *Network) handleFindNode(ctx context.Context, message *Message) (res []byte, err error) {
