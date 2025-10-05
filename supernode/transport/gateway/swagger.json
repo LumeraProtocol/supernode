@@ -30,6 +30,22 @@
           }
         }
       }
+    },
+    "/api/v1/services": {
+      "get": {
+        "summary": "List services",
+        "description": "Returns available gRPC services and their methods/streams",
+        "responses": {
+          "200": {
+            "description": "Services response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListServicesResponse" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -39,6 +55,23 @@
         "properties": {
           "version": { "type": "string" },
           "uptimeSeconds": { "type": "integer" }
+        }
+      },
+      "ListServicesResponse": {
+        "type": "object",
+        "properties": {
+          "services": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ServiceInfo" }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "ServiceInfo": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "methods": { "type": "array", "items": { "type": "string" } }
         }
       }
     }

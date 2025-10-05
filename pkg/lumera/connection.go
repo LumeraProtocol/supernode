@@ -97,7 +97,8 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 			firstConn = r.conn
 			firstCand = r.cand
 			winnerIndex = i
-			// Do not break yet; continue receiving to close any late winners.
+			// Cancel other attempts immediately; continue to drain results to avoid leaks.
+			cancelAll()
 			continue
 		}
 		// Close any non-winning connection to avoid leaks.
@@ -114,11 +115,19 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 		if firstErr == nil {
 			firstErr = fmt.Errorf("all connection attempts failed")
 		}
-		return nil, firstErr
+		// Summarize attempted targets to help with diagnostics.
+		var attempts []string
+		for _, c := range cands {
+			scheme := "plaintext"
+			if c.useTLS {
+				scheme = "tls"
+			}
+			attempts = append(attempts, fmt.Sprintf("%s (%s)", c.target, scheme))
+		}
+		return nil, fmt.Errorf("failed to connect to any Lumera endpoint; attempted: %s; last error: %v", strings.Join(attempts, ", "), firstErr)
 	}
 
-	// Cancel remaining attempts; return the winner.
-	cancelAll()
+	// Remaining attempts were already canceled once we had a winner.
 
 	// Info log showing final selected target and scheme
 	scheme := "plaintext"
@@ -257,11 +266,8 @@ func createGRPCConnection(ctx context.Context, hostPort string, creds credential
 		case connectivity.Shutdown:
 			conn.Close()
 			return nil, fmt.Errorf("grpc connection is shutdown")
-		case connectivity.TransientFailure:
-			conn.Close()
-			return nil, fmt.Errorf("grpc connection is in transient failure")
 		default:
-			// Idle or Connecting: wait for a state change or timeout
+			// For Idle, Connecting, and TransientFailure, wait for state change or timeout
 			if !conn.WaitForStateChange(ctx, state) {
 				conn.Close()
 				return nil, fmt.Errorf("timeout waiting for grpc connection readiness")
