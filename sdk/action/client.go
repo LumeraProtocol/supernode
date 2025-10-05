@@ -254,12 +254,12 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("read file: %w", err)
 	}
 
-    // Build layout metadata only (no symbols). Supernodes will create symbols.
-    rq := codec.NewRaptorQCodec("")
-    layout, err := rq.CreateMetadata(ctx, filePath)
-    if err != nil {
-        return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq create metadata: %w", err)
-    }
+	// Build layout metadata only (no symbols). Supernodes will create symbols.
+	rq := codec.NewRaptorQCodec("")
+	layout, err := rq.CreateMetadata(ctx, filePath)
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq create metadata: %w", err)
+	}
 
 	// Derive `max` from chain params, then create signatures and index IDs
 	paramsResp, err := c.lumeraClient.GetActionParams(ctx)
