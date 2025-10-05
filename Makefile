@@ -148,3 +148,30 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && go test -tags=system_test -v -run '^TestSNManager' .
+
+
+	# Release command: push branch, tag, and push tag with auto-increment
+# Release command: push branch, tag, and push tag with auto-increment
+release:
+	@echo "Getting current branch..."
+	$(eval CURRENT_BRANCH := $(shell git branch --show-current))
+	@echo "Current branch: $(CURRENT_BRANCH)"
+	
+	@echo "Getting latest tag..."
+	$(eval LATEST_TAG := $(shell git tag -l "v*" | sort -V | tail -n1))
+	$(eval NEXT_TAG := $(shell \
+		if [ -z "$(LATEST_TAG)" ]; then \
+			echo "v2.5.0"; \
+		else \
+			echo "$(LATEST_TAG)" | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}'; \
+		fi))
+	@echo "Next tag: $(NEXT_TAG)"
+	
+	@echo "Pushing branch to upstream..."
+	git push upstream $(CURRENT_BRANCH) -f
+	
+	@echo "Creating and pushing tag $(NEXT_TAG)..."
+	git tag $(NEXT_TAG)
+	git push upstream $(NEXT_TAG)
+	
+	@echo "Release complete: $(NEXT_TAG) pushed to upstream"

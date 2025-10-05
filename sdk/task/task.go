@@ -140,7 +140,7 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	if err != nil {
 		return false
 	}
-	if status.Network.PeersCount <= 1 {
+	if status.Network.PeersCount <= 1 && status.Version != "v2.3.62" {
 		return false
 	}
 
