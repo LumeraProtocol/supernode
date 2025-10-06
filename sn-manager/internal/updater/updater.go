@@ -14,7 +14,6 @@ import (
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/manager"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
@@ -44,22 +43,25 @@ type AutoUpdater struct {
 	// Gateway error backoff state
 	gwErrCount       int
 	gwErrWindowStart time.Time
+	// Optional hook to handle manager update (restart) orchestration
+	onManagerUpdate func()
 }
 
 // Use protobuf JSON decoding for gateway responses (int64s encoded as strings)
 
-func New(homeDir string, cfg *config.Config, managerVersion string) *AutoUpdater {
+func New(homeDir string, cfg *config.Config, managerVersion string, onManagerUpdate func()) *AutoUpdater {
 	// Use the correct gateway endpoint with imported constants
 	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", gateway.DefaultGatewayPort)
 
 	return &AutoUpdater{
-		config:         cfg,
-		homeDir:        homeDir,
-		githubClient:   github.NewClient(config.GitHubRepo),
-		versionMgr:     version.NewManager(homeDir),
-		gatewayURL:     gatewayURL,
-		stopCh:         make(chan struct{}),
-		managerVersion: managerVersion,
+		config:          cfg,
+		homeDir:         homeDir,
+		githubClient:    github.NewClient(config.GitHubRepo),
+		versionMgr:      version.NewManager(homeDir),
+		gatewayURL:      gatewayURL,
+		stopCh:          make(chan struct{}),
+		managerVersion:  managerVersion,
+		onManagerUpdate: onManagerUpdate,
 	}
 }
 
@@ -345,22 +347,12 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	// If manager updated, restart service after completing all work
 	if managerUpdated {
 		log.Printf("Self-update applied, restarting service...")
-		// Prevent monitor from (re)starting SuperNode during manager restart
-		if stopPath := filepath.Join(u.homeDir, manager.StopMarkerFile); stopPath != "" {
-			_ = os.WriteFile(stopPath, []byte("manager-update"), 0644)
-		}
-		// Attempt to gracefully stop SuperNode before exiting
-		if m, err := manager.New(u.homeDir); err == nil {
-			if m.IsRunning() {
-				if err := m.Stop(); err != nil {
-					log.Printf("Failed to stop SuperNode before restart: %v", err)
-				}
-			}
-		}
-		// Exit with code 3 to signal service restart
-		go func() {
+		if u.onManagerUpdate != nil {
+			u.onManagerUpdate()
+		} else {
+			// Fallback: immediate process restart signal
 			os.Exit(3)
-		}()
+		}
 	}
 }
 
