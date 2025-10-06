@@ -52,7 +52,7 @@ func (service *SuperNodeService) RunHelper(ctx context.Context, nodeID string, p
 				service.Worker = task.NewWorker()
 				logtrace.Error(ctx, "Service run failed, retrying", logtrace.Fields{logtrace.FieldModule: "supernode", logtrace.FieldError: err.Error()})
 			} else {
-				logtrace.Info(ctx, "Service run completed successfully - closing sn services", logtrace.Fields{logtrace.FieldModule: "supernode"})
+				logtrace.Debug(ctx, "Service run completed successfully - closing sn services", logtrace.Fields{logtrace.FieldModule: "supernode"})
 				return nil
 			}
 		}

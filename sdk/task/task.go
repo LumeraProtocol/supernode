@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"sync"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
@@ -85,10 +87,6 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 		return nil, errors.New("no supernodes found")
 	}
 
-	if len(sns) > 10 {
-		sns = sns[:10]
-	}
-
 	// Keep only SERVING nodes (done in parallel – keeps latency flat)
 	healthy := make(lumera.Supernodes, 0, len(sns))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -126,11 +124,36 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 		PeerType:           t.config.Account.PeerType,
 	}).CreateClient(ctx, sn)
 	if err != nil {
-		logtrace.Info(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
+		logtrace.Debug(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
 		return false
 	}
 	defer client.Close(ctx)
 
+	// First check gRPC health
 	resp, err := client.HealthCheck(ctx)
-	return err == nil && resp.Status == grpc_health_v1.HealthCheckResponse_SERVING
+	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		return false
+	}
+
+	// Then check P2P peers count via status
+	status, err := client.GetSupernodeStatus(ctx)
+	if err != nil {
+		return false
+	}
+	if status.Network.PeersCount <= 1 {
+		return false
+	}
+
+	denom := txmod.DefaultFeeDenom // base denom (micro), e.g., "ulume"
+	bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
+	if err != nil || bal == nil || bal.Balance == nil {
+		return false
+	}
+	// Require at least 1 LUME = 10^6 micro (ulume)
+	min := sdkmath.NewInt(1_000_000)
+	if bal.Balance.Amount.LT(min) {
+		return false
+	}
+
+	return true
 }

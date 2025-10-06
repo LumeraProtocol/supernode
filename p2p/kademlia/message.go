@@ -66,6 +66,11 @@ type Message struct {
 	Receiver    *Node       // the receiver node
 	MessageType int         // the message type
 	Data        interface{} // the real data for the request
+	// CorrelationID carries a best-effort trace identifier so that logs
+	// across nodes can be joined in external systems.
+	CorrelationID string
+	// Origin carries the phase that produced this message (first_pass | worker | download)
+	Origin string
 }
 
 func (m *Message) String() string {

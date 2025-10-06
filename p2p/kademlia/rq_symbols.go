@@ -16,7 +16,8 @@ const (
 )
 
 func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
-	logtrace.Info(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	// Minimal visibility for lifecycle + each tick
+	logtrace.Debug(ctx, "rq_symbols worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
@@ -25,7 +26,7 @@ func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
 				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			}
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing store symbols worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Debug(ctx, "rq_symbols worker stopping", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}
@@ -37,13 +38,30 @@ func (s *DHT) storeSymbols(ctx context.Context) error {
 		return fmt.Errorf("get to do store symbol dirs: %w", err)
 	}
 
-	for _, dir := range dirs {
-		logtrace.Info(ctx, "rq_symbols worker: start scanning dir & storing raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
-		if err := s.scanDirAndStoreSymbols(ctx, dir.Dir, dir.TXID); err != nil {
-			logtrace.Error(ctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
-		}
+	// Minimal visibility: how many dirs to process this tick
+	if len(dirs) > 0 {
+		logtrace.Info(ctx, "worker: symbols todo", logtrace.Fields{"count": len(dirs)})
+	}
 
-		logtrace.Info(ctx, "rq_symbols worker: scanned dir & stored raptorQ symbols", logtrace.Fields{"dir": dir, "txid": dir.TXID})
+	for _, dir := range dirs {
+		// Use txid as correlation id so worker logs join with register flow
+		wctx := logtrace.CtxWithCorrelationID(ctx, dir.TXID)
+		// Pre-count symbols in this directory
+		preCount := -1
+		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
+			preCount = len(set)
+		}
+		start := time.Now()
+		logtrace.Info(wctx, "worker: dir start", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "symbols": preCount})
+		if err := s.scanDirAndStoreSymbols(wctx, dir.Dir, dir.TXID); err != nil {
+			logtrace.Error(wctx, "scan and store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+		}
+		// Post-count remaining symbols
+		remCount := -1
+		if set, rerr := utils.ReadDirFilenames(dir.Dir); rerr == nil {
+			remCount = len(set)
+		}
+		logtrace.Info(wctx, "worker: dir done", logtrace.Fields{"dir": dir.Dir, "txid": dir.TXID, "remaining": remCount, "ms": time.Since(start).Milliseconds()})
 	}
 
 	return nil
@@ -74,7 +92,7 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 		if end > len(keys) {
 			end = len(keys)
 		}
-		if err := s.storeSymbolsInP2P(ctx, dir, keys[start:end]); err != nil {
+		if err := s.storeSymbolsInP2P(ctx, txid, dir, keys[start:end]); err != nil {
 			return err
 		}
 		start = end
@@ -90,15 +108,21 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 // ---------------------------------------------------------------------
 // 2. Load → StoreBatch → Delete for a slice of keys
 // ---------------------------------------------------------------------
-func (s *DHT) storeSymbolsInP2P(ctx context.Context, dir string, keys []string) error {
+func (s *DHT) storeSymbolsInP2P(ctx context.Context, txid, dir string, keys []string) error {
+	// Per-batch visibility for background worker
+	logtrace.Info(ctx, "worker: batch send", logtrace.Fields{"dir": dir, "keys": len(keys), logtrace.FieldTaskID: txid})
+
+	start := time.Now()
 	loaded, err := utils.LoadSymbols(dir, keys)
 	if err != nil {
 		return fmt.Errorf("load symbols: %w", err)
 	}
 
-	if err := s.StoreBatch(ctx, loaded, 1, dir); err != nil {
+	if err := s.StoreBatch(ctx, loaded, 1, txid); err != nil {
 		return fmt.Errorf("p2p store batch: %w", err)
 	}
+
+	logtrace.Info(ctx, "worker: batch ok", logtrace.Fields{"dir": dir, "keys": len(loaded), "ms": time.Since(start).Milliseconds(), logtrace.FieldTaskID: txid})
 
 	if err := utils.DeleteSymbols(ctx, dir, keys); err != nil {
 		return fmt.Errorf("delete symbols: %w", err)

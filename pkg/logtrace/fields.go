@@ -5,6 +5,8 @@ type Fields map[string]interface{}
 
 const (
 	FieldCorrelationID  = "correlation_id"
+	FieldOrigin         = "origin"
+	FieldRole           = "role"
 	FieldMethod         = "method"
 	FieldModule         = "module"
 	FieldError          = "error"

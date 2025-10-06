@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -15,7 +16,7 @@ type SupernodeClient interface {
 	// HealthCheck performs a health check on the supernode
 	HealthCheck(ctx context.Context) (*grpc_health_v1.HealthCheckResponse, error)
 
-	GetSupernodeStatus(ctx context.Context) (*supernodeservice.SupernodeStatusresponse, error)
+	GetSupernodeStatus(ctx context.Context) (*pb.StatusResponse, error)
 	// Download downloads the cascade action file
 	Download(ctx context.Context, in *supernodeservice.CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*supernodeservice.CascadeSupernodeDownloadResponse, error)
 

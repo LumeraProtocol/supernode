@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.21.12
-// source: supernode/supernode.proto
+// source: supernode/service.proto
 
 package supernode
 
@@ -159,5 +159,5 @@ var SupernodeService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "supernode/supernode.proto",
+	Metadata: "supernode/service.proto",
 }

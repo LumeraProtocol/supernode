@@ -14,12 +14,12 @@ func TestSupernodeStatusService(t *testing.T) {
 	t.Run("empty service", func(t *testing.T) {
 		statusService := NewSupernodeStatusService(nil, nil, nil)
 
-        resp, err := statusService.GetStatus(ctx, false)
+		resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
-		
+
 		// Should have version info
 		assert.NotEmpty(t, resp.Version)
-		
+
 		// Should have uptime
 		assert.True(t, resp.UptimeSeconds >= 0)
 
@@ -30,7 +30,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		assert.True(t, resp.Resources.Memory.TotalGB > 0)
 		assert.True(t, resp.Resources.Memory.UsagePercent >= 0)
 		assert.True(t, resp.Resources.Memory.UsagePercent <= 100)
-		
+
 		// Should have hardware summary if cores and memory are available
 		if resp.Resources.CPU.Cores > 0 && resp.Resources.Memory.TotalGB > 0 {
 			assert.NotEmpty(t, resp.Resources.HardwareSummary)
@@ -43,7 +43,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		// Should have empty services list
 		assert.Empty(t, resp.RunningTasks)
 		assert.Empty(t, resp.RegisteredServices)
-		
+
 		// Should have default values for new fields
 		assert.Equal(t, int32(0), resp.Network.PeersCount)
 		assert.Empty(t, resp.Network.PeerAddresses)
@@ -61,7 +61,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		}
 		statusService.RegisterTaskProvider(mockProvider)
 
-        resp, err := statusService.GetStatus(ctx, false)
+		resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have one service
@@ -91,7 +91,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		statusService.RegisterTaskProvider(cascadeProvider)
 		statusService.RegisterTaskProvider(senseProvider)
 
-        resp, err := statusService.GetStatus(ctx, false)
+		resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have two services
@@ -127,7 +127,7 @@ func TestSupernodeStatusService(t *testing.T) {
 		}
 		statusService.RegisterTaskProvider(mockProvider)
 
-        resp, err := statusService.GetStatus(ctx, false)
+		resp, err := statusService.GetStatus(ctx, false)
 		assert.NoError(t, err)
 
 		// Should have one service

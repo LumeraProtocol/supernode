@@ -71,13 +71,13 @@ func (s *Supernode) Start(ctx context.Context) error {
 		return err
 	}
 
-	logtrace.Info(ctx, "Found valid key in keyring", logtrace.Fields{
+	logtrace.Debug(ctx, "Found valid key in keyring", logtrace.Fields{
 		"key_name": s.config.SupernodeConfig.KeyName,
 		"address":  address.String(),
 	})
 
 	// Use the P2P service that was passed in via constructor
-	logtrace.Info(ctx, "Starting P2P service", logtrace.Fields{})
+	logtrace.Debug(ctx, "Starting P2P service", logtrace.Fields{})
 	if err := s.p2pService.Run(ctx); err != nil {
 		return fmt.Errorf("p2p service error: %w", err)
 	}
@@ -89,7 +89,7 @@ func (s *Supernode) Start(ctx context.Context) error {
 func (s *Supernode) Stop(ctx context.Context) error {
 	// Close the Lumera client connection
 	if s.lumeraClient != nil {
-		logtrace.Info(ctx, "Closing Lumera client", logtrace.Fields{})
+		logtrace.Debug(ctx, "Closing Lumera client", logtrace.Fields{})
 		if err := s.lumeraClient.Close(); err != nil {
 			logtrace.Error(ctx, "Error closing Lumera client", logtrace.Fields{
 				"error": err.Error(),
@@ -131,7 +131,7 @@ func initRQStore(ctx context.Context, config *config.Config) (rqstore.Store, err
 	// Create the SQLite file path
 	rqStoreFile := rqDir + "/rqstore.db"
 
-	logtrace.Info(ctx, "Initializing RaptorQ store", logtrace.Fields{
+	logtrace.Debug(ctx, "Initializing RaptorQ store", logtrace.Fields{
 		"file_path": rqStoreFile,
 	})
 

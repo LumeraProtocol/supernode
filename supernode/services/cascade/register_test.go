@@ -21,8 +21,8 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"lukechampine.com/blake3"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 )
 
 func TestCascadeRegistrationTask_Register(t *testing.T) {
@@ -104,10 +104,10 @@ func TestCascadeRegistrationTask_Register(t *testing.T) {
 						Metadata:   codecpkg.Layout{Blocks: []codecpkg.Block{{BlockID: 1, Hash: "abc"}}},
 					}, nil)
 
-                // 8. Store artefacts (no metrics returned; recorded centrally)
-                p2p.EXPECT().
-                    StoreArtefacts(gomock.Any(), gomock.Any(), gomock.Any()).
-                    Return(nil)
+				// 8. Store artefacts (no metrics returned; recorded centrally)
+				p2p.EXPECT().
+					StoreArtefacts(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil)
 			},
 			expectedError:  "",
 			expectedEvents: 12,

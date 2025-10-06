@@ -74,7 +74,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 
 	ctx := stream.Context()
-	logtrace.Info(ctx, "client streaming request to upload cascade input data received", fields)
+	logtrace.Debug(ctx, "client streaming request to upload cascade input data received", fields)
 
 	const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
 
@@ -140,7 +140,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 					return fmt.Errorf("file size %d exceeds maximum allowed size of 1GB", totalSize)
 				}
 
-				logtrace.Info(ctx, "received data chunk", logtrace.Fields{
+				logtrace.Debug(ctx, "received data chunk", logtrace.Fields{
 					"chunk_size":        len(x.Chunk.Data),
 					"total_size_so_far": totalSize,
 				})
@@ -148,7 +148,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 		case *pb.RegisterRequest_Metadata:
 			// Store metadata - this should be the final message
 			metadata = x.Metadata
-			logtrace.Info(ctx, "received metadata", logtrace.Fields{
+			logtrace.Debug(ctx, "received metadata", logtrace.Fields{
 				"task_id":   metadata.TaskId,
 				"action_id": metadata.ActionId,
 			})
@@ -162,7 +162,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 	fields[logtrace.FieldTaskID] = metadata.GetTaskId()
 	fields[logtrace.FieldActionID] = metadata.GetActionId()
-	logtrace.Info(ctx, "metadata received from action-sdk", fields)
+	logtrace.Debug(ctx, "metadata received from action-sdk", fields)
 
 	// Ensure all data is written to disk before calculating hash
 	if err := tempFile.Sync(); err != nil {
@@ -174,7 +174,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	hash := hasher.Sum(nil)
 	hashHex := hex.EncodeToString(hash)
 	fields[logtrace.FieldHashHex] = hashHex
-	logtrace.Info(ctx, "final BLAKE3 hash generated", fields)
+	logtrace.Debug(ctx, "final BLAKE3 hash generated", fields)
 
 	targetPath, err := replaceTempDirWithTaskDir(metadata.GetTaskId(), tempFilePath, tempFile)
 	if err != nil {
@@ -213,7 +213,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
-	logtrace.Info(ctx, "cascade registration completed successfully", fields)
+	logtrace.Debug(ctx, "cascade registration completed successfully", fields)
 	return nil
 }
 
@@ -225,25 +225,12 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	}
 
 	ctx := stream.Context()
-	logtrace.Info(ctx, "download request received from client", fields)
+	logtrace.Debug(ctx, "download request received from client", fields)
 
 	task := server.factory.NewCascadeRegistrationTask()
 
-	// Verify signature if provided
-	if req.GetSignature() != "" {
-		// Cast to concrete type to access helper method
-		if cascadeTask, ok := task.(*cascadeService.CascadeRegistrationTask); ok {
-			err := cascadeTask.VerifyDownloadSignature(ctx, req.GetActionId(), req.GetSignature())
-			if err != nil {
-				fields[logtrace.FieldError] = err.Error()
-				logtrace.Error(ctx, "signature verification failed", fields)
-				return fmt.Errorf("signature verification failed: %w", err)
-			}
-		} else {
-			logtrace.Error(ctx, "unable to cast task to CascadeRegistrationTask", fields)
-			return fmt.Errorf("unable to verify signature: task type assertion failed")
-		}
-	}
+	// Authorization is enforced inside the task based on metadata.Public.
+	// If public, signature is skipped; if private, signature is required.
 
 	var restoredFilePath string
 	var tmpDir string
@@ -254,13 +241,14 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 			if err := task.CleanupDownload(ctx, tmpDir); err != nil {
 				logtrace.Error(ctx, "error cleaning up the tmp dir", logtrace.Fields{logtrace.FieldError: err.Error()})
 			} else {
-				logtrace.Info(ctx, "tmp dir has been cleaned up", logtrace.Fields{"tmp_dir": tmpDir})
+				logtrace.Debug(ctx, "tmp dir has been cleaned up", logtrace.Fields{"tmp_dir": tmpDir})
 			}
 		}
 	}()
 
 	err := task.Download(ctx, &cascadeService.DownloadRequest{
-		ActionID: req.GetActionId(),
+		ActionID:  req.GetActionId(),
+		Signature: req.GetSignature(),
 	}, func(resp *cascadeService.DownloadResponse) error {
 		grpcResp := &pb.DownloadResponse{
 			ResponseType: &pb.DownloadResponse_Event{
@@ -290,7 +278,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		logtrace.Error(ctx, "no artefact file retrieved", fields)
 		return fmt.Errorf("no artefact to stream")
 	}
-	logtrace.Info(ctx, "streaming artefact file in chunks", fields)
+	logtrace.Debug(ctx, "streaming artefact file in chunks", fields)
 
 	// Open the restored file and stream directly from disk to avoid buffering entire file in memory
 	f, err := os.Open(restoredFilePath)
@@ -308,12 +296,19 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	// Calculate optimal chunk size based on file size
 	chunkSize := calculateOptimalChunkSize(fi.Size())
-	logtrace.Info(ctx, "calculated optimal chunk size for download", logtrace.Fields{
+	logtrace.Debug(ctx, "calculated optimal chunk size for download", logtrace.Fields{
 		"file_size":  fi.Size(),
 		"chunk_size": chunkSize,
 	})
 
-	// Announce: file is ready to be served to the client
+	// Pre-read first chunk to avoid any delay between SERVE_READY and first data
+	buf := make([]byte, chunkSize)
+	n, readErr := f.Read(buf)
+	if readErr != nil && readErr != io.EOF {
+		return fmt.Errorf("chunked read failed: %w", readErr)
+	}
+
+	// Announce: file is ready to be served to the client (right before first data)
 	if err := stream.Send(&pb.DownloadResponse{
 		ResponseType: &pb.DownloadResponse_Event{
 			Event: &pb.DownloadEvent{
@@ -326,10 +321,27 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		return err
 	}
 
-	// Stream the file in fixed-size chunks
-	buf := make([]byte, chunkSize)
+	// Send pre-read first chunk if available
+	if n > 0 {
+		if err := stream.Send(&pb.DownloadResponse{
+			ResponseType: &pb.DownloadResponse_Chunk{
+				Chunk: &pb.DataChunk{Data: buf[:n]},
+			},
+		}); err != nil {
+			logtrace.Error(ctx, "failed to stream first chunk", logtrace.Fields{logtrace.FieldError: err.Error()})
+			return err
+		}
+	}
+
+	// If EOF after first read, we're done
+	if readErr == io.EOF {
+		logtrace.Debug(ctx, "completed streaming all chunks", fields)
+		return nil
+	}
+
+	// Continue streaming remaining chunks
 	for {
-		n, readErr := f.Read(buf)
+		n, readErr = f.Read(buf)
 		if n > 0 {
 			if err := stream.Send(&pb.DownloadResponse{
 				ResponseType: &pb.DownloadResponse_Chunk{
@@ -350,6 +362,6 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 
 	// Cleanup is handled in deferred block above
 
-	logtrace.Info(ctx, "completed streaming all chunks", fields)
+	logtrace.Debug(ctx, "completed streaming all chunks", fields)
 	return nil
 }

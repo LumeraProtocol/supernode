@@ -9,15 +9,18 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
+	bankmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 
+	sdkmath "cosmossdk.io/math"
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 // MockLumeraClient implements the lumera.Client interface for testing purposes
@@ -25,6 +28,7 @@ type MockLumeraClient struct {
 	authMod      *MockAuthModule
 	actionMod    *MockActionModule
 	actionMsgMod *MockActionMsgModule
+	bankMod      *MockBankModule
 	supernodeMod *MockSupernodeModule
 	txMod        *MockTxModule
 	nodeMod      *MockNodeModule
@@ -36,6 +40,7 @@ type MockLumeraClient struct {
 func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client, error) {
 	actionMod := &MockActionModule{}
 	actionMsgMod := &MockActionMsgModule{}
+	bankMod := &MockBankModule{}
 	supernodeMod := &MockSupernodeModule{addresses: addresses}
 	txMod := &MockTxModule{}
 	nodeMod := &MockNodeModule{}
@@ -44,6 +49,7 @@ func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client,
 		authMod:      &MockAuthModule{},
 		actionMod:    actionMod,
 		actionMsgMod: actionMsgMod,
+		bankMod:      bankMod,
 		supernodeMod: supernodeMod,
 		txMod:        txMod,
 		nodeMod:      nodeMod,
@@ -67,6 +73,11 @@ func (c *MockLumeraClient) ActionMsg() action_msg.Module {
 	return c.actionMsgMod
 }
 
+// Bank returns the Bank module client
+func (c *MockLumeraClient) Bank() bankmod.Module {
+	return c.bankMod
+}
+
 // SuperNode returns the SuperNode module client
 func (c *MockLumeraClient) SuperNode() supernode.Module {
 	return c.supernodeMod
@@ -85,6 +96,15 @@ func (c *MockLumeraClient) Node() node.Module {
 // Close closes all connections
 func (c *MockLumeraClient) Close() error {
 	return nil
+}
+
+// MockBankModule implements the bank.Module interface for testing
+type MockBankModule struct{}
+
+// Balance returns a positive balance for any address/denom to pass checks by default
+func (m *MockBankModule) Balance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error) {
+	// Return >= 1 LUME in micro units to satisfy threshold checks
+	return &banktypes.QueryBalanceResponse{Balance: &sdktypes.Coin{Denom: denom, Amount: sdkmath.NewInt(1_000_000)}}, nil
 }
 
 // MockAuthModule implements the auth.Module interface for testing
@@ -124,8 +144,8 @@ type MockActionMsgModule struct{}
 
 // RequestAction mocks the behavior of requesting an action.
 func (m *MockActionMsgModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
-    // Mock implementation returns success with empty result
-    return &sdktx.BroadcastTxResponse{}, nil
+	// Mock implementation returns success with empty result
+	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface

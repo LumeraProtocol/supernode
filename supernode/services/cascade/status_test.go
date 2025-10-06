@@ -66,7 +66,7 @@ func TestGetStatus(t *testing.T) {
 
 			// Version check
 			assert.NotEmpty(t, resp.Version)
-			
+
 			// Uptime check
 			assert.True(t, resp.UptimeSeconds >= 0)
 
@@ -79,7 +79,7 @@ func TestGetStatus(t *testing.T) {
 			assert.True(t, resp.Resources.Memory.TotalGB > 0)
 			assert.True(t, resp.Resources.Memory.UsedGB <= resp.Resources.Memory.TotalGB)
 			assert.True(t, resp.Resources.Memory.UsagePercent >= 0 && resp.Resources.Memory.UsagePercent <= 100)
-			
+
 			// Hardware summary check
 			if resp.Resources.CPU.Cores > 0 && resp.Resources.Memory.TotalGB > 0 {
 				assert.NotEmpty(t, resp.Resources.HardwareSummary)
@@ -91,7 +91,7 @@ func TestGetStatus(t *testing.T) {
 
 			// Registered services check
 			assert.Contains(t, resp.RegisteredServices, "cascade")
-			
+
 			// Check new fields have default values (since service doesn't have access to P2P/lumera/config)
 			assert.Equal(t, int32(0), resp.Network.PeersCount)
 			assert.Empty(t, resp.Network.PeerAddresses)

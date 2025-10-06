@@ -3,20 +3,15 @@ package task
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
-	snsvc "github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
-	"github.com/LumeraProtocol/supernode/v2/sdk/net"
 )
 
 const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
-
-var ErrNoPeersConnected = errors.New("no P2P peers connected on available supernodes")
 
 // ValidateFileSize checks if a file size is within the allowed 1GB limit
 func ValidateFileSize(filePath string) error {
@@ -105,47 +100,7 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 	return nil
 }
 
-// checkSupernodesPeerConnectivity verifies that at least one supernode has P2P peers connected
-func (m *ManagerImpl) checkSupernodesPeerConnectivity(ctx context.Context, blockHeight int64) error {
-	// Fetch supernodes for the action's block height
-	supernodes, err := m.lumeraClient.GetSupernodes(ctx, blockHeight)
-	if err != nil {
-		return fmt.Errorf("failed to get supernodes: %w", err)
-	}
-
-	if len(supernodes) == 0 {
-		return fmt.Errorf("no supernodes available for block height %d", blockHeight)
-	}
-
-	// Check each supernode for peer connectivity
-	factoryCfg := net.FactoryConfig{
-		LocalCosmosAddress: m.config.Account.LocalCosmosAddress,
-		PeerType:           m.config.Account.PeerType,
-	}
-	clientFactory := net.NewClientFactory(ctx, m.logger, m.keyring, m.lumeraClient, factoryCfg)
-
-	for _, sn := range supernodes {
-		client, err := clientFactory.CreateClient(ctx, sn)
-		if err != nil {
-			continue // Skip this supernode if we can't connect
-		}
-
-		// Request peer info and P2P metrics to assess connectivity
-		ctxWithMetrics := snsvc.WithIncludeP2PMetrics(ctx)
-		status, err := client.GetSupernodeStatus(ctxWithMetrics)
-		client.Close(ctx)
-		if err != nil {
-			continue // Skip this supernode if we can't get status
-		}
-
-		// Check if this supernode has peers
-		if status.Network.PeersCount > 1 {
-			return nil // Found at least one supernode with peers
-		}
-	}
-
-	return ErrNoPeersConnected
-}
+// (Removed) Peers connectivity preflight is now enforced during discovery in isServing.
 
 func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID string) (lumera.Action, error) {
 	action, err := m.lumeraClient.GetAction(ctx, actionID)

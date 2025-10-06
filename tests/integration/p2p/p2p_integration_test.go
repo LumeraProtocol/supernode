@@ -108,7 +108,7 @@ func TestP2PBasicIntegration(t *testing.T) {
 
 		// Add debug logging
 		log.Printf("Storing batch with keys: %v", expectedKeys)
-        err := services[0].StoreBatch(ctx, batchData, 0, taskID)
+		err := services[0].StoreBatch(ctx, batchData, 0, taskID)
 		require.NoError(t, err)
 
 		// Add immediate verification
@@ -203,6 +203,7 @@ func SetupTestP2PNodes(t *testing.T, ctx context.Context) ([]p2p.Client, []*rqst
 		require.NoError(t, err, "failed to create rqstore for node %d: %v", i, err)
 		rqStores = append(rqStores, rqStore)
 
+		// Disable metrics in integration tests by default
 		service, err := p2p.New(ctx, p2pConfig, mockClient, kr, rqStore, nil, nil)
 		require.NoError(t, err, "failed to create p2p service for node %d: %v", i, err)
 

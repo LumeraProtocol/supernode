@@ -86,7 +86,7 @@ func (s *Server) Run(ctx context.Context) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	logtrace.Info(ctx, "Starting HTTP gateway server", logtrace.Fields{
+	logtrace.Debug(ctx, "Starting HTTP gateway server", logtrace.Fields{
 		"address": s.ipAddress,
 		"port":    s.port,
 	})
@@ -105,7 +105,7 @@ func (s *Server) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	logtrace.Info(ctx, "Shutting down HTTP gateway server", nil)
+	logtrace.Debug(ctx, "Shutting down HTTP gateway server", nil)
 	return s.server.Shutdown(ctx)
 }
 

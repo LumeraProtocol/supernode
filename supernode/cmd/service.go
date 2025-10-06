@@ -23,7 +23,7 @@ func RunServices(ctx context.Context, services ...service) error {
 			if err != nil {
 				logtrace.Error(ctx, "service stopped with an error", logtrace.Fields{"service": reflect.TypeOf(service).String(), "error": err})
 			} else {
-				logtrace.Info(ctx, "service stopped", logtrace.Fields{"service": reflect.TypeOf(service).String()})
+				logtrace.Debug(ctx, "service stopped", logtrace.Fields{"service": reflect.TypeOf(service).String()})
 			}
 			return err
 		})

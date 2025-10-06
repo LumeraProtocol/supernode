@@ -293,10 +293,10 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			logtrace.Info(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
+			logtrace.Debug(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
 			return
 		case <-s.worker.quit:
-			logtrace.Info(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
+			logtrace.Debug(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
 			return
 		default:
 		}
@@ -312,10 +312,10 @@ func (s *Store) start(ctx context.Context) {
 				logtrace.Error(ctx, "Failed to perform job", logtrace.Fields{logtrace.FieldError: err.Error()})
 			}
 		case <-s.worker.quit:
-			logtrace.Info(ctx, "exit sqlite db worker - quit signal received", logtrace.Fields{})
+			logtrace.Debug(ctx, "exit sqlite db worker - quit signal received", logtrace.Fields{})
 			return
 		case <-ctx.Done():
-			logtrace.Info(ctx, "exit sqlite db worker- ctx done signal received", logtrace.Fields{})
+			logtrace.Debug(ctx, "exit sqlite db worker- ctx done signal received", logtrace.Fields{})
 			return
 		}
 	}
@@ -737,11 +737,11 @@ func (s *Store) GetOwnCreatedAt(ctx context.Context) (time.Time, error) {
 func (s *Store) GetLocalKeys(from time.Time, to time.Time) ([]string, error) {
 	var keys []string
 	ctx := context.Background()
-	logtrace.Info(ctx, "getting all keys for SC", logtrace.Fields{})
+	logtrace.Debug(ctx, "getting all keys for SC", logtrace.Fields{})
 	if err := s.db.SelectContext(ctx, &keys, `SELECT key FROM data WHERE createdAt > ? and createdAt < ?`, from, to); err != nil {
 		return keys, fmt.Errorf("error reading all keys from database: %w", err)
 	}
-	logtrace.Info(ctx, "got all keys for SC", logtrace.Fields{})
+	logtrace.Debug(ctx, "got all keys for SC", logtrace.Fields{})
 
 	return keys, nil
 }
@@ -762,7 +762,7 @@ func stringArgsToInterface(args []string) []interface{} {
 
 func batchDeleteRecords(db *sqlx.DB, keys []string) error {
 	if len(keys) == 0 {
-		logtrace.Info(context.Background(), "no keys provided for batch delete", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		logtrace.Debug(context.Background(), "no keys provided for batch delete", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		return nil
 	}
 	total := int64(0)
@@ -784,7 +784,7 @@ func batchDeleteRecords(db *sqlx.DB, keys []string) error {
 
 func batchSetMigratedRecords(db *sqlx.DB, keys []string) error {
 	if len(keys) == 0 {
-		logtrace.Info(context.Background(), "no keys provided for batch update (migrated)", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		logtrace.Debug(context.Background(), "no keys provided for batch update (migrated)", logtrace.Fields{logtrace.FieldModule: "p2p"})
 		return nil
 	}
 	total := int64(0)

@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
@@ -22,7 +20,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/action"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 
-	"github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sdkconfig "github.com/LumeraProtocol/supernode/v2/sdk/config"
 
 	"github.com/stretchr/testify/require"
@@ -67,14 +64,13 @@ func TestCascadeE2E(t *testing.T) {
 	)
 
 	// Action request parameters
-	const (
-		actionType = "CASCADE"    // The action type for fountain code processing
-		price      = "23800ulume" // Price for the action in ulume tokens
-	)
+	const actionType = "CASCADE" // The action type for fountain code processing
 	t.Log("Step 1: Starting all services")
 
-	// Update the genesis file with action parameters
-	sut.ModifyGenesisJSON(t, SetActionParams(t))
+	// Update the genesis file with required params before starting
+	// - Set staking bond denom to match ulume used by gentxs
+	// - Configure action module params used by the test
+	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t))
 
 	// Reset and start the blockchain
 	sut.StartChain(t)
@@ -125,7 +121,7 @@ func TestCascadeE2E(t *testing.T) {
 	args := []string{
 		"query",
 		"supernode",
-		"get-top-super-nodes-for-block",
+		"get-top-supernodes-for-block",
 		fmt.Sprint(queryHeight),
 		"--output", "json",
 	}
@@ -190,13 +186,11 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Fund the account with tokens for transactions
 	t.Logf("Funding test address %s with %s", recoveredAddress, fundAmount)
-	cli.FundAddress(recoveredAddress, fundAmount)      // ulume tokens for action fees
-	cli.FundAddress(recoveredAddress, "10000000stake") // stake tokens
+	cli.FundAddress(recoveredAddress, fundAmount) // ulume tokens for action fees
 
 	// Fund user account
 	t.Logf("Funding user address %s with %s", userAddress, fundAmount)
-	cli.FundAddress(userAddress, fundAmount)      // ulume tokens for action fees
-	cli.FundAddress(userAddress, "10000000stake") // stake tokens
+	cli.FundAddress(userAddress, fundAmount) // ulume tokens for action fees
 
 	sut.AwaitNextBlock(t) // Wait for funding transaction to be processed
 
@@ -274,78 +268,36 @@ func TestCascadeE2E(t *testing.T) {
 	originalHash := sha256.Sum256(data)
 	t.Logf("Original file SHA256 hash: %x", originalHash)
 
-	rqCodec := codec.NewRaptorQCodec(raptorQFilesDir)
+	// Cascade signature creation process (high-level via action SDK)
 
-	encodeRes, err := rqCodec.Encode(ctx, codec.EncodeRequest{
-		Path:     testFileFullpath,
-		DataSize: int(fileInfo.Size()),
-		TaskID:   "1",
-	})
+	// Build action client for metadata generation and cascade operations
+	// Use the same account that submits RequestAction so signatures match the on-chain creator
+	accConfig := sdkconfig.AccountConfig{LocalCosmosAddress: userAddress, KeyName: userKeyName, Keyring: keplrKeyring}
+	lumraConfig := sdkconfig.LumeraConfig{GRPCAddr: lumeraGRPCAddr, ChainID: lumeraChainID}
+	actionConfig := sdkconfig.Config{Account: accConfig, Lumera: lumraConfig}
+	actionClient, err := action.NewClient(context.Background(), actionConfig, nil)
+	require.NoError(t, err, "Failed to create action client")
 
-	require.NoError(t, err, "Failed to encode data with RaptorQ")
+	// Use the new SDK helper to build Cascade metadata (includes signatures, price, and expiration)
+	builtMeta, autoPrice, expirationTime, err := actionClient.BuildCascadeMetadataFromFile(ctx, testFileFullpath, false)
+	require.NoError(t, err, "Failed to build cascade metadata from file")
 
-	metadataFile := encodeRes.Metadata
-
-	// Cascade signature creation process
-	const ic = uint32(121)
-	const maxFiles = uint32(50)
-
-	// Create cascade signature format
-	signatureFormat, indexFileIDs, err := createCascadeLayoutSignature(metadataFile, keplrKeyring, userKeyName, ic, maxFiles)
-	require.NoError(t, err, "Failed to create cascade signature")
-
-	t.Logf("Signature format prepared with length: %d bytes", len(signatureFormat))
-	t.Logf("Generated %d index file IDs for chain verification", len(indexFileIDs))
-
-	// Data hash with blake3
-	hash, err := ComputeBlake3Hash(data)
-	b64EncodedHash := base64.StdEncoding.EncodeToString(hash)
-	require.NoError(t, err, "Failed to compute Blake3 hash")
-
-	// Also Create a signature for the hash
-	signedHash, err := keyring.SignBytes(keplrKeyring, userKeyName, hash)
-	require.NoError(t, err, "Failed to sign hash")
-
-	// Encode the signed hash as base64
-	signedHashBase64 := base64.StdEncoding.EncodeToString(signedHash)
+	// Create a signature for StartCascade using the SDK helper
+	signedHashBase64, err := actionClient.GenerateStartCascadeSignatureFromFile(ctx, testFileFullpath)
+	require.NoError(t, err, "Failed to generate StartCascade signature")
 
 	// ---------------------------------------
 	t.Log("Step 7: Creating metadata and submitting action request")
 
-	// Create CascadeMetadata struct with all required fields
-	cascadeMetadata := types.CascadeMetadata{
-		DataHash:   b64EncodedHash,                  // Hash of the original file
-		FileName:   filepath.Base(testFileFullpath), // Original filename
-		RqIdsIc:    uint64(121),                     // Count of RQ identifiers
-		Signatures: signatureFormat,                 // Combined signature format
-	}
-
-	// Marshal the struct to JSON for the blockchain transaction
-	metadataBytes, err := json.Marshal(cascadeMetadata)
+	// Marshal the helper-built metadata to JSON for the blockchain transaction
+	metadataBytes, err := json.Marshal(builtMeta)
 	require.NoError(t, err, "Failed to marshal CascadeMetadata to JSON")
 	metadata := string(metadataBytes)
 
-	// Set expiration time 25 hours in the future (minimum is 24 hours)
-	// This defines how long the action request is valid
-	expirationTime := fmt.Sprintf("%d", time.Now().Add(25*time.Hour).Unix())
-
 	t.Logf("Requesting cascade action with metadata: %s", metadata)
-	t.Logf("Action type: %s, Price: %s, Expiration: %s", actionType, price, expirationTime)
+	t.Logf("Action type: %s, Price: %s, Expiration: %s", actionType, autoPrice, expirationTime)
 
-	// Submit the action request transaction to the blockchain using user key
-	// This registers the request with metadata for supernodes to process
-	// actionRequestResp := cli.CustomCommand(
-	// 	"tx", "action", "request-action",
-	// 	actionType,            // CASCADE action type
-	// 	metadata,              // JSON metadata with all required fields
-	// 	price,                 // Price in ulume tokens
-	// 	expirationTime,        // Unix timestamp for expiration
-	// 	"--from", userKeyName, // Use user key for transaction submission
-	// 	"--gas", "auto",
-	// 	"--gas-adjustment", "1.5",
-	// )
-
-	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, price, expirationTime)
+	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, autoPrice, expirationTime)
 
 	txresp := response.TxResponse
 
@@ -399,32 +351,6 @@ func TestCascadeE2E(t *testing.T) {
 	}
 	require.NotEmpty(t, actionID, "Action ID should not be empty")
 	t.Logf("Extracted action ID: %s", actionID)
-
-	// Set up action client configuration
-	// This defines how to connect to network services
-	accConfig := sdkconfig.AccountConfig{
-		LocalCosmosAddress: recoveredAddress,
-		KeyName:            testKeyName,
-		Keyring:            keplrKeyring,
-	}
-
-	lumraConfig := sdkconfig.LumeraConfig{
-		GRPCAddr: lumeraGRPCAddr,
-		ChainID:  lumeraChainID,
-	}
-	actionConfig := sdkconfig.Config{
-		Account: accConfig,
-		Lumera:  lumraConfig,
-	}
-
-	// Initialize action client for cascade operations
-	actionClient, err := action.NewClient(
-		context.Background(),
-		actionConfig,
-		nil, // Nil logger - use default
-
-	)
-	require.NoError(t, err, "Failed to create action client")
 
 	// ---------------------------------------
 	// Step 9: Subscribe to all events and extract tx hash
@@ -507,7 +433,7 @@ func TestCascadeE2E(t *testing.T) {
 		if event.Get("type").String() == "coin_spent" {
 			attrs := event.Get("attributes").Array()
 			for i, attr := range attrs {
-				if attr.Get("key").String() == "amount" && attr.Get("value").String() == price {
+				if attr.Get("key").String() == "amount" && attr.Get("value").String() == autoPrice {
 					feeSpent = true
 					// Get the spender address from the same event group
 					for j, addrAttr := range attrs {
@@ -524,7 +450,7 @@ func TestCascadeE2E(t *testing.T) {
 		if event.Get("type").String() == "coin_received" {
 			attrs := event.Get("attributes").Array()
 			for i, attr := range attrs {
-				if attr.Get("key").String() == "amount" && attr.Get("value").String() == price {
+				if attr.Get("key").String() == "amount" && attr.Get("value").String() == autoPrice {
 					feeReceived = true
 					// Get the receiver address from the same event group
 					for j, addrAttr := range attrs {
@@ -548,18 +474,13 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Payment flow: %s paid %s to %s", fromAddress, amount, toAddress)
 	require.NotEmpty(t, fromAddress, "Spender address should not be empty")
 	require.NotEmpty(t, toAddress, "Receiver address should not be empty")
-	require.Equal(t, price, amount, "Payment amount should match action price")
+	require.Equal(t, autoPrice, amount, "Payment amount should match action price")
 
 	time.Sleep(10 * time.Second)
 
 	outputFileBaseDir := filepath.Join(".")
-	// Create signature: actionId.creatorsaddress (using the same address that was used for StartCascade)
-	signatureData := fmt.Sprintf("%s.%s", actionID, userAddress)
-	// Sign the signature data with user key
-	signedSignature, err := keyring.SignBytes(keplrKeyring, userKeyName, []byte(signatureData))
-	require.NoError(t, err, "Failed to sign signature data")
-	// Base64 encode the signed signature
-	signature := base64.StdEncoding.EncodeToString(signedSignature)
+	// Create download signature for actionID (using the same address that was used for StartCascade)
+	signature, err := actionClient.GenerateDownloadSignature(context.Background(), actionID, userAddress)
 	// Try to download the file using the action ID and signature
 	dtaskID, err := actionClient.DownloadCascade(context.Background(), actionID, outputFileBaseDir, signature)
 
@@ -677,6 +598,16 @@ func SetActionParams(t *testing.T) GenesisMutator {
             "min_super_nodes": "1",
             "super_node_fee_share": "1.000000000000000000"
         }`))
+		require.NoError(t, err)
+		return state
+	}
+}
+
+// SetStakingBondDenomUlume sets the staking module bond denom to "ulume" in genesis
+func SetStakingBondDenomUlume(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+		state, err := sjson.SetBytes(genesis, "app_state.staking.params.bond_denom", "ulume")
 		require.NoError(t, err)
 		return state
 	}

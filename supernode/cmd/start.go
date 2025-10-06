@@ -3,9 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
@@ -43,7 +46,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Log configuration info
 		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
-		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
+		logtrace.Debug(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
 		kr, err := initKeyringFromConfig(appConfig)
@@ -58,7 +61,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Verify config matches chain registration before starting services
-		logtrace.Info(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
+		logtrace.Debug(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
 		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
 		verificationResult, err := configVerifier.VerifyConfig(ctx)
 		if err != nil {
@@ -73,7 +76,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Warn(ctx, "Config verification warnings", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
 
-		logtrace.Info(ctx, "Configuration verification successful", logtrace.Fields{})
+		logtrace.Debug(ctx, "Configuration verification successful", logtrace.Fields{})
+
+		// Set Datadog host to identity and service to latest IP address from chain
+		logtrace.SetDatadogHost(appConfig.SupernodeConfig.Identity)
+		if snInfo, err := lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, appConfig.SupernodeConfig.Identity); err == nil && snInfo != nil {
+			if ip := strings.TrimSpace(snInfo.LatestAddress); ip != "" {
+				logtrace.SetDatadogService(ip)
+			}
+		}
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
@@ -139,6 +150,25 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}
 
+		// Start profiling server on testnet only
+		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
+
+		if isTestnet && os.Getenv("INTEGRATION_TEST") != "true" {
+			profilingAddr := "0.0.0.0:8082"
+
+			logtrace.Debug(ctx, "Starting profiling server", logtrace.Fields{
+				"address":    profilingAddr,
+				"chain_id":   appConfig.LumeraClientConfig.ChainID,
+				"is_testnet": isTestnet,
+			})
+
+			go func() {
+				if err := http.ListenAndServe(profilingAddr, nil); err != nil {
+					logtrace.Error(ctx, "Profiling server error", logtrace.Fields{"error": err.Error()})
+				}
+			}()
+		}
+
 		// Start the services
 		go func() {
 			if err := RunServices(ctx, grpcServer, cService, *p2pService, gatewayServer); err != nil {
@@ -152,7 +182,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Wait for termination signal
 		sig := <-sigCh
-		logtrace.Info(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
+		logtrace.Debug(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
 
 		// Graceful shutdown
 		if err := supernodeInstance.Stop(ctx); err != nil {
@@ -182,7 +212,7 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 	// Create P2P config using helper function
 	p2pConfig := createP2PConfig(config, address.String())
 
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
+	logtrace.Debug(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
 	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
 	if err != nil {

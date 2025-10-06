@@ -16,7 +16,13 @@ type ContextKey string
 // CorrelationIDKey is the key for storing correlation ID in context
 const CorrelationIDKey ContextKey = "correlation_id"
 
-var logger *zap.Logger
+// OriginKey marks which phase produced the log (first_pass | worker | download)
+const OriginKey ContextKey = "origin"
+
+var (
+	logger   *zap.Logger
+	minLevel zapcore.Level = zapcore.InfoLevel // effective minimum log level
+)
 
 // Setup initializes the logger for readable output in all modes.
 func Setup(serviceName string) {
@@ -34,7 +40,11 @@ func Setup(serviceName string) {
 	config.DisableStacktrace = true
 
 	// Always respect the LOG_LEVEL environment variable.
-	config.Level = zap.NewAtomicLevelAt(getLogLevel())
+	lvl := getLogLevel()
+	config.Level = zap.NewAtomicLevelAt(lvl)
+	// Persist the effective minimum so non-core sinks (e.g., Datadog) can
+	// filter entries consistently with the console logger.
+	minLevel = lvl
 
 	// Build the logger from the customized config.
 	if tracingEnabled {
@@ -45,6 +55,9 @@ func Setup(serviceName string) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Initialize Datadog forwarding (minimal integration in separate file)
+	SetupDatadog(serviceName)
 }
 
 // getLogLevel returns the log level from environment variable LOG_LEVEL
@@ -76,6 +89,27 @@ func CtxWithCorrelationID(ctx context.Context, correlationID string) context.Con
 	return context.WithValue(ctx, CorrelationIDKey, correlationID)
 }
 
+// CorrelationIDFromContext returns the correlation ID from context or "unknown".
+func CorrelationIDFromContext(ctx context.Context) string {
+	return extractCorrelationID(ctx)
+}
+
+// CtxWithOrigin stores a phase/origin tag in context
+func CtxWithOrigin(ctx context.Context, origin string) context.Context {
+	if origin == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, OriginKey, origin)
+}
+
+// OriginFromContext returns the origin tag from context or ""
+func OriginFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(OriginKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // extractCorrelationID retrieves the correlation ID from context
 func extractCorrelationID(ctx context.Context) string {
 	if correlationID, ok := ctx.Value(CorrelationIDKey).(string); ok {
@@ -90,12 +124,10 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 		Setup("unknown-service") // Fallback if Setup wasn't called
 	}
 
-	// Always enrich logs with the correlation ID.
-	// allFields := make(Fields, len(fields)+1)
-	// for k, v := range fields {
-	// 	allFields[k] = v
-	// }
-	// allFields[FieldCorrelationID] = extractCorrelationID(ctx)
+	// Drop early if below the configured level (keeps Datadog in sync)
+	if !logger.Core().Enabled(level) {
+		return
+	}
 
 	// Convert the map to a slice of zap.Field
 	zapFields := make([]zap.Field, 0, len(fields))
@@ -116,18 +148,19 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 		}
 	}
 
-	// Log with the structured fields.
-	switch level {
-	case zapcore.DebugLevel:
-		logger.Debug(message, zapFields...)
-	case zapcore.InfoLevel:
-		logger.Info(message, zapFields...)
-	case zapcore.WarnLevel:
-		logger.Warn(message, zapFields...)
-	case zapcore.ErrorLevel:
-		logger.Error(message, zapFields...)
-	case zapcore.FatalLevel:
-		logger.Fatal(message, zapFields...)
+	// Log with the structured fields using a level check/write
+	if ce := logger.Check(level, message); ce != nil {
+		ce.Write(zapFields...)
+	} else {
+		// Should not happen due to early Enabled check, but guard anyway
+		return
+	}
+
+	// Forward to Datadog (non-blocking, best-effort) only if level is enabled
+	// for the current configuration. This prevents forwarding debug entries
+	// when the logger is configured for info and above.
+	if level >= minLevel {
+		ForwardDatadog(level, ctx, message, fields)
 	}
 }
 

@@ -1,5 +1,3 @@
-//go:generate mockgen -destination=codec_mock.go -package=codec -source=codec.go
-
 package codec
 
 import (
@@ -38,4 +36,7 @@ type Codec interface {
 	// Encode a file
 	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
+	// CreateMetadata builds the single-block layout metadata for the given file
+	// without generating RaptorQ symbols.
+	CreateMetadata(ctx context.Context, path string) (Layout, error)
 }

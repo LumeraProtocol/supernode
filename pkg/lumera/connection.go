@@ -14,8 +14,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"os"
-
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
@@ -127,13 +125,10 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 	if firstCand.useTLS {
 		scheme = "tls"
 	}
-	logtrace.Info(ctx, "gRPC connection established", logtrace.Fields{
+	logtrace.Debug(ctx, "gRPC connection established", logtrace.Fields{
 		"target": firstCand.target,
 		"scheme": scheme,
 	})
-
-	// Start a monitor to terminate the app if connection is lost
-	go monitorConnection(ctx, firstConn)
 
 	return &grpcConnection{conn: firstConn}, nil
 }
@@ -270,35 +265,6 @@ func createGRPCConnection(ctx context.Context, hostPort string, creds credential
 			if !conn.WaitForStateChange(ctx, state) {
 				conn.Close()
 				return nil, fmt.Errorf("timeout waiting for grpc connection readiness")
-			}
-		}
-	}
-}
-
-// monitorConnection watches the connection state and exits the process if the
-// connection transitions to Shutdown or remains in TransientFailure beyond a grace period.
-func monitorConnection(ctx context.Context, conn *grpc.ClientConn) {
-	for {
-		state := conn.GetState()
-		switch state {
-		case connectivity.Shutdown:
-			logtrace.Error(ctx, "gRPC connection shutdown", logtrace.Fields{"action": "exit"})
-			os.Exit(1)
-		case connectivity.TransientFailure:
-			// Allow some time to recover to Ready
-			gctx, cancel := context.WithTimeout(ctx, reconnectionGracePeriod)
-			for conn.GetState() == connectivity.TransientFailure {
-				if !conn.WaitForStateChange(gctx, connectivity.TransientFailure) {
-					cancel()
-					logtrace.Error(ctx, "gRPC connection lost (transient failure)", logtrace.Fields{"grace": reconnectionGracePeriod.String(), "action": "exit"})
-					os.Exit(1)
-				}
-			}
-			cancel()
-		default:
-			// Idle/Connecting/Ready: just wait for state change
-			if !conn.WaitForStateChange(ctx, state) {
-				return
 			}
 		}
 	}

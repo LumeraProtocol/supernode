@@ -37,7 +37,7 @@ func (m *MetricsCollector) GetCPUCores(ctx context.Context) (int32, error) {
 		logtrace.Error(ctx, "failed to get cpu core count", logtrace.Fields{logtrace.FieldError: err.Error()})
 		return 0, err
 	}
-	
+
 	return int32(cores), nil
 }
 
@@ -67,7 +67,7 @@ func (m *MetricsCollector) CollectStorageMetrics(ctx context.Context, paths []st
 		if err != nil {
 			logtrace.Error(ctx, "failed to get storage info", logtrace.Fields{
 				logtrace.FieldError: err.Error(),
-				"path": path,
+				"path":              path,
 			})
 			continue // Skip this path but continue with others
 		}

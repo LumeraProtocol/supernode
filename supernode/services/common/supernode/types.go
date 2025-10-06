@@ -60,16 +60,12 @@ type NetworkInfo struct {
 
 // P2PMetrics mirrors the proto P2P metrics for status API
 type P2PMetrics struct {
-	DhtMetrics              DhtMetrics
-	NetworkHandleMetrics    map[string]HandleCounters
-	ConnPoolMetrics         map[string]int64
-	BanList                 []BanEntry
-	Database                DatabaseStats
-	Disk                    DiskStatus
-	RecentBatchStore        []RecentBatchStoreEntry
-	RecentBatchRetrieve     []RecentBatchRetrieveEntry
-	RecentBatchStoreByIP    map[string][]RecentBatchStoreEntry
-	RecentBatchRetrieveByIP map[string][]RecentBatchRetrieveEntry
+	DhtMetrics           DhtMetrics
+	NetworkHandleMetrics map[string]HandleCounters
+	ConnPoolMetrics      map[string]int64
+	BanList              []BanEntry
+	Database             DatabaseStats
+	Disk                 DiskStatus
 }
 
 type StoreSuccessPoint struct {
@@ -122,25 +118,7 @@ type DiskStatus struct {
 	FreeMB float64
 }
 
-type RecentBatchStoreEntry struct {
-	TimeUnix   int64
-	SenderID   string
-	SenderIP   string
-	Keys       int
-	DurationMS int64
-	OK         bool
-	Error      string
-}
-
-type RecentBatchRetrieveEntry struct {
-	TimeUnix   int64
-	SenderID   string
-	SenderIP   string
-	Requested  int
-	Found      int
-	DurationMS int64
-	Error      string
-}
+// Removed: recent per-request lists from public API
 
 // TaskProvider interface defines the contract for services to provide
 // their running task information to the status service
