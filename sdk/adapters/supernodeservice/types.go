@@ -1,12 +1,12 @@
 package supernodeservice
 
 import (
-    "context"
+	"context"
 
-    pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
-    "google.golang.org/grpc"
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"google.golang.org/grpc"
 
-    "github.com/LumeraProtocol/supernode/v2/sdk/event"
+	"github.com/LumeraProtocol/supernode/v2/sdk/event"
 )
 
 type LoggerFunc func(
@@ -46,7 +46,7 @@ type CascadeSupernodeDownloadResponse struct {
 
 //go:generate mockery --name=CascadeServiceClient --output=testutil/mocks --outpkg=mocks --filename=cascade_service_mock.go
 type CascadeServiceClient interface {
-    CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
-    GetSupernodeStatus(ctx context.Context) (*pb.StatusResponse, error)
-    CascadeSupernodeDownload(ctx context.Context, in *CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*CascadeSupernodeDownloadResponse, error)
+	CascadeSupernodeRegister(ctx context.Context, in *CascadeSupernodeRegisterRequest, opts ...grpc.CallOption) (*CascadeSupernodeRegisterResponse, error)
+	GetSupernodeStatus(ctx context.Context) (*pb.StatusResponse, error)
+	CascadeSupernodeDownload(ctx context.Context, in *CascadeSupernodeDownloadRequest, opts ...grpc.CallOption) (*CascadeSupernodeDownloadResponse, error)
 }

@@ -58,12 +58,12 @@ func (s *Server) serveSwaggerJSON(w http.ResponseWriter, r *http.Request) {
 // serveSwaggerUI serves the Swagger UI interface
 func (s *Server) serveSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	
+
 	tmpl, err := template.New("swagger").Parse(swaggerUIHTML)
 	if err != nil {
 		http.Error(w, "Failed to load Swagger UI", http.StatusInternalServerError)
 		return
 	}
-	
+
 	tmpl.Execute(w, nil)
 }

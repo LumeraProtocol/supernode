@@ -218,7 +218,7 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 					}
 				}
 
-            // Detailed recent per-request lists removed from API mapping
+				// Detailed recent per-request lists removed from API mapping
 			}
 
 			// DHT rolling metrics snapshot is attached at top-level under dht_metrics

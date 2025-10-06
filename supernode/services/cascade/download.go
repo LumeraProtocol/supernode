@@ -1,12 +1,12 @@
 package cascade
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "os"
-    "sort"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"time"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
@@ -82,7 +82,7 @@ func (task *CascadeRegistrationTask) Download(
 	}
 	logtrace.Info(ctx, "download: action state ok", fields)
 
-metadata, err := cascadekit.UnmarshalCascadeMetadata(actionDetails.GetAction().Metadata)
+	metadata, err := cascadekit.UnmarshalCascadeMetadata(actionDetails.GetAction().Metadata)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
@@ -150,8 +150,8 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		}
 		logtrace.Debug(ctx, "Retrieve index file completed", logtrace.Fields{"index_id": indexID, "bytes": len(indexFile), "ms": time.Since(iStart).Milliseconds()})
 
-        // Parse index file to get layout IDs
-        indexData, err := cascadekit.ParseCompressedIndexFile(indexFile)
+		// Parse index file to get layout IDs
+		indexData, err := cascadekit.ParseCompressedIndexFile(indexFile)
 		if err != nil {
 			logtrace.Warn(ctx, "failed to parse index file", logtrace.Fields{"index_id": indexID, logtrace.FieldError: err.Error()})
 			continue
@@ -283,15 +283,15 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("file hash is nil")
 	}
 
-    err = cascadekit.VerifyB64DataHash(fileHash, dataHash)
-    if err != nil {
-        logtrace.Error(ctx, "failed to verify hash", fields)
-        fields[logtrace.FieldError] = err.Error()
-        return "", decodeInfo.DecodeTmpDir, err
-    }
-    // Preserve original debug log for successful hash match
-    logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
-    // Log the state of the temporary decode directory
+	err = cascadekit.VerifyB64DataHash(fileHash, dataHash)
+	if err != nil {
+		logtrace.Error(ctx, "failed to verify hash", fields)
+		fields[logtrace.FieldError] = err.Error()
+		return "", decodeInfo.DecodeTmpDir, err
+	}
+	// Preserve original debug log for successful hash match
+	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
+	// Log the state of the temporary decode directory
 	if decodeInfo.DecodeTmpDir != "" {
 		if set, derr := utils.ReadDirFilenames(decodeInfo.DecodeTmpDir); derr == nil {
 			if left := len(set); left > 0 {

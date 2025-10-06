@@ -124,7 +124,7 @@ func (s *DHT) ConnPoolSnapshot() map[string]int64 {
 
 // Options contains configuration options for the queries node
 type Options struct {
-    ID []byte
+	ID []byte
 
 	// The queries IPv4 or IPv6 address
 	IP string
@@ -141,7 +141,6 @@ type Options struct {
 
 	// Keyring for credentials
 	Keyring keyring.Keyring
-
 }
 
 // NewDHT returns a new DHT node
@@ -471,7 +470,7 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 	dhtStats["peers_count"] = len(s.ht.nodes())
 	dhtStats["peers"] = s.ht.nodes()
 	dhtStats["network"] = s.network.HandleMetricsSnapshot()
-    // Removed: recent per-request snapshots (logs provide visibility)
+	// Removed: recent per-request snapshots (logs provide visibility)
 	dhtStats["database"] = dbStats
 
 	return dhtStats, nil
@@ -682,7 +681,7 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 }
 
 func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
-    logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
+	logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
 	result = make(map[string][]byte)
 	var resMap sync.Map
 	var foundLocalCount int32
@@ -754,23 +753,23 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	if err != nil {
 		return nil, fmt.Errorf("fetch and add local keys: %v", err)
 	}
-		// Found locally count is logged via summary below; no external metrics
+	// Found locally count is logged via summary below; no external metrics
 	if foundLocalCount >= required {
 		return result, nil
 	}
 
-        batchSize := batchRetrieveSize
-        var networkFound int32
-        totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
-        parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
+	batchSize := batchRetrieveSize
+	var networkFound int32
+	totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
+	parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
 
-        semaphore := make(chan struct{}, parallelBatches)
-        var wg sync.WaitGroup
-        gctx, cancel := context.WithCancel(ctx)
-        defer cancel()
+	semaphore := make(chan struct{}, parallelBatches)
+	var wg sync.WaitGroup
+	gctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-        // Measure only the network retrieval phase (after local scan)
-        netStart := time.Now()
+	// Measure only the network retrieval phase (after local scan)
+	netStart := time.Now()
 
 	for start := 0; start < len(keys); start += batchSize {
 		end := start + batchSize
@@ -802,15 +801,17 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	wg.Wait()
 
-        netFound := int(atomic.LoadInt32(&networkFound))
-{ 
-    f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(netStart).Milliseconds(), logtrace.FieldRole: "client"}
-    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-    logtrace.Info(ctx, "dht: batch retrieve summary", f)
-}
-        // Record batch retrieve stats for internal DHT snapshot window (network phase only)
-        s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(netStart))
-		// No per-task metrics collector updates
+	netFound := int(atomic.LoadInt32(&networkFound))
+	{
+		f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(netStart).Milliseconds(), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch retrieve summary", f)
+	}
+	// Record batch retrieve stats for internal DHT snapshot window (network phase only)
+	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(netStart))
+	// No per-task metrics collector updates
 
 	return result, nil
 }
@@ -942,7 +943,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				defer func() { <-semaphore }()
 			}
 
-				indices := fetchMap[nodeID]
+			indices := fetchMap[nodeID]
 			requestKeys := make(map[string]KeyValWithClosest)
 			for _, idx := range indices {
 				if idx < len(hexKeys) {
@@ -966,9 +967,9 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 					firstErr = err
 				}
 				mu.Unlock()
-					// per-node metrics removed; logs retained
-					return
-				}
+				// per-node metrics removed; logs retained
+				return
+			}
 
 			returned := 0
 			for k, v := range decompressedData {
@@ -988,9 +989,9 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 			}
 
-				// per-node metrics removed; logs retained
-			}(node, nodeID)
-		}
+			// per-node metrics removed; logs retained
+		}(node, nodeID)
+	}
 
 	wg.Wait()
 
@@ -1038,20 +1039,24 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 
 func (s *DHT) doBatchGetValuesCall(ctx context.Context, node *Node, requestKeys map[string]KeyValWithClosest) (map[string]KeyValWithClosest, error) {
 	request := s.newMessage(BatchGetValues, node, &BatchGetValuesRequest{Data: requestKeys})
-{
-    f := logtrace.Fields{"node": node.String(), "keys": len(requestKeys), logtrace.FieldRole: "client"}
-    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-    logtrace.Info(ctx, "dht: batch get send", f)
-}
+	{
+		f := logtrace.Fields{"node": node.String(), "keys": len(requestKeys), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch get send", f)
+	}
 	response, err := s.network.Call(ctx, request, false)
 	if err != nil {
 		return nil, fmt.Errorf("network call request %s failed: %w", request.String(), err)
 	}
-{
-    f := logtrace.Fields{"node": node.String(), logtrace.FieldRole: "client"}
-    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-    logtrace.Info(ctx, "dht: batch get ok", f)
-}
+	{
+		f := logtrace.Fields{"node": node.String(), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch get ok", f)
+	}
 
 	resp, ok := response.Data.(*BatchGetValuesResponse)
 	if !ok {
@@ -1659,11 +1664,13 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
 
-{
-    f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
-    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-    logtrace.Info(ctx, "dht: batch store start", f)
-}
+	{
+		f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch store start", f)
+	}
 	for i := 0; i < len(values); i++ {
 		target, _ := utils.Blake3Hash(values[i])
 		hashes[i] = target
@@ -1689,11 +1696,11 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	storeResponses := s.batchStoreNetwork(ctx, values, knownNodes, storageMap, typ)
 	for response := range storeResponses {
 		requests++
-			var nodeAddr string
+		var nodeAddr string
 		if response.Receiver != nil {
-				nodeAddr = response.Receiver.String()
+			nodeAddr = response.Receiver.String()
 		} else if response.Message != nil && response.Message.Sender != nil {
-				nodeAddr = response.Message.Sender.String()
+			nodeAddr = response.Message.Sender.String()
 		}
 
 		errMsg := ""
@@ -1724,7 +1731,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 			}
 		}
 
-			// per-node store metrics removed; logs retained
+		// per-node store metrics removed; logs retained
 
 	}
 
@@ -1797,11 +1804,13 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					totalBytes += len(values[idx])
 				}
 
-                {
-                    f := logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes), logtrace.FieldRole: "client"}
-                    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-                    logtrace.Info(ctx, "dht: batch store RPC send", f)
-                }
+				{
+					f := logtrace.Fields{logtrace.FieldModule: "dht", "node": receiver.String(), "keys": len(toStore), "size_mb": utils.BytesIntToMB(totalBytes), logtrace.FieldRole: "client"}
+					if o := logtrace.OriginFromContext(ctx); o != "" {
+						f[logtrace.FieldOrigin] = o
+					}
+					logtrace.Info(ctx, "dht: batch store RPC send", f)
+				}
 
 				// Skip empty payloads: avoid sending empty store RPCs and do not record no-op metrics.
 				if len(toStore) == 0 {
@@ -1827,11 +1836,13 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 					return
 				}
 
-                {
-                    f := logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur, logtrace.FieldRole: "client"}
-                    if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-                    logtrace.Info(ctx, "dht: batch store RPC ok", f)
-                }
+				{
+					f := logtrace.Fields{logtrace.FieldModule: "p2p", "node": receiver.String(), "keys": len(toStore), "ms": dur, logtrace.FieldRole: "client"}
+					if o := logtrace.OriginFromContext(ctx); o != "" {
+						f[logtrace.FieldOrigin] = o
+					}
+					logtrace.Info(ctx, "dht: batch store RPC ok", f)
+				}
 				responses <- &MessageWithError{Message: response, KeysCount: len(toStore), Receiver: receiver, DurationMS: dur}
 			}
 		}(node, key)

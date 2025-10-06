@@ -57,7 +57,6 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	symbolsDir := filepath.Join(rq.symbolsBaseDir, req.TaskID)
 	if err := os.MkdirAll(symbolsDir, 0o755); err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		os.Remove(req.Path)
 		return EncodeResponse{}, fmt.Errorf("mkdir %s: %w", symbolsDir, err)
 	}
 	logtrace.Debug(ctx, "RaptorQ processor encoding", fields)
@@ -65,12 +64,8 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	resp, err := processor.EncodeFile(req.Path, symbolsDir, blockSize)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		os.Remove(req.Path)
 		return EncodeResponse{}, fmt.Errorf("raptorq encode: %w", err)
 	}
-
-	/* we no longer need the temp file */
-	// _ = os.Remove(tmpPath)
 
 	/* ---------- 2.  read the layout JSON ---------- */
 	layoutData, err := os.ReadFile(resp.LayoutFilePath)
@@ -93,4 +88,65 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	}
 
 	return encodeResp, nil
+}
+
+// CreateMetadata builds only the layout metadata for the given file without generating symbols.
+func (rq *raptorQ) CreateMetadata(ctx context.Context, path string) (Layout, error) {
+	// Populate fields; include data-size by stat-ing the file to preserve existing log fields
+	fields := logtrace.Fields{
+		logtrace.FieldMethod: "CreateMetadata",
+		logtrace.FieldModule: "rq",
+		"path":               path,
+	}
+	if fi, err := os.Stat(path); err == nil {
+		fields["data-size"] = int(fi.Size())
+	}
+
+	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
+	if err != nil {
+		return Layout{}, fmt.Errorf("create RaptorQ processor: %w", err)
+	}
+	defer processor.Free()
+	logtrace.Debug(ctx, "RaptorQ processor created", fields)
+
+	// Deterministic: force single block
+	blockSize := rqBlockSize
+
+	// Prepare a temporary path for the generated layout file
+	base := rq.symbolsBaseDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	tmpDir, err := os.MkdirTemp(base, "rq_meta_*")
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return Layout{}, fmt.Errorf("mkdir temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	layoutPath := filepath.Join(tmpDir, "layout.json")
+
+	// Use rq-go's metadata-only creation; no symbols are produced here.
+	resp, err := processor.CreateMetadata(path, layoutPath, blockSize)
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return Layout{}, fmt.Errorf("raptorq create metadata: %w", err)
+	}
+
+	layoutData, err := os.ReadFile(resp.LayoutFilePath)
+	if err != nil {
+		fields[logtrace.FieldError] = err.Error()
+		return Layout{}, fmt.Errorf("read layout %s: %w", resp.LayoutFilePath, err)
+	}
+
+	var layout Layout
+	if err := json.Unmarshal(layoutData, &layout); err != nil {
+		return Layout{}, fmt.Errorf("unmarshal layout: %w", err)
+	}
+
+	// Enforce single-block output; abort if multiple blocks are produced
+	if n := len(layout.Blocks); n != 1 {
+		return Layout{}, fmt.Errorf("raptorq metadata produced %d blocks; single-block layout is required", n)
+	}
+
+	return layout, nil
 }

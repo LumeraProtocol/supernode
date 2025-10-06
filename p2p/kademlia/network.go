@@ -68,7 +68,6 @@ type Network struct {
 	sem         *semaphore.Weighted
 
 	metrics sync.Map
-
 }
 
 // NewNetwork returns a network service
@@ -406,15 +405,15 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			})
 			return
 		}
-        // stitch correlation + origin into context for downstream handler logs
-        if request != nil {
-            if s := strings.TrimSpace(request.CorrelationID); s != "" {
-                ctx = logtrace.CtxWithCorrelationID(ctx, s)
-            }
-            if o := strings.TrimSpace(request.Origin); o != "" {
-                ctx = logtrace.CtxWithOrigin(ctx, o)
-            }
-        }
+		// stitch correlation + origin into context for downstream handler logs
+		if request != nil {
+			if s := strings.TrimSpace(request.CorrelationID); s != "" {
+				ctx = logtrace.CtxWithCorrelationID(ctx, s)
+			}
+			if o := strings.TrimSpace(request.Origin); o != "" {
+				ctx = logtrace.CtxWithOrigin(ctx, o)
+			}
+		}
 
 		reqID := uuid.New().String()
 		mt := request.MessageType
@@ -597,17 +596,17 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	idStr := string(request.Receiver.ID)
 	remoteAddr := fmt.Sprintf("%s@%s:%d", idStr, strings.TrimSpace(request.Receiver.IP), request.Receiver.Port)
 	// Log raw RPC start (reduce noise: Info only for high-signal messages)
-    startFields := logtrace.Fields{
-        logtrace.FieldModule: "p2p",
-        "remote":             remoteAddr,
-        "message":            msgName(request.MessageType),
-        "timeout_ms":         int64(timeout / time.Millisecond),
-    }
-    // Tag role/origin for filtering
-    startFields[logtrace.FieldRole] = "client"
-    if o := logtrace.OriginFromContext(ctx); o != "" {
-        startFields[logtrace.FieldOrigin] = o
-    }
+	startFields := logtrace.Fields{
+		logtrace.FieldModule: "p2p",
+		"remote":             remoteAddr,
+		"message":            msgName(request.MessageType),
+		"timeout_ms":         int64(timeout / time.Millisecond),
+	}
+	// Tag role/origin for filtering
+	startFields[logtrace.FieldRole] = "client"
+	if o := logtrace.OriginFromContext(ctx); o != "" {
+		startFields[logtrace.FieldOrigin] = o
+	}
 	if isHighSignalMsg(request.MessageType) {
 		logtrace.Info(ctx, fmt.Sprintf("RPC %s start remote=%s timeout_ms=%d", msgName(request.MessageType), remoteAddr, int64(timeout/time.Millisecond)), startFields)
 	} else {
@@ -615,14 +614,14 @@ func (s *Network) Call(ctx context.Context, request *Message, isLong bool) (*Mes
 	}
 
 	// Attach correlation id only for high‑signal messages (store/retrieve batches)
-    if isHighSignalMsg(request.MessageType) {
-        if cid := logtrace.CorrelationIDFromContext(ctx); cid != "unknown" {
-            request.CorrelationID = cid
-        }
-        if o := logtrace.OriginFromContext(ctx); o != "" {
-            request.Origin = o
-        }
-    }
+	if isHighSignalMsg(request.MessageType) {
+		if cid := logtrace.CorrelationIDFromContext(ctx); cid != "unknown" {
+			request.CorrelationID = cid
+		}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			request.Origin = o
+		}
+	}
 
 	// try get from pool
 	s.connPoolMtx.Lock()
@@ -750,13 +749,15 @@ func (s *Network) rpcOnceWrapper(ctx context.Context, cw *connWrapper, remoteAdd
 			return nil, errors.Errorf("conn read: %w", e)
 		}
 		// Single-line completion for successful outbound RPC
-        if isHighSignalMsg(msgType) {
-            f := logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
-            if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-            logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), f)
-        } else {
-            logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"})
-        }
+		if isHighSignalMsg(msgType) {
+			f := logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+			if o := logtrace.OriginFromContext(ctx); o != "" {
+				f[logtrace.FieldOrigin] = o
+			}
+			logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), f)
+		} else {
+			logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"})
+		}
 		return r, nil
 	}
 }
@@ -842,13 +843,15 @@ Retry:
 		s.dropFromPool(remoteAddr, conn)
 		return nil, errors.Errorf("conn read: %w", err)
 	}
-    if isHighSignalMsg(msgType) {
-        f := logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
-        if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-        logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), f)
-    } else {
-        logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"})
-    }
+	if isHighSignalMsg(msgType) {
+		f := logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), f)
+	} else {
+		logtrace.Debug(ctx, fmt.Sprintf("RPC %s ok remote=%s ms=%d", msgName(msgType), remoteAddr, time.Since(start).Milliseconds()), logtrace.Fields{logtrace.FieldModule: "p2p", "remote": remoteAddr, "message": msgName(msgType), "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"})
+	}
 	return resp, nil
 }
 
@@ -950,17 +953,17 @@ func (s *Network) handleBatchFindValues(ctx context.Context, message *Message, r
 }
 
 func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, reqID string) (res []byte, err error) {
-    defer func() {
-        if response, err := s.handlePanic(ctx, message.Sender, BatchGetValues); response != nil || err != nil {
-            res = response
-        }
-    }()
+	defer func() {
+		if response, err := s.handlePanic(ctx, message.Sender, BatchGetValues); response != nil || err != nil {
+			res = response
+		}
+	}()
 
-    request, ok := message.Data.(*BatchGetValuesRequest)
-    if !ok {
-        err := errors.New("invalid BatchGetValuesRequest")
-        return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
-    }
+	request, ok := message.Data.(*BatchGetValuesRequest)
+	if !ok {
+		err := errors.New("invalid BatchGetValuesRequest")
+		return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
+	}
 
 	logtrace.Debug(ctx, "Batch get values request received", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
@@ -976,17 +979,19 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 		i++
 	}
 
-    values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, false)
-    if err != nil {
-        err = errors.Errorf("batch find values: %w", err)
-        return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
-    }
+	values, count, err := s.dht.store.RetrieveBatchValues(ctx, keys, false)
+	if err != nil {
+		err = errors.Errorf("batch find values: %w", err)
+		return s.generateResponseMessage(ctx, BatchGetValues, message.Sender, ResultFailed, err.Error())
+	}
 
-    {
-        f := logtrace.Fields{logtrace.FieldModule: "p2p", "requested-keys": len(keys), "found": count, "sender": message.Sender.String(), logtrace.FieldRole: "server"}
-        if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-        logtrace.Info(ctx, "network: batch get values ok", f)
-    }
+	{
+		f := logtrace.Fields{logtrace.FieldModule: "p2p", "requested-keys": len(keys), "found": count, "sender": message.Sender.String(), logtrace.FieldRole: "server"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "network: batch get values ok", f)
+	}
 
 	for i, key := range keys {
 		val := KeyValWithClosest{
@@ -1005,9 +1010,9 @@ func (s *Network) handleGetValuesRequest(ctx context.Context, message *Message, 
 	}
 
 	// new a response message
-    resMsg := s.dht.newMessage(BatchGetValues, message.Sender, response)
-    resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
-    return s.encodeMesage(resMsg)
+	resMsg := s.dht.newMessage(BatchGetValues, message.Sender, response)
+	resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
+	return s.encodeMesage(resMsg)
 }
 
 func (s *Network) handleBatchFindValuesRequest(ctx context.Context, req *BatchFindValuesRequest, ip string, reqID string) (isDone bool, compressedData []byte, err error) {
@@ -1178,32 +1183,34 @@ func findTopHeaviestKeys(dataMap map[string][]byte, size int) (int, []string) {
 }
 
 func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (res []byte, err error) {
-    defer func() {
-        if response, err := s.handlePanic(ctx, message.Sender, BatchStoreData); response != nil || err != nil {
-            res = response
-        }
-    }()
+	defer func() {
+		if response, err := s.handlePanic(ctx, message.Sender, BatchStoreData); response != nil || err != nil {
+			res = response
+		}
+	}()
 
-    request, ok := message.Data.(*BatchStoreDataRequest)
-    if !ok {
-        err := errors.New("invalid BatchStoreDataRequest")
-        return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
-    }
+	request, ok := message.Data.(*BatchStoreDataRequest)
+	if !ok {
+		err := errors.New("invalid BatchStoreDataRequest")
+		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
+	}
 
 	// log.P2P().WithContext(ctx).Info("handle batch store data request received")
-    {
-        f := logtrace.Fields{logtrace.FieldModule: "p2p", "sender": message.Sender.String(), "keys": len(request.Data), logtrace.FieldRole: "server"}
-        if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-        logtrace.Info(ctx, "network: batch store recv", f)
-    }
+	{
+		f := logtrace.Fields{logtrace.FieldModule: "p2p", "sender": message.Sender.String(), "keys": len(request.Data), logtrace.FieldRole: "server"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "network: batch store recv", f)
+	}
 
 	// add the sender to queries hash table
 	s.dht.addNode(ctx, message.Sender)
 
-    if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
-        err = errors.Errorf("batch store the data: %w", err)
-        return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
-    }
+	if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
+		err = errors.Errorf("batch store the data: %w", err)
+		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, err.Error())
+	}
 
 	response := &StoreDataResponse{
 		Status: ResponseStatus{
@@ -1211,16 +1218,18 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 		},
 	}
 	// log.P2P().WithContext(ctx).Info("handle batch store data request processed")
-    {
-        f := logtrace.Fields{logtrace.FieldModule: "p2p", "sender": message.Sender.String(), "keys": len(request.Data), logtrace.FieldRole: "server"}
-        if o := logtrace.OriginFromContext(ctx); o != "" { f[logtrace.FieldOrigin] = o }
-        logtrace.Info(ctx, "network: batch store ok", f)
-    }
+	{
+		f := logtrace.Fields{logtrace.FieldModule: "p2p", "sender": message.Sender.String(), "keys": len(request.Data), logtrace.FieldRole: "server"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "network: batch store ok", f)
+	}
 
 	// new a response message
-    resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)
-    resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
-    return s.encodeMesage(resMsg)
+	resMsg := s.dht.newMessage(BatchStoreData, message.Sender, response)
+	resMsg.CorrelationID = logtrace.CorrelationIDFromContext(ctx)
+	return s.encodeMesage(resMsg)
 }
 
 func (s *Network) handleBatchFindNode(ctx context.Context, message *Message) (res []byte, err error) {

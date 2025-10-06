@@ -48,7 +48,7 @@ type Client interface {
 	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error)
 	// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key; returns base64 signature.
 	GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error)
-	// GenerateDownloadSignature signs the payload "actionID.creatorAddress"; returns base64 signature.
+	// GenerateDownloadSignature signs the payload "actionID" and returns a base64 signature.
 	GenerateDownloadSignature(ctx context.Context, actionID, creatorAddr string) (string, error)
 }
 
@@ -239,8 +239,8 @@ func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir, s
 }
 
 // BuildCascadeMetadataFromFile produces Cascade metadata (including signatures) from a local file path.
-// It uses a temporary RaptorQ workspace, enforces single-block layout via the codec, and cleans up after.
-// BuildCascadeMetadataFromFile builds Cascade metadata, price and expiration from a file path.
+// It generates only the single-block RaptorQ layout metadata (no symbols), signs it,
+// and returns metadata, price and expiration.
 func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error) {
 	if filePath == "" {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("file path is empty")
@@ -254,19 +254,11 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("read file: %w", err)
 	}
 
-	// Create temp workspace for codec symbols; remove after
-	baseDir, err := os.MkdirTemp("", "rq_files_*")
+	// Build layout metadata only (no symbols). Supernodes will create symbols.
+	rq := codec.NewRaptorQCodec("")
+	layout, err := rq.CreateMetadata(ctx, filePath)
 	if err != nil {
-		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(baseDir)
-
-	rq := codec.NewRaptorQCodec(baseDir)
-	// Use a simple task ID with epoch to avoid collisions
-	taskID := fmt.Sprintf("sdk-%d", time.Now().UnixNano())
-	enc, err := rq.Encode(ctx, codec.EncodeRequest{TaskID: taskID, Path: filePath, DataSize: int(fi.Size())})
-	if err != nil {
-		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq encode: %w", err)
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq create metadata: %w", err)
 	}
 
 	// Derive `max` from chain params, then create signatures and index IDs
@@ -274,10 +266,10 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("get action params: %w", err)
 	}
-	// Use MaxDdAndFingerprints as the count for rq_ids generation (chain maps this to rq_ids_max for Cascade)
+	// Use MaxRaptorQSymbols as the count for rq_ids generation.
 	var max uint32
-	if paramsResp != nil && paramsResp.Params.MaxDdAndFingerprints > 0 {
-		max = uint32(paramsResp.Params.MaxDdAndFingerprints)
+	if paramsResp != nil && paramsResp.Params.MaxRaptorQSymbols > 0 {
+		max = uint32(paramsResp.Params.MaxRaptorQSymbols)
 	} else {
 		// Fallback to a sane default if params missing
 		max = 50
@@ -285,7 +277,7 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	// Pick a random initial counter in [1,100]
 	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
 	ic := uint32(rnd.Int64() + 1) // 1..100
-	signatures, _, err := cascadekit.CreateSignaturesWithKeyring(enc.Metadata, c.keyring, c.config.Account.KeyName, ic, max)
+	signatures, _, err := cascadekit.CreateSignaturesWithKeyring(layout, c.keyring, c.config.Account.KeyName, ic, max)
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create signatures: %w", err)
 	}

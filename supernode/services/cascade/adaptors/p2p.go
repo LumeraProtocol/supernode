@@ -38,8 +38,8 @@ type P2PService interface {
 
 // p2pImpl is the default implementation of the P2PService interface.
 type p2pImpl struct {
-	p2p             p2p.Client
-	rqStore         rqstore.Store
+	p2p     p2p.Client
+	rqStore rqstore.Store
 }
 
 // NewP2PService returns a concrete implementation of P2PService.

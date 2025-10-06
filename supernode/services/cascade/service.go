@@ -56,11 +56,11 @@ func (service *CascadeService) GetRunningTasks() []string {
 
 // NewCascadeService returns a new CascadeService instance
 func NewCascadeService(config *Config, lumera lumera.Client, p2pClient p2p.Client, codec codec.Codec, rqstore rqstore.Store) *CascadeService {
-    return &CascadeService{
-        config:           config,
-        SuperNodeService: base.NewSuperNodeService(p2pClient),
-        LumeraClient:     adaptors.NewLumeraClient(lumera),
-        P2P:              adaptors.NewP2PService(p2pClient, rqstore),
-        RQ:               adaptors.NewCodecService(codec),
-    }
+	return &CascadeService{
+		config:           config,
+		SuperNodeService: base.NewSuperNodeService(p2pClient),
+		LumeraClient:     adaptors.NewLumeraClient(lumera),
+		P2P:              adaptors.NewP2PService(p2pClient, rqstore),
+		RQ:               adaptors.NewCodecService(codec),
+	}
 }

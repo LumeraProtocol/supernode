@@ -26,12 +26,12 @@ type Client interface {
 	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)
 	DecodeCascadeMetadata(ctx context.Context, action Action) (actiontypes.CascadeMetadata, error)
 	VerifySignature(ctx context.Context, accountAddr string, data []byte, signature []byte) error
-    // GetBalance returns the bank balance for the given address and denom.
-    GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
-    // GetActionParams returns the action module parameters.
-    GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error)
-    // GetActionFee returns the fee amount for a given data size (in KB) for RequestAction.
-    GetActionFee(ctx context.Context, dataSizeKB string) (*actiontypes.QueryGetActionFeeResponse, error)
+	// GetBalance returns the bank balance for the given address and denom.
+	GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
+	// GetActionParams returns the action module parameters.
+	GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error)
+	// GetActionFee returns the fee amount for a given data size (in KB) for RequestAction.
+	GetActionFee(ctx context.Context, dataSizeKB string) (*actiontypes.QueryGetActionFeeResponse, error)
 }
 
 // SuperNodeInfo contains supernode information with latest address
@@ -224,20 +224,20 @@ func (a *Adapter) VerifySignature(ctx context.Context, accountAddr string, data,
 
 // GetActionParams fetches the action module parameters via the underlying lumera client.
 func (a *Adapter) GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error) {
-    resp, err := a.client.Action().GetParams(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("get action params: %w", err)
-    }
-    return resp, nil
+	resp, err := a.client.Action().GetParams(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get action params: %w", err)
+	}
+	return resp, nil
 }
 
 // GetActionFee fetches the action fee for a given data size (in KB).
 func (a *Adapter) GetActionFee(ctx context.Context, dataSizeKB string) (*actiontypes.QueryGetActionFeeResponse, error) {
-    resp, err := a.client.Action().GetActionFee(ctx, dataSizeKB)
-    if err != nil {
-        return nil, fmt.Errorf("get action fee: %w", err)
-    }
-    return resp, nil
+	resp, err := a.client.Action().GetActionFee(ctx, dataSizeKB)
+	if err != nil {
+		return nil, fmt.Errorf("get action fee: %w", err)
+	}
+	return resp, nil
 }
 
 // GetBalance fetches the balance for a given address and denom via the underlying lumera client.

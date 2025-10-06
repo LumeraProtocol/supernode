@@ -174,7 +174,7 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 		pbpm.Disk.UsedMb = pm.Disk.UsedMB
 		pbpm.Disk.FreeMb = pm.Disk.FreeMB
 
-    // Detailed recent per-request lists removed from API
+		// Detailed recent per-request lists removed from API
 
 		response.P2PMetrics = pbpm
 	}

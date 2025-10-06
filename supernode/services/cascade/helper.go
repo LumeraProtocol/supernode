@@ -1,25 +1,25 @@
 package cascade
 
 import (
-    "context"
-    "encoding/base64"
-    "fmt"
-    "strconv"
+	"context"
+	"encoding/base64"
+	"fmt"
+	"strconv"
 
-    "cosmossdk.io/math"
-    actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-    "github.com/LumeraProtocol/supernode/v2/pkg/codec"
-    "github.com/LumeraProtocol/supernode/v2/pkg/errors"
-    "github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-    "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-    "github.com/LumeraProtocol/supernode/v2/pkg/utils"
-    "github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
-    "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
+	"cosmossdk.io/math"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
+	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+	"github.com/LumeraProtocol/supernode/v2/supernode/services/cascade/adaptors"
 
-    sdk "github.com/cosmos/cosmos-sdk/types"
-    json "github.com/json-iterator/go"
-    "google.golang.org/grpc/codes"
-    "google.golang.org/grpc/status"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	json "github.com/json-iterator/go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // layout stats helpers removed to keep download metrics minimal.
@@ -74,11 +74,11 @@ func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID s
 }
 
 func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.Context, encoded string, creator string,
-    encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
+	encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
 
-    // Extract index file and creator signature from encoded data
-    // The signatures field contains: Base64(index_file).creators_signature
-    indexFileB64, creatorSig, err := cascadekit.ExtractIndexAndCreatorSig(encoded)
+	// Extract index file and creator signature from encoded data
+	// The signatures field contains: Base64(index_file).creators_signature
+	indexFileB64, creatorSig, err := cascadekit.ExtractIndexAndCreatorSig(encoded)
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract index file and creator signature", err, f)
 	}
@@ -94,8 +94,8 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	}
 	logtrace.Debug(ctx, "creator signature successfully verified", f)
 
-    // Decode index file to get the layout signature
-    indexFile, err := cascadekit.DecodeIndexB64(indexFileB64)
+	// Decode index file to get the layout signature
+	indexFile, err := cascadekit.DecodeIndexB64(indexFileB64)
 	if err != nil {
 		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode index file", err, f)
 	}
@@ -116,36 +116,36 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	}
 	logtrace.Debug(ctx, "layout signature successfully verified", f)
 
-    return encodedMeta, indexFile.LayoutSignature, nil
+	return encodedMeta, indexFile.LayoutSignature, nil
 }
 
 func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata,
-    sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
-    // The signatures field contains: Base64(index_file).creators_signature
-    // This full format will be used for ID generation to match chain expectations
+	sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
+	// The signatures field contains: Base64(index_file).creators_signature
+	// This full format will be used for ID generation to match chain expectations
 
-    // Generate layout files (redundant metadata files)
-    layoutRes, err := cascadekit.GenerateLayoutFiles(ctx, encodedMeta, sig, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
-    if err != nil {
-        return cascadekit.GenRQIdentifiersFilesResponse{},
-            task.wrapErr(ctx, "failed to generate layout files", err, f)
-    }
+	// Generate layout files (redundant metadata files)
+	layoutRes, err := cascadekit.GenerateLayoutFiles(ctx, encodedMeta, sig, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+	if err != nil {
+		return cascadekit.GenRQIdentifiersFilesResponse{},
+			task.wrapErr(ctx, "failed to generate layout files", err, f)
+	}
 
-    // Generate index files using full signatures format for ID generation (matches chain expectation)
-    indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(ctx, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
-    if err != nil {
-        return cascadekit.GenRQIdentifiersFilesResponse{},
-            task.wrapErr(ctx, "failed to generate index files", err, f)
-    }
+	// Generate index files using full signatures format for ID generation (matches chain expectation)
+	indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(ctx, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+	if err != nil {
+		return cascadekit.GenRQIdentifiersFilesResponse{},
+			task.wrapErr(ctx, "failed to generate index files", err, f)
+	}
 
-    // Store layout files and index files separately in P2P
-    allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
+	// Store layout files and index files separately in P2P
+	allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
 
-    // Return index IDs (sent to chain) and all files (stored in P2P)
-    return cascadekit.GenRQIdentifiersFilesResponse{
-        RQIDs:                  indexIDs,
-        RedundantMetadataFiles: allFiles,
-    }, nil
+	// Return index IDs (sent to chain) and all files (stored in P2P)
+	return cascadekit.GenRQIdentifiersFilesResponse{
+		RQIDs:                  indexIDs,
+		RedundantMetadataFiles: allFiles,
+	}, nil
 }
 
 // storeArtefacts persists cascade artefacts (ID files + RaptorQ symbols) via the
@@ -256,7 +256,8 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 
 //
 
-// VerifyDownloadSignature verifies the download signature for actionID.creatorAddress
+// VerifyDownloadSignature verifies a download signature where the signed payload
+// is actionID (creator address not included in the payload)
 func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context, actionID, signature string) error {
 	fields := logtrace.Fields{
 		logtrace.FieldActionID: actionID,
@@ -272,9 +273,9 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	creatorAddress := actionDetails.GetAction().Creator
 	fields["creator_address"] = creatorAddress
 
-    // Create the expected signature data: actionID (creator address not included in payload)
-    signatureData := fmt.Sprintf("%s", actionID)
-    fields["signature_data"] = signatureData
+	// Create the expected signature data: actionID (creator address not included in payload)
+	signatureData := fmt.Sprintf("%s", actionID)
+	fields["signature_data"] = signatureData
 
 	// Decode the base64 signature
 	signatureBytes, err := base64.StdEncoding.DecodeString(signature)

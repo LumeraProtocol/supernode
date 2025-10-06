@@ -60,12 +60,12 @@ type NetworkInfo struct {
 
 // P2PMetrics mirrors the proto P2P metrics for status API
 type P2PMetrics struct {
-    DhtMetrics              DhtMetrics
-    NetworkHandleMetrics    map[string]HandleCounters
-    ConnPoolMetrics         map[string]int64
-    BanList                 []BanEntry
-    Database                DatabaseStats
-    Disk                    DiskStatus
+	DhtMetrics           DhtMetrics
+	NetworkHandleMetrics map[string]HandleCounters
+	ConnPoolMetrics      map[string]int64
+	BanList              []BanEntry
+	Database             DatabaseStats
+	Disk                 DiskStatus
 }
 
 type StoreSuccessPoint struct {

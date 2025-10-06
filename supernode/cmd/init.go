@@ -618,7 +618,6 @@ func promptNetworkConfig(passedAddrs string, passedPort int, passedGRPC, passedC
 		return "", 0, "", "", fmt.Errorf("invalid supernode port: %s", portStr)
 	}
 
-
 	// Lumera GRPC address (full address with port)
 	lumeraPrompt := &survey.Input{
 		Message: "Enter Lumera GRPC address:",
