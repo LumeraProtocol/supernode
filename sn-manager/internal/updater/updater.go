@@ -34,8 +34,6 @@ type AutoUpdater struct {
 	managerVersion string
 }
 
-// Use protobuf JSON decoding for gateway responses (int64s encoded as strings)
-
 func New(homeDir string, cfg *config.Config, managerVersion string) *AutoUpdater {
 	return &AutoUpdater{
 		config:         cfg,
@@ -118,39 +116,38 @@ func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	return false
 }
 
-// isGatewayIdle returns (idle, isError). When isError is true,
-// the gateway could not be reliably checked (network/error/invalid).
-// When isError is false and idle is false, the gateway is busy.
-
 // checkAndUpdateCombined performs a single release check and, if needed,
 // downloads the release tarball once to update sn-manager and SuperNode.
 // Order: update sn-manager first (prepare new binary), then SuperNode, then
 // trigger restart if manager was updated.
 // ForceSyncToLatest performs a one-shot forced sync to the latest stable
-// release, bypassing standard gating checks (gateway idle, same-major policy).
+// release, bypassing standard gating checks (same-major policy applies when not forced).
 // Intended for mandatory checks at manager start.
-func (u *AutoUpdater) ForceSyncToLatest(_ context.Context) {
-	u.checkAndUpdateCombined(true)
+// ForceSyncToLatest returns true if the manager binary was updated.
+func (u *AutoUpdater) ForceSyncToLatest(_ context.Context) bool {
+	return u.checkAndUpdateCombined(true)
 }
 
 // checkAndUpdateCombined performs a single release check and, if needed,
 // downloads the release tarball once to update sn-manager and SuperNode.
-// If force is true, bypass gateway idleness and version policy checks.
-func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
+// If force is true, bypass normal version policy checks.
+// checkAndUpdateCombined performs one check + update cycle.
+// Returns true if the sn-manager binary itself was updated.
+func (u *AutoUpdater) checkAndUpdateCombined(force bool) bool {
 
 	// Fetch latest stable release once
 	release, err := u.githubClient.GetLatestStableRelease()
 	if err != nil {
 		log.Printf("Failed to check releases: %v", err)
-		return
+		return false
 	}
 
 	latest := strings.TrimSpace(release.TagName)
 	if latest == "" {
-		return
+		return false
 	}
 
-	// If the latest release has been out for > 4 hours, elevate to force mode
+	// If the latest release has been out long enough, elevate to force mode
 	if !force {
 		if !release.PublishedAt.IsZero() && time.Since(release.PublishedAt) > forceUpdateAfter {
 			force = true
@@ -180,26 +177,26 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	}
 
 	if !managerNeedsUpdate && !supernodeNeedsUpdate {
-		return
+		return false
 	}
 
 	// Download the combined release tarball once
 	tarURL, err := u.githubClient.GetReleaseTarballURL(latest)
 	if err != nil {
 		log.Printf("Failed to get tarball URL: %v", err)
-		return
+		return false
 	}
 	// Ensure downloads directory exists
 	downloadsDir := filepath.Join(u.homeDir, "downloads")
 	if err := os.MkdirAll(downloadsDir, 0755); err != nil {
 		log.Printf("Failed to create downloads directory: %v", err)
-		return
+		return false
 	}
 
 	tarPath := filepath.Join(downloadsDir, fmt.Sprintf("release-%s.tar.gz", latest))
 	if err := utils.DownloadFile(tarURL, tarPath, nil); err != nil {
 		log.Printf("Failed to download tarball: %v", err)
-		return
+		return false
 	}
 	defer func() {
 		if err := os.Remove(tarPath); err != nil && !os.IsNotExist(err) {
@@ -211,7 +208,7 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	exePath, err := os.Executable()
 	if err != nil {
 		log.Printf("Cannot determine executable path: %v", err)
-		return
+		return false
 	}
 	exePath, _ = filepath.EvalSymlinks(exePath)
 	tmpManager := exePath + ".new"
@@ -229,7 +226,7 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	found, err := utils.ExtractMultipleFromTarGz(tarPath, targets)
 	if err != nil {
 		log.Printf("Extraction error: %v", err)
-		return
+		return false
 	}
 
 	extractedManager := managerNeedsUpdate && found["sn-manager"]
@@ -255,7 +252,7 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
-	// Apply SuperNode update (idle already verified) and extracted
+	// Apply SuperNode update and extracted
 	if supernodeNeedsUpdate {
 		if extractedSN {
 			if err := u.versionMgr.InstallVersion(latest, tmpSN); err != nil {
@@ -282,16 +279,18 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
-	// If manager updated, restart service after completing all work
+	// If manager updated: for forced path, let caller re-exec; for periodic path, self-exit
 	if managerUpdated {
+		if force {
+			return true
+		}
 		log.Printf("Self-update applied, restarting service...")
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			os.Exit(3)
 		}()
 	}
+	return managerUpdated
 }
 
-// handleGatewayError increments an error counter in a rolling 5-minute window
-// and when the threshold is reached, requests a clean SuperNode restart by
-// writing the standard restart marker consumed by the manager monitor.
+// gateway error handling removed; updates are unconditional per policy

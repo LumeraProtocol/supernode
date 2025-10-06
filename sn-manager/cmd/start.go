@@ -122,15 +122,26 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Mandatory version sync on startup: ensure both sn-manager and SuperNode
-	// are at the latest stable release. This bypasses regular updater checks
-	// (gateway idleness, same-major policy) to guarantee a consistent baseline.
-	// Runs once before monitoring begins.
+	// are at the latest stable release. If the manager binary was updated,
+	// re-exec the updated binary before proceeding, so SuperNode starts only
+	// under the updated manager and the shell does not return unexpectedly.
+	u := updater.New(home, cfg, appVersion)
+	// Best-effort: ignore panics from update code
+	var managerUpdated bool
 	func() {
-		u := updater.New(home, cfg, appVersion)
-		// Do not block startup on failures; best-effort sync
-		defer func() { recover() }()
-		u.ForceSyncToLatest(context.Background())
+		defer func() { _ = recover() }()
+		managerUpdated = u.ForceSyncToLatest(context.Background())
 	}()
+	if managerUpdated {
+		if exePath, err := os.Executable(); err == nil {
+			if exeReal, err := filepath.EvalSymlinks(exePath); err == nil {
+				log.Printf("Re-execing updated sn-manager...")
+				return syscall.Exec(exeReal, os.Args, os.Environ())
+			}
+		}
+		// If re-exec fails, continue with current process
+		log.Printf("Warning: failed to re-exec updated sn-manager; continuing")
+	}
 
 	// Start auto-updater if enabled
 	var autoUpdater *updater.AutoUpdater
