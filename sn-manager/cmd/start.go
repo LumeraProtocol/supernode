@@ -171,7 +171,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 
 	case err := <-monitorDone:
-		// Monitor exited unexpectedly
+		// Monitor exited; ensure SuperNode is stopped as manager exits
+		if autoUpdater != nil {
+			autoUpdater.Stop()
+		}
+		if mgr.IsRunning() {
+			if stopErr := mgr.Stop(); stopErr != nil {
+				log.Printf("Failed to stop supernode: %v", stopErr)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("monitor error: %w", err)
 		}

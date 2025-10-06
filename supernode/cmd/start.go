@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -150,25 +148,6 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}
 
-		// Start profiling server on testnet only
-		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
-
-		if isTestnet && os.Getenv("INTEGRATION_TEST") != "true" {
-			profilingAddr := "0.0.0.0:8082"
-
-			logtrace.Debug(ctx, "Starting profiling server", logtrace.Fields{
-				"address":    profilingAddr,
-				"chain_id":   appConfig.LumeraClientConfig.ChainID,
-				"is_testnet": isTestnet,
-			})
-
-			go func() {
-				if err := http.ListenAndServe(profilingAddr, nil); err != nil {
-					logtrace.Error(ctx, "Profiling server error", logtrace.Fields{"error": err.Error()})
-				}
-			}()
-		}
-
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() { servicesErr <- RunServices(ctx, grpcServer, cService, p2pService, gatewayServer) }()
@@ -176,6 +155,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(sigCh)
 
 		// Wait for either a termination signal or service exit
 		var triggeredBySignal bool
@@ -195,20 +175,24 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Cancel context to signal all services
 		cancel()
 
-		// Stop HTTP gateway and gRPC servers gracefully
+		// Stop HTTP gateway and gRPC servers without blocking shutdown
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		if err := gatewayServer.Stop(shutdownCtx); err != nil {
-			logtrace.Warn(ctx, "Gateway shutdown warning", logtrace.Fields{"error": err.Error()})
-		}
+		go func() {
+			if err := gatewayServer.Stop(shutdownCtx); err != nil {
+				logtrace.Warn(ctx, "Gateway shutdown warning", logtrace.Fields{"error": err.Error()})
+			}
+		}()
 		grpcServer.Close()
 
-		// Close Lumera client (preserve original log messages)
+		// Close Lumera client without blocking shutdown
 		logtrace.Debug(ctx, "Closing Lumera client", logtrace.Fields{})
-		if err := lumeraClient.Close(); err != nil {
-			logtrace.Error(ctx, "Error closing Lumera client", logtrace.Fields{"error": err.Error()})
-		}
+		go func() {
+			if err := lumeraClient.Close(); err != nil {
+				logtrace.Error(ctx, "Error closing Lumera client", logtrace.Fields{"error": err.Error()})
+			}
+		}()
 
 		// If we triggered shutdown by signal, wait for services to drain
 		if triggeredBySignal {

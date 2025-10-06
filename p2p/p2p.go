@@ -55,6 +55,13 @@ func (s *p2p) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// Ensure cleanup even if inner run() never started
+			if s.dht != nil {
+				s.dht.Stop(ctx)
+			}
+			if s.store != nil {
+				s.store.Close(ctx)
+			}
 			return nil
 		case <-time.After(5 * time.Second):
 			if err := s.run(ctx); err != nil {
