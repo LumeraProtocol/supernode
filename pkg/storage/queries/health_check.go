@@ -98,10 +98,10 @@ func (s *SQLiteStore) GetHCSummaryStats(from time.Time) (hcMetrics metrics.HCMet
 	if err != nil {
 		return hcMetrics, err
 	}
-	logtrace.Info(context.Background(), "observer evaluations retrieved", logtrace.Fields{"observer_evaluations": len(hcObserversEvaluations), "from": from})
+	logtrace.Debug(context.Background(), "observer evaluations retrieved", logtrace.Fields{"observer_evaluations": len(hcObserversEvaluations), "from": from})
 
 	observerEvaluationMetrics := processHCObserverEvaluations(hcObserversEvaluations)
-	logtrace.Info(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{"observer_evaluation_metrics": len(observerEvaluationMetrics), "from": from})
+	logtrace.Debug(context.Background(), "observer evaluation metrics retrieved", logtrace.Fields{"observer_evaluation_metrics": len(observerEvaluationMetrics), "from": from})
 
 	for _, obMetrics := range observerEvaluationMetrics {
 		if obMetrics.ChallengesVerified >= 3 {
@@ -154,7 +154,7 @@ func (s *SQLiteStore) GetMetricsDataByHealthCheckChallengeID(ctx context.Context
 	if err != nil {
 		return healthCheckChallengeMessages, err
 	}
-	logtrace.Info(ctx, "health-check-challenge metrics row count", logtrace.Fields{"rows": len(hcMetrics), "challenge_id": challengeID})
+	logtrace.Debug(ctx, "health-check-challenge metrics row count", logtrace.Fields{"rows": len(hcMetrics), "challenge_id": challengeID})
 
 	for _, hcMetric := range hcMetrics {
 		msg := types.HealthCheckMessageData{}

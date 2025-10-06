@@ -312,7 +312,7 @@ Auto-update checks run every 10 minutes when enabled.
 
 ## Version Update Scenarios
 
-The auto-updater follows stable-only, same-major update rules and defers updates while the gateway is busy. Summary:
+The auto-updater follows stable-only, same-major update rules. Summary:
 
 | Current | Available | Auto-Upgrade Enabled | Auto Updates? | Manual Option |
 |---|---|---|---|---|
@@ -323,13 +323,12 @@ The auto-updater follows stable-only, same-major update rules and defers updates
 | v1.7.4 | v1.7.4 (stable) | Yes | ❌ | — |
 | v1.7.5 | v1.7.4 (stable) | Yes | ❌ | — |
 | Any | Any | No | ❌ | `sn-manager get [version] && sn-manager use [version]` |
-| Any | Any | Yes, but gateway busy | ❌ (deferred) | Manual allowed |
+| Any | Any | — | — | — |
 
 Mechanics and notes:
 - Stable-only: auto-updater targets latest stable GitHub release (non-draft, non-prerelease).
 - Same-major only: SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
-- Gateway-aware: updates are applied only when the gateway reports no running tasks; otherwise they are deferred.
-- Gateway errors: repeated check failures over a 5-minute window request a clean SuperNode restart (no version change) to recover.
+- Unconditional updates: no gateway/task check; when an update is available under policy, it is applied.
 - Combined tarball: when updating, sn-manager downloads a single tarball once, then updates itself first (if eligible), then installs/activates the new SuperNode version.
 - Config is updated to reflect the new `updates.current_version` after a successful SuperNode update.
 - Manual installs: you can always override with `sn-manager get <version>` and `sn-manager use <version>`; pre-releases are supported manually.
@@ -341,7 +340,7 @@ sn-manager start and supernode start clear the stop marker; supernode stop sets 
 | Action | Manager | SuperNode | Marker | systemd (unit uses `Restart=on-failure`) |
 |---|---|---|---|---|
 | `sn-manager start` | Starts manager ✅ | Starts if no stop marker ✅ | Clears `.stop_requested` if present | Start via `systemctl start sn-manager` when running under systemd |
-| `sn-manager stop` | Stops manager ✅ | Stops (graceful, then forced if needed) ✅ | — | Will NOT be restarted by systemd (clean exit) ❌ |
+| `sn-manager stop` | Stops manager ✅ | Stops (tied to manager; SIGTERM on manager exit) ✅ | — | Will NOT be restarted by systemd (clean exit) ❌ |
 | `sn-manager status` | Reads PID | Reports running/not and versions | — | — |
 | `sn-manager supernode start` | Stays running | Starts SuperNode ✅ | Removes `.stop_requested` | — |
 | `sn-manager supernode stop` | Stays running | Stops SuperNode ✅ | Writes `.stop_requested` | — |
@@ -351,7 +350,7 @@ sn-manager start and supernode start clear the stop marker; supernode stop sets 
 Notes:
 - Clean exit vs. systemd: If systemd started sn-manager and you run `sn-manager stop`, the manager exits cleanly. With `Restart=on-failure`, systemd does not restart it. Use `systemctl start sn-manager` (or `systemctl restart sn-manager`) to run it again. If you want automatic restarts after clean exits, change the unit to `Restart=always` (not generally recommended as it fights the `stop` intent).
 - Stop marker: `.stop_requested` prevents automatic SuperNode restarts by the manager until cleared. `sn-manager supernode start` clears it; `sn-manager start` also clears it on launch.
-- PID files: Manager writes `~/.sn-manager/sn-manager.pid`; SuperNode writes `~/.sn-manager/supernode.pid`. Stale PID files are detected and cleaned up.
+- Process lifetime: On Linux, SuperNode receives SIGTERM automatically if sn-manager exits (crash, kill, or stop). This guarantees SuperNode never outlives sn-manager.
 
 ## Migration for Existing sn-manager Users
 

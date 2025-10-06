@@ -46,7 +46,7 @@ func (m *module) Verify(ctx context.Context, accAddress string, data, signature 
 		return fmt.Errorf("invalid address: %w", err)
 	}
 
-	logtrace.Info(ctx, "Verifying signature", logtrace.Fields{"address": addr.String()})
+	logtrace.Debug(ctx, "Verifying signature", logtrace.Fields{"address": addr.String()})
 
 	// Use Account RPC instead of AccountInfo to get the full account with public key
 	accResp, err := m.client.Account(ctx, &authtypes.QueryAccountRequest{
@@ -66,7 +66,7 @@ func (m *module) Verify(ctx context.Context, accAddress string, data, signature 
 	if pubKey == nil {
 		return fmt.Errorf("public key is nil")
 	}
-	logtrace.Info(ctx, "Public key retrieved", logtrace.Fields{"pubKey": pubKey.String()})
+	logtrace.Debug(ctx, "Public key retrieved", logtrace.Fields{"pubKey": pubKey.String()})
 	if !pubKey.VerifySignature(data, signature) {
 		return fmt.Errorf("invalid signature")
 	}

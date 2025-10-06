@@ -32,21 +32,21 @@ func SaveConfig(config *Config, filename string) error {
 
 // CreateDefaultConfig creates a default configuration with the specified values
 func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyringDir string, passPlain, passEnv, passFile string) *Config {
-	// Set default values
 	if keyringBackend == "" {
-		keyringBackend = "test"
+		keyringBackend = DefaultKeyringBackend
 	}
 	if keyringDir == "" {
-		keyringDir = "keys"
+		keyringDir = DefaultKeyringDir
+	}
+	if keyName == "" {
+		keyName = DefaultKeyName
+	}
+	if chainID == "" {
+		chainID = DefaultChainID
 	}
 
 	return &Config{
-		SupernodeConfig: SupernodeConfig{
-			KeyName:  keyName,
-			Identity: identity,
-			Host:     "0.0.0.0",
-			Port:     4444,
-		},
+		SupernodeConfig: SupernodeConfig{KeyName: keyName, Identity: identity, Host: DefaultSupernodeHost, Port: DefaultSupernodePort},
 		KeyringConfig: KeyringConfig{
 			Backend:   keyringBackend,
 			Dir:       keyringDir,
@@ -54,16 +54,8 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			PassEnv:   passEnv,
 			PassFile:  passFile,
 		},
-		P2PConfig: P2PConfig{
-			Port:    4445,
-			DataDir: "data/p2p",
-		},
-		LumeraClientConfig: LumeraClientConfig{
-			GRPCAddr: "localhost:9090",
-			ChainID:  chainID,
-		},
-		RaptorQConfig: RaptorQConfig{
-			FilesDir: "raptorq_files",
-		},
+		P2PConfig:          P2PConfig{Port: DefaultP2PPort, DataDir: "data/p2p"},
+		LumeraClientConfig: LumeraClientConfig{GRPCAddr: DefaultLumeraGRPC, ChainID: chainID},
+		RaptorQConfig:      RaptorQConfig{FilesDir: DefaultRaptorQFilesDir},
 	}
 }

@@ -102,7 +102,7 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 		})
 	}
 	s.options.BootstrapNodes = nodes
-	logtrace.Info(ctx, "Bootstrap nodes set from config var", logtrace.Fields{
+	logtrace.Debug(ctx, "Bootstrap nodes set from config var", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"bootstrap_nodes":    nodes,
 	})

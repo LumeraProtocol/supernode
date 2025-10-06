@@ -64,7 +64,7 @@ func (s *p2p) Run(ctx context.Context) error {
 
 				logtrace.Error(ctx, "failed to run kadmelia, retrying.", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			} else {
-				logtrace.Info(ctx, "kadmelia started successfully", logtrace.Fields{logtrace.FieldModule: "p2p"})
+				logtrace.Debug(ctx, "kadmelia started successfully", logtrace.Fields{logtrace.FieldModule: "p2p"})
 				return nil
 			}
 		}
@@ -74,7 +74,7 @@ func (s *p2p) Run(ctx context.Context) error {
 // run the kademlia network
 func (s *p2p) run(ctx context.Context) error {
 
-	logtrace.Info(ctx, "Running  kademlia network", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, "Running  kademlia network", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	// configure the kademlia dht for p2p service
 	if err := s.configure(ctx); err != nil {
 		return errors.Errorf("configure kademlia dht: %w", err)
@@ -95,7 +95,7 @@ func (s *p2p) run(ctx context.Context) error {
 	}
 	s.running = true
 
-	logtrace.Info(ctx, "p2p service is started", logtrace.Fields{})
+	logtrace.Debug(ctx, "p2p service is started", logtrace.Fields{})
 
 	// block until context is done
 	<-ctx.Done()
@@ -103,7 +103,7 @@ func (s *p2p) run(ctx context.Context) error {
 	// stop the node for kademlia network
 	s.dht.Stop(ctx)
 
-	logtrace.Info(ctx, "p2p service is stopped", logtrace.Fields{})
+	logtrace.Debug(ctx, "p2p service is stopped", logtrace.Fields{})
 	return nil
 }
 

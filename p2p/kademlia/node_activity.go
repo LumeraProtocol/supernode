@@ -25,7 +25,7 @@ func (s *DHT) checkNodeActivity(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if !utils.CheckInternetConnectivity() {
-				logtrace.Info(ctx, "no internet connectivity, not checking node activity", logtrace.Fields{})
+				logtrace.Debug(ctx, "no internet connectivity, not checking node activity", logtrace.Fields{})
 				continue
 			}
 
@@ -115,7 +115,7 @@ func (s *DHT) handlePingSuccess(ctx context.Context, wasActive bool, n *Node) {
 	s.ignorelist.Delete(n)
 
 	if !wasActive {
-		logtrace.Info(ctx, "node found to be active again", logtrace.Fields{
+		logtrace.Debug(ctx, "node found to be active again", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"ip":                 n.IP,
 			"node_id":            string(n.ID),

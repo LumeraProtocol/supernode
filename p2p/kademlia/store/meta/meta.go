@@ -67,7 +67,7 @@ func NewStore(ctx context.Context, dataDir string) (*Store, error) {
 		quit:     make(chan bool),
 	}
 
-	logtrace.Info(ctx, fmt.Sprintf("p2p data dir: %v", dataDir), logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, fmt.Sprintf("p2p data dir: %v", dataDir), logtrace.Fields{logtrace.FieldModule: "p2p"})
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dataDir, 0750); err != nil {
 			return nil, fmt.Errorf("mkdir %q: %w", dataDir, err)
@@ -185,10 +185,10 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			logtrace.Info(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
+			logtrace.Debug(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
 			return
 		case <-s.worker.quit:
-			logtrace.Info(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
+			logtrace.Debug(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
 			return
 		default:
 		}
@@ -204,10 +204,10 @@ func (s *Store) start(ctx context.Context) {
 				logtrace.Error(ctx, "Failed to perform job", logtrace.Fields{logtrace.FieldError: err})
 			}
 		case <-s.worker.quit:
-			logtrace.Info(ctx, "exit sqlite meta db worker - quit signal received", logtrace.Fields{})
+			logtrace.Debug(ctx, "exit sqlite meta db worker - quit signal received", logtrace.Fields{})
 			return
 		case <-ctx.Done():
-			logtrace.Info(ctx, "exit sqlite meta db worker- ctx done signal received", logtrace.Fields{})
+			logtrace.Debug(ctx, "exit sqlite meta db worker- ctx done signal received", logtrace.Fields{})
 			return
 		}
 	}

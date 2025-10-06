@@ -20,13 +20,6 @@ func (c *CLI) GetSupernodeStatus() error {
 	fmt.Printf("   Memory: %.2fGB used / %.2fGB total (%.2f%%)\n",
 		resp.Resources.Memory.UsedGB, resp.Resources.Memory.TotalGB, resp.Resources.Memory.UsagePercent)
 
-	if len(resp.RunningTasks) > 0 {
-		fmt.Println("   Running Tasks:")
-		for _, service := range resp.RunningTasks {
-			fmt.Printf("   - %s (Tasks: %d)\n", service.ServiceName, service.TaskCount)
-		}
-	}
-
 	if len(resp.RegisteredServices) > 0 {
 		fmt.Println("   Registered Services:")
 		for _, svc := range resp.RegisteredServices {

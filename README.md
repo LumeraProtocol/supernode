@@ -54,19 +54,12 @@ message StatusResponse {
     string hardware_summary = 4;  // Formatted hardware summary (e.g., "8 cores / 32GB RAM")
   }
   
-  message ServiceTasks {
-    string service_name = 1;
-    repeated string task_ids = 2;
-    int32 task_count = 3;
-  }
-  
   message Network {
     int32 peers_count = 1;               // Number of connected peers in P2P network
     repeated string peer_addresses = 2;  // List of connected peer addresses (format: "ID@IP:Port")
   }
   
   Resources resources = 3;
-  repeated ServiceTasks running_tasks = 4;  // Services with currently running tasks
   repeated string registered_services = 5;   // All registered/available services
   Network network = 6;                      // P2P network information
   int32 rank = 7;                           // Rank in the top supernodes list (0 if not in top list)

@@ -3,10 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud"
@@ -14,18 +18,22 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	grpcserver "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
-	"github.com/LumeraProtocol/supernode/v2/supernode/node/action/server/cascade"
-	"github.com/LumeraProtocol/supernode/v2/supernode/node/supernode/gateway"
-	"github.com/LumeraProtocol/supernode/v2/supernode/node/supernode/server"
-	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/services/cascade"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/common"
-	supernodeService "github.com/LumeraProtocol/supernode/v2/supernode/services/common/supernode"
-	"github.com/LumeraProtocol/supernode/v2/supernode/services/verifier"
+	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
+	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
+	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
+	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
+	"github.com/LumeraProtocol/supernode/v2/supernode/verifier"
 
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
+
+	pbcascade "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+
+	pbsupernode "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 )
 
 // startCmd represents the start command
@@ -40,10 +48,13 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Create context with correlation ID for tracing
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")
+		// Make the context cancelable for graceful shutdown
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 
 		// Log configuration info
 		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
-		logtrace.Info(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
+		logtrace.Debug(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
 		// Initialize keyring
 		kr, err := initKeyringFromConfig(appConfig)
@@ -58,7 +69,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Verify config matches chain registration before starting services
-		logtrace.Info(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
+		logtrace.Debug(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
 		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
 		verificationResult, err := configVerifier.VerifyConfig(ctx)
 		if err != nil {
@@ -73,7 +84,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Warn(ctx, "Config verification warnings", logtrace.Fields{"summary": verificationResult.Summary()})
 		}
 
-		logtrace.Info(ctx, "Configuration verification successful", logtrace.Fields{})
+		logtrace.Debug(ctx, "Configuration verification successful", logtrace.Fields{})
+
+		// Set Datadog host to identity and service to latest IP address from chain
+		logtrace.SetDatadogHost(appConfig.SupernodeConfig.Identity)
+		if snInfo, err := lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, appConfig.SupernodeConfig.Identity); err == nil && snInfo != nil {
+			if ip := strings.TrimSpace(snInfo.LatestAddress); ip != "" {
+				logtrace.SetDatadogService(ip)
+			}
+		}
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
@@ -87,48 +106,40 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
 		}
 
-		// Initialize the supernode
-		supernodeInstance, err := NewSupernode(ctx, appConfig, kr, p2pService, rqStore, lumeraClient)
-		if err != nil {
-			logtrace.Fatal(ctx, "Failed to initialize supernode", logtrace.Fields{"error": err.Error()})
-		}
+		// Supernode wrapper removed; components are managed directly
 
 		// Configure cascade service
 		cService := cascadeService.NewCascadeService(
-			&cascadeService.Config{
-				Config: common.Config{
-					SupernodeAccountAddress: appConfig.SupernodeConfig.Identity,
-				},
-				RqFilesDir: appConfig.GetRaptorQFilesDir(),
-			},
+			&cascadeService.Config{SupernodeAccountAddress: appConfig.SupernodeConfig.Identity, RqFilesDir: appConfig.GetRaptorQFilesDir()},
 			lumeraClient,
-			*p2pService,
+			p2pService,
 			codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
 			rqStore,
 		)
 
 		// Create cascade action server
-		cascadeActionServer := cascade.NewCascadeActionServer(cService)
+		cascadeActionServer := cascadeRPC.NewCascadeActionServer(cService)
 
 		// Set the version in the status service package
-		supernodeService.Version = Version
+		statusService.Version = Version
 
 		// Create supernode status service
-		statusService := supernodeService.NewSupernodeStatusService(*p2pService, lumeraClient, appConfig)
-		statusService.RegisterTaskProvider(cService)
+		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig)
 
 		// Create supernode server
-		supernodeServer := server.NewSupernodeServer(statusService)
+		supernodeServer := server.NewSupernodeServer(statusSvc)
 
-		// Configure server
-		serverConfig := &server.Config{
-			Identity:        appConfig.SupernodeConfig.Identity,
-			ListenAddresses: appConfig.SupernodeConfig.Host,
-			Port:            int(appConfig.SupernodeConfig.Port),
-		}
-
-		// Create gRPC server
-		grpcServer, err := server.New(serverConfig, "service", kr, lumeraClient, cascadeActionServer, supernodeServer)
+		// Create gRPC server (explicit args, no config struct)
+		grpcServer, err := server.New(
+			appConfig.SupernodeConfig.Identity,
+			appConfig.SupernodeConfig.Host,
+			int(appConfig.SupernodeConfig.Port),
+			"service",
+			kr,
+			lumeraClient,
+			grpcserver.ServiceDesc{Desc: &pbcascade.CascadeService_ServiceDesc, Service: cascadeActionServer},
+			grpcserver.ServiceDesc{Desc: &pbsupernode.SupernodeService_ServiceDesc, Service: supernodeServer},
+		)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
 		}
@@ -139,24 +150,71 @@ The supernode will connect to the Lumera network and begin participating in the 
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}
 
-		// Start the services
-		go func() {
-			if err := RunServices(ctx, grpcServer, cService, *p2pService, gatewayServer); err != nil {
-				logtrace.Error(ctx, "Service error", logtrace.Fields{"error": err.Error()})
-			}
-		}()
+		// Start profiling server on testnet only
+		isTestnet := strings.Contains(strings.ToLower(appConfig.LumeraClientConfig.ChainID), "testnet")
+
+		if isTestnet && os.Getenv("INTEGRATION_TEST") != "true" {
+			profilingAddr := "0.0.0.0:8082"
+
+			logtrace.Debug(ctx, "Starting profiling server", logtrace.Fields{
+				"address":    profilingAddr,
+				"chain_id":   appConfig.LumeraClientConfig.ChainID,
+				"is_testnet": isTestnet,
+			})
+
+			go func() {
+				if err := http.ListenAndServe(profilingAddr, nil); err != nil {
+					logtrace.Error(ctx, "Profiling server error", logtrace.Fields{"error": err.Error()})
+				}
+			}()
+		}
+
+		// Start the services using the standard runner and capture exit
+		servicesErr := make(chan error, 1)
+		go func() { servicesErr <- RunServices(ctx, grpcServer, cService, p2pService, gatewayServer) }()
 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-		// Wait for termination signal
-		sig := <-sigCh
-		logtrace.Info(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
+		// Wait for either a termination signal or service exit
+		var triggeredBySignal bool
+		var runErr error
+		select {
+		case sig := <-sigCh:
+			triggeredBySignal = true
+			logtrace.Debug(ctx, "Received signal, shutting down", logtrace.Fields{"signal": sig.String()})
+		case runErr = <-servicesErr:
+			if runErr != nil {
+				logtrace.Error(ctx, "Service error", logtrace.Fields{"error": runErr.Error()})
+			} else {
+				logtrace.Debug(ctx, "Services exited", logtrace.Fields{})
+			}
+		}
 
-		// Graceful shutdown
-		if err := supernodeInstance.Stop(ctx); err != nil {
-			logtrace.Error(ctx, "Error during shutdown", logtrace.Fields{"error": err.Error()})
+		// Cancel context to signal all services
+		cancel()
+
+		// Stop HTTP gateway and gRPC servers gracefully
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		if err := gatewayServer.Stop(shutdownCtx); err != nil {
+			logtrace.Warn(ctx, "Gateway shutdown warning", logtrace.Fields{"error": err.Error()})
+		}
+		grpcServer.Close()
+
+		// Close Lumera client (preserve original log messages)
+		logtrace.Debug(ctx, "Closing Lumera client", logtrace.Fields{})
+		if err := lumeraClient.Close(); err != nil {
+			logtrace.Error(ctx, "Error closing Lumera client", logtrace.Fields{"error": err.Error()})
+		}
+
+		// If we triggered shutdown by signal, wait for services to drain
+		if triggeredBySignal {
+			if err := <-servicesErr; err != nil {
+				logtrace.Error(ctx, "Service error on shutdown", logtrace.Fields{"error": err.Error()})
+			}
 		}
 
 		return nil
@@ -168,7 +226,7 @@ func init() {
 }
 
 // initP2PService initializes the P2P service
-func initP2PService(ctx context.Context, config *config.Config, lumeraClient lumera.Client, kr cKeyring.Keyring, rqStore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (*p2p.P2P, error) {
+func initP2PService(ctx context.Context, config *config.Config, lumeraClient lumera.Client, kr cKeyring.Keyring, rqStore rqstore.Store, cloud cloud.Storage, mst *sqlite.MigrationMetaStore) (p2p.P2P, error) {
 	// Get the supernode address from the keyring
 	keyInfo, err := kr.Key(config.SupernodeConfig.KeyName)
 	if err != nil {
@@ -182,12 +240,51 @@ func initP2PService(ctx context.Context, config *config.Config, lumeraClient lum
 	// Create P2P config using helper function
 	p2pConfig := createP2PConfig(config, address.String())
 
-	logtrace.Info(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
+	logtrace.Debug(ctx, "Initializing P2P service", logtrace.Fields{"address": p2pConfig.ListenAddress, "port": p2pConfig.Port, "data_dir": p2pConfig.DataDir, "supernode_id": address.String()})
 
 	p2pService, err := p2p.New(ctx, p2pConfig, lumeraClient, kr, rqStore, cloud, mst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize p2p service: %w", err)
 	}
 
-	return &p2pService, nil
+	return p2pService, nil
+}
+
+// initLumeraClient initializes the Lumera client based on configuration
+func initLumeraClient(ctx context.Context, config *config.Config, kr cKeyring.Keyring) (lumera.Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
+	lumeraConfig, err := lumera.NewConfig(config.LumeraClientConfig.GRPCAddr, config.LumeraClientConfig.ChainID, config.SupernodeConfig.KeyName, kr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Lumera config: %w", err)
+	}
+	return lumera.NewClient(
+		ctx,
+		lumeraConfig,
+	)
+}
+
+// initRQStore initializes the RaptorQ store for Cascade processing
+func initRQStore(ctx context.Context, config *config.Config) (rqstore.Store, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
+	// Create RaptorQ store directory if it doesn't exist
+	rqDir := config.GetRaptorQFilesDir() + "/rq"
+	if err := os.MkdirAll(rqDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create RQ store directory: %w", err)
+	}
+
+	// Create the SQLite file path
+	rqStoreFile := rqDir + "/rqstore.db"
+
+	logtrace.Debug(ctx, "Initializing RaptorQ store", logtrace.Fields{
+		"file_path": rqStoreFile,
+	})
+
+	// Initialize RaptorQ store with SQLite
+	return rqstore.NewSQLiteRQStore(rqStoreFile)
 }

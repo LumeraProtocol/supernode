@@ -14,8 +14,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"os"
-
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
@@ -99,7 +97,8 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 			firstConn = r.conn
 			firstCand = r.cand
 			winnerIndex = i
-			// Do not break yet; continue receiving to close any late winners.
+			// Cancel other attempts immediately; continue to drain results to avoid leaks.
+			cancelAll()
 			continue
 		}
 		// Close any non-winning connection to avoid leaks.
@@ -116,24 +115,29 @@ func newGRPCConnection(ctx context.Context, rawAddr string) (Connection, error) 
 		if firstErr == nil {
 			firstErr = fmt.Errorf("all connection attempts failed")
 		}
-		return nil, firstErr
+		// Summarize attempted targets to help with diagnostics.
+		var attempts []string
+		for _, c := range cands {
+			scheme := "plaintext"
+			if c.useTLS {
+				scheme = "tls"
+			}
+			attempts = append(attempts, fmt.Sprintf("%s (%s)", c.target, scheme))
+		}
+		return nil, fmt.Errorf("failed to connect to any Lumera endpoint; attempted: %s; last error: %v", strings.Join(attempts, ", "), firstErr)
 	}
 
-	// Cancel remaining attempts; return the winner.
-	cancelAll()
+	// Remaining attempts were already canceled once we had a winner.
 
 	// Info log showing final selected target and scheme
 	scheme := "plaintext"
 	if firstCand.useTLS {
 		scheme = "tls"
 	}
-	logtrace.Info(ctx, "gRPC connection established", logtrace.Fields{
+	logtrace.Debug(ctx, "gRPC connection established", logtrace.Fields{
 		"target": firstCand.target,
 		"scheme": scheme,
 	})
-
-	// Start a monitor to terminate the app if connection is lost
-	go monitorConnection(ctx, firstConn)
 
 	return &grpcConnection{conn: firstConn}, nil
 }
@@ -262,43 +266,11 @@ func createGRPCConnection(ctx context.Context, hostPort string, creds credential
 		case connectivity.Shutdown:
 			conn.Close()
 			return nil, fmt.Errorf("grpc connection is shutdown")
-		case connectivity.TransientFailure:
-			conn.Close()
-			return nil, fmt.Errorf("grpc connection is in transient failure")
 		default:
-			// Idle or Connecting: wait for a state change or timeout
+			// For Idle, Connecting, and TransientFailure, wait for state change or timeout
 			if !conn.WaitForStateChange(ctx, state) {
 				conn.Close()
 				return nil, fmt.Errorf("timeout waiting for grpc connection readiness")
-			}
-		}
-	}
-}
-
-// monitorConnection watches the connection state and exits the process if the
-// connection transitions to Shutdown or remains in TransientFailure beyond a grace period.
-func monitorConnection(ctx context.Context, conn *grpc.ClientConn) {
-	for {
-		state := conn.GetState()
-		switch state {
-		case connectivity.Shutdown:
-			logtrace.Error(ctx, "gRPC connection shutdown", logtrace.Fields{"action": "exit"})
-			os.Exit(1)
-		case connectivity.TransientFailure:
-			// Allow some time to recover to Ready
-			gctx, cancel := context.WithTimeout(ctx, reconnectionGracePeriod)
-			for conn.GetState() == connectivity.TransientFailure {
-				if !conn.WaitForStateChange(gctx, connectivity.TransientFailure) {
-					cancel()
-					logtrace.Error(ctx, "gRPC connection lost (transient failure)", logtrace.Fields{"grace": reconnectionGracePeriod.String(), "action": "exit"})
-					os.Exit(1)
-				}
-			}
-			cancel()
-		default:
-			// Idle/Connecting/Ready: just wait for state change
-			if !conn.WaitForStateChange(ctx, state) {
-				return
 			}
 		}
 	}

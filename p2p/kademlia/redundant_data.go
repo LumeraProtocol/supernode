@@ -13,7 +13,7 @@ import (
 )
 
 func (s *DHT) startDisabledKeysCleanupWorker(ctx context.Context) error {
-	logtrace.Info(ctx, "disabled keys cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, "disabled keys cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
@@ -50,7 +50,7 @@ func (s *DHT) cleanupDisabledKeys(ctx context.Context) error {
 }
 
 func (s *DHT) startCleanupRedundantDataWorker(ctx context.Context) {
-	logtrace.Info(ctx, "redundant data cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, "redundant data cleanup worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {
@@ -66,7 +66,7 @@ func (s *DHT) startCleanupRedundantDataWorker(ctx context.Context) {
 func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	from := time.Now().AddDate(-5, 0, 0) // 5 years ago
 
-	logtrace.Info(ctx, "getting all possible replication keys past five years", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
+	logtrace.Debug(ctx, "getting all possible replication keys past five years", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
 	to := time.Now().UTC()
 	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
 
@@ -88,7 +88,7 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	removeKeys := make([]domain.DelKey, 0)
 	for key, closestContacts := range closestContactsMap {
 		if len(closestContacts) < Alpha {
-			logtrace.Info(ctx, "not enough contacts to replicate", logtrace.Fields{logtrace.FieldModule: "p2p", "key": key, "closest contacts": closestContacts})
+			logtrace.Debug(ctx, "not enough contacts to replicate", logtrace.Fields{logtrace.FieldModule: "p2p", "key": key, "closest contacts": closestContacts})
 			continue
 		}
 
@@ -118,9 +118,9 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 			return
 		}
 
-		logtrace.Info(ctx, "insert del keys success", logtrace.Fields{logtrace.FieldModule: "p2p", "count-del-keys": len(insertKeys)})
+		logtrace.Debug(ctx, "insert del keys success", logtrace.Fields{logtrace.FieldModule: "p2p", "count-del-keys": len(insertKeys)})
 	} else {
-		logtrace.Info(ctx, "No redundant key found to be stored in the storage", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		logtrace.Debug(ctx, "No redundant key found to be stored in the storage", logtrace.Fields{logtrace.FieldModule: "p2p"})
 	}
 
 	if len(removeKeys) > 0 {
@@ -133,7 +133,7 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 }
 
 func (s *DHT) startDeleteDataWorker(ctx context.Context) {
-	logtrace.Info(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+	logtrace.Debug(ctx, "start delete data worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
 	for {
 		select {

@@ -92,13 +92,13 @@ func (task *task) RunAction(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			logtrace.Info(ctx, "context done", logtrace.Fields{"task_id": task.ID()})
+			logtrace.Debug(ctx, "context done", logtrace.Fields{"task_id": task.ID()})
 		case <-task.Done():
-			logtrace.Info(ctx, "task done", logtrace.Fields{"task_id": task.ID()})
+			logtrace.Debug(ctx, "task done", logtrace.Fields{"task_id": task.ID()})
 			cancel()
 		case action, ok := <-task.actionCh:
 			if !ok {
-				logtrace.Info(ctx, "action channel closed", logtrace.Fields{"task_id": task.ID()})
+				logtrace.Debug(ctx, "action channel closed", logtrace.Fields{"task_id": task.ID()})
 				return group.Wait()
 			}
 

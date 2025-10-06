@@ -1,5 +1,5 @@
 .PHONY: build build-release build-sncli build-sn-manager
-.PHONY: install-lumera setup-supernodes system-test-setup 
+.PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
 
@@ -11,7 +11,9 @@ BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 # Linker flags for version information
 LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERSION) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=$(GIT_COMMIT) \
-          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME)
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME) \
+          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=$(DD_API_KEY) \
+          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE)
 
 # Linker flags for sn-manager
 SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
@@ -96,7 +98,7 @@ gen-supernode:
 		--grpc-gateway_out=gen \
 		--grpc-gateway_opt=paths=source_relative \
 		--openapiv2_out=gen \
-		proto/supernode/supernode.proto
+		proto/supernode/service.proto proto/supernode/status.proto
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
@@ -140,7 +142,7 @@ test-e2e:
 # Run cascade e2e tests only
 test-cascade:
 	@echo "Running cascade e2e tests..."
-	@cd tests/system && go test -tags=system_test -v -run TestCascadeE2E .
+	@cd tests/system && go mod tidy && go test -tags=system_test -v -run TestCascadeE2E .
 
 # Run sn-manager e2e tests only
 test-sn-manager:

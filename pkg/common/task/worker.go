@@ -91,7 +91,7 @@ func (worker *Worker) Run(ctx context.Context) error {
 						logtrace.Error(ctx, "Recovered from panic in common task's worker run", logtrace.Fields{"task": currentTask.ID(), "error": r})
 					}
 
-					logtrace.Info(ctx, "Task Removed", logtrace.Fields{"task": currentTask.ID()})
+					logtrace.Debug(ctx, "Task Removed", logtrace.Fields{"task": currentTask.ID()})
 					// Remove the task from the worker's task list
 					worker.RemoveTask(currentTask)
 				}()

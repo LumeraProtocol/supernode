@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -48,6 +47,18 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 
 // SimulateTransaction simulates a transaction with given messages and returns gas used
 func (m *module) SimulateTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, config *TxConfig) (*sdktx.SimulateResponse, error) {
+	if config == nil {
+		return nil, fmt.Errorf("tx config cannot be nil")
+	}
+	if accountInfo == nil {
+		return nil, fmt.Errorf("account info cannot be nil")
+	}
+	if config.Keyring == nil {
+		return nil, fmt.Errorf("keyring cannot be nil")
+	}
+	if config.KeyName == "" {
+		return nil, fmt.Errorf("key name cannot be empty")
+	}
 	// Create encoding config and client context
 	encCfg := lumeracodec.GetEncodingConfig()
 	clientCtx := client.Context{}.
@@ -103,12 +114,24 @@ func (m *module) SimulateTransaction(ctx context.Context, msgs []types.Msg, acco
 		return nil, fmt.Errorf("simulation error: %w", err)
 	}
 
-	logtrace.Info(ctx, fmt.Sprintf("simulation complete | gasUsed=%d", simRes.GasInfo.GasUsed), nil)
+	logtrace.Debug(ctx, fmt.Sprintf("simulation complete | gasUsed=%d", simRes.GasInfo.GasUsed), nil)
 	return simRes, nil
 }
 
 // BuildAndSignTransaction builds and signs a transaction with the given parameters
 func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount, gasLimit uint64, fee string, config *TxConfig) ([]byte, error) {
+	if config == nil {
+		return nil, fmt.Errorf("tx config cannot be nil")
+	}
+	if accountInfo == nil {
+		return nil, fmt.Errorf("account info cannot be nil")
+	}
+	if config.Keyring == nil {
+		return nil, fmt.Errorf("keyring cannot be nil")
+	}
+	if config.KeyName == "" {
+		return nil, fmt.Errorf("key name cannot be empty")
+	}
 	// Create encoding config
 	encCfg := lumeracodec.GetEncodingConfig()
 
@@ -116,10 +139,9 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 	clientCtx := client.Context{}.
 		WithCodec(encCfg.Codec).
 		WithTxConfig(encCfg.TxConfig).
-		WithKeyring(config.Keyring).
-		WithBroadcastMode("sync")
+		WithKeyring(config.Keyring)
 
-	// Create transaction factory
+		// Create transaction factory
 	factory := tx.Factory{}.
 		WithTxConfig(clientCtx.TxConfig).
 		WithKeybase(config.Keyring).
@@ -127,7 +149,6 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		WithSequence(accountInfo.Sequence).
 		WithChainID(config.ChainID).
 		WithGas(gasLimit).
-		WithGasAdjustment(config.GasAdjustment).
 		WithSignMode(signingtypes.SignMode_SIGN_MODE_DIRECT).
 		WithFees(fee)
 
@@ -143,7 +164,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	logtrace.Info(ctx, "transaction signed successfully", nil)
+	logtrace.Debug(ctx, "transaction signed successfully", nil)
 
 	// Encode signed transaction
 	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
@@ -157,10 +178,7 @@ func (m *module) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, 
 // BroadcastTransaction broadcasts a signed transaction and returns the result
 func (m *module) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdktx.BroadcastTxResponse, error) {
 	// Broadcast transaction
-	req := &sdktx.BroadcastTxRequest{
-		TxBytes: txBytes,
-		Mode:    sdktx.BroadcastMode_BROADCAST_MODE_SYNC,
-	}
+	req := &sdktx.BroadcastTxRequest{TxBytes: txBytes, Mode: sdktx.BroadcastMode_BROADCAST_MODE_SYNC}
 
 	resp, err := m.client.BroadcastTx(ctx, req)
 
@@ -273,7 +291,7 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	// Step 3: Calculate fee based on adjusted gas
 	fee := m.CalculateFee(gasToUse, config)
 
-	logtrace.Info(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d adjustedGas=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
+	logtrace.Debug(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d gasToUse=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
 
 	// Step 4: Build and sign transaction
 	txBytes, err := m.BuildAndSignTransaction(ctx, msgs, accountInfo, gasToUse, fee, config)
@@ -281,36 +299,10 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 		return nil, fmt.Errorf("failed to build and sign transaction: %w", err)
 	}
 
-	// Step 5: Broadcast transaction
+	// Step 5: Broadcast transaction (SYNC mode)
 	result, err := m.BroadcastTransaction(ctx, txBytes)
 	if err != nil {
 		return result, fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	if result != nil && result.TxResponse != nil && result.TxResponse.Code == 0 && len(result.TxResponse.Events) == 0 {
-		logtrace.Info(ctx, "Transaction broadcast successful, waiting for inclusion to get events...", nil)
-
-		// Retry 5 times with 1 second intervals
-		var txResp *sdktx.GetTxResponse
-		for i := 0; i < 5; i++ {
-			time.Sleep(1 * time.Second)
-
-			txResp, err = m.GetTransaction(ctx, result.TxResponse.TxHash)
-			if err == nil && txResp != nil && txResp.TxResponse != nil {
-				// Successfully got the transaction with events
-				logtrace.Info(ctx, fmt.Sprintf("Retrieved transaction with %d events", len(txResp.TxResponse.Events)), nil)
-				result.TxResponse = txResp.TxResponse
-				break
-			}
-
-			if err != nil {
-				logtrace.Warn(ctx, fmt.Sprintf("Attempt %d: failed to query transaction: %v", i+1, err), nil)
-			}
-		}
-	}
-
-	if len(result.TxResponse.Events) == 0 {
-		logtrace.Error(ctx, "Failed to retrieve transaction events after 5 attempts", nil)
 	}
 
 	return result, nil

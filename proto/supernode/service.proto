@@ -1,0 +1,34 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
+
+import "supernode/status.proto";
+import "google/api/annotations.proto";
+
+// SupernodeService provides status information for all services
+service SupernodeService {
+  rpc GetStatus(StatusRequest) returns (StatusResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/status"
+    };
+  }
+  
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/services"
+    };
+  }
+}
+
+message ListServicesRequest {}
+
+message ListServicesResponse {
+  repeated ServiceInfo services = 1;
+  int32 count = 2;
+}
+
+message ServiceInfo {
+  string name = 1;
+  repeated string methods = 2;
+}
+
