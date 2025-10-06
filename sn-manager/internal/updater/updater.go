@@ -345,6 +345,10 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	// If manager updated, restart service after completing all work
 	if managerUpdated {
 		log.Printf("Self-update applied, restarting service...")
+		// Prevent monitor from (re)starting SuperNode during manager restart
+		if stopPath := filepath.Join(u.homeDir, manager.StopMarkerFile); stopPath != "" {
+			_ = os.WriteFile(stopPath, []byte("manager-update"), 0644)
+		}
 		// Attempt to gracefully stop SuperNode before exiting
 		if m, err := manager.New(u.homeDir); err == nil {
 			if m.IsRunning() {
