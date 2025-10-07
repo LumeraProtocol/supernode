@@ -2,7 +2,9 @@
 supernode:
   key_name: "mykey"  # Account name for the supernode in keyring
   identity: "lumera1ccmw5plzuldntum2rz6kq6uq346vtrhrvwfzsa"  # Identity of the supernode, lumera address
+  # You can set either 'host' (preferred) or 'ip_address' (legacy alias).
   host: "0.0.0.0"
+  # ip_address: "0.0.0.0"
   port: 4444
 
 # Keyring Configuration
