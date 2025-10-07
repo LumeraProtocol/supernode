@@ -12,9 +12,18 @@ import (
 const (
 	// ManagerHomeDir is the constant home directory for sn-manager
 	ManagerHomeDir = ".sn-manager"
-	// GitHubRepo is the constant GitHub repository for supernode
-	GitHubRepo = "LumeraProtocol/supernode"
+	// defaultGitHubRepo is the default GitHub repository for supernode
+	defaultGitHubRepo = "LumeraProtocol/supernode"
 )
+
+// GitHubRepo is the GitHub repository for supernode and can be overridden via
+// the SNM_GITHUB_REPO environment variable.
+var GitHubRepo = func() string {
+	if v := os.Getenv("SNM_GITHUB_REPO"); v != "" {
+		return v
+	}
+	return defaultGitHubRepo
+}()
 
 // Config represents the sn-manager configuration
 type Config struct {
@@ -81,7 +90,3 @@ func Save(cfg *Config, path string) error {
 
 	return nil
 }
-
-// Validate checks if the configuration is valid
-// Validate is kept for compatibility; no-op since interval was removed.
-func (c *Config) Validate() error { return nil }

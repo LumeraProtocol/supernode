@@ -1,7 +1,8 @@
-.PHONY: build build-release build-sncli build-sn-manager
+.PHONY: build build-sncli build-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
+.PHONY: release
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -22,11 +23,8 @@ SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
 
 build:
 	@mkdir -p release
-	CGO_ENABLED=1 \
-	GOOS=linux \
-	GOARCH=amd64 \
-	echo "Building supernode..."
-	go build \
+	@echo "Building supernode..."
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
 		-o release/supernode-linux-amd64 \
@@ -148,3 +146,30 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && go test -tags=system_test -v -run '^TestSNManager' .
+
+
+
+# Release command: push branch, tag, and push tag with auto-increment - this is for testing only (including releases) setup a new remote upstream or rename the script
+release:
+	@echo "Getting current branch..."
+	$(eval CURRENT_BRANCH := $(shell git branch --show-current))
+	@echo "Current branch: $(CURRENT_BRANCH)"
+	
+	@echo "Getting latest tag..."
+	$(eval LATEST_TAG := $(shell git tag -l "v*" | sort -V | tail -n1))
+	$(eval NEXT_TAG := $(shell \
+		if [ -z "$(LATEST_TAG)" ]; then \
+			echo "v2.5.0"; \
+		else \
+			echo "$(LATEST_TAG)" | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}'; \
+		fi))
+	@echo "Next tag: $(NEXT_TAG)"
+	
+	@echo "Pushing branch to upstream..."
+	git push upstream $(CURRENT_BRANCH) -f
+	
+	@echo "Creating and pushing tag $(NEXT_TAG)..."
+	git tag $(NEXT_TAG)
+	git push upstream $(NEXT_TAG)
+	
+	@echo "Release complete: $(NEXT_TAG) pushed to upstream"
