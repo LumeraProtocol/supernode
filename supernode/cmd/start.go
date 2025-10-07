@@ -143,7 +143,13 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		// Create HTTP gateway server that directly calls the supernode server
-		gatewayServer, err := gateway.NewServer(appConfig.SupernodeConfig.Host, int(appConfig.SupernodeConfig.GatewayPort), supernodeServer)
+		// Pass chain ID for pprof configuration
+		gatewayServer, err := gateway.NewServerWithConfig(
+			appConfig.SupernodeConfig.Host,
+			int(appConfig.SupernodeConfig.GatewayPort),
+			supernodeServer,
+			appConfig.LumeraClientConfig.ChainID,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to create gateway server: %w", err)
 		}

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
@@ -23,6 +26,8 @@ type Server struct {
 	port            int
 	server          *http.Server
 	supernodeServer pb.SupernodeServiceServer
+	chainID         string
+	pprofEnabled    bool
 }
 
 // NewServer creates a new HTTP gateway server that directly calls the service
@@ -41,6 +46,29 @@ func NewServer(ipAddress string, port int, supernodeServer pb.SupernodeServiceSe
 		ipAddress:       ipAddress,
 		port:            port,
 		supernodeServer: supernodeServer,
+	}, nil
+}
+
+// NewServerWithConfig creates a new HTTP gateway server with additional configuration
+func NewServerWithConfig(ipAddress string, port int, supernodeServer pb.SupernodeServiceServer, chainID string) (*Server, error) {
+	if supernodeServer == nil {
+		return nil, fmt.Errorf("supernode server is required")
+	}
+
+	// Use default port if not specified
+	if port == 0 {
+		port = DefaultGatewayPort
+	}
+
+	// Determine if pprof should be enabled
+	pprofEnabled := strings.Contains(strings.ToLower(chainID), "testnet") || os.Getenv("ENABLE_PPROF") == "true"
+
+	return &Server{
+		ipAddress:       ipAddress,
+		port:            port,
+		supernodeServer: supernodeServer,
+		chainID:         chainID,
+		pprofEnabled:    pprofEnabled,
 	}, nil
 }
 
@@ -69,6 +97,28 @@ func (s *Server) Run(ctx context.Context) error {
 	// Register Swagger endpoints
 	httpMux.HandleFunc("/swagger.json", s.serveSwaggerJSON)
 	httpMux.HandleFunc("/swagger-ui/", s.serveSwaggerUI)
+
+	// Register pprof endpoints (only on testnet)
+	if s.pprofEnabled {
+		httpMux.HandleFunc("/debug/pprof/", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/cmdline", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/profile", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/symbol", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/trace", s.pprofHandler)
+		// Register specific pprof profiles
+		httpMux.HandleFunc("/debug/pprof/allocs", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/block", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/goroutine", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/heap", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/mutex", s.pprofHandler)
+		httpMux.HandleFunc("/debug/pprof/threadcreate", s.pprofHandler)
+
+		logtrace.Debug(ctx, "Pprof endpoints enabled on gateway", logtrace.Fields{
+			"chain_id": s.chainID,
+			"port":     s.port,
+		})
+	}
+
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/swagger-ui/", http.StatusFound)
@@ -87,8 +137,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	logtrace.Debug(ctx, "Starting HTTP gateway server", logtrace.Fields{
-		"address": s.ipAddress,
-		"port":    s.port,
+		"address":       s.ipAddress,
+		"port":          s.port,
+		"pprof_enabled": s.pprofEnabled,
 	})
 
 	// Start server
@@ -123,4 +174,20 @@ func (s *Server) corsMiddleware(h http.Handler) http.Handler {
 
 		h.ServeHTTP(w, r)
 	})
+}
+
+// pprofHandler proxies requests to the pprof handlers
+func (s *Server) pprofHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if pprof is enabled
+	if !s.pprofEnabled {
+		http.Error(w, "Profiling is not enabled", http.StatusForbidden)
+		return
+	}
+
+	// Get the default pprof handler and serve
+	if handler, pattern := http.DefaultServeMux.Handler(r); pattern != "" {
+		handler.ServeHTTP(w, r)
+	} else {
+		http.NotFound(w, r)
+	}
 }
