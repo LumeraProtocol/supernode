@@ -28,10 +28,10 @@ import (
 
 const (
 	defaultConnRate                    = 1000
-	defaultMaxPayloadSize              = 200 // MB
+	defaultMaxPayloadSize              = 400 // MB
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
-	defaultExecTimeout                 = 10 * time.Second
+	defaultExecTimeout                 = 15 * time.Second
 )
 
 // Global map for message type timeouts
