@@ -104,7 +104,17 @@ func (task *CascadeRegistrationTask) Register(
 	if err != nil {
 		return err
 	}
+
+	// Calculate combined size of all index and layout files
+	totalSize := 0
+	for _, file := range rqidResp.RedundantMetadataFiles {
+		totalSize += len(file)
+	}
+
 	fields["id_files_count"] = len(rqidResp.RedundantMetadataFiles)
+	fields["combined_files_size_bytes"] = totalSize
+	fields["combined_files_size_kb"] = float64(totalSize) / 1024
+	fields["combined_files_size_mb"] = float64(totalSize) / (1024 * 1024)
 	logtrace.Info(ctx, "register: rqid files generated", fields)
 	task.streamEvent(SupernodeEventTypeRQIDsGenerated, "RQID files generated", "", send)
 
