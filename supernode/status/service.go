@@ -32,6 +32,14 @@ func NewSupernodeStatusService(p2pService p2p.Client, lumeraClient lumera.Client
 	return &SupernodeStatusService{metrics: NewMetricsCollector(), storagePaths: []string{"/"}, startTime: time.Now(), p2pService: p2pService, lumeraClient: lumeraClient, config: cfg}
 }
 
+// GetChainID returns the chain ID from the configuration
+func (s *SupernodeStatusService) GetChainID() string {
+	if s.config != nil {
+		return s.config.LumeraClientConfig.ChainID
+	}
+	return ""
+}
+
 // GetStatus returns the current system status including optional P2P info
 func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetrics bool) (*pb.StatusResponse, error) {
 	fields := logtrace.Fields{logtrace.FieldMethod: "GetStatus", logtrace.FieldModule: "SupernodeStatusService"}

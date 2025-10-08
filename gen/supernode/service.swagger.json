@@ -16,6 +16,253 @@
     "application/json"
   ],
   "paths": {
+    "/api/v1/debug/pprof": {
+      "get": {
+        "summary": "Profiling endpoints",
+        "operationId": "SupernodeService_GetPprofIndex",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofIndexResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/allocs": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofAllocs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/block": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofBlock",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/goroutine": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofGoroutine",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/heap": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofHeap",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/mutex": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofMutex",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/profile": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofProfile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "seconds",
+            "description": "Duration in seconds (optional, default 30)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/pprof/threadcreate": {
+      "get": {
+        "operationId": "SupernodeService_GetPprofThreadcreate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeGetPprofProfileResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (optional, default 1)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
     "/api/v1/services": {
       "get": {
         "operationId": "SupernodeService_ListServices",
@@ -416,6 +663,41 @@
             "type": "object",
             "$ref": "#/definitions/protobufAny"
           }
+        }
+      }
+    },
+    "supernodeGetPprofIndexResponse": {
+      "type": "object",
+      "properties": {
+        "html": {
+          "type": "string",
+          "title": "HTML content for the pprof index page"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "Whether profiling is enabled"
+        }
+      }
+    },
+    "supernodeGetPprofProfileResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte",
+          "title": "Profile data (binary pprof format)"
+        },
+        "contentType": {
+          "type": "string",
+          "title": "Content type of the response"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "Whether profiling is enabled"
+        },
+        "error": {
+          "type": "string",
+          "title": "Error message if profiling is disabled"
         }
       }
     },

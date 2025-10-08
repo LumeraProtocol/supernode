@@ -12,10 +12,59 @@ service SupernodeService {
       get: "/api/v1/status"
     };
   }
-  
+
   rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
     option (google.api.http) = {
       get: "/api/v1/services"
+    };
+  }
+
+  // Profiling endpoints
+  rpc GetPprofIndex(GetPprofIndexRequest) returns (GetPprofIndexResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof"
+    };
+  }
+
+  rpc GetPprofHeap(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/heap"
+    };
+  }
+
+  rpc GetPprofGoroutine(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/goroutine"
+    };
+  }
+
+  rpc GetPprofAllocs(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/allocs"
+    };
+  }
+
+  rpc GetPprofBlock(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/block"
+    };
+  }
+
+  rpc GetPprofMutex(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/mutex"
+    };
+  }
+
+  rpc GetPprofThreadcreate(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/threadcreate"
+    };
+  }
+
+  rpc GetPprofProfile(GetPprofCpuProfileRequest) returns (GetPprofProfileResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/pprof/profile"
     };
   }
 }
@@ -30,5 +79,28 @@ message ListServicesResponse {
 message ServiceInfo {
   string name = 1;
   repeated string methods = 2;
+}
+
+// Pprof message types
+message GetPprofIndexRequest {}
+
+message GetPprofIndexResponse {
+  string html = 1;  // HTML content for the pprof index page
+  bool enabled = 2; // Whether profiling is enabled
+}
+
+message GetPprofProfileRequest {
+  int32 debug = 1;  // Debug level (optional, default 1)
+}
+
+message GetPprofCpuProfileRequest {
+  int32 seconds = 1; // Duration in seconds (optional, default 30)
+}
+
+message GetPprofProfileResponse {
+  bytes data = 1;      // Profile data (binary pprof format)
+  string content_type = 2; // Content type of the response
+  bool enabled = 3;    // Whether profiling is enabled
+  string error = 4;    // Error message if profiling is disabled
 }
 
