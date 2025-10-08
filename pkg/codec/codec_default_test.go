@@ -10,9 +10,9 @@ import (
 
 // Constants: set InputPath and TaskID. BaseDir is the current directory.
 const (
-	BaseDir   = ""
-	InputPath = ""        // set to an existing file path before running
-	TaskID    = "rq-dirA" // both tests use the same directory
+	BaseDir   = "/home/enxsys/Documents/Github/LumeraProtocol/supernode/release"
+	InputPath = "/home/enxsys/Documents/Github/LumeraProtocol/supernode/tests/system/900.zip" // set to an existing file path before running
+	TaskID    = "rq-dirA"                                                                     // both tests use the same directory
 )
 
 // TestEncode_ToDirA encodes InputPath into BaseDir/TaskID using default settings.
@@ -119,4 +119,37 @@ func itoa(i int) string {
 		b[n] = '-'
 	}
 	return string(b[n:])
+}
+
+// TestCreateMetadata_SaveToFile generates layout metadata only and writes it to a file.
+func TestCreateMetadata_SaveToFile(t *testing.T) {
+	if InputPath == "" {
+		t.Skip("set InputPath constant to a file path to run this test")
+	}
+
+	ctx := context.TODO()
+	c := NewRaptorQCodec(BaseDir)
+
+	// Create metadata using the codec and write it next to the input file.
+	layout, err := c.CreateMetadata(ctx, InputPath)
+	if err != nil {
+		t.Fatalf("create metadata: %v", err)
+	}
+	data, err := json.MarshalIndent(layout, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	outPath := "/home/enxsys/Documents/Github/LumeraProtocol/supernode/pkg/codec" + ".layout.json"
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		t.Fatalf("write output: %v", err)
+	}
+
+	fi, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Fatalf("output file is empty: %s", outPath)
+	}
+	t.Logf("metadata saved to: %s (%d bytes)", outPath, fi.Size())
 }

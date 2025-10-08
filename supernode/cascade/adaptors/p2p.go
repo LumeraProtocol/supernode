@@ -51,9 +51,6 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 	if err != nil {
 		return fmt.Errorf("error storing artefacts: %w", err)
 	}
-	_ = firstPassSymbols
-	_ = totalSymbols
-	_ = start
 	remaining := 0
 	if req.SymbolsDir != "" {
 		if keys, werr := walkSymbolTree(req.SymbolsDir); werr == nil {

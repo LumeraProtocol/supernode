@@ -49,8 +49,8 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 	return nil
 }
 
-func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, path string, dataSize int, f logtrace.Fields) (*adaptors.EncodeResult, error) {
-	resp, err := task.RQ.EncodeInput(ctx, actionID, path, dataSize)
+func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, path string, f logtrace.Fields) (*adaptors.EncodeResult, error) {
+	resp, err := task.RQ.EncodeInput(ctx, actionID, path)
 	if err != nil {
 		return nil, task.wrapErr(ctx, "failed to encode data", err, f)
 	}
@@ -89,7 +89,7 @@ func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.
 	return encodedMeta, indexFile.LayoutSignature, nil
 }
 
-func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, sig, creator string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
+func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, sig string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
 	layoutRes, err := cascadekit.GenerateLayoutFiles(ctx, encodedMeta, sig, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 	if err != nil {
 		return cascadekit.GenRQIdentifiersFilesResponse{}, task.wrapErr(ctx, "failed to generate layout files", err, f)

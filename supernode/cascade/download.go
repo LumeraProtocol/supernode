@@ -219,8 +219,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(ctx context.Context, 
 	}
 	decodeMS := time.Since(decodeStart).Milliseconds()
 	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
-	_ = retrieveMS
-	_ = decodeMS
+	// Emit timing metrics for network retrieval and decode phases
+	logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
 
 	// Verify reconstructed file hash matches action metadata
 	fileHash, herr := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)

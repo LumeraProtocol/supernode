@@ -8,7 +8,7 @@ import (
 
 // CodecService wraps codec operations used by cascade
 type CodecService interface {
-	EncodeInput(ctx context.Context, actionID string, path string, dataSize int) (EncodeResult, error)
+	EncodeInput(ctx context.Context, actionID string, path string) (EncodeResult, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResult, error)
 }
 
@@ -32,8 +32,8 @@ type codecImpl struct{ codec codec.Codec }
 
 func NewCodecService(c codec.Codec) CodecService { return &codecImpl{codec: c} }
 
-func (c *codecImpl) EncodeInput(ctx context.Context, actionID, path string, dataSize int) (EncodeResult, error) {
-	res, err := c.codec.Encode(ctx, codec.EncodeRequest{TaskID: actionID, Path: path, DataSize: dataSize})
+func (c *codecImpl) EncodeInput(ctx context.Context, actionID, path string) (EncodeResult, error) {
+	res, err := c.codec.Encode(ctx, codec.EncodeRequest{TaskID: actionID, Path: path})
 	if err != nil {
 		return EncodeResult{}, err
 	}

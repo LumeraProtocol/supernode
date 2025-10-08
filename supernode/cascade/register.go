@@ -85,7 +85,7 @@ func (task *CascadeRegistrationTask) Register(
 	logtrace.Info(ctx, "register: data hash matched", fields)
 	task.streamEvent(SupernodeEventTypeDataHashVerified, "Data hash verified", "", send)
 
-	encResp, err := task.encodeInput(ctx, req.ActionID, req.FilePath, req.DataSize, fields)
+	encResp, err := task.encodeInput(ctx, req.ActionID, req.FilePath, fields)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (task *CascadeRegistrationTask) Register(
 	logtrace.Info(ctx, "register: signature verified", fields)
 	task.streamEvent(SupernodeEventTypeSignatureVerified, "Signature verified", "", send)
 
-	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, signature, action.Creator, encResp.Metadata, fields)
+	rqidResp, err := task.generateRQIDFiles(ctx, cascadeMeta, signature, encResp.Metadata, fields)
 	if err != nil {
 		return err
 	}

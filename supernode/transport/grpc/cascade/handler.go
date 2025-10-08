@@ -227,6 +227,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	}
 
 	// Notify client that server is ready to stream the file
+	logtrace.Debug(ctx, "download: serve ready", logtrace.Fields{"event_type": cascadeService.SupernodeEventTypeServeReady, logtrace.FieldActionID: req.GetActionId()})
 	if err := stream.Send(&pb.DownloadResponse{ResponseType: &pb.DownloadResponse_Event{Event: &pb.DownloadEvent{EventType: pb.SupernodeEventType_SERVE_READY, Message: "Serve ready"}}}); err != nil {
 		return fmt.Errorf("send serve-ready: %w", err)
 	}
