@@ -10,6 +10,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
@@ -97,6 +98,17 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 	}
 	resp.Network.PeersCount = 0
 	resp.Network.PeerAddresses = []string{}
+
+	// Populate running tasks from the global in-memory tracker
+	if snap := task.Default.Snapshot(); len(snap) > 0 {
+		for svc, ids := range snap {
+			resp.RunningTasks = append(resp.RunningTasks, &pb.StatusResponse_ServiceTasks{
+				ServiceName: svc,
+				TaskIds:     ids,
+				TaskCount:   int32(len(ids)),
+			})
+		}
+	}
 
 	// Prepare optional P2P metrics container
 	pm := &pb.StatusResponse_P2PMetrics{

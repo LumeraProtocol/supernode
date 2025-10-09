@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	tasks "github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"lukechampine.com/blake3"
 )
@@ -27,6 +29,12 @@ func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *Actio
 
 // calculateOptimalChunkSize returns an optimal chunk size based on file size
 // to balance throughput and memory usage
+
+    var (
+        startedTask bool
+        handle      *tasks.Handle
+    )
+
 func calculateOptimalChunkSize(fileSize int64) int {
 	const (
 		minChunkSize        = 64 * 1024         // 64 KB minimum
@@ -124,6 +132,12 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 		case *pb.RegisterRequest_Metadata:
 			metadata = x.Metadata
 			logtrace.Debug(ctx, "received metadata", logtrace.Fields{"task_id": metadata.TaskId, "action_id": metadata.ActionId})
+			// Start live task tracking on first metadata (covers remaining stream and processing)
+            if !startedTask {
+                startedTask = true
+                handle = tasks.Start(ctx, "cascade.upload", metadata.ActionId, 30*time.Minute)
+                defer handle.End(ctx)
+            }
 		}
 	}
 
@@ -188,6 +202,10 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 		logtrace.FieldActionID: req.GetActionId(),
 	}
 	logtrace.Debug(ctx, "download request received", fields)
+
+	// Start live task tracking for the entire download RPC (including file streaming)
+    dlHandle := tasks.Start(ctx, "cascade.download", req.GetActionId(), 30*time.Minute)
+    defer dlHandle.End(ctx)
 
 	// Prepare to capture decoded file path from task events
 	var decodedFilePath string

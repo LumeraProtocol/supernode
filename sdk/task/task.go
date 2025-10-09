@@ -8,7 +8,6 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
@@ -124,7 +123,7 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 		PeerType:           t.config.Account.PeerType,
 	}).CreateClient(ctx, sn)
 	if err != nil {
-		logtrace.Debug(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
+		t.logger.Info(ctx, "reject supernode: client create failed", "reason", err.Error(), "endpoint", sn.GrpcEndpoint, "cosmos", sn.CosmosAddress)
 		return false
 	}
 	defer client.Close(ctx)
@@ -132,26 +131,41 @@ func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
 	// First check gRPC health
 	resp, err := client.HealthCheck(ctx)
 	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		statusStr := "nil"
+		if resp != nil {
+			statusStr = resp.Status.String()
+		}
+		t.logger.Info(ctx, "reject supernode: health not SERVING", "error", err, "status", statusStr)
 		return false
 	}
 
 	// Then check P2P peers count via status
 	status, err := client.GetSupernodeStatus(ctx)
 	if err != nil {
+		t.logger.Info(ctx, "reject supernode: status fetch failed", "error", err)
 		return false
 	}
 	if status.Network.PeersCount <= 1 {
+		t.logger.Info(ctx, "reject supernode: insufficient peers", "peers_count", status.Network.PeersCount)
+		return false
+	}
+	// Busy check: exclude supernodes that report running tasks
+	if rt := status.GetRunningTasks(); len(rt) > 0 {
+		svc := rt[0].GetServiceName()
+		t.logger.Info(ctx, "reject supernode: busy", "service", svc)
 		return false
 	}
 
 	denom := txmod.DefaultFeeDenom // base denom (micro), e.g., "ulume"
 	bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
 	if err != nil || bal == nil || bal.Balance == nil {
+		t.logger.Info(ctx, "reject supernode: balance fetch failed or empty", "error", err)
 		return false
 	}
 	// Require at least 1 LUME = 10^6 micro (ulume)
 	min := sdkmath.NewInt(1_000_000)
 	if bal.Balance.Amount.LT(min) {
+		t.logger.Info(ctx, "reject supernode: insufficient balance", "amount", bal.Balance.Amount.String(), "min", min.String())
 		return false
 	}
 
