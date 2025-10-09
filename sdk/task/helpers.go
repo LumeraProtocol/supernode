@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
@@ -135,4 +138,48 @@ func ensureOutputPathWithFilename(outputPath, filename string) string {
 
 	// Otherwise, append the filename to the path
 	return filepath.Join(outputPath, filename)
+}
+
+func orderSupernodesByDeterministicDistance(seed string, sns lumera.Supernodes) lumera.Supernodes {
+	if len(sns) == 0 || seed == "" {
+		return sns
+	}
+	// Precompute seed hash (blake3)
+	seedHash, err := cascadekit.ComputeBlake3Hash([]byte(seed))
+	if err != nil {
+		return sns
+	}
+
+	type nodeDist struct {
+		sn       lumera.Supernode
+		distance *big.Int
+	}
+	nd := make([]nodeDist, 0, len(sns))
+	for _, sn := range sns {
+		id := sn.CosmosAddress
+		if id == "" {
+			id = sn.GrpcEndpoint
+		}
+		nHash, err := cascadekit.ComputeBlake3Hash([]byte(id))
+		if err != nil {
+			nd = append(nd, nodeDist{sn: sn, distance: new(big.Int).SetInt64(0)})
+			continue
+		}
+		// XOR distance across min length
+		l := len(seedHash)
+		if len(nHash) < l {
+			l = len(nHash)
+		}
+		xor := make([]byte, l)
+		for i := 0; i < l; i++ {
+			xor[i] = seedHash[i] ^ nHash[i]
+		}
+		nd = append(nd, nodeDist{sn: sn, distance: new(big.Int).SetBytes(xor)})
+	}
+	sort.Slice(nd, func(i, j int) bool { return nd[i].distance.Cmp(nd[j].distance) < 0 })
+	out := make(lumera.Supernodes, len(nd))
+	for i := range nd {
+		out[i] = nd[i].sn
+	}
+	return out
 }

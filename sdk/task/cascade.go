@@ -46,6 +46,8 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Deterministic per-action ordering to distribute load fairly
+	supernodes = orderSupernodesByDeterministicDistance(t.ActionID, supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes found.", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
@@ -80,6 +82,11 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			event.KeySupernodeAddress: sn.CosmosAddress,
 			event.KeyIteration:        idx + 1,
 		})
+		// Re-check serving status just-in-time to avoid calling a node that became busy/down
+		if !t.isServing(ctx, sn) {
+			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", idx+1)
+			continue
+		}
 		if err := t.attemptRegistration(ctx, idx, sn, clientFactory, req); err != nil {
 			//
 			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
