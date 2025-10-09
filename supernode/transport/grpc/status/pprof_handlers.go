@@ -1,14 +1,12 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"runtime"
-	"runtime/pprof"
 	"strings"
-	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 )
@@ -26,198 +24,230 @@ func (s *SupernodeServer) isPprofEnabled() bool {
 	return os.Getenv("ENABLE_PPROF") == "true"
 }
 
-// GetPprofIndex returns the pprof index page
-func (s *SupernodeServer) GetPprofIndex(ctx context.Context, req *pb.GetPprofIndexRequest) (*pb.GetPprofIndexResponse, error) {
-	if !s.isPprofEnabled() {
-		return &pb.GetPprofIndexResponse{
-			Html:    "",
-			Enabled: false,
-		}, nil
+
+// Raw pprof handlers - these proxy to the actual pprof HTTP endpoints
+
+// pprofProxy makes an internal HTTP request to the actual pprof endpoint
+func (s *SupernodeServer) pprofProxy(path string, queryParams string) ([]byte, error) {
+	// Determine the port - use gateway port if available, otherwise use default
+	port := 8002 // Default gateway port
+	if s.gatewayPort != 0 {
+		port = s.gatewayPort
 	}
 
-	// Generate a simple index page with links to available profiles
-	html := `<!DOCTYPE html>
-<html>
-<head>
-<title>Supernode Profiling</title>
-<style>
-body {
-	font-family: Arial, sans-serif;
-	margin: 40px;
-}
-h1 {
-	color: #333;
-}
-ul {
-	line-height: 1.8;
-}
-a {
-	color: #0066cc;
-	text-decoration: none;
-}
-a:hover {
-	text-decoration: underline;
-}
-</style>
-</head>
-<body>
-<h1>Supernode Profiling</h1>
-<p>Available profiles:</p>
-<ul>
-<li><a href="/api/v1/debug/pprof/heap">heap</a> - A sampling of memory allocations of live objects</li>
-<li><a href="/api/v1/debug/pprof/goroutine">goroutine</a> - Stack traces of all current goroutines</li>
-<li><a href="/api/v1/debug/pprof/allocs">allocs</a> - A sampling of all past memory allocations</li>
-<li><a href="/api/v1/debug/pprof/block">block</a> - Stack traces that led to blocking on synchronization primitives</li>
-<li><a href="/api/v1/debug/pprof/mutex">mutex</a> - Stack traces of holders of contended mutexes</li>
-<li><a href="/api/v1/debug/pprof/threadcreate">threadcreate</a> - Stack traces that led to the creation of new OS threads</li>
-<li><a href="/api/v1/debug/pprof/profile">profile</a> - CPU profile (specify ?seconds=30 for duration)</li>
-</ul>
-</body>
-</html>`
+	// Construct the URL
+	url := fmt.Sprintf("http://localhost:%d/debug/pprof%s", port, path)
+	if queryParams != "" {
+		url += "?" + queryParams
+	}
 
-	return &pb.GetPprofIndexResponse{
-		Html:    html,
-		Enabled: true,
-	}, nil
+	// Make the HTTP request
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
-// GetPprofHeap returns the heap profile
-func (s *SupernodeServer) GetPprofHeap(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("heap", req.GetDebug())
-}
-
-// GetPprofGoroutine returns the goroutine profile
-func (s *SupernodeServer) GetPprofGoroutine(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("goroutine", req.GetDebug())
-}
-
-// GetPprofAllocs returns the allocations profile
-func (s *SupernodeServer) GetPprofAllocs(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("allocs", req.GetDebug())
-}
-
-// GetPprofBlock returns the block profile
-func (s *SupernodeServer) GetPprofBlock(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("block", req.GetDebug())
-}
-
-// GetPprofMutex returns the mutex profile
-func (s *SupernodeServer) GetPprofMutex(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("mutex", req.GetDebug())
-}
-
-// GetPprofThreadcreate returns the threadcreate profile
-func (s *SupernodeServer) GetPprofThreadcreate(ctx context.Context, req *pb.GetPprofProfileRequest) (*pb.GetPprofProfileResponse, error) {
-	return s.getPprofProfile("threadcreate", req.GetDebug())
-}
-
-// GetPprofProfile returns the CPU profile
-func (s *SupernodeServer) GetPprofProfile(ctx context.Context, req *pb.GetPprofCpuProfileRequest) (*pb.GetPprofProfileResponse, error) {
+// GetRawPprof returns the pprof index
+func (s *SupernodeServer) GetRawPprof(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
 	if !s.isPprofEnabled() {
-		return &pb.GetPprofProfileResponse{
-			Enabled: false,
-			Error:   "Profiling is disabled. Enable on testnet or set ENABLE_PPROF=true",
-		}, nil
+		return &pb.RawPprofResponse{Data: []byte("Profiling disabled")}, nil
+	}
+
+	data, err := s.pprofProxy("/", "")
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte(fmt.Sprintf("Error: %v", err))}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofHeap returns raw heap profile
+func (s *SupernodeServer) GetRawPprofHeap(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/heap", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofGoroutine returns raw goroutine profile
+func (s *SupernodeServer) GetRawPprofGoroutine(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/goroutine", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofAllocs returns raw allocations profile
+func (s *SupernodeServer) GetRawPprofAllocs(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/allocs", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofBlock returns raw block profile
+func (s *SupernodeServer) GetRawPprofBlock(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/block", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofMutex returns raw mutex profile
+func (s *SupernodeServer) GetRawPprofMutex(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/mutex", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofThreadcreate returns raw threadcreate profile
+func (s *SupernodeServer) GetRawPprofThreadcreate(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	queryParams := ""
+	if req.GetDebug() > 0 {
+		queryParams = fmt.Sprintf("debug=%d", req.GetDebug())
+	}
+
+	data, err := s.pprofProxy("/threadcreate", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofProfile returns raw CPU profile
+func (s *SupernodeServer) GetRawPprofProfile(ctx context.Context, req *pb.RawPprofCpuRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
 	seconds := req.GetSeconds()
 	if seconds <= 0 {
-		seconds = 30 // Default to 30 seconds
+		seconds = 30
 	}
 	if seconds > 300 {
-		seconds = 300 // Cap at 5 minutes
+		seconds = 300
 	}
 
-	var buf bytes.Buffer
-	if err := pprof.StartCPUProfile(&buf); err != nil {
-		return &pb.GetPprofProfileResponse{
-			Enabled: true,
-			Error:   fmt.Sprintf("Failed to start CPU profile: %v", err),
-		}, nil
+	queryParams := fmt.Sprintf("seconds=%d", seconds)
+	data, err := s.pprofProxy("/profile", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
-	// Profile for the specified duration
-	time.Sleep(time.Duration(seconds) * time.Second)
-	pprof.StopCPUProfile()
-
-	return &pb.GetPprofProfileResponse{
-		Data:        buf.Bytes(),
-		ContentType: "application/octet-stream",
-		Enabled:     true,
-	}, nil
+	return &pb.RawPprofResponse{Data: data}, nil
 }
 
-// getPprofProfile is a helper function to get various runtime profiles
-func (s *SupernodeServer) getPprofProfile(profileType string, debug int32) (*pb.GetPprofProfileResponse, error) {
+// GetRawPprofCmdline returns the command line
+func (s *SupernodeServer) GetRawPprofCmdline(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
 	if !s.isPprofEnabled() {
-		return &pb.GetPprofProfileResponse{
-			Enabled: false,
-			Error:   "Profiling is disabled. Enable on testnet or set ENABLE_PPROF=true",
-		}, nil
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
-	var buf bytes.Buffer
-	var contentType string
-
-	// Get the appropriate profile
-	var p *pprof.Profile
-	switch profileType {
-	case "heap":
-		runtime.GC() // Force GC before heap profile
-		p = pprof.Lookup("heap")
-		contentType = "application/octet-stream"
-	case "goroutine":
-		p = pprof.Lookup("goroutine")
-		contentType = "application/octet-stream"
-	case "allocs":
-		p = pprof.Lookup("allocs")
-		contentType = "application/octet-stream"
-	case "block":
-		p = pprof.Lookup("block")
-		contentType = "application/octet-stream"
-	case "mutex":
-		p = pprof.Lookup("mutex")
-		contentType = "application/octet-stream"
-	case "threadcreate":
-		p = pprof.Lookup("threadcreate")
-		contentType = "application/octet-stream"
-	default:
-		return &pb.GetPprofProfileResponse{
-			Enabled: true,
-			Error:   fmt.Sprintf("Unknown profile type: %s", profileType),
-		}, nil
+	data, err := s.pprofProxy("/cmdline", "")
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
-	if p == nil {
-		return &pb.GetPprofProfileResponse{
-			Enabled: true,
-			Error:   fmt.Sprintf("Profile %s not found", profileType),
-		}, nil
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofSymbol returns symbol information
+func (s *SupernodeServer) GetRawPprofSymbol(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
-	// Write the profile to buffer
-	// If debug > 0, write in text format for human reading
-	if debug > 0 {
-		if err := p.WriteTo(&buf, int(debug)); err != nil {
-			return &pb.GetPprofProfileResponse{
-				Enabled: true,
-				Error:   fmt.Sprintf("Failed to write profile: %v", err),
-			}, nil
-		}
-		contentType = "text/plain"
-	} else {
-		// Write in binary pprof format
-		if err := p.WriteTo(&buf, 0); err != nil {
-			return &pb.GetPprofProfileResponse{
-				Enabled: true,
-				Error:   fmt.Sprintf("Failed to write profile: %v", err),
-			}, nil
-		}
+	data, err := s.pprofProxy("/symbol", "")
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
 	}
 
-	return &pb.GetPprofProfileResponse{
-		Data:        buf.Bytes(),
-		ContentType: contentType,
-		Enabled:     true,
-	}, nil
+	return &pb.RawPprofResponse{Data: data}, nil
+}
+
+// GetRawPprofTrace returns execution trace
+func (s *SupernodeServer) GetRawPprofTrace(ctx context.Context, req *pb.RawPprofRequest) (*pb.RawPprofResponse, error) {
+	if !s.isPprofEnabled() {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	// Trace typically takes a seconds parameter
+	queryParams := "seconds=1"
+	data, err := s.pprofProxy("/trace", queryParams)
+	if err != nil {
+		return &pb.RawPprofResponse{Data: []byte{}}, nil
+	}
+
+	return &pb.RawPprofResponse{Data: data}, nil
 }
