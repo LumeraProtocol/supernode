@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
@@ -77,8 +78,10 @@ func (s *Server) Run(ctx context.Context) error {
 	// Create gRPC-Gateway mux with custom JSON marshaler options
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
-			EmitDefaults: true, // This ensures zero values are included
-			OrigName:     true, // Use original proto field names
+			MarshalOptions: protojson.MarshalOptions{
+				EmitUnpopulated: true, // This ensures zero values are included
+				UseProtoNames:   true, // Use original proto field names
+			},
 		}),
 	)
 
@@ -90,6 +93,23 @@ func (s *Server) Run(ctx context.Context) error {
 
 	// Create HTTP mux for custom endpoints
 	httpMux := http.NewServeMux()
+
+	// Register raw pprof endpoints BEFORE the gRPC gateway to intercept them
+	// These must be registered before the /api/ handler to take precedence
+	if s.pprofEnabled {
+		// Raw pprof endpoints that return actual pprof data (not JSON)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/heap", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/goroutine", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/allocs", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/block", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/mutex", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/threadcreate", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/profile", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/cmdline", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/symbol", s.rawPprofHandler)
+		httpMux.HandleFunc("/api/v1/debug/raw/pprof/trace", s.rawPprofHandler)
+	}
 
 	// Register gRPC-Gateway endpoints
 	httpMux.Handle("/api/", mux)
@@ -190,4 +210,27 @@ func (s *Server) pprofHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.NotFound(w, r)
 	}
+}
+
+// rawPprofHandler handles the raw pprof endpoints that return actual pprof data
+func (s *Server) rawPprofHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if pprof is enabled
+	if !s.pprofEnabled {
+		http.Error(w, "Profiling is not enabled", http.StatusForbidden)
+		return
+	}
+
+	// Map the /api/v1/debug/raw/pprof/* path to /debug/pprof/*
+	originalPath := r.URL.Path
+	r.URL.Path = strings.Replace(originalPath, "/api/v1/debug/raw/pprof", "/debug/pprof", 1)
+
+	// Get the default pprof handler and serve
+	if handler, pattern := http.DefaultServeMux.Handler(r); pattern != "" {
+		handler.ServeHTTP(w, r)
+	} else {
+		http.NotFound(w, r)
+	}
+
+	// Restore the original path
+	r.URL.Path = originalPath
 }

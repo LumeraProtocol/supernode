@@ -19,16 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SupernodeService_GetStatus_FullMethodName            = "/supernode.SupernodeService/GetStatus"
-	SupernodeService_ListServices_FullMethodName         = "/supernode.SupernodeService/ListServices"
-	SupernodeService_GetPprofIndex_FullMethodName        = "/supernode.SupernodeService/GetPprofIndex"
-	SupernodeService_GetPprofHeap_FullMethodName         = "/supernode.SupernodeService/GetPprofHeap"
-	SupernodeService_GetPprofGoroutine_FullMethodName    = "/supernode.SupernodeService/GetPprofGoroutine"
-	SupernodeService_GetPprofAllocs_FullMethodName       = "/supernode.SupernodeService/GetPprofAllocs"
-	SupernodeService_GetPprofBlock_FullMethodName        = "/supernode.SupernodeService/GetPprofBlock"
-	SupernodeService_GetPprofMutex_FullMethodName        = "/supernode.SupernodeService/GetPprofMutex"
-	SupernodeService_GetPprofThreadcreate_FullMethodName = "/supernode.SupernodeService/GetPprofThreadcreate"
-	SupernodeService_GetPprofProfile_FullMethodName      = "/supernode.SupernodeService/GetPprofProfile"
+	SupernodeService_GetStatus_FullMethodName               = "/supernode.SupernodeService/GetStatus"
+	SupernodeService_ListServices_FullMethodName            = "/supernode.SupernodeService/ListServices"
+	SupernodeService_GetRawPprof_FullMethodName             = "/supernode.SupernodeService/GetRawPprof"
+	SupernodeService_GetRawPprofHeap_FullMethodName         = "/supernode.SupernodeService/GetRawPprofHeap"
+	SupernodeService_GetRawPprofGoroutine_FullMethodName    = "/supernode.SupernodeService/GetRawPprofGoroutine"
+	SupernodeService_GetRawPprofAllocs_FullMethodName       = "/supernode.SupernodeService/GetRawPprofAllocs"
+	SupernodeService_GetRawPprofBlock_FullMethodName        = "/supernode.SupernodeService/GetRawPprofBlock"
+	SupernodeService_GetRawPprofMutex_FullMethodName        = "/supernode.SupernodeService/GetRawPprofMutex"
+	SupernodeService_GetRawPprofThreadcreate_FullMethodName = "/supernode.SupernodeService/GetRawPprofThreadcreate"
+	SupernodeService_GetRawPprofProfile_FullMethodName      = "/supernode.SupernodeService/GetRawPprofProfile"
+	SupernodeService_GetRawPprofCmdline_FullMethodName      = "/supernode.SupernodeService/GetRawPprofCmdline"
+	SupernodeService_GetRawPprofSymbol_FullMethodName       = "/supernode.SupernodeService/GetRawPprofSymbol"
+	SupernodeService_GetRawPprofTrace_FullMethodName        = "/supernode.SupernodeService/GetRawPprofTrace"
 )
 
 // SupernodeServiceClient is the client API for SupernodeService service.
@@ -39,15 +42,18 @@ const (
 type SupernodeServiceClient interface {
 	GetStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	ListServices(ctx context.Context, in *ListServicesRequest, opts ...grpc.CallOption) (*ListServicesResponse, error)
-	// Profiling endpoints
-	GetPprofIndex(ctx context.Context, in *GetPprofIndexRequest, opts ...grpc.CallOption) (*GetPprofIndexResponse, error)
-	GetPprofHeap(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofGoroutine(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofAllocs(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofBlock(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofMutex(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofThreadcreate(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
-	GetPprofProfile(ctx context.Context, in *GetPprofCpuProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error)
+	// Raw pprof endpoints - return standard pprof output directly
+	GetRawPprof(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofHeap(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofGoroutine(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofAllocs(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofBlock(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofMutex(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofThreadcreate(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofProfile(ctx context.Context, in *RawPprofCpuRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofCmdline(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofSymbol(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
+	GetRawPprofTrace(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error)
 }
 
 type supernodeServiceClient struct {
@@ -78,80 +84,110 @@ func (c *supernodeServiceClient) ListServices(ctx context.Context, in *ListServi
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofIndex(ctx context.Context, in *GetPprofIndexRequest, opts ...grpc.CallOption) (*GetPprofIndexResponse, error) {
+func (c *supernodeServiceClient) GetRawPprof(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofIndexResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofIndex_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprof_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofHeap(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofHeap(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofHeap_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofHeap_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofGoroutine(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofGoroutine(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofGoroutine_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofGoroutine_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofAllocs(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofAllocs(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofAllocs_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofAllocs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofBlock(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofBlock(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofBlock_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofBlock_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofMutex(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofMutex(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofMutex_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofMutex_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofThreadcreate(ctx context.Context, in *GetPprofProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofThreadcreate(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofThreadcreate_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofThreadcreate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *supernodeServiceClient) GetPprofProfile(ctx context.Context, in *GetPprofCpuProfileRequest, opts ...grpc.CallOption) (*GetPprofProfileResponse, error) {
+func (c *supernodeServiceClient) GetRawPprofProfile(ctx context.Context, in *RawPprofCpuRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPprofProfileResponse)
-	err := c.cc.Invoke(ctx, SupernodeService_GetPprofProfile_FullMethodName, in, out, cOpts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supernodeServiceClient) GetRawPprofCmdline(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofCmdline_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supernodeServiceClient) GetRawPprofSymbol(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofSymbol_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *supernodeServiceClient) GetRawPprofTrace(ctx context.Context, in *RawPprofRequest, opts ...grpc.CallOption) (*RawPprofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RawPprofResponse)
+	err := c.cc.Invoke(ctx, SupernodeService_GetRawPprofTrace_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,15 +202,18 @@ func (c *supernodeServiceClient) GetPprofProfile(ctx context.Context, in *GetPpr
 type SupernodeServiceServer interface {
 	GetStatus(context.Context, *StatusRequest) (*StatusResponse, error)
 	ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error)
-	// Profiling endpoints
-	GetPprofIndex(context.Context, *GetPprofIndexRequest) (*GetPprofIndexResponse, error)
-	GetPprofHeap(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofGoroutine(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofAllocs(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofBlock(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofMutex(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofThreadcreate(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error)
-	GetPprofProfile(context.Context, *GetPprofCpuProfileRequest) (*GetPprofProfileResponse, error)
+	// Raw pprof endpoints - return standard pprof output directly
+	GetRawPprof(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofHeap(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofGoroutine(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofAllocs(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofBlock(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofMutex(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofThreadcreate(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofProfile(context.Context, *RawPprofCpuRequest) (*RawPprofResponse, error)
+	GetRawPprofCmdline(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofSymbol(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
+	GetRawPprofTrace(context.Context, *RawPprofRequest) (*RawPprofResponse, error)
 	mustEmbedUnimplementedSupernodeServiceServer()
 }
 
@@ -191,29 +230,38 @@ func (UnimplementedSupernodeServiceServer) GetStatus(context.Context, *StatusReq
 func (UnimplementedSupernodeServiceServer) ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListServices not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofIndex(context.Context, *GetPprofIndexRequest) (*GetPprofIndexResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofIndex not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprof(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprof not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofHeap(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofHeap not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofHeap(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofHeap not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofGoroutine(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofGoroutine not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofGoroutine(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofGoroutine not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofAllocs(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofAllocs not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofAllocs(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofAllocs not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofBlock(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofBlock not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofBlock(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofBlock not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofMutex(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofMutex not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofMutex(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofMutex not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofThreadcreate(context.Context, *GetPprofProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofThreadcreate not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofThreadcreate(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofThreadcreate not implemented")
 }
-func (UnimplementedSupernodeServiceServer) GetPprofProfile(context.Context, *GetPprofCpuProfileRequest) (*GetPprofProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPprofProfile not implemented")
+func (UnimplementedSupernodeServiceServer) GetRawPprofProfile(context.Context, *RawPprofCpuRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofProfile not implemented")
+}
+func (UnimplementedSupernodeServiceServer) GetRawPprofCmdline(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofCmdline not implemented")
+}
+func (UnimplementedSupernodeServiceServer) GetRawPprofSymbol(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofSymbol not implemented")
+}
+func (UnimplementedSupernodeServiceServer) GetRawPprofTrace(context.Context, *RawPprofRequest) (*RawPprofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawPprofTrace not implemented")
 }
 func (UnimplementedSupernodeServiceServer) mustEmbedUnimplementedSupernodeServiceServer() {}
 func (UnimplementedSupernodeServiceServer) testEmbeddedByValue()                          {}
@@ -272,146 +320,200 @@ func _SupernodeService_ListServices_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofIndex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofIndexRequest)
+func _SupernodeService_GetRawPprof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofIndex(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprof(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofIndex_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprof_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofIndex(ctx, req.(*GetPprofIndexRequest))
+		return srv.(SupernodeServiceServer).GetRawPprof(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofHeap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofHeap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofHeap(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofHeap(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofHeap_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofHeap_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofHeap(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofHeap(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofGoroutine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofGoroutine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofGoroutine(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofGoroutine(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofGoroutine_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofGoroutine_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofGoroutine(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofGoroutine(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofAllocs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofAllocs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofAllocs(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofAllocs(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofAllocs_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofAllocs_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofAllocs(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofAllocs(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofBlock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofBlock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofBlock(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofBlock(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofBlock_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofBlock_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofBlock(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofBlock(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofMutex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofMutex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofMutex(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofMutex(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofMutex_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofMutex_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofMutex(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofMutex(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofThreadcreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofProfileRequest)
+func _SupernodeService_GetRawPprofThreadcreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofThreadcreate(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofThreadcreate(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofThreadcreate_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofThreadcreate_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofThreadcreate(ctx, req.(*GetPprofProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofThreadcreate(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SupernodeService_GetPprofProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPprofCpuProfileRequest)
+func _SupernodeService_GetRawPprofProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofCpuRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SupernodeServiceServer).GetPprofProfile(ctx, in)
+		return srv.(SupernodeServiceServer).GetRawPprofProfile(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SupernodeService_GetPprofProfile_FullMethodName,
+		FullMethod: SupernodeService_GetRawPprofProfile_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SupernodeServiceServer).GetPprofProfile(ctx, req.(*GetPprofCpuProfileRequest))
+		return srv.(SupernodeServiceServer).GetRawPprofProfile(ctx, req.(*RawPprofCpuRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupernodeService_GetRawPprofCmdline_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupernodeServiceServer).GetRawPprofCmdline(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupernodeService_GetRawPprofCmdline_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupernodeServiceServer).GetRawPprofCmdline(ctx, req.(*RawPprofRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupernodeService_GetRawPprofSymbol_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupernodeServiceServer).GetRawPprofSymbol(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupernodeService_GetRawPprofSymbol_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupernodeServiceServer).GetRawPprofSymbol(ctx, req.(*RawPprofRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SupernodeService_GetRawPprofTrace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RawPprofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SupernodeServiceServer).GetRawPprofTrace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SupernodeService_GetRawPprofTrace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SupernodeServiceServer).GetRawPprofTrace(ctx, req.(*RawPprofRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -432,36 +534,48 @@ var SupernodeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SupernodeService_ListServices_Handler,
 		},
 		{
-			MethodName: "GetPprofIndex",
-			Handler:    _SupernodeService_GetPprofIndex_Handler,
+			MethodName: "GetRawPprof",
+			Handler:    _SupernodeService_GetRawPprof_Handler,
 		},
 		{
-			MethodName: "GetPprofHeap",
-			Handler:    _SupernodeService_GetPprofHeap_Handler,
+			MethodName: "GetRawPprofHeap",
+			Handler:    _SupernodeService_GetRawPprofHeap_Handler,
 		},
 		{
-			MethodName: "GetPprofGoroutine",
-			Handler:    _SupernodeService_GetPprofGoroutine_Handler,
+			MethodName: "GetRawPprofGoroutine",
+			Handler:    _SupernodeService_GetRawPprofGoroutine_Handler,
 		},
 		{
-			MethodName: "GetPprofAllocs",
-			Handler:    _SupernodeService_GetPprofAllocs_Handler,
+			MethodName: "GetRawPprofAllocs",
+			Handler:    _SupernodeService_GetRawPprofAllocs_Handler,
 		},
 		{
-			MethodName: "GetPprofBlock",
-			Handler:    _SupernodeService_GetPprofBlock_Handler,
+			MethodName: "GetRawPprofBlock",
+			Handler:    _SupernodeService_GetRawPprofBlock_Handler,
 		},
 		{
-			MethodName: "GetPprofMutex",
-			Handler:    _SupernodeService_GetPprofMutex_Handler,
+			MethodName: "GetRawPprofMutex",
+			Handler:    _SupernodeService_GetRawPprofMutex_Handler,
 		},
 		{
-			MethodName: "GetPprofThreadcreate",
-			Handler:    _SupernodeService_GetPprofThreadcreate_Handler,
+			MethodName: "GetRawPprofThreadcreate",
+			Handler:    _SupernodeService_GetRawPprofThreadcreate_Handler,
 		},
 		{
-			MethodName: "GetPprofProfile",
-			Handler:    _SupernodeService_GetPprofProfile_Handler,
+			MethodName: "GetRawPprofProfile",
+			Handler:    _SupernodeService_GetRawPprofProfile_Handler,
+		},
+		{
+			MethodName: "GetRawPprofCmdline",
+			Handler:    _SupernodeService_GetRawPprofCmdline_Handler,
+		},
+		{
+			MethodName: "GetRawPprofSymbol",
+			Handler:    _SupernodeService_GetRawPprofSymbol_Handler,
+		},
+		{
+			MethodName: "GetRawPprofTrace",
+			Handler:    _SupernodeService_GetRawPprofTrace_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

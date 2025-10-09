@@ -12,11 +12,17 @@ import (
 type SupernodeServer struct {
 	pb.UnimplementedSupernodeServiceServer
 	statusService *statussvc.SupernodeStatusService
+	gatewayPort   int
 }
 
 // NewSupernodeServer creates a new SupernodeServer
 func NewSupernodeServer(statusService *statussvc.SupernodeStatusService) *SupernodeServer {
-	return &SupernodeServer{statusService: statusService}
+	return &SupernodeServer{statusService: statusService, gatewayPort: 8002}
+}
+
+// SetGatewayPort sets the gateway port for internal proxy requests
+func (s *SupernodeServer) SetGatewayPort(port int) {
+	s.gatewayPort = port
 }
 
 // GetStatus implements SupernodeService.GetStatus
