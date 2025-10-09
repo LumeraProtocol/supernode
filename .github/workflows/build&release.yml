@@ -30,11 +30,15 @@ jobs:
         
       - name: Build binaries
         run: |
+          # Ensure module metadata is up to date
+          go mod tidy
           # Build supernode
           CGO_ENABLED=1 go build -trimpath -o /tmp/supernode ./supernode
           
           # Build sn-manager  
           cd sn-manager
+          # Ensure sn-manager module metadata is up to date
+          go mod tidy
           CGO_ENABLED=0 go build -trimpath -o /tmp/sn-manager .
           
           echo "✅ Build successful"
@@ -86,6 +90,8 @@ jobs:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
           DD_SITE: ${{ secrets.DD_SITE }}
         run: |
+          # Ensure module metadata is up to date
+          go mod tidy
           mkdir -p release
           
           # Build supernode
@@ -105,6 +111,8 @@ jobs:
           
           # Build sn-manager
           cd sn-manager
+          # Ensure sn-manager module metadata is up to date
+          go mod tidy
           CGO_ENABLED=0 \
           GOOS=linux \
           GOARCH=amd64 \
