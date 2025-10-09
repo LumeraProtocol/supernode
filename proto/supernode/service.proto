@@ -19,52 +19,70 @@ service SupernodeService {
     };
   }
 
-  // Profiling endpoints
-  rpc GetPprofIndex(GetPprofIndexRequest) returns (GetPprofIndexResponse) {
+  // Raw pprof endpoints - return standard pprof output directly
+  rpc GetRawPprof(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof"
+      get: "/api/v1/debug/raw/pprof"
     };
   }
 
-  rpc GetPprofHeap(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofHeap(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/heap"
+      get: "/api/v1/debug/raw/pprof/heap"
     };
   }
 
-  rpc GetPprofGoroutine(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofGoroutine(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/goroutine"
+      get: "/api/v1/debug/raw/pprof/goroutine"
     };
   }
 
-  rpc GetPprofAllocs(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofAllocs(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/allocs"
+      get: "/api/v1/debug/raw/pprof/allocs"
     };
   }
 
-  rpc GetPprofBlock(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofBlock(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/block"
+      get: "/api/v1/debug/raw/pprof/block"
     };
   }
 
-  rpc GetPprofMutex(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofMutex(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/mutex"
+      get: "/api/v1/debug/raw/pprof/mutex"
     };
   }
 
-  rpc GetPprofThreadcreate(GetPprofProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofThreadcreate(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/threadcreate"
+      get: "/api/v1/debug/raw/pprof/threadcreate"
     };
   }
 
-  rpc GetPprofProfile(GetPprofCpuProfileRequest) returns (GetPprofProfileResponse) {
+  rpc GetRawPprofProfile(RawPprofCpuRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
-      get: "/api/v1/debug/pprof/profile"
+      get: "/api/v1/debug/raw/pprof/profile"
+    };
+  }
+
+  rpc GetRawPprofCmdline(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/cmdline"
+    };
+  }
+
+  rpc GetRawPprofSymbol(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/symbol"
+    };
+  }
+
+  rpc GetRawPprofTrace(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/trace"
     };
   }
 }
@@ -81,26 +99,16 @@ message ServiceInfo {
   repeated string methods = 2;
 }
 
-// Pprof message types
-message GetPprofIndexRequest {}
-
-message GetPprofIndexResponse {
-  string html = 1;  // HTML content for the pprof index page
-  bool enabled = 2; // Whether profiling is enabled
+// Raw pprof request/response messages
+message RawPprofRequest {
+  int32 debug = 1;  // Debug level (0 for binary, >0 for text)
 }
 
-message GetPprofProfileRequest {
-  int32 debug = 1;  // Debug level (optional, default 1)
+message RawPprofCpuRequest {
+  int32 seconds = 1; // CPU profile duration in seconds (default 30)
 }
 
-message GetPprofCpuProfileRequest {
-  int32 seconds = 1; // Duration in seconds (optional, default 30)
-}
-
-message GetPprofProfileResponse {
-  bytes data = 1;      // Profile data (binary pprof format)
-  string content_type = 2; // Content type of the response
-  bool enabled = 3;    // Whether profiling is enabled
-  string error = 4;    // Error message if profiling is disabled
+message RawPprofResponse {
+  bytes data = 1;  // Raw pprof data exactly as returned by runtime/pprof
 }
 

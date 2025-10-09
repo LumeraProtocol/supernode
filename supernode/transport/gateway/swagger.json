@@ -1,79 +1,857 @@
 {
-  "openapi": "3.0.0",
+  "swagger": "2.0",
   "info": {
-    "title": "Supernode API",
-    "version": "1.0.0",
-    "description": "Supernode status and metrics API"
+    "title": "supernode/service.proto",
+    "version": "version not set"
   },
+  "tags": [
+    {
+      "name": "SupernodeService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
   "paths": {
-    "/api/v1/status": {
+    "/api/v1/debug/raw/pprof": {
       "get": {
-        "summary": "Get supernode status",
-        "description": "Returns system, network, and optional P2P metrics",
-        "parameters": [
-          {
-            "name": "include_p2p_metrics",
-            "in": "query",
-            "schema": { "type": "boolean" },
-            "required": false,
-            "description": "Optional: include detailed P2P metrics in the response\nMaps to query param via grpc-gateway: /api/v1/status?include_p2p_metrics=true"
-          }
-        ],
+        "summary": "Raw pprof endpoints - return standard pprof output directly",
+        "operationId": "SupernodeService_GetRawPprof",
         "responses": {
           "200": {
-            "description": "Status response",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/StatusResponse" }
-              }
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/allocs": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofAllocs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/block": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofBlock",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/cmdline": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofCmdline",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/goroutine": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofGoroutine",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/heap": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofHeap",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/mutex": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofMutex",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/profile": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofProfile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "seconds",
+            "description": "CPU profile duration in seconds (default 30)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/symbol": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofSymbol",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/threadcreate": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofThreadcreate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/trace": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofTrace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
       }
     },
     "/api/v1/services": {
       "get": {
-        "summary": "List services",
-        "description": "Returns available gRPC services and their methods/streams",
+        "operationId": "SupernodeService_ListServices",
         "responses": {
           "200": {
-            "description": "Services response",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ListServicesResponse" }
-              }
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeListServicesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
             }
           }
-        }
+        },
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "SupernodeService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "includeP2pMetrics",
+            "description": "Optional: include detailed P2P metrics in the response\nMaps to query param via grpc-gateway: /api/v1/status?include_p2p_metrics=true",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
       }
     }
   },
-  "components": {
-    "schemas": {
-      "StatusResponse": {
-        "type": "object",
-        "properties": {
-          "version": { "type": "string" },
-          "uptimeSeconds": { "type": "integer" }
-        }
-      },
-      "ListServicesResponse": {
-        "type": "object",
-        "properties": {
-          "services": {
-            "type": "array",
-            "items": { "$ref": "#/components/schemas/ServiceInfo" }
-          },
-          "count": { "type": "integer" }
-        }
-      },
-      "ServiceInfo": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" },
-          "methods": { "type": "array", "items": { "type": "string" } }
+  "definitions": {
+    "DhtMetricsBatchRetrievePoint": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "event time (unix seconds)"
+        },
+        "keys": {
+          "type": "integer",
+          "format": "int32",
+          "title": "keys requested"
+        },
+        "required": {
+          "type": "integer",
+          "format": "int32",
+          "title": "required count"
+        },
+        "foundLocal": {
+          "type": "integer",
+          "format": "int32",
+          "title": "found locally"
+        },
+        "foundNetwork": {
+          "type": "integer",
+          "format": "int32",
+          "title": "found on network"
+        },
+        "durationMs": {
+          "type": "string",
+          "format": "int64",
+          "title": "duration in milliseconds"
         }
       }
+    },
+    "DhtMetricsStoreSuccessPoint": {
+      "type": "object",
+      "properties": {
+        "timeUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "event time (unix seconds)"
+        },
+        "requests": {
+          "type": "integer",
+          "format": "int32",
+          "title": "total node RPCs attempted"
+        },
+        "successful": {
+          "type": "integer",
+          "format": "int32",
+          "title": "successful node RPCs"
+        },
+        "successRate": {
+          "type": "number",
+          "format": "double",
+          "title": "percentage (0-100)"
+        }
+      }
+    },
+    "P2PMetricsBanEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "printable ID"
+        },
+        "ip": {
+          "type": "string",
+          "title": "last seen IP"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int64",
+          "title": "last seen port"
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32",
+          "title": "failure count"
+        },
+        "createdAtUnix": {
+          "type": "string",
+          "format": "int64",
+          "title": "first ban time (unix seconds)"
+        },
+        "ageSeconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "age in seconds"
+        }
+      },
+      "title": "Ban list entry"
+    },
+    "P2PMetricsDatabaseStats": {
+      "type": "object",
+      "properties": {
+        "p2pDbSizeMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "p2pDbRecordsCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "DB stats"
+    },
+    "P2PMetricsDhtMetrics": {
+      "type": "object",
+      "properties": {
+        "storeSuccessRecent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/DhtMetricsStoreSuccessPoint"
+          }
+        },
+        "batchRetrieveRecent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/DhtMetricsBatchRetrievePoint"
+          }
+        },
+        "hotPathBannedSkips": {
+          "type": "string",
+          "format": "int64",
+          "title": "counter"
+        },
+        "hotPathBanIncrements": {
+          "type": "string",
+          "format": "int64",
+          "title": "counter"
+        }
+      },
+      "title": "Rolling DHT metrics snapshot"
+    },
+    "P2PMetricsDiskStatus": {
+      "type": "object",
+      "properties": {
+        "allMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "usedMb": {
+          "type": "number",
+          "format": "double"
+        },
+        "freeMb": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "title": "Disk status"
+    },
+    "P2PMetricsHandleCounters": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "success": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failure": {
+          "type": "string",
+          "format": "int64"
+        },
+        "timeout": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "Per-handler counters from network layer"
+    },
+    "ResourcesCPU": {
+      "type": "object",
+      "properties": {
+        "usagePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "CPU usage percentage (0-100)"
+        },
+        "cores": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Number of CPU cores"
+        }
+      }
+    },
+    "ResourcesMemory": {
+      "type": "object",
+      "properties": {
+        "totalGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Total memory in GB"
+        },
+        "usedGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Used memory in GB"
+        },
+        "availableGb": {
+          "type": "number",
+          "format": "double",
+          "title": "Available memory in GB"
+        },
+        "usagePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "Memory usage percentage (0-100)"
+        }
+      }
+    },
+    "ResourcesStorage": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "title": "Storage path being monitored"
+        },
+        "totalBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "usedBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "availableBytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "usagePercent": {
+          "type": "number",
+          "format": "double",
+          "title": "Storage usage percentage (0-100)"
+        }
+      }
+    },
+    "StatusResponseNetwork": {
+      "type": "object",
+      "properties": {
+        "peersCount": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Number of connected peers in P2P network"
+        },
+        "peerAddresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "List of connected peer addresses (optional, may be empty for privacy)"
+        }
+      },
+      "title": "Network information"
+    },
+    "StatusResponseP2PMetrics": {
+      "type": "object",
+      "properties": {
+        "dhtMetrics": {
+          "$ref": "#/definitions/P2PMetricsDhtMetrics"
+        },
+        "networkHandleMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/P2PMetricsHandleCounters"
+          }
+        },
+        "connPoolMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "banList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/P2PMetricsBanEntry"
+          }
+        },
+        "database": {
+          "$ref": "#/definitions/P2PMetricsDatabaseStats"
+        },
+        "disk": {
+          "$ref": "#/definitions/P2PMetricsDiskStatus"
+        }
+      },
+      "title": "P2P metrics and diagnostics (additive field)"
+    },
+    "StatusResponseResources": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "$ref": "#/definitions/ResourcesCPU"
+        },
+        "memory": {
+          "$ref": "#/definitions/ResourcesMemory"
+        },
+        "storageVolumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/ResourcesStorage"
+          }
+        },
+        "hardwareSummary": {
+          "type": "string",
+          "title": "Formatted hardware summary (e.g., \"8 cores / 32GB RAM\")"
+        }
+      },
+      "title": "System resource information"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "supernodeListServicesResponse": {
+      "type": "object",
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/supernodeServiceInfo"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "supernodeRawPprofResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte",
+          "title": "Raw pprof data exactly as returned by runtime/pprof"
+        }
+      }
+    },
+    "supernodeServiceInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "supernodeStatusResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "title": "Supernode version"
+        },
+        "uptimeSeconds": {
+          "type": "string",
+          "format": "uint64",
+          "title": "Uptime in seconds"
+        },
+        "resources": {
+          "$ref": "#/definitions/StatusResponseResources"
+        },
+        "registeredServices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "All registered/available services"
+        },
+        "network": {
+          "$ref": "#/definitions/StatusResponseNetwork",
+          "title": "P2P network information"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Rank in the top supernodes list (0 if not in top list)"
+        },
+        "ipAddress": {
+          "type": "string",
+          "title": "Supernode IP address with port (e.g., \"192.168.1.1:4445\")"
+        },
+        "p2pMetrics": {
+          "$ref": "#/definitions/StatusResponseP2PMetrics"
+        }
+      },
+      "title": "The StatusResponse represents system status with clear organization"
     }
   }
 }
