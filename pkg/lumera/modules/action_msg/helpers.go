@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"encoding/json"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/util"
-	gogoproto "github.com/cosmos/gogoproto/proto"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/util"	
 )
 
 func validateRequestActionParams(actionType, metadata, price, expirationTime string) error {
@@ -69,7 +69,7 @@ func createFinalizeActionMessage(creator, actionId string, rqIdsIds []string) (*
 		RqIdsIds: rqIdsIds,
 	}
 
-	metadataBytes, err := gogoproto.Marshal(&cascadeMeta)
+	metadataBytes, err := json.Marshal(&cascadeMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cascade metadata: %w", err)
 	}
