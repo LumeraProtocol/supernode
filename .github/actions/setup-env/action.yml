@@ -38,3 +38,20 @@ runs:
       shell: bash
       run: |
         go mod download
+
+    - name: Ensure modules are tidy
+      shell: bash
+      run: |
+        set -euo pipefail
+        modules=( "." "cmd/sncli" "sn-manager" "tests/system" )
+        for m in "${modules[@]}"; do
+          echo "::group::go mod tidy in $m"
+          (cd "$m" && go mod tidy)
+          echo "::endgroup::"
+        done
+        if ! git diff --quiet; then
+          echo "The following files changed after go mod tidy:"
+          git --no-pager diff --name-only
+          echo "Please run 'go mod tidy' locally in the modules above and commit."
+          exit 1
+        fi

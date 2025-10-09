@@ -10,9 +10,9 @@ import (
 
 // Constants: set InputPath and TaskID. BaseDir is the current directory.
 const (
-	BaseDir   = "/home/enxsys/Documents/Github/LumeraProtocol/supernode/release"
-	InputPath = "/home/enxsys/Documents/Github/LumeraProtocol/supernode/tests/system/900.zip" // set to an existing file path before running
-	TaskID    = "rq-dirA"                                                                     // both tests use the same directory
+	BaseDir   = ""
+	InputPath = ""        // set to an existing file path before running
+	TaskID    = "rq-dirA" // both tests use the same directory
 )
 
 // TestEncode_ToDirA encodes InputPath into BaseDir/TaskID using default settings.
@@ -139,7 +139,7 @@ func TestCreateMetadata_SaveToFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal metadata: %v", err)
 	}
-	outPath := "/home/enxsys/Documents/Github/LumeraProtocol/supernode/pkg/codec" + ".layout.json"
+	outPath := " . " + ".layout.json"
 	if err := os.WriteFile(outPath, data, 0o644); err != nil {
 		t.Fatalf("write output: %v", err)
 	}
