@@ -75,6 +75,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	}
 
 	var lastErr error
+	attempted := 0
 	for idx, sn := range supernodes {
 		// 1
 		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
@@ -87,6 +88,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", idx+1)
 			continue
 		}
+		attempted++
 		if err := t.attemptRegistration(ctx, idx, sn, clientFactory, req); err != nil {
 			//
 			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
@@ -105,8 +107,13 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		})
 		return nil // success
 	}
-
-	return fmt.Errorf("failed to upload to all supernodes: %w", lastErr)
+	if attempted == 0 {
+		return fmt.Errorf("no eligible supernodes to register")
+	}
+	if lastErr != nil {
+		return fmt.Errorf("failed to upload to all supernodes: %w", lastErr)
+	}
+	return fmt.Errorf("failed to upload to all supernodes")
 }
 
 func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {

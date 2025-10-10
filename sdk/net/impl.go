@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
@@ -29,13 +30,17 @@ type supernodeClient struct {
 // Verify interface compliance at compile time
 var _ SupernodeClient = (*supernodeClient)(nil)
 
+// ensure ALTS protocols are registered once per process
+var registerALTSOnce sync.Once
+
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
 	factoryConfig FactoryConfig, targetSupernode lumera.Supernode, lumeraClient lumera.Client,
 	clientOptions *client.ClientOptions,
 ) (SupernodeClient, error) {
-	// Register ALTS protocols, just like in the test
-	conn.RegisterALTSRecordProtocols()
+	// Register ALTS protocols once (process-wide). These are global and should not
+	// be unregistered per-connection to avoid impacting concurrent clients.
+	registerALTSOnce.Do(func() { conn.RegisterALTSRecordProtocols() })
 
 	// Validate required parameters
 	if logger == nil {
@@ -154,10 +159,6 @@ func (c *supernodeClient) Close(ctx context.Context) error {
 	if c.conn != nil {
 		c.logger.Debug(ctx, "Closing connection to supernode")
 		err := c.conn.Close()
-
-		// Cleanup ALTS protocols when client is closed
-		conn.UnregisterALTSRecordProtocols()
-
 		return err
 	}
 	return nil
