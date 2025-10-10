@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -127,7 +128,7 @@ func (c *Client) ListReleases() ([]*Release, error) {
 func (c *Client) GetLatestStableRelease() (*Release, error) {
 	// Try the latest release endpoint first (single API call)
 	release, err := c.GetLatestRelease()
-	if err == nil && !release.Draft && !release.Prerelease {
+	if err == nil && !release.Draft && !release.Prerelease && !strings.Contains(release.TagName, "-") {
 		return release, nil
 	}
 
@@ -139,7 +140,7 @@ func (c *Client) GetLatestStableRelease() (*Release, error) {
 
 	// Filter for stable releases (not draft, not prerelease)
 	for _, release := range releases {
-		if !release.Draft && !release.Prerelease {
+		if !release.Draft && !release.Prerelease && !strings.Contains(release.TagName, "-") {
 			return release, nil
 		}
 	}
