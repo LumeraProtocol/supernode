@@ -26,11 +26,12 @@ type SupernodeStatusService struct {
 	p2pService   p2p.Client
 	lumeraClient lumera.Client
 	config       *config.Config
+	tracker      task.Tracker
 }
 
 // NewSupernodeStatusService creates a new supernode status service instance
-func NewSupernodeStatusService(p2pService p2p.Client, lumeraClient lumera.Client, cfg *config.Config) *SupernodeStatusService {
-	return &SupernodeStatusService{metrics: NewMetricsCollector(), storagePaths: []string{"/"}, startTime: time.Now(), p2pService: p2pService, lumeraClient: lumeraClient, config: cfg}
+func NewSupernodeStatusService(p2pService p2p.Client, lumeraClient lumera.Client, cfg *config.Config, tracker task.Tracker) *SupernodeStatusService {
+	return &SupernodeStatusService{metrics: NewMetricsCollector(), storagePaths: []string{"/"}, startTime: time.Now(), p2pService: p2pService, lumeraClient: lumeraClient, config: cfg, tracker: tracker}
 }
 
 // GetChainID returns the chain ID from the configuration
@@ -99,14 +100,17 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 	resp.Network.PeersCount = 0
 	resp.Network.PeerAddresses = []string{}
 
-	// Populate running tasks from the global in-memory tracker
-	if snap := task.Default.Snapshot(); len(snap) > 0 {
-		for svc, ids := range snap {
-			resp.RunningTasks = append(resp.RunningTasks, &pb.StatusResponse_ServiceTasks{
-				ServiceName: svc,
-				TaskIds:     ids,
-				TaskCount:   int32(len(ids)),
-			})
+	// Populate running tasks from injected tracker
+	if s.tracker != nil {
+		snap := s.tracker.Snapshot()
+		if len(snap) > 0 {
+			for svc, ids := range snap {
+				resp.RunningTasks = append(resp.RunningTasks, &pb.StatusResponse_ServiceTasks{
+					ServiceName: svc,
+					TaskIds:     ids,
+					TaskCount:   int32(len(ids)),
+				})
+			}
 		}
 	}
 

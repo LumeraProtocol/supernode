@@ -130,31 +130,27 @@ func TestConcurrentAccessNoPanic(t *testing.T) {
 func fmtInt(i int) string { return string('0' + rune(i)) }
 
 func TestHandleIdempotentAndWatchdog(t *testing.T) {
-	// Swap the default tracker to isolate
-	orig := Default
-	Default = New()
-	defer func() { Default = orig }()
-
+	tr := New()
 	ctx := context.Background()
 
 	// Idempotent End
-	g := Start(ctx, "svc.guard", "id-1", 0)
+	g := StartWith(tr, ctx, "svc.handle", "id-1", 0)
 	g.End(ctx)
 	g.End(ctx) // no panic, no double-end crash
 
 	// Watchdog auto-end: use a small timeout
-	g2 := Start(ctx, "svc.guard", "id-2", 50*time.Millisecond)
-	_ = g2 // ensure guard stays referenced until timeout path
+	g2 := StartWith(tr, ctx, "svc.handle", "id-2", 50*time.Millisecond)
+	_ = g2 // ensure handle stays referenced until timeout path
 	// Do not call End; let the watchdog fire
 	time.Sleep(120 * time.Millisecond)
 
 	// After watchdog, the task should not be listed
-	snap := Default.Snapshot()
-	if ids, ok := snap["svc.guard"]; ok {
+	snap := tr.Snapshot()
+	if ids, ok := snap["svc.handle"]; ok {
 		// If still present, ensure id-2 is not in the list
 		for _, id := range ids {
 			if id == "id-2" {
-				t.Fatalf("expected watchdog to remove id-2 from svc.guard; snapshot: %v", ids)
+				t.Fatalf("expected watchdog to remove id-2 from svc.handle; snapshot: %v", ids)
 			}
 		}
 	}

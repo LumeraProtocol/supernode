@@ -18,6 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	grpcserver "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
@@ -115,14 +116,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 			rqStore,
 		)
 
-		// Create cascade action server
-		cascadeActionServer := cascadeRPC.NewCascadeActionServer(cService)
+		// Create a task tracker and cascade action server with DI
+		tr := task.New()
+		cascadeActionServer := cascadeRPC.NewCascadeActionServer(cService, tr, 0, 0)
 
 		// Set the version in the status service package
 		statusService.Version = Version
 
-		// Create supernode status service
-		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig)
+		// Create supernode status service with injected tracker
+		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)

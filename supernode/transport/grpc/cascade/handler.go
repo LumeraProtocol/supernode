@@ -19,12 +19,26 @@ import (
 
 type ActionServer struct {
 	pb.UnimplementedCascadeServiceServer
-	factory cascadeService.CascadeServiceFactory
+	factory         cascadeService.CascadeServiceFactory
+	tracker         tasks.Tracker
+	uploadTimeout   time.Duration
+	downloadTimeout time.Duration
 }
 
-// NewCascadeActionServer creates a new CascadeActionServer with injected service
-func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *ActionServer {
-	return &ActionServer{factory: factory}
+const (
+	serviceCascadeUpload   = "cascade.upload"
+	serviceCascadeDownload = "cascade.download"
+)
+
+// NewCascadeActionServer creates a new CascadeActionServer with injected service and tracker
+func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory, tracker tasks.Tracker, uploadTO, downloadTO time.Duration) *ActionServer {
+	if uploadTO <= 0 {
+		uploadTO = 30 * time.Minute
+	}
+	if downloadTO <= 0 {
+		downloadTO = 30 * time.Minute
+	}
+	return &ActionServer{factory: factory, tracker: tracker, uploadTimeout: uploadTO, downloadTimeout: downloadTO}
 }
 
 // calculateOptimalChunkSize returns an optimal chunk size based on file size
@@ -135,7 +149,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 			// Start live task tracking on first metadata (covers remaining stream and processing)
 			if !startedTask {
 				startedTask = true
-				handle = tasks.Start(ctx, "cascade.upload", metadata.ActionId, 30*time.Minute)
+				handle = tasks.StartWith(server.tracker, ctx, serviceCascadeUpload, metadata.ActionId, server.uploadTimeout)
 				defer handle.End(ctx)
 			}
 		}
@@ -204,7 +218,7 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	logtrace.Debug(ctx, "download request received", fields)
 
 	// Start live task tracking for the entire download RPC (including file streaming)
-	dlHandle := tasks.Start(ctx, "cascade.download", req.GetActionId(), 30*time.Minute)
+	dlHandle := tasks.StartWith(server.tracker, ctx, serviceCascadeDownload, req.GetActionId(), server.downloadTimeout)
 	defer dlHandle.End(ctx)
 
 	// Prepare to capture decoded file path from task events

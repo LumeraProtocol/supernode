@@ -25,9 +25,6 @@ type InMemoryTracker struct {
 	data map[string]map[string]struct{}
 }
 
-// Default is a package-level tracker instance for convenience.
-var Default = New()
-
 // New creates and returns a new in-memory tracker.
 func New() *InMemoryTracker {
 	return &InMemoryTracker{data: make(map[string]map[string]struct{})}

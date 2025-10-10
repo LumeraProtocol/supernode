@@ -11,6 +11,7 @@ import (
 // Handle manages a running task with an optional watchdog.
 // It ensures Start and End are paired, logs start/end, and auto-ends on timeout.
 type Handle struct {
+	tr      Tracker
 	service string
 	id      string
 	stop    chan struct{}
@@ -20,22 +21,20 @@ type Handle struct {
 // Start starts tracking a task and returns a Handle that will ensure the
 // task is ended. A watchdog is started to auto-end the task after timeout
 // to avoid indefinitely stuck running tasks in status reporting.
-func Start(ctx context.Context, service, id string, timeout time.Duration) *Handle {
-	if service == "" || id == "" {
+func StartWith(tr Tracker, ctx context.Context, service, id string, timeout time.Duration) *Handle {
+	if tr == nil || service == "" || id == "" {
 		return &Handle{}
 	}
-	Default.Start(service, id)
+	tr.Start(service, id)
 	logtrace.Info(ctx, "task: started", logtrace.Fields{"service": service, "task_id": id})
 
-	g := &Handle{service: service, id: id, stop: make(chan struct{})}
+	g := &Handle{tr: tr, service: service, id: id, stop: make(chan struct{})}
 	if timeout > 0 {
 		go func() {
 			select {
 			case <-time.After(timeout):
-				// Auto-end if not already ended
 				g.endWith(ctx, true)
 			case <-g.stop:
-				// normal completion
 			}
 		}()
 	}
@@ -55,7 +54,9 @@ func (g *Handle) endWith(ctx context.Context, expired bool) {
 	}
 	g.once.Do(func() {
 		close(g.stop)
-		Default.End(g.service, g.id)
+		if g.tr != nil {
+			g.tr.End(g.service, g.id)
+		}
 		if expired {
 			logtrace.Warn(ctx, "task: watchdog expired", logtrace.Fields{"service": g.service, "task_id": g.id})
 		} else {
