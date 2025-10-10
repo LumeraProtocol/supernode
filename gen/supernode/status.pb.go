@@ -7,11 +7,12 @@
 package supernode
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -70,15 +71,16 @@ func (x *StatusRequest) GetIncludeP2PMetrics() bool {
 
 // The StatusResponse represents system status with clear organization
 type StatusResponse struct {
-	state              protoimpl.MessageState     `protogen:"open.v1"`
-	Version            string                     `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                                   // Supernode version
-	UptimeSeconds      uint64                     `protobuf:"varint,2,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"` // Uptime in seconds
-	Resources          *StatusResponse_Resources  `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
-	RegisteredServices []string                   `protobuf:"bytes,5,rep,name=registered_services,json=registeredServices,proto3" json:"registered_services,omitempty"` // All registered/available services
-	Network            *StatusResponse_Network    `protobuf:"bytes,6,opt,name=network,proto3" json:"network,omitempty"`                                                 // P2P network information
-	Rank               int32                      `protobuf:"varint,7,opt,name=rank,proto3" json:"rank,omitempty"`                                                      // Rank in the top supernodes list (0 if not in top list)
-	IpAddress          string                     `protobuf:"bytes,8,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`                            // Supernode IP address with port (e.g., "192.168.1.1:4445")
-	P2PMetrics         *StatusResponse_P2PMetrics `protobuf:"bytes,9,opt,name=p2p_metrics,json=p2pMetrics,proto3" json:"p2p_metrics,omitempty"`
+	state              protoimpl.MessageState         `protogen:"open.v1"`
+	Version            string                         `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                                   // Supernode version
+	UptimeSeconds      uint64                         `protobuf:"varint,2,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"` // Uptime in seconds
+	Resources          *StatusResponse_Resources      `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
+	RunningTasks       []*StatusResponse_ServiceTasks `protobuf:"bytes,4,rep,name=running_tasks,json=runningTasks,proto3" json:"running_tasks,omitempty"`                   // Services with currently running tasks
+	RegisteredServices []string                       `protobuf:"bytes,5,rep,name=registered_services,json=registeredServices,proto3" json:"registered_services,omitempty"` // All registered/available services
+	Network            *StatusResponse_Network        `protobuf:"bytes,6,opt,name=network,proto3" json:"network,omitempty"`                                                 // P2P network information
+	Rank               int32                          `protobuf:"varint,7,opt,name=rank,proto3" json:"rank,omitempty"`                                                      // Rank in the top supernodes list (0 if not in top list)
+	IpAddress          string                         `protobuf:"bytes,8,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`                            // Supernode IP address with port (e.g., "192.168.1.1:4445")
+	P2PMetrics         *StatusResponse_P2PMetrics     `protobuf:"bytes,9,opt,name=p2p_metrics,json=p2pMetrics,proto3" json:"p2p_metrics,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -130,6 +132,13 @@ func (x *StatusResponse) GetUptimeSeconds() uint64 {
 func (x *StatusResponse) GetResources() *StatusResponse_Resources {
 	if x != nil {
 		return x.Resources
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetRunningTasks() []*StatusResponse_ServiceTasks {
+	if x != nil {
+		return x.RunningTasks
 	}
 	return nil
 }
@@ -238,6 +247,67 @@ func (x *StatusResponse_Resources) GetHardwareSummary() string {
 	return ""
 }
 
+// ServiceTasks contains task information for a specific service
+type StatusResponse_ServiceTasks struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	TaskIds       []string               `protobuf:"bytes,2,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
+	TaskCount     int32                  `protobuf:"varint,3,opt,name=task_count,json=taskCount,proto3" json:"task_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusResponse_ServiceTasks) Reset() {
+	*x = StatusResponse_ServiceTasks{}
+	mi := &file_supernode_status_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusResponse_ServiceTasks) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusResponse_ServiceTasks) ProtoMessage() {}
+
+func (x *StatusResponse_ServiceTasks) ProtoReflect() protoreflect.Message {
+	mi := &file_supernode_status_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusResponse_ServiceTasks.ProtoReflect.Descriptor instead.
+func (*StatusResponse_ServiceTasks) Descriptor() ([]byte, []int) {
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 1}
+}
+
+func (x *StatusResponse_ServiceTasks) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *StatusResponse_ServiceTasks) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
+func (x *StatusResponse_ServiceTasks) GetTaskCount() int32 {
+	if x != nil {
+		return x.TaskCount
+	}
+	return 0
+}
+
 // Network information
 type StatusResponse_Network struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -249,7 +319,7 @@ type StatusResponse_Network struct {
 
 func (x *StatusResponse_Network) Reset() {
 	*x = StatusResponse_Network{}
-	mi := &file_supernode_status_proto_msgTypes[3]
+	mi := &file_supernode_status_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -261,7 +331,7 @@ func (x *StatusResponse_Network) String() string {
 func (*StatusResponse_Network) ProtoMessage() {}
 
 func (x *StatusResponse_Network) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[3]
+	mi := &file_supernode_status_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,7 +344,7 @@ func (x *StatusResponse_Network) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse_Network.ProtoReflect.Descriptor instead.
 func (*StatusResponse_Network) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 1}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2}
 }
 
 func (x *StatusResponse_Network) GetPeersCount() int32 {
@@ -306,7 +376,7 @@ type StatusResponse_P2PMetrics struct {
 
 func (x *StatusResponse_P2PMetrics) Reset() {
 	*x = StatusResponse_P2PMetrics{}
-	mi := &file_supernode_status_proto_msgTypes[4]
+	mi := &file_supernode_status_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -318,7 +388,7 @@ func (x *StatusResponse_P2PMetrics) String() string {
 func (*StatusResponse_P2PMetrics) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[4]
+	mi := &file_supernode_status_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -331,7 +401,7 @@ func (x *StatusResponse_P2PMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse_P2PMetrics.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3}
 }
 
 func (x *StatusResponse_P2PMetrics) GetDhtMetrics() *StatusResponse_P2PMetrics_DhtMetrics {
@@ -386,7 +456,7 @@ type StatusResponse_Resources_CPU struct {
 
 func (x *StatusResponse_Resources_CPU) Reset() {
 	*x = StatusResponse_Resources_CPU{}
-	mi := &file_supernode_status_proto_msgTypes[5]
+	mi := &file_supernode_status_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -398,7 +468,7 @@ func (x *StatusResponse_Resources_CPU) String() string {
 func (*StatusResponse_Resources_CPU) ProtoMessage() {}
 
 func (x *StatusResponse_Resources_CPU) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[5]
+	mi := &file_supernode_status_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +510,7 @@ type StatusResponse_Resources_Memory struct {
 
 func (x *StatusResponse_Resources_Memory) Reset() {
 	*x = StatusResponse_Resources_Memory{}
-	mi := &file_supernode_status_proto_msgTypes[6]
+	mi := &file_supernode_status_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -452,7 +522,7 @@ func (x *StatusResponse_Resources_Memory) String() string {
 func (*StatusResponse_Resources_Memory) ProtoMessage() {}
 
 func (x *StatusResponse_Resources_Memory) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[6]
+	mi := &file_supernode_status_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +579,7 @@ type StatusResponse_Resources_Storage struct {
 
 func (x *StatusResponse_Resources_Storage) Reset() {
 	*x = StatusResponse_Resources_Storage{}
-	mi := &file_supernode_status_proto_msgTypes[7]
+	mi := &file_supernode_status_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +591,7 @@ func (x *StatusResponse_Resources_Storage) String() string {
 func (*StatusResponse_Resources_Storage) ProtoMessage() {}
 
 func (x *StatusResponse_Resources_Storage) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[7]
+	mi := &file_supernode_status_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +655,7 @@ type StatusResponse_P2PMetrics_DhtMetrics struct {
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics) Reset() {
 	*x = StatusResponse_P2PMetrics_DhtMetrics{}
-	mi := &file_supernode_status_proto_msgTypes[8]
+	mi := &file_supernode_status_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +667,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics) String() string {
 func (*StatusResponse_P2PMetrics_DhtMetrics) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[8]
+	mi := &file_supernode_status_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +680,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use StatusResponse_P2PMetrics_DhtMetrics.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_DhtMetrics) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 0}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 0}
 }
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics) GetStoreSuccessRecent() []*StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint {
@@ -654,7 +724,7 @@ type StatusResponse_P2PMetrics_HandleCounters struct {
 
 func (x *StatusResponse_P2PMetrics_HandleCounters) Reset() {
 	*x = StatusResponse_P2PMetrics_HandleCounters{}
-	mi := &file_supernode_status_proto_msgTypes[9]
+	mi := &file_supernode_status_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -666,7 +736,7 @@ func (x *StatusResponse_P2PMetrics_HandleCounters) String() string {
 func (*StatusResponse_P2PMetrics_HandleCounters) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_HandleCounters) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[9]
+	mi := &file_supernode_status_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -679,7 +749,7 @@ func (x *StatusResponse_P2PMetrics_HandleCounters) ProtoReflect() protoreflect.M
 
 // Deprecated: Use StatusResponse_P2PMetrics_HandleCounters.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_HandleCounters) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 1}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 1}
 }
 
 func (x *StatusResponse_P2PMetrics_HandleCounters) GetTotal() int64 {
@@ -725,7 +795,7 @@ type StatusResponse_P2PMetrics_BanEntry struct {
 
 func (x *StatusResponse_P2PMetrics_BanEntry) Reset() {
 	*x = StatusResponse_P2PMetrics_BanEntry{}
-	mi := &file_supernode_status_proto_msgTypes[10]
+	mi := &file_supernode_status_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -737,7 +807,7 @@ func (x *StatusResponse_P2PMetrics_BanEntry) String() string {
 func (*StatusResponse_P2PMetrics_BanEntry) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_BanEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[10]
+	mi := &file_supernode_status_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -750,7 +820,7 @@ func (x *StatusResponse_P2PMetrics_BanEntry) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use StatusResponse_P2PMetrics_BanEntry.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_BanEntry) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 2}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 2}
 }
 
 func (x *StatusResponse_P2PMetrics_BanEntry) GetId() string {
@@ -806,7 +876,7 @@ type StatusResponse_P2PMetrics_DatabaseStats struct {
 
 func (x *StatusResponse_P2PMetrics_DatabaseStats) Reset() {
 	*x = StatusResponse_P2PMetrics_DatabaseStats{}
-	mi := &file_supernode_status_proto_msgTypes[11]
+	mi := &file_supernode_status_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -818,7 +888,7 @@ func (x *StatusResponse_P2PMetrics_DatabaseStats) String() string {
 func (*StatusResponse_P2PMetrics_DatabaseStats) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_DatabaseStats) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[11]
+	mi := &file_supernode_status_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -831,7 +901,7 @@ func (x *StatusResponse_P2PMetrics_DatabaseStats) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use StatusResponse_P2PMetrics_DatabaseStats.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_DatabaseStats) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 3}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 3}
 }
 
 func (x *StatusResponse_P2PMetrics_DatabaseStats) GetP2PDbSizeMb() float64 {
@@ -860,7 +930,7 @@ type StatusResponse_P2PMetrics_DiskStatus struct {
 
 func (x *StatusResponse_P2PMetrics_DiskStatus) Reset() {
 	*x = StatusResponse_P2PMetrics_DiskStatus{}
-	mi := &file_supernode_status_proto_msgTypes[12]
+	mi := &file_supernode_status_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -872,7 +942,7 @@ func (x *StatusResponse_P2PMetrics_DiskStatus) String() string {
 func (*StatusResponse_P2PMetrics_DiskStatus) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_DiskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[12]
+	mi := &file_supernode_status_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -885,7 +955,7 @@ func (x *StatusResponse_P2PMetrics_DiskStatus) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use StatusResponse_P2PMetrics_DiskStatus.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_DiskStatus) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 4}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 4}
 }
 
 func (x *StatusResponse_P2PMetrics_DiskStatus) GetAllMb() float64 {
@@ -921,7 +991,7 @@ type StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint struct {
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) Reset() {
 	*x = StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint{}
-	mi := &file_supernode_status_proto_msgTypes[15]
+	mi := &file_supernode_status_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1003,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) String() string
 func (*StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[15]
+	mi := &file_supernode_status_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1016,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) ProtoReflect() 
 
 // Deprecated: Use StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 0, 0}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 0, 0}
 }
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint) GetTimeUnix() int64 {
@@ -991,7 +1061,7 @@ type StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint struct {
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) Reset() {
 	*x = StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint{}
-	mi := &file_supernode_status_proto_msgTypes[16]
+	mi := &file_supernode_status_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1003,7 +1073,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) String() strin
 func (*StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) ProtoMessage() {}
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[16]
+	mi := &file_supernode_status_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1016,7 +1086,7 @@ func (x *StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) ProtoReflect()
 
 // Deprecated: Use StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint.ProtoReflect.Descriptor instead.
 func (*StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 2, 0, 1}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 3, 0, 1}
 }
 
 func (x *StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint) GetTimeUnix() int64 {
@@ -1067,11 +1137,12 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\n" +
 	"\x16supernode/status.proto\x12\tsupernode\"?\n" +
 	"\rStatusRequest\x12.\n" +
-	"\x13include_p2p_metrics\x18\x01 \x01(\bR\x11includeP2pMetrics\"\xca\x17\n" +
+	"\x13include_p2p_metrics\x18\x01 \x01(\bR\x11includeP2pMetrics\"\x84\x19\n" +
 	"\x0eStatusResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\x12A\n" +
-	"\tresources\x18\x03 \x01(\v2#.supernode.StatusResponse.ResourcesR\tresources\x12/\n" +
+	"\tresources\x18\x03 \x01(\v2#.supernode.StatusResponse.ResourcesR\tresources\x12K\n" +
+	"\rrunning_tasks\x18\x04 \x03(\v2&.supernode.StatusResponse.ServiceTasksR\frunningTasks\x12/\n" +
 	"\x13registered_services\x18\x05 \x03(\tR\x12registeredServices\x12;\n" +
 	"\anetwork\x18\x06 \x01(\v2!.supernode.StatusResponse.NetworkR\anetwork\x12\x12\n" +
 	"\x04rank\x18\a \x01(\x05R\x04rank\x12\x1d\n" +
@@ -1099,7 +1170,12 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\n" +
 	"used_bytes\x18\x03 \x01(\x04R\tusedBytes\x12'\n" +
 	"\x0favailable_bytes\x18\x04 \x01(\x04R\x0eavailableBytes\x12#\n" +
-	"\rusage_percent\x18\x05 \x01(\x01R\fusagePercent\x1aQ\n" +
+	"\rusage_percent\x18\x05 \x01(\x01R\fusagePercent\x1ak\n" +
+	"\fServiceTasks\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x19\n" +
+	"\btask_ids\x18\x02 \x03(\tR\ataskIds\x12\x1d\n" +
+	"\n" +
+	"task_count\x18\x03 \x01(\x05R\ttaskCount\x1aQ\n" +
 	"\aNetwork\x12\x1f\n" +
 	"\vpeers_count\x18\x01 \x01(\x05R\n" +
 	"peersCount\x12%\n" +
@@ -1175,47 +1251,49 @@ func file_supernode_status_proto_rawDescGZIP() []byte {
 	return file_supernode_status_proto_rawDescData
 }
 
-var file_supernode_status_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_supernode_status_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_supernode_status_proto_goTypes = []any{
 	(*StatusRequest)(nil),                            // 0: supernode.StatusRequest
 	(*StatusResponse)(nil),                           // 1: supernode.StatusResponse
 	(*StatusResponse_Resources)(nil),                 // 2: supernode.StatusResponse.Resources
-	(*StatusResponse_Network)(nil),                   // 3: supernode.StatusResponse.Network
-	(*StatusResponse_P2PMetrics)(nil),                // 4: supernode.StatusResponse.P2PMetrics
-	(*StatusResponse_Resources_CPU)(nil),             // 5: supernode.StatusResponse.Resources.CPU
-	(*StatusResponse_Resources_Memory)(nil),          // 6: supernode.StatusResponse.Resources.Memory
-	(*StatusResponse_Resources_Storage)(nil),         // 7: supernode.StatusResponse.Resources.Storage
-	(*StatusResponse_P2PMetrics_DhtMetrics)(nil),     // 8: supernode.StatusResponse.P2PMetrics.DhtMetrics
-	(*StatusResponse_P2PMetrics_HandleCounters)(nil), // 9: supernode.StatusResponse.P2PMetrics.HandleCounters
-	(*StatusResponse_P2PMetrics_BanEntry)(nil),       // 10: supernode.StatusResponse.P2PMetrics.BanEntry
-	(*StatusResponse_P2PMetrics_DatabaseStats)(nil),  // 11: supernode.StatusResponse.P2PMetrics.DatabaseStats
-	(*StatusResponse_P2PMetrics_DiskStatus)(nil),     // 12: supernode.StatusResponse.P2PMetrics.DiskStatus
-	nil, // 13: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry
-	nil, // 14: supernode.StatusResponse.P2PMetrics.ConnPoolMetricsEntry
-	(*StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint)(nil),  // 15: supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
-	(*StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint)(nil), // 16: supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
+	(*StatusResponse_ServiceTasks)(nil),              // 3: supernode.StatusResponse.ServiceTasks
+	(*StatusResponse_Network)(nil),                   // 4: supernode.StatusResponse.Network
+	(*StatusResponse_P2PMetrics)(nil),                // 5: supernode.StatusResponse.P2PMetrics
+	(*StatusResponse_Resources_CPU)(nil),             // 6: supernode.StatusResponse.Resources.CPU
+	(*StatusResponse_Resources_Memory)(nil),          // 7: supernode.StatusResponse.Resources.Memory
+	(*StatusResponse_Resources_Storage)(nil),         // 8: supernode.StatusResponse.Resources.Storage
+	(*StatusResponse_P2PMetrics_DhtMetrics)(nil),     // 9: supernode.StatusResponse.P2PMetrics.DhtMetrics
+	(*StatusResponse_P2PMetrics_HandleCounters)(nil), // 10: supernode.StatusResponse.P2PMetrics.HandleCounters
+	(*StatusResponse_P2PMetrics_BanEntry)(nil),       // 11: supernode.StatusResponse.P2PMetrics.BanEntry
+	(*StatusResponse_P2PMetrics_DatabaseStats)(nil),  // 12: supernode.StatusResponse.P2PMetrics.DatabaseStats
+	(*StatusResponse_P2PMetrics_DiskStatus)(nil),     // 13: supernode.StatusResponse.P2PMetrics.DiskStatus
+	nil, // 14: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry
+	nil, // 15: supernode.StatusResponse.P2PMetrics.ConnPoolMetricsEntry
+	(*StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint)(nil),  // 16: supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
+	(*StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint)(nil), // 17: supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
 }
 var file_supernode_status_proto_depIdxs = []int32{
 	2,  // 0: supernode.StatusResponse.resources:type_name -> supernode.StatusResponse.Resources
-	3,  // 1: supernode.StatusResponse.network:type_name -> supernode.StatusResponse.Network
-	4,  // 2: supernode.StatusResponse.p2p_metrics:type_name -> supernode.StatusResponse.P2PMetrics
-	5,  // 3: supernode.StatusResponse.Resources.cpu:type_name -> supernode.StatusResponse.Resources.CPU
-	6,  // 4: supernode.StatusResponse.Resources.memory:type_name -> supernode.StatusResponse.Resources.Memory
-	7,  // 5: supernode.StatusResponse.Resources.storage_volumes:type_name -> supernode.StatusResponse.Resources.Storage
-	8,  // 6: supernode.StatusResponse.P2PMetrics.dht_metrics:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics
-	13, // 7: supernode.StatusResponse.P2PMetrics.network_handle_metrics:type_name -> supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry
-	14, // 8: supernode.StatusResponse.P2PMetrics.conn_pool_metrics:type_name -> supernode.StatusResponse.P2PMetrics.ConnPoolMetricsEntry
-	10, // 9: supernode.StatusResponse.P2PMetrics.ban_list:type_name -> supernode.StatusResponse.P2PMetrics.BanEntry
-	11, // 10: supernode.StatusResponse.P2PMetrics.database:type_name -> supernode.StatusResponse.P2PMetrics.DatabaseStats
-	12, // 11: supernode.StatusResponse.P2PMetrics.disk:type_name -> supernode.StatusResponse.P2PMetrics.DiskStatus
-	15, // 12: supernode.StatusResponse.P2PMetrics.DhtMetrics.store_success_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
-	16, // 13: supernode.StatusResponse.P2PMetrics.DhtMetrics.batch_retrieve_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
-	9,  // 14: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry.value:type_name -> supernode.StatusResponse.P2PMetrics.HandleCounters
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	3,  // 1: supernode.StatusResponse.running_tasks:type_name -> supernode.StatusResponse.ServiceTasks
+	4,  // 2: supernode.StatusResponse.network:type_name -> supernode.StatusResponse.Network
+	5,  // 3: supernode.StatusResponse.p2p_metrics:type_name -> supernode.StatusResponse.P2PMetrics
+	6,  // 4: supernode.StatusResponse.Resources.cpu:type_name -> supernode.StatusResponse.Resources.CPU
+	7,  // 5: supernode.StatusResponse.Resources.memory:type_name -> supernode.StatusResponse.Resources.Memory
+	8,  // 6: supernode.StatusResponse.Resources.storage_volumes:type_name -> supernode.StatusResponse.Resources.Storage
+	9,  // 7: supernode.StatusResponse.P2PMetrics.dht_metrics:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics
+	14, // 8: supernode.StatusResponse.P2PMetrics.network_handle_metrics:type_name -> supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry
+	15, // 9: supernode.StatusResponse.P2PMetrics.conn_pool_metrics:type_name -> supernode.StatusResponse.P2PMetrics.ConnPoolMetricsEntry
+	11, // 10: supernode.StatusResponse.P2PMetrics.ban_list:type_name -> supernode.StatusResponse.P2PMetrics.BanEntry
+	12, // 11: supernode.StatusResponse.P2PMetrics.database:type_name -> supernode.StatusResponse.P2PMetrics.DatabaseStats
+	13, // 12: supernode.StatusResponse.P2PMetrics.disk:type_name -> supernode.StatusResponse.P2PMetrics.DiskStatus
+	16, // 13: supernode.StatusResponse.P2PMetrics.DhtMetrics.store_success_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
+	17, // 14: supernode.StatusResponse.P2PMetrics.DhtMetrics.batch_retrieve_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
+	10, // 15: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry.value:type_name -> supernode.StatusResponse.P2PMetrics.HandleCounters
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_supernode_status_proto_init() }
@@ -1229,7 +1307,7 @@ func file_supernode_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_supernode_status_proto_rawDesc), len(file_supernode_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

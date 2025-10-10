@@ -43,6 +43,8 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
+	// Deterministic per-action ordering to distribute load fairly
+	supernodes = orderSupernodesByDeterministicDistance(t.ActionID, supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes found", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 – download from super-nodes
@@ -88,6 +90,12 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			event.KeyIteration:        iteration,
 		})
 
+		// Re-check serving status just-in-time to avoid calling a node that became busy/down
+		if !t.isServing(ctx, sn) {
+			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", iteration)
+			continue
+		}
+
 		if err := t.attemptDownload(ctx, sn, clientFactory, req); err != nil {
 			// Log failure and continue to next supernode
 			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
@@ -116,6 +124,16 @@ func (t *CascadeDownloadTask) attemptDownload(
 	factory *net.ClientFactory,
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
 ) error {
+	// Recheck liveness/busyness just before attempting download to handle delays
+	if !t.isServing(parent, sn) {
+		// Emit a concise event; detailed rejection reasons are logged inside isServing
+		t.LogEvent(parent, event.SDKDownloadFailure, "precheck: supernode not serving/busy", event.EventData{
+			event.KeySupernode:        sn.GrpcEndpoint,
+			event.KeySupernodeAddress: sn.CosmosAddress,
+			event.KeyReason:           "precheck_not_serving_or_busy",
+		})
+		return fmt.Errorf("precheck: supernode not serving/busy")
+	}
 
 	ctx, cancel := context.WithTimeout(parent, downloadTimeout)
 	defer cancel()

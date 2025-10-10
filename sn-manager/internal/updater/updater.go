@@ -3,28 +3,32 @@ package updater
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Global updater timing constants
 const (
 	// gatewayTimeout bounds the local gateway status probe
-	// gatewayTimeout = 15 * time.Second
+	gatewayTimeout = 15 * time.Second
 	// updateCheckInterval is how often the periodic updater runs
-	updateCheckInterval = 5 * time.Minute
+	updateCheckInterval = 10 * time.Minute
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
-	forceUpdateAfter = 5 * time.Minute
+	forceUpdateAfter = 60 * time.Minute
 )
 
 type AutoUpdater struct {
@@ -132,37 +136,43 @@ func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	return false
 }
 
-// isGatewayIdle returns (idle, isError). When isError is true,
-// the gateway could not be reliably checked (network/error/invalid).
-// When isError is false and idle is false, the gateway is busy.
 func (u *AutoUpdater) isGatewayIdle() (bool, bool) {
-	// client := &http.Client{Timeout: gatewayTimeout}
+	client := &http.Client{Timeout: gatewayTimeout}
 
-	// resp, err := client.Get(u.gatewayURL)
-	// if err != nil {
-	// 	log.Printf("Failed to check gateway status: %v", err)
-	// 	// Error contacting gateway
-	// 	return false, true
-	// }
-	// defer resp.Body.Close()
+	resp, err := client.Get(u.gatewayURL)
+	if err != nil {
+		log.Printf("Failed to check gateway status: %v", err)
+		// Error contacting gateway
+		return false, true
+	}
+	defer resp.Body.Close()
 
-	// if resp.StatusCode != http.StatusOK {
-	// 	log.Printf("Gateway returned status %d, not safe to update", resp.StatusCode)
-	// 	return false, true
-	// }
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Gateway returned status %d, not safe to update", resp.StatusCode)
+		return false, true
+	}
 
-	// var status pb.StatusResponse
-	// body, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	log.Printf("Failed to read gateway response: %v", err)
-	// 	return false, true
-	// }
-	// if err := protojson.Unmarshal(body, &status); err != nil {
-	// 	log.Printf("Failed to decode gateway response: %v", err)
-	// 	return false, true
-	// }
+	var status pb.StatusResponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read gateway response: %v", err)
+		return false, true
+	}
+	if err := protojson.Unmarshal(body, &status); err != nil {
+		log.Printf("Failed to decode gateway response: %v", err)
+		return false, true
+	}
 
-	// // TEMP: tasks are not available in the new gateway endpoint; skip busy-check
+	// Idle when there are no running tasks across all services
+	if len(status.GetRunningTasks()) == 0 {
+		return true, false
+	}
+	for _, st := range status.GetRunningTasks() {
+		if st.GetTaskCount() > 0 || len(st.GetTaskIds()) > 0 {
+			log.Printf("Gateway busy: service=%s tasks=%d", st.GetServiceName(), st.GetTaskCount())
+			return false, false
+		}
+	}
 	return true, false
 }
 

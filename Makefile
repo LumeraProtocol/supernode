@@ -114,7 +114,7 @@ SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 # Optional: specify lumera binary path to skip download
 LUMERAD_BINARY ?=
 # Optional: specify installation mode (latest-release, latest-tag, or vX.Y.Z)
-INSTALL_MODE ?=latest-tag
+INSTALL_MODE ?=v1.7.2
 
 install-lumera:
 	@echo "Installing Lumera..."
