@@ -37,8 +37,8 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// 1 - Fetch the supernodes
-	supernodes, err := t.fetchSupernodes(ctx, t.Action.Height)
+	// 1 - Fetch the supernodes (single-pass probe: sanitize + load snapshot)
+	supernodes, loads, err := t.fetchSupernodesWithLoads(ctx, t.Action.Height)
 
 	if err != nil {
 		t.LogEvent(ctx, event.SDKSupernodesUnavailable, "Supernodes unavailable", event.EventData{event.KeyError: err.Error()})
@@ -46,8 +46,8 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Deterministic per-action ordering to distribute load fairly
-	supernodes = orderSupernodesByDeterministicDistance(t.ActionID, supernodes)
+	// Rank by current load snapshot (fewest first), tie-break deterministically
+	supernodes = t.orderByLoadSnapshotThenDeterministic(supernodes, loads)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes found.", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
@@ -76,34 +76,46 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	var lastErr error
 	attempted := 0
-	for idx, sn := range supernodes {
-		// 1
+	// Work on a copy and re-rank between attempts to avoid stale ordering
+	remaining := append(lumera.Supernodes(nil), supernodes...)
+	for len(remaining) > 0 {
+		// Refresh load-aware ordering for remaining candidates
+		remaining = t.orderByLoadThenDeterministic(ctx, remaining)
+		sn := remaining[0]
+		iteration := attempted + 1
+
 		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
 			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyIteration:        idx + 1,
+			event.KeyIteration:        iteration,
 		})
-		// Re-check serving status just-in-time to avoid calling a node that became busy/down
+
+		// Re-check serving status just-in-time to avoid calling a node that became down/underpeered
 		if !t.isServing(ctx, sn) {
-			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", idx+1)
+			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", iteration)
+			// Drop this node and retry with the rest
+			remaining = remaining[1:]
 			continue
 		}
+
 		attempted++
-		if err := t.attemptRegistration(ctx, idx, sn, clientFactory, req); err != nil {
-			//
+		if err := t.attemptRegistration(ctx, iteration-1, sn, clientFactory, req); err != nil {
 			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
 				event.KeySupernode:        sn.GrpcEndpoint,
 				event.KeySupernodeAddress: sn.CosmosAddress,
-				event.KeyIteration:        idx + 1,
+				event.KeyIteration:        iteration,
 				event.KeyError:            err.Error(),
 			})
 			lastErr = err
+			// Drop this node and retry with the rest (re-ranked next loop)
+			remaining = remaining[1:]
 			continue
 		}
+
 		t.LogEvent(ctx, event.SDKRegistrationSuccessful, "successfully registered with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
 			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyIteration:        idx + 1,
+			event.KeyIteration:        iteration,
 		})
 		return nil // success
 	}

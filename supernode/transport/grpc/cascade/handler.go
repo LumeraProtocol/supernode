@@ -30,10 +30,10 @@ func NewCascadeActionServer(factory cascadeService.CascadeServiceFactory) *Actio
 // calculateOptimalChunkSize returns an optimal chunk size based on file size
 // to balance throughput and memory usage
 
-    var (
-        startedTask bool
-        handle      *tasks.Handle
-    )
+var (
+	startedTask bool
+	handle      *tasks.Handle
+)
 
 func calculateOptimalChunkSize(fileSize int64) int {
 	const (
@@ -133,11 +133,11 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 			metadata = x.Metadata
 			logtrace.Debug(ctx, "received metadata", logtrace.Fields{"task_id": metadata.TaskId, "action_id": metadata.ActionId})
 			// Start live task tracking on first metadata (covers remaining stream and processing)
-            if !startedTask {
-                startedTask = true
-                handle = tasks.Start(ctx, "cascade.upload", metadata.ActionId, 30*time.Minute)
-                defer handle.End(ctx)
-            }
+			if !startedTask {
+				startedTask = true
+				handle = tasks.Start(ctx, "cascade.upload", metadata.ActionId, 30*time.Minute)
+				defer handle.End(ctx)
+			}
 		}
 	}
 
@@ -204,8 +204,8 @@ func (server *ActionServer) Download(req *pb.DownloadRequest, stream pb.CascadeS
 	logtrace.Debug(ctx, "download request received", fields)
 
 	// Start live task tracking for the entire download RPC (including file streaming)
-    dlHandle := tasks.Start(ctx, "cascade.download", req.GetActionId(), 30*time.Minute)
-    defer dlHandle.End(ctx)
+	dlHandle := tasks.Start(ctx, "cascade.download", req.GetActionId(), 30*time.Minute)
+	defer dlHandle.End(ctx)
 
 	// Prepare to capture decoded file path from task events
 	var decodedFilePath string

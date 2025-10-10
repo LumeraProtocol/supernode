@@ -34,8 +34,8 @@ This document explains how timeouts and deadlines are applied across the SDK cas
 3) `sdk/task/cascade.go: CascadeTask.Run(ctx)`
    - Validates file size; fetches healthy supernodes; registers with one.
 
-4) Discovery: `sdk/task/task.go: BaseTask.fetchSupernodes` → `BaseTask.isServing`
-   - `context.WithTimeout(parent, 10s)` for health probe (create client + `HealthCheck`).
+4) Discovery: `sdk/task/task.go: BaseTask.fetchSupernodesWithLoads` (single-pass sanitize + load)
+   - `context.WithTimeout(parent, 10s)` per node: `HealthCheck` + `GetStatus` (peers, running_tasks) + balance.
 
 5) Registration attempt: `sdk/task/cascade.go: attemptRegistration`
    - Client connect: uses task context (no deadline); gRPC injects a 30s default at connect if needed.
@@ -136,7 +136,7 @@ This approach requires no request‑struct changes and preserves existing call s
   - `supernode/sdk/action/client.go` — entrypoints, no timeouts added.
   - `supernode/sdk/task/manager.go` — detaches from caller context; creates and runs tasks.
   - `supernode/sdk/task/timeouts.go` — `connectionTimeout` for health checks.
-  - `supernode/sdk/task/task.go` — discovery + health checks using `connectionTimeout`.
+  - `supernode/sdk/task/task.go` — discovery with single-pass probe (`fetchSupernodesWithLoads`) using `connectionTimeout`.
   - `supernode/sdk/adapters/supernodeservice/timeouts.go` — upload/processing timeout constants.
   - `supernode/sdk/adapters/supernodeservice/adapter.go` — upload and progress stream handling (phase timers + events).
   - `supernode/sdk/net/factory.go` — client options tuned for streaming.
@@ -170,7 +170,7 @@ This document describes how the SDK applies timeouts and deadlines during cascad
 1) `sdk/action/client.go: ClientImpl.StartCascade(ctx, ...)` — forwards `ctx` to the Task Manager.
 2) `sdk/task/manager.go: ManagerImpl.CreateCascadeTask(...)` — detaches from caller (`context.WithCancel(context.Background())`).
 3) `sdk/task/cascade.go: CascadeTask.Run(ctx)` — validates file size, discovers healthy supernodes, attempts registration.
-4) `sdk/task/task.go: BaseTask.fetchSupernodes` → `BaseTask.isServing` — health probe with `connectionTimeout = 10s` per node.
+4) `sdk/task/task.go: BaseTask.fetchSupernodesWithLoads` — single-pass probe with `connectionTimeout = 10s` per node (health, status, balance) and load snapshot.
 5) `sdk/task/cascade.go: attemptRegistration` — creates client and calls `RegisterCascade` with task context.
 6) `sdk/adapters/supernodeservice/adapter.go: CascadeSupernodeRegister` — applies phase timers:
    - Upload phase: send chunks and metadata; cancel if `cascadeUploadTimeout` elapses.

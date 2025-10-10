@@ -1,10 +1,10 @@
 package task
 
 import (
-    "context"
-    "sync"
-    "testing"
-    "time"
+	"context"
+	"sync"
+	"testing"
+	"time"
 )
 
 func TestStartEndSnapshot(t *testing.T) {
@@ -80,82 +80,82 @@ func TestInvalidInputsAndIsolation(t *testing.T) {
 // TestConcurrentAccessNoPanic ensures that concurrent Start/End/Snapshot
 // operations do not panic due to unsafe map access.
 func TestConcurrentAccessNoPanic(t *testing.T) {
-    tr := New()
+	tr := New()
 
-    // Run a mix of writers and readers concurrently.
-    var wg sync.WaitGroup
-    startWriters := 8
-    snapReaders := 4
-    loops := 1000
+	// Run a mix of writers and readers concurrently.
+	var wg sync.WaitGroup
+	startWriters := 8
+	snapReaders := 4
+	loops := 1000
 
-    // Writers: repeatedly start/end tasks across a few services.
-    for w := 0; w < startWriters; w++ {
-        wg.Add(1)
-        go func(id int) {
-            defer wg.Done()
-            for i := 0; i < loops; i++ {
-                svc := "svc" + string('A'+rune(id%3)) // svcA, svcB, svcC
-                tid := svc + ":t" + fmtInt(i%5)
-                tr.Start(svc, tid)
-                if i%2 == 0 {
-                    tr.End(svc, tid)
-                }
-            }
-        }(w)
-    }
+	// Writers: repeatedly start/end tasks across a few services.
+	for w := 0; w < startWriters; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < loops; i++ {
+				svc := "svc" + string('A'+rune(id%3)) // svcA, svcB, svcC
+				tid := svc + ":t" + fmtInt(i%5)
+				tr.Start(svc, tid)
+				if i%2 == 0 {
+					tr.End(svc, tid)
+				}
+			}
+		}(w)
+	}
 
-    // Readers: take snapshots concurrently.
-    for r := 0; r < snapReaders; r++ {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            for i := 0; i < loops; i++ {
-                _ = tr.Snapshot()
-            }
-        }()
-    }
+	// Readers: take snapshots concurrently.
+	for r := 0; r < snapReaders; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < loops; i++ {
+				_ = tr.Snapshot()
+			}
+		}()
+	}
 
-    // If there is any concurrent map access bug, the test runner would panic.
-    done := make(chan struct{})
-    go func() { wg.Wait(); close(done) }()
-    select {
-    case <-done:
-        // ok
-    case <-time.After(5 * time.Second):
-        t.Fatal("concurrent access test timed out")
-    }
+	// If there is any concurrent map access bug, the test runner would panic.
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		// ok
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent access test timed out")
+	}
 }
 
 // fmtInt provides a tiny int-to-string helper to avoid importing strconv.
 func fmtInt(i int) string { return string('0' + rune(i)) }
 
 func TestHandleIdempotentAndWatchdog(t *testing.T) {
-    // Swap the default tracker to isolate
-    orig := Default
-    Default = New()
-    defer func() { Default = orig }()
+	// Swap the default tracker to isolate
+	orig := Default
+	Default = New()
+	defer func() { Default = orig }()
 
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // Idempotent End
-    g := Start(ctx, "svc.guard", "id-1", 0)
-    g.End(ctx)
-    g.End(ctx) // no panic, no double-end crash
+	// Idempotent End
+	g := Start(ctx, "svc.guard", "id-1", 0)
+	g.End(ctx)
+	g.End(ctx) // no panic, no double-end crash
 
-    // Watchdog auto-end: use a small timeout
-    g2 := Start(ctx, "svc.guard", "id-2", 50*time.Millisecond)
-    _ = g2 // ensure guard stays referenced until timeout path
-    // Do not call End; let the watchdog fire
-    time.Sleep(120 * time.Millisecond)
+	// Watchdog auto-end: use a small timeout
+	g2 := Start(ctx, "svc.guard", "id-2", 50*time.Millisecond)
+	_ = g2 // ensure guard stays referenced until timeout path
+	// Do not call End; let the watchdog fire
+	time.Sleep(120 * time.Millisecond)
 
-    // After watchdog, the task should not be listed
-    snap := Default.Snapshot()
-    if ids, ok := snap["svc.guard"]; ok {
-        // If still present, ensure id-2 is not in the list
-        for _, id := range ids {
-            if id == "id-2" {
-                t.Fatalf("expected watchdog to remove id-2 from svc.guard; snapshot: %v", ids)
-            }
-        }
-    }
+	// After watchdog, the task should not be listed
+	snap := Default.Snapshot()
+	if ids, ok := snap["svc.guard"]; ok {
+		// If still present, ensure id-2 is not in the list
+		for _, id := range ids {
+			if id == "id-2" {
+				t.Fatalf("expected watchdog to remove id-2 from svc.guard; snapshot: %v", ids)
+			}
+		}
+	}
 }

@@ -24,7 +24,6 @@ func (s *SupernodeServer) isPprofEnabled() bool {
 	return os.Getenv("ENABLE_PPROF") == "true"
 }
 
-
 // Raw pprof handlers - these proxy to the actual pprof HTTP endpoints
 
 // pprofProxy makes an internal HTTP request to the actual pprof endpoint
