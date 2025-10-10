@@ -30,6 +30,7 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 func (m *module) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
 	resp, err := m.client.GetTopSuperNodesForBlock(ctx, &types.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
+		State:       types.SuperNodeStateActive.String(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top supernodes: %w", err)
