@@ -1,9 +1,9 @@
 package status
 
 import (
-    "context"
-    "fmt"
-    "time"
+	"context"
+	"fmt"
+	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/p2p"
@@ -126,11 +126,11 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		Disk:                 &pb.StatusResponse_P2PMetrics_DiskStatus{},
 	}
 
-    if includeP2PMetrics && s.p2pService != nil {
-        // Bound P2P metrics collection so status can't hang if P2P is slow
-        p2pCtx, cancel := context.WithTimeout(ctx, statusSubsystemTimeout)
-        defer cancel()
-        p2pStats, err := s.p2pService.Stats(p2pCtx)
+	if includeP2PMetrics && s.p2pService != nil {
+		// Bound P2P metrics collection so status can't hang if P2P is slow
+		p2pCtx, cancel := context.WithTimeout(ctx, statusSubsystemTimeout)
+		defer cancel()
+		p2pStats, err := s.p2pService.Stats(p2pCtx)
 		if err != nil {
 			logtrace.Error(ctx, "failed to get p2p stats", logtrace.Fields{logtrace.FieldError: err.Error()})
 		} else {
@@ -212,15 +212,15 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		resp.P2PMetrics = pm
 	}
 
-    if s.config != nil && s.lumeraClient != nil {
-        // Bound chain query for latest address to avoid slow network hangs
-        chainCtx, cancel := context.WithTimeout(ctx, statusSubsystemTimeout)
-        defer cancel()
-        if supernodeInfo, err := s.lumeraClient.SuperNode().GetSupernodeWithLatestAddress(chainCtx, s.config.SupernodeConfig.Identity); err == nil && supernodeInfo != nil {
-            resp.IpAddress = supernodeInfo.LatestAddress
-        } else if err != nil {
-            logtrace.Error(ctx, "failed to resolve latest supernode address", logtrace.Fields{logtrace.FieldError: err.Error()})
-        }
-    }
+	if s.config != nil && s.lumeraClient != nil {
+		// Bound chain query for latest address to avoid slow network hangs
+		chainCtx, cancel := context.WithTimeout(ctx, statusSubsystemTimeout)
+		defer cancel()
+		if supernodeInfo, err := s.lumeraClient.SuperNode().GetSupernodeWithLatestAddress(chainCtx, s.config.SupernodeConfig.Identity); err == nil && supernodeInfo != nil {
+			resp.IpAddress = supernodeInfo.LatestAddress
+		} else if err != nil {
+			logtrace.Error(ctx, "failed to resolve latest supernode address", logtrace.Fields{logtrace.FieldError: err.Error()})
+		}
+	}
 	return resp, nil
 }

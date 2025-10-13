@@ -15,7 +15,7 @@ const (
 	rqSymbolSize       uint16 = 65535
 	rqRedundancyFactor uint8  = 6
 	// Limit RaptorQ processor memory usage to ~2 GiB
-	rqMaxMemoryMB uint64 = 4 * 1024 // MB
+	rqMaxMemoryMB uint64 = 8 * 1024 // MB
 	// Concurrency tuned for 2 GiB limit and typical 8+ core CPUs
 	rqConcurrency uint64 = 1
 	// Target single-block output for up to 1 GiB files with padding headroom (~1.25 GiB)
@@ -43,6 +43,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		"data-size":          req.DataSize,
 	}
 
+	logtrace.Info(ctx, "rq: encode start", fields)
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
 		return EncodeResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)
@@ -86,7 +87,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	if n := len(encodeResp.Metadata.Blocks); n != 1 {
 		return EncodeResponse{}, fmt.Errorf("raptorq encode produced %d blocks; single-block layout is required", n)
 	}
-
+	logtrace.Info(ctx, "rq: encode ok", logtrace.Fields{"symbols_dir": encodeResp.SymbolsDir})
 	return encodeResp, nil
 }
 
@@ -102,6 +103,7 @@ func (rq *raptorQ) CreateMetadata(ctx context.Context, path string) (Layout, err
 		fields["data-size"] = int(fi.Size())
 	}
 
+	logtrace.Info(ctx, "rq: create-metadata start", fields)
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
 		return Layout{}, fmt.Errorf("create RaptorQ processor: %w", err)
@@ -147,6 +149,6 @@ func (rq *raptorQ) CreateMetadata(ctx context.Context, path string) (Layout, err
 	if n := len(layout.Blocks); n != 1 {
 		return Layout{}, fmt.Errorf("raptorq metadata produced %d blocks; single-block layout is required", n)
 	}
-
+	logtrace.Info(ctx, "rq: create-metadata ok", logtrace.Fields{"blocks": len(layout.Blocks)})
 	return layout, nil
 }

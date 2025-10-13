@@ -49,6 +49,7 @@ func (rq *raptorQ) PrepareDecode(
 		logtrace.FieldModule:   "rq",
 		logtrace.FieldActionID: actionID,
 	}
+	logtrace.Info(ctx, "rq: prepare-decode start", fields)
 
 	// Create root symbols dir for this action
 	symbolsDir := filepath.Join(rq.symbolsBaseDir, actionID)
@@ -145,10 +146,7 @@ func (rq *raptorQ) PrepareDecode(
 		return os.RemoveAll(symbolsDir)
 	}
 
-	logtrace.Debug(ctx, "prepare decode workspace created", logtrace.Fields{
-		"symbols_dir": symbolsDir,
-		"blocks":      len(blockDirs),
-	})
+	logtrace.Info(ctx, "rq: prepare-decode ok", logtrace.Fields{"symbols_dir": symbolsDir, "blocks": len(blockDirs)})
 	return blockDirs, Write, Cleanup, ws, nil
 }
 
@@ -164,7 +162,7 @@ func (rq *raptorQ) DecodeFromPrepared(
 		logtrace.FieldModule:   "rq",
 		logtrace.FieldActionID: ws.ActionID,
 	}
-	logtrace.Debug(ctx, "RaptorQ decode (prepared) requested", fields)
+	logtrace.Info(ctx, "rq: decode-from-prepared start", fields)
 
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
@@ -214,7 +212,7 @@ func (rq *raptorQ) DecodeFromPrepared(
 		fields[logtrace.FieldError] = err.Error()
 		return DecodeResponse{}, fmt.Errorf("write layout file: %w", err)
 	}
-	logtrace.Debug(ctx, "layout.json written (prepared)", fields)
+	logtrace.Info(ctx, "rq: layout written", fields)
 
 	// Decode to output (idempotent-safe: overwrite on success)
 	outputPath := filepath.Join(ws.SymbolsDir, "output")
@@ -224,9 +222,7 @@ func (rq *raptorQ) DecodeFromPrepared(
 		return DecodeResponse{}, fmt.Errorf("raptorq decode: %w", err)
 	}
 
-	logtrace.Debug(ctx, "RaptorQ decoding completed successfully (prepared)", logtrace.Fields{
-		"output_path": outputPath,
-	})
+	logtrace.Info(ctx, "rq: decode-from-prepared ok", logtrace.Fields{"output_path": outputPath})
 	return DecodeResponse{FilePath: outputPath, DecodeTmpDir: ws.SymbolsDir}, nil
 }
 
@@ -236,7 +232,7 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 		logtrace.FieldModule:   "rq",
 		logtrace.FieldActionID: req.ActionID,
 	}
-	logtrace.Debug(ctx, "RaptorQ decode request received", fields)
+	logtrace.Info(ctx, "rq: decode request", fields)
 
 	// 1) Validate layout (the check)
 	if len(req.Layout.Blocks) == 0 {
@@ -273,7 +269,7 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 				return DecodeResponse{}, werr
 			}
 		}
-		logtrace.Debug(ctx, "symbols persisted via Write()", fields)
+		logtrace.Info(ctx, "rq: symbols persisted", logtrace.Fields{"count": len(req.Symbols)})
 	}
 
 	// 4) Decode using the prepared workspace (functionality)
@@ -283,5 +279,6 @@ func (rq *raptorQ) Decode(ctx context.Context, req DecodeRequest) (DecodeRespons
 		return DecodeResponse{}, derr
 	}
 	success = true
+	logtrace.Info(ctx, "rq: decode ok", fields)
 	return resp, nil
 }

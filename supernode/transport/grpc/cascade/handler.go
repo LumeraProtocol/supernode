@@ -87,7 +87,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 
 	ctx := stream.Context()
-	logtrace.Debug(ctx, "client streaming request to upload cascade input data received", fields)
+	logtrace.Info(ctx, "register: stream open", fields)
 
 	const maxFileSize = 1 * 1024 * 1024 * 1024 // 1GB limit
 
@@ -141,11 +141,16 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 					logtrace.Error(ctx, "upload rejected: file too large", fields)
 					return fmt.Errorf("file size %d exceeds maximum allowed size of 1GB", totalSize)
 				}
+				// Keep chunk logs at debug to avoid verbosity
 				logtrace.Debug(ctx, "received data chunk", logtrace.Fields{"chunk_size": len(x.Chunk.Data), "total_size_so_far": totalSize})
 			}
 		case *pb.RegisterRequest_Metadata:
 			metadata = x.Metadata
-			logtrace.Debug(ctx, "received metadata", logtrace.Fields{"task_id": metadata.TaskId, "action_id": metadata.ActionId})
+			// Set correlation ID for the rest of the flow
+			ctx = logtrace.CtxWithCorrelationID(ctx, metadata.ActionId)
+			fields[logtrace.FieldTaskID] = metadata.GetTaskId()
+			fields[logtrace.FieldActionID] = metadata.GetActionId()
+			logtrace.Info(ctx, "register: metadata received", fields)
 			// Start live task tracking on first metadata (covers remaining stream and processing)
 			if !startedTask {
 				startedTask = true
@@ -161,7 +166,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 	fields[logtrace.FieldTaskID] = metadata.GetTaskId()
 	fields[logtrace.FieldActionID] = metadata.GetActionId()
-	logtrace.Debug(ctx, "metadata received from action-sdk", fields)
+	logtrace.Info(ctx, "register: stream upload complete", fields)
 
 	if err := tempFile.Sync(); err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -172,7 +177,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	hash := hasher.Sum(nil)
 	hashHex := hex.EncodeToString(hash)
 	fields[logtrace.FieldHashHex] = hashHex
-	logtrace.Debug(ctx, "final BLAKE3 hash generated", fields)
+	logtrace.Info(ctx, "register: hash computed", fields)
 
 	targetPath, err := replaceTempDirWithTaskDir(metadata.GetTaskId(), tempFilePath, tempFile)
 	if err != nil {
@@ -182,6 +187,7 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 	}
 
 	task := server.factory.NewCascadeRegistrationTask()
+	logtrace.Info(ctx, "register: task start", fields)
 	err = task.Register(ctx, &cascadeService.RegisterRequest{
 		TaskID:   metadata.TaskId,
 		ActionID: metadata.ActionId,
@@ -198,13 +204,15 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 			logtrace.Error(ctx, "failed to send response to client", logtrace.Fields{logtrace.FieldError: err.Error()})
 			return err
 		}
+		// Mirror event to Info logs for high-level tracing
+		logtrace.Info(ctx, "register: event", logtrace.Fields{"event_type": resp.EventType, "message": resp.Message, logtrace.FieldTxHash: resp.TxHash, logtrace.FieldActionID: metadata.ActionId, logtrace.FieldTaskID: metadata.TaskId})
 		return nil
 	})
 	if err != nil {
 		logtrace.Error(ctx, "registration task failed", logtrace.Fields{logtrace.FieldError: err.Error()})
 		return fmt.Errorf("registration failed: %w", err)
 	}
-	logtrace.Debug(ctx, "cascade registration completed successfully", fields)
+	logtrace.Info(ctx, "register: task ok", fields)
 	return nil
 }
 
