@@ -23,6 +23,9 @@ type Node struct {
 	// port of the node
 	Port uint16 `json:"port,omitempty"`
 
+	// Version of the supernode binary (used for strict DHT gating)
+	Version string `json:"version,omitempty"`
+
 	HashedID []byte
 }
 

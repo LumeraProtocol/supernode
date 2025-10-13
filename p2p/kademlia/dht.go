@@ -498,9 +498,10 @@ func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Mes
 	}
 
 	sender := &Node{
-		IP:   hostIP,
-		ID:   s.ht.self.ID,
-		Port: s.ht.self.Port,
+		IP:      hostIP,
+		ID:      s.ht.self.ID,
+		Port:    s.ht.self.Port,
+		Version: requiredVersion(),
 	}
 	return &Message{
 		Sender:      sender,
@@ -1398,6 +1399,23 @@ func (s *DHT) sendStoreData(ctx context.Context, n *Node, request *StoreDataRequ
 
 // add a node into the appropriate k bucket, return the removed node if it's full
 func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
+	// Strict version gating: must match env and be non-empty.
+	peerVer := ""
+	if node != nil {
+		peerVer = node.Version
+	}
+	if required, mismatch := versionMismatch(peerVer); mismatch {
+		fields := logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"required":           required,
+			"peer_version":       strings.TrimSpace(peerVer),
+		}
+		if node != nil {
+			fields["peer"] = node.String()
+		}
+		logtrace.Debug(ctx, "Rejecting node due to version mismatch", fields)
+		return nil
+	}
 	// Allow localhost for integration testing
 	isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
 	if node.IP == "" || node.IP == "0.0.0.0" || (!isIntegrationTest && node.IP == "127.0.0.1") {

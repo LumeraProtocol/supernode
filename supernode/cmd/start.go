@@ -33,6 +33,9 @@ import (
 	pbcascade "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
 
 	pbsupernode "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+
+	// Configure DHT version gating from build-injected Version
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 )
 
 // startCmd represents the start command
@@ -44,6 +47,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Initialize logging
 		logtrace.Setup("supernode")
+
+		// Set strict DHT required version from build-time injected variable
+		kademlia.SetRequiredVersion(Version)
 
 		// Create context with correlation ID for tracing
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")

@@ -415,6 +415,20 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			}
 		}
 
+		// Strict version gating: reject immediately on mismatch or missing
+		var senderVer string
+		if request != nil && request.Sender != nil {
+			senderVer = request.Sender.Version
+		}
+		if required, mismatch := versionMismatch(senderVer); mismatch {
+			logtrace.Debug(ctx, "Rejecting connection due to version mismatch", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"required":           required,
+				"peer_version":       strings.TrimSpace(senderVer),
+			})
+			return
+		}
+
 		reqID := uuid.New().String()
 		mt := request.MessageType
 
