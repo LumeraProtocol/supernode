@@ -13,7 +13,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 
-	"github.com/LumeraProtocol/supernode/v2/supernode/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/grpc/codes"

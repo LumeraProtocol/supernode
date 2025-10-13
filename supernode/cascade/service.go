@@ -7,7 +7,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/v2/supernode/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
 )
 
 type CascadeService struct {

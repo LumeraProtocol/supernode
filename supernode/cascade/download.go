@@ -15,7 +15,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/crypto"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
-	"github.com/LumeraProtocol/supernode/v2/supernode/cascade/adaptors"
+	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
 )
 
 const targetRequiredPercent = 17
