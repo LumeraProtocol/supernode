@@ -12,8 +12,8 @@ import (
 	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
@@ -28,7 +28,7 @@ const (
 	updateCheckInterval = 10 * time.Minute
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
-	forceUpdateAfter = 60 * time.Minute
+	forceUpdateAfter = 10 * time.Minute
 )
 
 type AutoUpdater struct {
