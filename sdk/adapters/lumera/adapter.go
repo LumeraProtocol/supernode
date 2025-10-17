@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
@@ -14,7 +15,18 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	ristretto "github.com/dgraph-io/ristretto/v2"
 	"github.com/golang/protobuf/proto"
+	"golang.org/x/sync/singleflight"
+)
+
+const (
+	// Cache tuning: tiny LFU with TTL to avoid stale long-term entries
+	cacheNumCounters = 1_000
+	cacheMaxCost     = 100
+	cacheBufferItems = 64
+	cacheItemCost    = 1
+	cacheTTL         = time.Hour
 )
 
 //go:generate mockery --name=Client --output=testutil/mocks --outpkg=mocks --filename=lumera_mock.go
@@ -54,6 +66,11 @@ type ConfigParams struct {
 type Adapter struct {
 	client lumeraclient.Client
 	logger log.Logger
+
+	// Lightweight caches to reduce repeated chain lookups when used as a validator
+	accountCache   *ristretto.Cache[string, *authtypes.QueryAccountInfoResponse]
+	supernodeCache *ristretto.Cache[string, *sntypes.SuperNode]
+	sf             singleflight.Group
 }
 
 // NewAdapter creates a new Adapter with dependencies explicitly injected
@@ -77,31 +94,74 @@ func NewAdapter(ctx context.Context, config ConfigParams, logger log.Logger) (Cl
 
 	logger.Info(ctx, "Lumera adapter created successfully")
 
+	// Initialize small, bounded caches
 	return &Adapter{
-		client: client,
-		logger: logger,
+		client:         client,
+		logger:         logger,
+		accountCache:   newStringCache[*authtypes.QueryAccountInfoResponse](),
+		supernodeCache: newStringCache[*sntypes.SuperNode](),
 	}, nil
 }
 
+func newStringCache[T any]() *ristretto.Cache[string, T] {
+	c, _ := ristretto.NewCache(&ristretto.Config[string, T]{
+		NumCounters: cacheNumCounters,
+		MaxCost:     cacheMaxCost,
+		BufferItems: cacheBufferItems,
+	})
+	return c
+}
+
 func (a *Adapter) GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*sntypes.SuperNode, error) {
-	a.logger.Debug(ctx, "Getting supernode by address", "address", address)
-	resp, err := a.client.SuperNode().GetSupernodeBySupernodeAddress(ctx, address)
+	if address == "" {
+		return nil, fmt.Errorf("address cannot be empty")
+	}
+	// Fast path: cache hit
+	if a.supernodeCache != nil {
+		if val, ok := a.supernodeCache.Get(address); ok && val != nil {
+			return val, nil
+		}
+	}
+
+	// Deduplicate concurrent lookups for same address
+	res, err, _ := a.sf.Do("sn:"+address, func() (any, error) {
+		// Double-check cache inside singleflight
+		if a.supernodeCache != nil {
+			if val, ok := a.supernodeCache.Get(address); ok && val != nil {
+				return val, nil
+			}
+		}
+
+		a.logger.Debug(ctx, "Getting supernode by address", "address", address)
+		resp, err := a.client.SuperNode().GetSupernodeBySupernodeAddress(ctx, address)
+		if err != nil {
+			a.logger.Error(ctx, "Failed to get supernode", "address", address, "error", err)
+			return nil, fmt.Errorf("failed to get supernode: %w", err)
+		}
+		if resp == nil {
+			a.logger.Error(ctx, "Received nil response for supernode", "address", address)
+			return nil, fmt.Errorf("received nil response for supernode %s", address)
+		}
+		if a.supernodeCache != nil {
+			a.supernodeCache.SetWithTTL(address, resp, cacheItemCost, cacheTTL)
+		}
+		return resp, nil
+	})
 	if err != nil {
-		a.logger.Error(ctx, "Failed to get supernode", "address", address, "error", err)
-		return nil, fmt.Errorf("failed to get supernode: %w", err)
+		return nil, err
 	}
-	if resp == nil {
-		a.logger.Error(ctx, "Received nil response for supernode", "address", address)
-		return nil, fmt.Errorf("received nil response for supernode %s", address)
+	sn, _ := res.(*sntypes.SuperNode)
+	if sn == nil {
+		return nil, fmt.Errorf("supernode is nil")
 	}
-	a.logger.Debug(ctx, "Successfully retrieved supernode", "address", address)
-	return resp, nil
+	return sn, nil
 }
 
 func (a *Adapter) GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error) {
 	a.logger.Debug(ctx, "Getting supernode with latest address", "address", address)
 
-	resp, err := a.client.SuperNode().GetSupernodeBySupernodeAddress(ctx, address)
+	// Route through cached method to avoid duplicate chain calls
+	resp, err := a.GetSupernodeBySupernodeAddress(ctx, address)
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernode", "address", address, "error", err)
 		return nil, fmt.Errorf("failed to get supernode: %w", err)
@@ -147,19 +207,49 @@ func (a *Adapter) GetSupernodeWithLatestAddress(ctx context.Context, address str
 }
 
 func (a *Adapter) AccountInfoByAddress(ctx context.Context, addr string) (*authtypes.QueryAccountInfoResponse, error) {
-	a.logger.Debug(ctx, "Getting account info by address", "address", addr)
-	resp, err := a.client.Auth().AccountInfoByAddress(ctx, addr)
-	if err != nil {
-		a.logger.Error(ctx, "Failed to get account info", "address", addr, "error", err)
-		return nil, fmt.Errorf("failed to get account info: %w", err)
+	if addr == "" {
+		return nil, fmt.Errorf("address cannot be empty")
 	}
-	if resp == nil {
-		a.logger.Error(ctx, "Received nil response for account info", "address", addr)
-		return nil, fmt.Errorf("received nil response for account info %s", addr)
+	// Fast path: cache hit
+	if a.accountCache != nil {
+		if val, ok := a.accountCache.Get(addr); ok && val != nil {
+			return val, nil
+		}
 	}
-	a.logger.Debug(ctx, "Successfully retrieved account info", "address", addr)
 
-	return resp, nil
+	// Deduplicate concurrent fetches
+	res, err, _ := a.sf.Do("acct:"+addr, func() (any, error) {
+		// Double-check cache inside singleflight window
+		if a.accountCache != nil {
+			if val, ok := a.accountCache.Get(addr); ok && val != nil {
+				return val, nil
+			}
+		}
+
+		a.logger.Debug(ctx, "Getting account info by address", "address", addr)
+		resp, err := a.client.Auth().AccountInfoByAddress(ctx, addr)
+		if err != nil {
+			a.logger.Error(ctx, "Failed to get account info", "address", addr, "error", err)
+			return nil, fmt.Errorf("failed to get account info: %w", err)
+		}
+		if resp == nil {
+			a.logger.Error(ctx, "Received nil response for account info", "address", addr)
+			return nil, fmt.Errorf("received nil response for account info %s", addr)
+		}
+		if a.accountCache != nil {
+			a.accountCache.SetWithTTL(addr, resp, cacheItemCost, cacheTTL)
+		}
+		a.logger.Debug(ctx, "Successfully retrieved account info", "address", addr)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	ai, _ := res.(*authtypes.QueryAccountInfoResponse)
+	if ai == nil {
+		return nil, fmt.Errorf("account info is nil")
+	}
+	return ai, nil
 }
 
 func (a *Adapter) GetAction(ctx context.Context, actionID string) (Action, error) {
