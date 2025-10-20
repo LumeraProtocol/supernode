@@ -34,7 +34,7 @@ import (
 
 	pbsupernode "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 
-	// Configure DHT version gating from build-injected Version
+	// Configure DHT advertised/minimum versions from build-time variables
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 )
 
@@ -48,8 +48,12 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Initialize logging
 		logtrace.Setup("supernode")
 
-		// Set strict DHT required version from build-time injected variable
-		kademlia.SetRequiredVersion(Version)
+		// Advertise our binary version to peers
+		kademlia.SetLocalVersion(Version)
+		// Optionally enforce a minimum peer version if provided at build time
+		if strings.TrimSpace(MinVer) != "" {
+			kademlia.SetMinVersion(MinVer)
+		}
 
 		// Create context with correlation ID for tracing
 		ctx := logtrace.CtxWithCorrelationID(context.Background(), "supernode-start")
