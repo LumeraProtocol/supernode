@@ -13,7 +13,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
-	"github.com/LumeraProtocol/supernode/v2/sdk/helpers"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 	"github.com/LumeraProtocol/supernode/v2/sdk/net"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -183,10 +182,7 @@ func (t *BaseTask) fetchSupernodesWithLoads(ctx context.Context, height int64) (
 				t.logger.Info(cctx, "reject supernode: status fetch failed", "error", err)
 				return nil
 			}
-			if reqVer := helpers.ResolveRequiredSupernodeVersion(); reqVer != "" && status.Version != reqVer {
-				t.logger.Info(cctx, "reject supernode: version mismatch", "expected", reqVer, "got", status.Version)
-				return nil
-			}
+			// Removed SDK-level version gating; rely on network/node policies instead.
 
 			// Compute load from running tasks (sum of task_count across services)
 			total := 0

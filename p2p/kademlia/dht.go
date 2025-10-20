@@ -501,7 +501,7 @@ func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Mes
 		IP:      hostIP,
 		ID:      s.ht.self.ID,
 		Port:    s.ht.self.Port,
-		Version: requiredVersion(),
+		Version: localVersion(),
 	}
 	return &Message{
 		Sender:      sender,
@@ -1399,21 +1399,21 @@ func (s *DHT) sendStoreData(ctx context.Context, n *Node, request *StoreDataRequ
 
 // add a node into the appropriate k bucket, return the removed node if it's full
 func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
-	// Strict version gating: must match env and be non-empty.
+	// Minimum-version gating: reject nodes below configured minimum.
 	peerVer := ""
 	if node != nil {
 		peerVer = node.Version
 	}
-	if required, mismatch := versionMismatch(peerVer); mismatch {
+	if minRequired, tooOld := versionTooOld(peerVer); tooOld {
 		fields := logtrace.Fields{
 			logtrace.FieldModule: "p2p",
-			"required":           required,
+			"min_required":       minRequired,
 			"peer_version":       strings.TrimSpace(peerVer),
 		}
 		if node != nil {
 			fields["peer"] = node.String()
 		}
-		logtrace.Debug(ctx, "Rejecting node due to version mismatch", fields)
+		logtrace.Debug(ctx, "Rejecting node: peer below minimum version", fields)
 		return nil
 	}
 	// Allow localhost for integration testing

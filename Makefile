@@ -10,9 +10,11 @@ GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
 # Linker flags for version information
+# Optional minimum peer version for DHT gating can be provided via MIN_VER env/make var
 LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERSION) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=$(GIT_COMMIT) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME) \
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.MinVer=$(MIN_VER) \
           -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=$(DD_API_KEY) \
           -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE)
 

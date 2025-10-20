@@ -11,6 +11,8 @@ var (
 	Version   = "dev"
 	GitCommit = "unknown"
 	BuildTime = "unknown"
+	// Optional: minimum peer version for DHT gating (empty disables gating)
+	MinVer = ""
 )
 
 // versionCmd represents the version command

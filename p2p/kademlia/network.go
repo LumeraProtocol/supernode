@@ -415,15 +415,15 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			}
 		}
 
-		// Strict version gating: reject immediately on mismatch or missing
+		// Minimum-version gating: reject immediately if peer is below configured minimum
 		var senderVer string
 		if request != nil && request.Sender != nil {
 			senderVer = request.Sender.Version
 		}
-		if required, mismatch := versionMismatch(senderVer); mismatch {
-			logtrace.Debug(ctx, "Rejecting connection due to version mismatch", logtrace.Fields{
+		if minRequired, tooOld := versionTooOld(senderVer); tooOld {
+			logtrace.Debug(ctx, "Rejecting connection: peer below minimum version", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
-				"required":           required,
+				"min_required":       minRequired,
 				"peer_version":       strings.TrimSpace(senderVer),
 			})
 			return
