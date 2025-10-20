@@ -33,35 +33,53 @@ func SignLayoutB64(layout codec.Layout, signer Signer) (layoutB64 string, layout
 	return layoutB64, layoutSigB64, nil
 }
 
-// CreateSignatures reproduces the cascade signature format and index IDs:
+// SignIndexB64 marshals the index to JSON, base64-encodes it, and signs the
+// base64 payload, returning both the index base64 and creator-signature base64.
+func SignIndexB64(idx IndexFile, signer Signer) (indexB64 string, creatorSigB64 string, err error) {
+	raw, err := json.Marshal(idx)
+	if err != nil {
+		return "", "", errors.Errorf("marshal index file: %w", err)
+	}
+	indexB64 = base64.StdEncoding.EncodeToString(raw)
+
+	sig, err := signer([]byte(indexB64))
+	if err != nil {
+		return "", "", errors.Errorf("sign index: %w", err)
+	}
+	creatorSigB64 = base64.StdEncoding.EncodeToString(sig)
+	return indexB64, creatorSigB64, nil
+}
+
+// CreateSignatures produces the index signature format and index IDs:
 //
 //	Base64(index_json).Base64(creator_signature)
 //
 // It validates the layout has exactly one block.
-func CreateSignatures(layout codec.Layout, signer Signer, ic, max uint32) (signatures string, indexIDs []string, err error) {
+func CreateSignatures(layout codec.Layout, signer Signer, ic, max uint32) (indexSignatureFormat string, indexIDs []string, err error) {
 	layoutB64, layoutSigB64, err := SignLayoutB64(layout, signer)
 	if err != nil {
 		return "", nil, err
 	}
 
 	// Generate layout IDs (not returned; used to populate the index file)
-	layoutIDs := GenerateLayoutIDs(layoutB64, layoutSigB64, ic, max)
-
-	// Build and sign the index file
-	idx := BuildIndex(layoutIDs, layoutSigB64)
-	indexB64, _, err := EncodeIndexB64(idx)
+	layoutSignatureFormat := layoutB64 + "." + layoutSigB64
+	layoutIDs, err := GenerateLayoutIDs(layoutSignatureFormat, ic, max)
 	if err != nil {
 		return "", nil, err
 	}
 
-	creatorSig, err := signer([]byte(indexB64))
+	// Build and sign the index file
+	idx := BuildIndex(layoutIDs, layoutSigB64)
+	indexB64, creatorSigB64, err := SignIndexB64(idx, signer)
 	if err != nil {
-		return "", nil, errors.Errorf("sign index: %w", err)
+		return "", nil, err
 	}
-	creatorSigB64 := base64.StdEncoding.EncodeToString(creatorSig)
-	signatures = fmt.Sprintf("%s.%s", indexB64, creatorSigB64)
+	indexSignatureFormat = fmt.Sprintf("%s.%s", indexB64, creatorSigB64)
 
 	// Generate the index IDs (these are the RQIDs sent to chain)
-	indexIDs = GenerateIndexIDs(signatures, ic, max)
-	return signatures, indexIDs, nil
+	indexIDs, err = GenerateIndexIDs(indexSignatureFormat, ic, max)
+	if err != nil {
+		return "", nil, err
+	}
+	return indexSignatureFormat, indexIDs, nil
 }

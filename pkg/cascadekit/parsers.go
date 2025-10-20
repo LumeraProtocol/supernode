@@ -2,11 +2,11 @@ package cascadekit
 
 import (
 	"bytes"
+	"encoding/json"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
-	json "github.com/json-iterator/go"
 )
 
 // ParseRQMetadataFile parses a compressed rq metadata file into layout, signature and counter.

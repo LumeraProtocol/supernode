@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
@@ -145,7 +145,7 @@ func orderSupernodesByDeterministicDistance(seed string, sns lumera.Supernodes) 
 		return sns
 	}
 	// Precompute seed hash (blake3)
-	seedHash, err := cascadekit.ComputeBlake3Hash([]byte(seed))
+	seedHash, err := utils.Blake3Hash([]byte(seed))
 	if err != nil {
 		return sns
 	}
@@ -160,7 +160,7 @@ func orderSupernodesByDeterministicDistance(seed string, sns lumera.Supernodes) 
 		if id == "" {
 			id = sn.GrpcEndpoint
 		}
-		nHash, err := cascadekit.ComputeBlake3Hash([]byte(id))
+		nHash, err := utils.Blake3Hash([]byte(id))
 		if err != nil {
 			nd = append(nd, nodeDist{sn: sn, distance: new(big.Int).SetInt64(0)})
 			continue

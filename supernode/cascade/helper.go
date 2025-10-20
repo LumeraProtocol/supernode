@@ -48,95 +48,96 @@ func (task *CascadeRegistrationTask) ensureIsTopSupernode(ctx context.Context, b
 		return task.wrapErr(ctx, "failed to get top SNs", err, f)
 	}
 	logtrace.Info(ctx, "register: top-supernodes fetch ok", f)
-	if !supernode.Exists(top.Supernodes, task.config.SupernodeAccountAddress) {
+	if !supernode.Exists(top.Supernodes, task.SupernodeAccountAddress) {
 		addresses := make([]string, len(top.Supernodes))
 		for i, sn := range top.Supernodes {
 			addresses[i] = sn.SupernodeAccount
 		}
-		logtrace.Debug(ctx, "Supernode not in top list", logtrace.Fields{"currentAddress": task.config.SupernodeAccountAddress, "topSupernodes": addresses})
-		return task.wrapErr(ctx, "current supernode does not exist in the top SNs list", errors.Errorf("current address: %s, top supernodes: %v", task.config.SupernodeAccountAddress, addresses), f)
+		logtrace.Debug(ctx, "Supernode not in top list", logtrace.Fields{"currentAddress": task.SupernodeAccountAddress, "topSupernodes": addresses})
+		return task.wrapErr(ctx, "current supernode does not exist in the top SNs list", errors.Errorf("current address: %s, top supernodes: %v", task.SupernodeAccountAddress, addresses), f)
 	}
 	logtrace.Info(ctx, "register: top-supernode verified", f)
 	return nil
 }
 
-func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, path string, f logtrace.Fields) (*adaptors.EncodeResult, error) {
+func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID string, filePath string, f logtrace.Fields) (*adaptors.EncodeResult, error) {
 	if f == nil {
 		f = logtrace.Fields{}
 	}
 	f[logtrace.FieldActionID] = actionID
-	f["input_path"] = path
+	f["file_path"] = filePath
 	logtrace.Info(ctx, "register: encode input start", f)
-	resp, err := task.RQ.EncodeInput(ctx, actionID, path)
+	res, err := task.RQ.EncodeInput(ctx, actionID, filePath)
 	if err != nil {
 		return nil, task.wrapErr(ctx, "failed to encode data", err, f)
 	}
 	// Enrich fields with result for subsequent logs
-	f["symbols_dir"] = resp.SymbolsDir
+	f["symbols_dir"] = res.SymbolsDir
 	logtrace.Info(ctx, "register: encode input ok", f)
-	return &resp, nil
+	return &res, nil
 }
 
-func (task *CascadeRegistrationTask) verifySignatureAndDecodeLayout(ctx context.Context, encoded string, creator string, encodedMeta codec.Layout, f logtrace.Fields) (codec.Layout, string, error) {
-	if f == nil {
-		f = logtrace.Fields{}
-	}
-	f[logtrace.FieldCreator] = creator
-	logtrace.Info(ctx, "register: verify+decode layout start", f)
-	indexFileB64, creatorSig, err := cascadekit.ExtractIndexAndCreatorSig(encoded)
+// ValidateIndexAndLayout verifies:
+// - creator signature over the index payload (index_b64)
+// - layout signature over base64(JSON(layout))
+// Returns the decoded index and layoutB64. No logging here; callers handle it.
+func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context, creator string, indexSignatureFormat string, layout codec.Layout) (cascadekit.IndexFile, []byte, error) {
+	// Extract and verify creator signature on index
+	indexB64, creatorSigB64, err := cascadekit.ExtractIndexAndCreatorSig(indexSignatureFormat)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to extract index file and creator signature", err, f)
+		return cascadekit.IndexFile{}, nil, err
 	}
-	logtrace.Info(ctx, "register: index+creatorSig extracted", f)
-	creatorSigBytes, err := base64.StdEncoding.DecodeString(creatorSig)
+	creatorSig, err := base64.StdEncoding.DecodeString(creatorSigB64)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode creator signature from base64", err, f)
+		return cascadekit.IndexFile{}, nil, err
 	}
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexFileB64), creatorSigBytes); err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify creator signature", err, f)
+	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexB64), creatorSig); err != nil {
+		return cascadekit.IndexFile{}, nil, err
 	}
-	logtrace.Info(ctx, "register: creator signature verified", f)
-	indexFile, err := cascadekit.DecodeIndexB64(indexFileB64)
+	// Decode index
+	indexFile, err := cascadekit.DecodeIndexB64(indexB64)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode index file", err, f)
+		return cascadekit.IndexFile{}, nil, err
 	}
-	_ = indexFile // keep for potential future detail logs
-	layoutSigBytes, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
+	// Build layoutB64 and verify single-block + signature
+	layoutB64, err := cascadekit.LayoutB64(layout)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to decode layout signature from base64", err, f)
+		return cascadekit.IndexFile{}, nil, err
 	}
-	layoutB64, err := cascadekit.LayoutB64(encodedMeta)
+	if err := cascadekit.VerifySingleBlock(layout); err != nil {
+		return cascadekit.IndexFile{}, nil, err
+	}
+	layoutSig, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
 	if err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to build layout base64", err, f)
+		return cascadekit.IndexFile{}, nil, err
 	}
-	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigBytes); err != nil {
-		return codec.Layout{}, "", task.wrapErr(ctx, "failed to verify layout signature", err, f)
+	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSig); err != nil {
+		return cascadekit.IndexFile{}, nil, err
 	}
-	logtrace.Info(ctx, "register: layout signature verified", f)
-	logtrace.Info(ctx, "register: verify+decode layout ok", f)
-	return encodedMeta, indexFile.LayoutSignature, nil
+	return indexFile, layoutB64, nil
 }
 
-func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, sig string, encodedMeta codec.Layout, f logtrace.Fields) (cascadekit.GenRQIdentifiersFilesResponse, error) {
+func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, layoutSigB64 string, layoutB64 []byte, f logtrace.Fields) ([]string, [][]byte, error) {
 	if f == nil {
 		f = logtrace.Fields{}
 	}
 	f["rq_ic"] = uint32(meta.RqIdsIc)
 	f["rq_max"] = uint32(meta.RqIdsMax)
 	logtrace.Info(ctx, "register: rqid files generation start", f)
-	layoutRes, err := cascadekit.GenerateLayoutFiles(ctx, encodedMeta, sig, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+
+	layoutIDs, layoutFiles, err := cascadekit.GenerateLayoutFilesFromB64(layoutB64, layoutSigB64, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 	if err != nil {
-		return cascadekit.GenRQIdentifiersFilesResponse{}, task.wrapErr(ctx, "failed to generate layout files", err, f)
+		return nil, nil, task.wrapErr(ctx, "failed to generate layout files", err, f)
 	}
-	logtrace.Info(ctx, "register: layout files generated", logtrace.Fields{"count": len(layoutRes.RedundantMetadataFiles)})
-	indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(ctx, meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+	logtrace.Info(ctx, "register: layout files generated", logtrace.Fields{"count": len(layoutFiles), "layout_ids": len(layoutIDs)})
+	indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 	if err != nil {
-		return cascadekit.GenRQIdentifiersFilesResponse{}, task.wrapErr(ctx, "failed to generate index files", err, f)
+		return nil, nil, task.wrapErr(ctx, "failed to generate index files", err, f)
 	}
-	allFiles := append(layoutRes.RedundantMetadataFiles, indexFiles...)
+	allFiles := append(layoutFiles, indexFiles...)
 	logtrace.Info(ctx, "register: index files generated", logtrace.Fields{"count": len(indexFiles), "rqids": len(indexIDs)})
 	logtrace.Info(ctx, "register: rqid files generation ok", logtrace.Fields{"total_files": len(allFiles)})
-	return cascadekit.GenRQIdentifiersFilesResponse{RQIDs: indexIDs, RedundantMetadataFiles: allFiles}, nil
+	return indexIDs, allFiles, nil
 }
 
 func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) error {
@@ -182,7 +183,8 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	}
 	fields["data_bytes"] = dataSize
 	logtrace.Info(ctx, "register: verify action fee start", fields)
-	dataSizeInKBs := dataSize / 1024
+	// Round up to the nearest KB to avoid underestimating required fee
+	dataSizeInKBs := (dataSize + 1023) / 1024
 	fee, err := task.LumeraClient.GetActionFee(ctx, strconv.Itoa(dataSizeInKBs))
 	if err != nil {
 		return task.wrapErr(ctx, "failed to get action fee", err, fields)

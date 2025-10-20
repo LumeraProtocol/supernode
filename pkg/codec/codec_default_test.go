@@ -34,7 +34,7 @@ func TestEncode_ToDirA(t *testing.T) {
 	t.Logf("encoded to: %s", resp.SymbolsDir)
 
 	// Log theoretical minimum percentage of symbols needed per block
-	for _, b := range resp.Metadata.Blocks {
+	for _, b := range resp.Layout.Blocks {
 		s := int64(rqSymbolSize)
 		if s <= 0 {
 			s = 65535
@@ -131,15 +131,15 @@ func TestCreateMetadata_SaveToFile(t *testing.T) {
 	c := NewRaptorQCodec(BaseDir)
 
 	// Create metadata using the codec and write it next to the input file.
-	layout, err := c.CreateMetadata(ctx, InputPath)
+	resp, err := c.CreateMetadata(ctx, CreateMetadataRequest{Path: InputPath})
 	if err != nil {
 		t.Fatalf("create metadata: %v", err)
 	}
-	data, err := json.MarshalIndent(layout, "", "  ")
+	data, err := json.MarshalIndent(resp.Layout, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal metadata: %v", err)
 	}
-	outPath := " . " + ".layout.json"
+	outPath := InputPath + ".layout.json"
 	if err := os.WriteFile(outPath, data, 0o644); err != nil {
 		t.Fatalf("write output: %v", err)
 	}

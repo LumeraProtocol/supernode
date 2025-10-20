@@ -2,100 +2,102 @@ package cascadekit
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
+	"github.com/klauspost/compress/zstd"
 )
 
 // GenerateLayoutIDs computes IDs for redundant layout files (not the final index IDs).
-// The ID is base58(blake3(zstd(layout_b64.layout_sig_b64.counter))).
-func GenerateLayoutIDs(layoutB64, layoutSigB64 string, ic, max uint32) []string {
-	layoutWithSig := fmt.Sprintf("%s.%s", layoutB64, layoutSigB64)
-	layoutIDs := make([]string, max)
-
-	var buffer bytes.Buffer
-	buffer.Grow(len(layoutWithSig) + 10)
-
-	for i := uint32(0); i < max; i++ {
-		buffer.Reset()
-		buffer.WriteString(layoutWithSig)
-		buffer.WriteByte('.')
-		buffer.WriteString(fmt.Sprintf("%d", ic+i))
-
-		compressedData, err := utils.ZstdCompress(buffer.Bytes())
-		if err != nil {
-			continue
-		}
-
-		hash, err := utils.Blake3Hash(compressedData)
-		if err != nil {
-			continue
-		}
-
-		layoutIDs[i] = base58.Encode(hash)
-	}
-
-	return layoutIDs
+// The ID is base58(blake3(zstd(layout_signature_format.counter))).
+// layoutSignatureFormat must be: base64(JSON(layout)).layout_signature_base64
+func GenerateLayoutIDs(layoutSignatureFormat string, ic, max uint32) ([]string, error) {
+	return generateIDs([]byte(layoutSignatureFormat), ic, max)
 }
 
-// GenerateIndexIDs computes IDs for index files from the full signatures string.
-func GenerateIndexIDs(signatures string, ic, max uint32) []string {
-	indexFileIDs := make([]string, max)
-
-	var buffer bytes.Buffer
-	buffer.Grow(len(signatures) + 10)
-
-	for i := uint32(0); i < max; i++ {
-		buffer.Reset()
-		buffer.WriteString(signatures)
-		buffer.WriteByte('.')
-		buffer.WriteString(fmt.Sprintf("%d", ic+i))
-
-		compressedData, err := utils.ZstdCompress(buffer.Bytes())
-		if err != nil {
-			continue
-		}
-		hash, err := utils.Blake3Hash(compressedData)
-		if err != nil {
-			continue
-		}
-		indexFileIDs[i] = base58.Encode(hash)
-	}
-	return indexFileIDs
+// GenerateIndexIDs computes IDs for index files from the full index signature format string.
+func GenerateIndexIDs(indexSignatureFormat string, ic, max uint32) ([]string, error) {
+	return generateIDs([]byte(indexSignatureFormat), ic, max)
 }
 
 // getIDFiles generates ID files by appending a '.' and counter, compressing,
 // and returning both IDs and compressed payloads.
-func getIDFiles(file []byte, ic uint32, max uint32) (ids []string, files [][]byte, err error) {
+// generateIDFiles builds compressed ID files from a base payload and returns
+// both their content-addressed IDs and the compressed files themselves.
+// For each counter in [ic..ic+max-1], the payload is:
+//
+//	base + '.' + counter
+//
+// then zstd-compressed; the ID is base58(blake3(compressed)).
+func generateIDFiles(base []byte, ic uint32, max uint32) (ids []string, files [][]byte, err error) {
 	idFiles := make([][]byte, 0, max)
 	ids = make([]string, 0, max)
 	var buffer bytes.Buffer
+
+	// Reuse a single zstd encoder across iterations
+	enc, zerr := zstd.NewWriter(nil)
+	if zerr != nil {
+		return ids, idFiles, errors.Errorf("compress identifiers file: %w", zerr)
+	}
+	defer enc.Close()
 
 	for i := uint32(0); i < max; i++ {
 		buffer.Reset()
 		counter := ic + i
 
-		buffer.Write(file)
+		buffer.Write(base)
 		buffer.WriteByte(SeparatorByte)
-		buffer.WriteString(strconv.Itoa(int(counter)))
+		// Append counter efficiently without intermediate string
+		var tmp [20]byte
+		cnt := strconv.AppendUint(tmp[:0], uint64(counter), 10)
+		buffer.Write(cnt)
 
-		compressedData, err := utils.ZstdCompress(buffer.Bytes())
-		if err != nil {
-			return ids, idFiles, errors.Errorf("compress identifiers file: %w", err)
-		}
+		compressedData := enc.EncodeAll(buffer.Bytes(), nil)
 
 		idFiles = append(idFiles, compressedData)
 
 		hash, err := utils.Blake3Hash(compressedData)
 		if err != nil {
-			return ids, idFiles, errors.Errorf("sha3-256-hash error getting an id file: %w", err)
+			return ids, idFiles, errors.Errorf("blake3 hash error getting an id file: %w", err)
 		}
 
 		ids = append(ids, base58.Encode(hash))
 	}
 
 	return ids, idFiles, nil
+}
+
+// generateIDs computes base58(blake3(zstd(base + '.' + counter))) for counters ic..ic+max-1.
+// It reuses a single zstd encoder and avoids per-iteration heap churn.
+func generateIDs(base []byte, ic, max uint32) ([]string, error) {
+	ids := make([]string, max)
+
+	var buffer bytes.Buffer
+	// Reserve base length + dot + up to 10 digits
+	buffer.Grow(len(base) + 12)
+
+	enc, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, errors.Errorf("zstd encoder init: %w", err)
+	}
+	defer enc.Close()
+
+	for i := uint32(0); i < max; i++ {
+		buffer.Reset()
+		buffer.Write(base)
+		buffer.WriteByte(SeparatorByte)
+		var tmp [20]byte
+		cnt := strconv.AppendUint(tmp[:0], uint64(ic+i), 10)
+		buffer.Write(cnt)
+
+		compressed := enc.EncodeAll(buffer.Bytes(), nil)
+		h, err := utils.Blake3Hash(compressed)
+		if err != nil {
+			return nil, errors.Errorf("blake3 hash (i=%d): %w", i, err)
+		}
+		ids[i] = base58.Encode(h)
+	}
+	return ids, nil
 }

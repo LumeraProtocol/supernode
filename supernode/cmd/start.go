@@ -115,7 +115,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Configure cascade service
 		cService := cascadeService.NewCascadeService(
-			&cascadeService.Config{SupernodeAccountAddress: appConfig.SupernodeConfig.Identity, RqFilesDir: appConfig.GetRaptorQFilesDir()},
+			appConfig.SupernodeConfig.Identity,
 			lumeraClient,
 			p2pService,
 			codec.NewRaptorQCodec(appConfig.GetRaptorQFilesDir()),
