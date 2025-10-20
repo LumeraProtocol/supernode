@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
@@ -688,11 +689,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	var foundLocalCount int32
 
 	hexKeys := make([]string, len(keys))
-	globalClosestContacts := make(map[string]*NodeList)
 	hashes := make([][]byte, len(keys))
-	knownNodes := make(map[string]*Node)
-	var knownMu sync.Mutex
-	var closestMu sync.RWMutex
 
 	defer func() {
 		resMap.Range(func(key, value interface{}) bool {
@@ -716,15 +713,6 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		}
 	}()
 
-	for _, key := range keys {
-		result[key] = nil
-	}
-
-	supernodeAddr, _ := s.getSupernodeAddress(ctx)
-	hostIP := parseSupernodeAddress(supernodeAddr)
-	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
-	self.SetHashedID()
-
 	for i, key := range keys {
 		decoded := base58.Decode(key)
 		if len(decoded) != B/8 {
@@ -732,7 +720,46 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		}
 		hashes[i] = decoded
 		hexKeys[i] = hex.EncodeToString(decoded)
+		result[key] = nil
 	}
+
+	// Check LOCAL storage first (this node only)
+	foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
+	if err != nil {
+		return nil, fmt.Errorf("fetch and add local keys: %v", err)
+	}
+	// Found locally count is logged via summary below; no external metrics
+
+	// If we found enough in LOCAL storage, return immediately
+	if foundLocalCount >= required {
+		logtrace.Debug(ctx, "DHT BatchRetrieve satisfied from local storage", logtrace.Fields{
+			"txid": txID, "found_local": foundLocalCount, "required": required,
+		})
+		return result, nil
+	}
+
+	// Check localOnly flag - if set, don't fetch from network
+	if len(localOnly) > 0 && localOnly[0] {
+		logtrace.Debug(ctx, "DHT BatchRetrieve local-only mode, insufficient keys", logtrace.Fields{
+			"txid": txID, "found_local": foundLocalCount, "required": required,
+		})
+		return result, fmt.Errorf("local-only: found %d, required %d", foundLocalCount, required)
+	}
+
+	// Now we need to fetch from OTHER nodes in the network
+	supernodeAddr, addrErr := s.getSupernodeAddress(ctx)
+	if addrErr != nil {
+		logtrace.Warn(ctx, "Failed to get supernode address", logtrace.Fields{
+			logtrace.FieldModule: "dht",
+			logtrace.FieldError:  addrErr.Error(),
+		})
+	}
+	hostIP := parseSupernodeAddress(supernodeAddr)
+	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
+	self.SetHashedID()
+
+	knownNodes := make(map[string]*Node)
+	var knownMu sync.Mutex
 
 	for _, n := range s.ht.nodes() {
 		nn := &Node{ID: n.ID, IP: n.IP, Port: n.Port}
@@ -740,8 +767,21 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		knownNodes[string(nn.ID)] = nn
 	}
 
+	// Get ignorelist once, not per iteration
+	ignoreList := s.ignorelist.ToNodeList()
+
+	// Compute closest contacts - but skip keys we already found locally
+	globalClosestContacts := make(map[string]*NodeList)
+	var closestMu sync.RWMutex
+
 	for i := range keys {
-		top6 := s.ht.closestContactsWithIncludingNode(Alpha, hashes[i], s.ignorelist.ToNodeList(), nil)
+		// Skip if already found in local storage
+		if _, found := resMap.Load(hexKeys[i]); found {
+			continue
+		}
+
+		// For missing keys, compute which remote nodes to query
+		top6 := s.ht.closestContactsWithIncludingNode(Alpha, hashes[i], ignoreList, nil)
 		closestMu.Lock()
 		globalClosestContacts[keys[i]] = top6
 		closestMu.Unlock()
@@ -750,21 +790,12 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 
 	delete(knownNodes, string(self.ID))
 
-	foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
-	if err != nil {
-		return nil, fmt.Errorf("fetch and add local keys: %v", err)
-	}
-	// Found locally count is logged via summary below; no external metrics
-	if foundLocalCount >= required {
-		return result, nil
-	}
-
 	batchSize := batchRetrieveSize
 	var networkFound int32
 	totalBatches := int(math.Ceil(float64(required) / float64(batchSize)))
 	parallelBatches := int(math.Min(float64(totalBatches), float64(fetchSymbolsBatchConcurrency)))
 
-	semaphore := make(chan struct{}, parallelBatches)
+	sem := semaphore.NewWeighted(int64(parallelBatches))
 	var wg sync.WaitGroup
 	gctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -777,27 +808,42 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		if end > len(keys) {
 			end = len(keys)
 		}
+		// Check early exit before launching goroutine
 		if atomic.LoadInt32(&networkFound)+int32(foundLocalCount) >= int32(required) {
 			break
 		}
 
 		wg.Add(1)
-		semaphore <- struct{}{}
-		go s.processBatch(
-			gctx,
-			keys[start:end],
-			hexKeys[start:end],
-			semaphore, &wg,
-			globalClosestContacts,
-			&closestMu,
-			knownNodes, &knownMu,
-			&resMap,
-			required,
-			foundLocalCount,
-			&networkFound,
-			cancel,
-			txID,
-		)
+		// Launch goroutine immediately - it will acquire semaphore inside
+		go func(start, end int) {
+			defer wg.Done()
+
+			// Acquire semaphore (respects context cancellation)
+			if err := sem.Acquire(gctx, 1); err != nil {
+				return // Context cancelled
+			}
+			defer sem.Release(1)
+
+			// Double-check requirement after acquiring (may have been satisfied while waiting)
+			if atomic.LoadInt32(&networkFound)+int32(foundLocalCount) >= int32(required) {
+				return
+			}
+
+			s.processBatch(
+				gctx,
+				keys[start:end],
+				hexKeys[start:end],
+				globalClosestContacts,
+				&closestMu,
+				knownNodes, &knownMu,
+				&resMap,
+				required,
+				foundLocalCount,
+				&networkFound,
+				cancel,
+				txID,
+			)
+		}(start, end)
 	}
 
 	wg.Wait()
@@ -821,8 +867,6 @@ func (s *DHT) processBatch(
 	ctx context.Context,
 	batchKeys []string,
 	batchHexKeys []string,
-	semaphore chan struct{},
-	wg *sync.WaitGroup,
 	globalClosestContacts map[string]*NodeList,
 	closestMu *sync.RWMutex,
 	knownNodes map[string]*Node,
@@ -834,8 +878,6 @@ func (s *DHT) processBatch(
 	cancel context.CancelFunc,
 	txID string,
 ) {
-	defer wg.Done()
-	defer func() { <-semaphore }()
 
 	for i := 0; i < maxIterations; i++ {
 		select {
@@ -844,18 +886,26 @@ func (s *DHT) processBatch(
 		default:
 		}
 
-		// Build fetch map (read globalClosestContacts under RLock)
+		// Build fetch map (read globalClosestContacts once under RLock)
 		fetchMap := make(map[string][]int)
-		for i, key := range batchKeys {
-			closestMu.RLock()
-			nl := globalClosestContacts[key]
-			closestMu.RUnlock()
+
+		// Acquire lock once, copy all needed data, release
+		closestMu.RLock()
+		localContacts := make(map[string]*NodeList, len(batchKeys))
+		for _, key := range batchKeys {
+			localContacts[key] = globalClosestContacts[key]
+		}
+		closestMu.RUnlock()
+
+		// Now build fetchMap without any locks
+		for idx, key := range batchKeys {
+			nl := localContacts[key]
 			if nl == nil {
 				continue
 			}
 			for _, node := range nl.Nodes {
 				nodeID := string(node.ID)
-				fetchMap[nodeID] = append(fetchMap[nodeID], i)
+				fetchMap[nodeID] = append(fetchMap[nodeID], idx)
 			}
 		}
 
@@ -872,6 +922,13 @@ func (s *DHT) processBatch(
 		if atomic.LoadInt32(networkFound)+int32(foundLocalCount) >= int32(required) {
 			cancel()
 			break
+		}
+
+		// Check context before expensive merge operation
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
 
 		changed := false
@@ -911,10 +968,11 @@ func (s *DHT) processBatch(
 
 func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node, keys []string, hexKeys []string, fetchMap map[string][]int,
 	resMap *sync.Map, req, alreadyFound int32) (int, map[string]*NodeList, error) {
-	semaphore := make(chan struct{}, storeSameSymbolsBatchConcurrency) // Limit concurrency to 1
+	sem := semaphore.NewWeighted(int64(storeSameSymbolsBatchConcurrency))
 	closestContacts := make(map[string]*NodeList)
 	var wg sync.WaitGroup
 	contactsMap := make(map[string]map[string][]*Node)
+	var contactsMapMu sync.Mutex // Protect contactsMap access
 	var firstErr error
 	var mu sync.Mutex // To protect the firstErr
 	foundCount := int32(0)
@@ -930,18 +988,19 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			continue
 		}
 
-		contactsMap[nodeID] = make(map[string][]*Node)
 		wg.Add(1)
 		go func(node *Node, nodeID string) {
 			defer wg.Done()
 
-			select {
-			case <-ctx.Done():
+			// Acquire semaphore (respects context cancellation)
+			if err := sem.Acquire(gctx, 1); err != nil {
+				return // Context cancelled
+			}
+			defer sem.Release(1)
+
+			// Double-check if requirement satisfied after acquiring
+			if atomic.LoadInt32(&foundCount) >= int32(req-alreadyFound) {
 				return
-			case <-gctx.Done():
-				return
-			case semaphore <- struct{}{}:
-				defer func() { <-semaphore }()
 			}
 
 			indices := fetchMap[nodeID]
@@ -973,6 +1032,7 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			}
 
 			returned := 0
+			localContacts := make(map[string][]*Node) // Local map to avoid locking during iteration
 			for k, v := range decompressedData {
 				if len(v.Value) > 0 {
 					_, loaded := resMap.LoadOrStore(k, v.Value)
@@ -986,8 +1046,15 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 						}
 					}
 				} else {
-					contactsMap[nodeID][k] = v.Closest
+					localContacts[k] = v.Closest
 				}
+			}
+
+			// Only lock once to store all contacts for this node
+			if len(localContacts) > 0 {
+				contactsMapMu.Lock()
+				contactsMap[nodeID] = localContacts
+				contactsMapMu.Unlock()
 			}
 
 			// per-node metrics removed; logs retained
