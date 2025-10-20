@@ -15,8 +15,8 @@ func ParseCompressedIndexFile(data []byte) (IndexFile, error) {
 		return IndexFile{}, errors.Errorf("decompress index file: %w", err)
 	}
 	parts := bytes.Split(decompressed, []byte{SeparatorByte})
-	if len(parts) < 2 {
-		return IndexFile{}, errors.New("invalid index file format")
+	if len(parts) != 3 {
+		return IndexFile{}, errors.New("invalid index file format: expected 3 parts (index_b64.creator_sig_b64.counter)")
 	}
 	return DecodeIndexB64(string(parts[0]))
 }

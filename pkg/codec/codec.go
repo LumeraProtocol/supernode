@@ -4,9 +4,10 @@ import (
 	"context"
 )
 
-// EncodeResponse  represents the response of the encode request.
+// EncodeResponse represents the response of the encode request.
+// Layout contains the single-block layout produced by the encoder.
 type EncodeResponse struct {
-	Metadata   Layout
+	Layout     Layout
 	SymbolsDir string
 }
 
@@ -30,13 +31,20 @@ type EncodeRequest struct {
 	Path     string
 	DataSize int
 }
+type CreateMetadataRequest struct {
+	Path string
+}
+
+// CreateMetadataResponse returns the Layout.
+type CreateMetadataResponse struct {
+	Layout Layout
+}
 
 // RaptorQ contains methods for request services from RaptorQ service.
 type Codec interface {
 	// Encode a file
 	Encode(ctx context.Context, req EncodeRequest) (EncodeResponse, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
-	// CreateMetadata builds the single-block layout metadata for the given file
 	// without generating RaptorQ symbols.
-	CreateMetadata(ctx context.Context, path string) (Layout, error)
+	CreateMetadata(ctx context.Context, req CreateMetadataRequest) (CreateMetadataResponse, error)
 }

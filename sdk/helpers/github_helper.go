@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"os"
 	"strings"
 	"sync"
 
@@ -16,6 +17,10 @@ var (
 // The value is fetched once per process and cached. If lookup fails, it returns
 // an empty string so callers can gracefully skip strict version gating.
 func ResolveRequiredSupernodeVersion() string {
+	// Bypass strict version gating during integration tests.
+	if os.Getenv("INTEGRATION_TEST") == "true" {
+		return ""
+	}
 	requiredVersionOnce.Do(func() {
 		client := gh.NewClient("LumeraProtocol/supernode")
 		if client != nil {
