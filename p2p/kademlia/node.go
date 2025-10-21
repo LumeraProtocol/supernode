@@ -180,15 +180,13 @@ func (s *NodeList) DelNode(node *Node) {
 }
 
 func haveAllNodes(a, b []*Node) bool {
+	bSet := make(map[string]bool, len(b))
+	for _, y := range b {
+		bSet[string(y.HashedID)] = true
+	}
+
 	for _, x := range a {
-		found := false
-		for _, y := range b {
-			if bytes.Equal(x.HashedID, y.HashedID) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !bSet[string(x.HashedID)] {
 			return false
 		}
 	}
