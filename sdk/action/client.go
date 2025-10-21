@@ -49,7 +49,7 @@ type Client interface {
 	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error)
 	// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key; returns base64 signature.
 	GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error)
-	// GenerateDownloadSignature signs the payload "actionID.creatorAddress"; returns base64 signature.
+	// GenerateDownloadSignature signs the payload "actionID" and returns a base64 signature.
 	GenerateDownloadSignature(ctx context.Context, actionID, creatorAddr string) (string, error)
 }
 
