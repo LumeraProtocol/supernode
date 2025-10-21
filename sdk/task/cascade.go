@@ -37,8 +37,8 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// 1 - Fetch the supernodes (single-pass probe: sanitize + load snapshot)
-	supernodes, loads, err := t.fetchSupernodesWithLoads(ctx, t.Action.Height)
+	// 1 - Fetch the supernodes
+	supernodes, err := t.fetchSupernodes(ctx, t.Action.Height)
 
 	if err != nil {
 		t.LogEvent(ctx, event.SDKSupernodesUnavailable, "Supernodes unavailable", event.EventData{event.KeyError: err.Error()})
@@ -46,8 +46,11 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Rank by current load snapshot (fewest first), tie-break deterministically
-	supernodes = t.orderByLoadSnapshotThenDeterministic(supernodes, loads)
+	// Initial concurrent balance filter (one-time)
+	supernodes = t.filterByMinBalance(ctx, supernodes)
+
+	// Rank by available free RAM (descending). Unknown RAM stays after known.
+	supernodes = t.orderByFreeRAM(ctx, supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes found.", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
@@ -76,11 +79,11 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	var lastErr error
 	attempted := 0
-	// Work on a copy and re-rank between attempts to avoid stale ordering
+	// Work on a copy; re-rank by free RAM between attempts
 	remaining := append(lumera.Supernodes(nil), supernodes...)
 	for len(remaining) > 0 {
-		// Refresh load-aware ordering for remaining candidates
-		remaining = t.orderByLoadThenDeterministic(ctx, remaining)
+		// Re-rank remaining nodes by available RAM (descending)
+		remaining = t.orderByFreeRAM(ctx, remaining)
 		sn := remaining[0]
 		iteration := attempted + 1
 

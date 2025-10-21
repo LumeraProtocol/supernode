@@ -23,8 +23,8 @@ type Node struct {
 	// port of the node
 	Port uint16 `json:"port,omitempty"`
 
-    // Version of the supernode binary (advertised to peers; may be used by min-version gating)
-    Version string `json:"version,omitempty"`
+	// Version of the supernode binary (advertised to peers; may be used by min-version gating)
+	Version string `json:"version,omitempty"`
 
 	HashedID []byte
 }

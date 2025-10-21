@@ -36,15 +36,18 @@ func NewCascadeDownloadTask(base BaseTask, actionId string, outputPath string, s
 func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 	t.LogEvent(ctx, event.SDKTaskStarted, "Running cascade download task", nil)
 
-	// 1 – fetch super-nodes (single-pass probe: sanitize + load snapshot)
-	supernodes, loads, err := t.fetchSupernodesWithLoads(ctx, t.Action.Height)
+	// 1 – fetch super-nodes (plain)
+	supernodes, err := t.fetchSupernodes(ctx, t.Action.Height)
 	if err != nil {
 		t.LogEvent(ctx, event.SDKSupernodesUnavailable, "super-nodes unavailable", event.EventData{event.KeyError: err.Error()})
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
-	// Rank by current load snapshot (fewest first), tie-break deterministically
-	supernodes = t.orderByLoadSnapshotThenDeterministic(supernodes, loads)
+	// Initial concurrent balance filter (one-time)
+	supernodes = t.filterByMinBalance(ctx, supernodes)
+
+	// Rank by available free RAM (descending). Unknown RAM stays after known.
+	supernodes = t.orderByFreeRAM(ctx, supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes found", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 – download from super-nodes
@@ -83,7 +86,8 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 	remaining := append(lumera.Supernodes(nil), supernodes...)
 	attempted := 0
 	for len(remaining) > 0 {
-		remaining = t.orderByLoadThenDeterministic(ctx, remaining)
+		// Re-rank remaining nodes by available RAM (descending)
+		remaining = t.orderByFreeRAM(ctx, remaining)
 		sn := remaining[0]
 		iteration := attempted + 1
 
