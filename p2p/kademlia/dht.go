@@ -24,10 +24,11 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
-	"github.com/LumeraProtocol/supernode/v2/pkg/storage"
-	"github.com/LumeraProtocol/supernode/v2/pkg/storage/memory"
-	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
-	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+    "github.com/LumeraProtocol/supernode/v2/pkg/storage"
+    "github.com/LumeraProtocol/supernode/v2/pkg/storage/memory"
+    "github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
+    "github.com/LumeraProtocol/supernode/v2/pkg/utils"
+    "github.com/LumeraProtocol/supernode/v2/pkg/p2pmetrics"
 )
 
 const (
@@ -723,11 +724,12 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		result[key] = nil
 	}
 
-	foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
-	if err != nil {
-		return nil, fmt.Errorf("fetch and add local keys: %v", err)
-	}
-	// Found locally count is logged via summary below; no external metrics
+    foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
+    if err != nil {
+        return nil, fmt.Errorf("fetch and add local keys: %v", err)
+    }
+    // Report locally found count for metrics
+    p2pmetrics.ReportFoundLocal(p2pmetrics.TaskIDFromContext(ctx), int(foundLocalCount))
 
 	if foundLocalCount >= required {
 		logtrace.Debug(ctx, "DHT BatchRetrieve satisfied from local storage", logtrace.Fields{
@@ -918,8 +920,8 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 	var mu sync.Mutex // To protect the firstErr
 	foundCount := int32(0)
 
-	gctx, cancel := context.WithCancel(ctx) // Create a cancellable context
-	defer cancel()
+    gctx, cancel := context.WithCancel(ctx) // Create a cancellable context
+    defer cancel()
     for nodeID := range fetchMap {
         node, ok := nodes[nodeID]
         if !ok {
@@ -964,14 +966,23 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				return
 			}
 
-			decompressedData, err := s.doBatchGetValuesCall(gctx, node, requestKeys)
+		callStart := time.Now()
+		decompressedData, err := s.doBatchGetValuesCall(gctx, node, requestKeys)
 			if err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
 				}
 				mu.Unlock()
-				// per-node metrics removed; logs retained
+				// record failed RPC for metrics
+				p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+					IP:         node.IP,
+					Address:    node.String(),
+					Keys:       0,
+					Success:    false,
+					Error:      err.Error(),
+					DurationMS: time.Since(callStart).Milliseconds(),
+				})
 				return
 			}
 
@@ -1001,7 +1012,15 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 				}
 			}
 
-			// per-node metrics removed; logs retained
+			// record successful RPC per-node (returned may be 0). Success is true when no error.
+			p2pmetrics.RecordRetrieve(p2pmetrics.TaskIDFromContext(ctx), p2pmetrics.Call{
+				IP:         node.IP,
+				Address:    node.String(),
+				Keys:       returned,
+				Success:    true,
+				Error:      "",
+				DurationMS: time.Since(callStart).Milliseconds(),
+			})
 		}(node, nodeID)
 	}
 
