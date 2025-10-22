@@ -298,9 +298,11 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	denom := paramsResp.Params.BaseActionFee.Denom
 	exp := paramsResp.Params.ExpirationDuration
 
-	// Compute data size in KB for fee
-	kb := int(fi.Size()) / 1024
-	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.Itoa(kb))
+	// Compute data size in KB for fee, rounding up to avoid underpaying
+	// Keep consistent with supernode verification which uses ceil(bytes/1024)
+	sizeBytes := fi.Size()
+	kb := (sizeBytes + 1023) / 1024 // int64 division
+	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.FormatInt(kb, 10))
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("get action fee: %w", err)
 	}

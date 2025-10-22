@@ -195,13 +195,16 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	}
 	requiredFee := sdk.NewCoin("ulume", math.NewInt(amount))
 	logtrace.Debug(ctx, "calculated required fee", logtrace.Fields{"fee": requiredFee.String(), "dataBytes": dataSize})
-	if action.Price == nil || action.Price.String() != requiredFee.String() {
-		got := "<nil>"
-		if action.Price != nil {
-			got = action.Price.String()
-		}
-		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got %s", requiredFee.String(), got), fields)
+	// Accept paying more than the minimum required fee. Only enforce denom match and Amount >= required.
+	if action.Price == nil {
+		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got <nil>", requiredFee.String()), fields)
 	}
-	logtrace.Info(ctx, "register: verify action fee ok", logtrace.Fields{"required_fee": requiredFee.String()})
+	if action.Price.Denom != requiredFee.Denom {
+		return task.wrapErr(ctx, "invalid fee denom", errors.Errorf("expected denom %s, got %s", requiredFee.Denom, action.Price.Denom), fields)
+	}
+	if action.Price.Amount.LT(requiredFee.Amount) {
+		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got %s", requiredFee.String(), action.Price.String()), fields)
+	}
+	logtrace.Info(ctx, "register: verify action fee ok", logtrace.Fields{"required_fee": requiredFee.String(), "provided_fee": action.Price.String()})
 	return nil
 }
