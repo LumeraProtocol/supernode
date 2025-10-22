@@ -639,7 +639,7 @@ func (s *DHT) doMultiWorkers(ctx context.Context, iterativeType int, target []by
 	return responses
 }
 
-func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result *sync.Map, req int32) (count int32, err error) {
+func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result *sync.Map, req int32, writer func(symbolID string, data []byte) error) (count int32, err error) {
 	batchSize := 5000
 
 	// Process in batches
@@ -672,7 +672,16 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 		for i, val := range localValues {
 			if len(val) > 0 {
 				count++
-				result.Store(batchHexKeys[i], val)
+				// When writer is provided, call it and store empty marker
+				// Otherwise store full data in memory
+				if writer != nil {
+					if err := writer(batchHexKeys[i], val); err != nil {
+						logtrace.Error(ctx, "writer error for local key", logtrace.Fields{"key": batchHexKeys[i], logtrace.FieldError: err.Error()})
+					}
+					result.Store(batchHexKeys[i], []byte{}) // Empty marker
+				} else {
+					result.Store(batchHexKeys[i], val) // Full data
+				}
 				if count >= req {
 					return count, nil
 				}
@@ -693,6 +702,12 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	hashes := make([][]byte, len(keys))
 
 	defer func() {
+		// Skip building result map when writer is provided
+		// Writer stores data to disk; resMap only has empty markers for deduplication
+		if writer != nil {
+			return
+		}
+
 		resMap.Range(func(key, value interface{}) bool {
 			hexKey := key.(string)
 			valBytes := value.([]byte)
@@ -724,7 +739,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		result[key] = nil
 	}
 
-    foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required)
+    foundLocalCount, err = s.fetchAndAddLocalKeys(ctx, hexKeys, &resMap, required, writer)
     if err != nil {
         return nil, fmt.Errorf("fetch and add local keys: %v", err)
     }
@@ -989,7 +1004,13 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			returned := 0
 			for k, v := range decompressedData {
 				if len(v.Value) > 0 {
-					_, loaded := resMap.LoadOrStore(k, v.Value)
+					// When writer is provided, only store empty marker to save memory
+					// The writer already persists data to disk for RaptorQ
+					storeVal := v.Value
+					if writer != nil {
+						storeVal = []byte{} // Empty marker for deduplication only
+					}
+					_, loaded := resMap.LoadOrStore(k, storeVal)
 					if !loaded {
 						if writer != nil {
 							// decode k (hex) back to base58 key if your writer expects that
