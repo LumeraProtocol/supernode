@@ -925,7 +925,6 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 			continue
 		}
 
-
 		if s.ignorelist.Banned(node) {
 			logtrace.Debug(ctx, "Ignore banned node in iterate batch get values", logtrace.Fields{
 				logtrace.FieldModule: "dht",
@@ -1388,7 +1387,7 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 		if node != nil {
 			fields["peer"] = node.String()
 		}
-		logtrace.Info(ctx, "Rejecting node: peer below minimum version", fields)
+		logtrace.Debug(ctx, "Rejecting node: peer below minimum version", fields)
 		return nil
 	}
 	// Allow localhost for integration testing
