@@ -46,12 +46,8 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Initial concurrent balance filter (one-time)
-	supernodes = t.filterByMinBalance(ctx, supernodes)
-
-	// Rank by available free RAM (descending). Unknown RAM stays after known.
-	supernodes = t.orderByFreeRAM(ctx, supernodes)
-	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes found.", event.EventData{event.KeyCount: len(supernodes)})
+	// Log available candidates; streaming will happen within registration
+	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes fetched", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
 	if err := t.registerWithSupernodes(ctx, supernodes); err != nil {
@@ -77,15 +73,18 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		TaskId:   t.TaskID,
 	}
 
+	// Strict XOR-first qualification and attempts
+	fileSize := getFileSizeBytes(t.filePath)
+	var minRam uint64
+	if fileSize > 0 {
+		minRam = uint64(fileSize) * uploadRAMMultiplier
+	}
+	ordered := t.orderByXORDistance(ctx, supernodes)
+
 	var lastErr error
 	attempted := 0
-	// Work on a copy; re-rank by free RAM between attempts
-	remaining := append(lumera.Supernodes(nil), supernodes...)
-	for len(remaining) > 0 {
-		// Re-rank remaining nodes by available RAM (descending)
-		remaining = t.orderByFreeRAM(ctx, remaining)
-		sn := remaining[0]
-		iteration := attempted + 1
+	for i, sn := range ordered {
+		iteration := i + 1
 
 		t.LogEvent(ctx, event.SDKRegistrationAttempt, "attempting registration with supernode", event.EventData{
 			event.KeySupernode:        sn.GrpcEndpoint,
@@ -94,10 +93,8 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		})
 
 		// Re-check serving status just-in-time to avoid calling a node that became down/underpeered
-		if !t.isServing(ctx, sn) {
-			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", iteration)
-			// Drop this node and retry with the rest
-			remaining = remaining[1:]
+		// Ensure node qualifies before attempt
+		if !t.nodeQualifies(ctx, sn, minStorageThresholdBytes, minRam) {
 			continue
 		}
 
@@ -110,8 +107,6 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 				event.KeyError:            err.Error(),
 			})
 			lastErr = err
-			// Drop this node and retry with the rest (re-ranked next loop)
-			remaining = remaining[1:]
 			continue
 		}
 

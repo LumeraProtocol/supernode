@@ -43,12 +43,8 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
-	// Initial concurrent balance filter (one-time)
-	supernodes = t.filterByMinBalance(ctx, supernodes)
-
-	// Rank by available free RAM (descending). Unknown RAM stays after known.
-	supernodes = t.orderByFreeRAM(ctx, supernodes)
-	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes found", event.EventData{event.KeyCount: len(supernodes)})
+	// Log available candidates; streaming will happen within download phase
+	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes fetched", event.EventData{event.KeyCount: len(supernodes)})
 
 	// 2 – download from super-nodes
 	if err := t.downloadFromSupernodes(ctx, supernodes); err != nil {
@@ -81,15 +77,13 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		}
 	}
 
-	// Try supernodes sequentially with re-ranking between attempts
+	// Strict XOR-first qualification and attempts (downloads: storage-only threshold)
+	ordered := t.orderByXORDistance(ctx, supernodes)
+
 	var lastErr error
-	remaining := append(lumera.Supernodes(nil), supernodes...)
 	attempted := 0
-	for len(remaining) > 0 {
-		// Re-rank remaining nodes by available RAM (descending)
-		remaining = t.orderByFreeRAM(ctx, remaining)
-		sn := remaining[0]
-		iteration := attempted + 1
+	for i, sn := range ordered {
+		iteration := i + 1
 
 		// Log download attempt
 		t.LogEvent(ctx, event.SDKDownloadAttempt, "attempting download from super-node", event.EventData{
@@ -98,10 +92,8 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			event.KeyIteration:        iteration,
 		})
 
-		// Re-check serving status just-in-time to avoid calling a node that became down/underpeered
-		if !t.isServing(ctx, sn) {
-			t.logger.Info(ctx, "skip supernode: not serving", "supernode", sn.GrpcEndpoint, "sn-address", sn.CosmosAddress, "iteration", iteration)
-			remaining = remaining[1:]
+		// Ensure node qualifies before attempt
+		if !t.nodeQualifies(ctx, sn, minStorageThresholdBytes, 0) {
 			continue
 		}
 
@@ -115,7 +107,6 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 				event.KeyError:            err.Error(),
 			})
 			lastErr = err
-			remaining = remaining[1:]
 			continue
 		}
 
@@ -135,17 +126,6 @@ func (t *CascadeDownloadTask) attemptDownload(
 	factory *net.ClientFactory,
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
 ) error {
-	// Recheck liveness/busyness just before attempting download to handle delays
-	if !t.isServing(parent, sn) {
-		// Emit a concise event; detailed rejection reasons are logged inside isServing
-		t.LogEvent(parent, event.SDKDownloadFailure, "precheck: supernode not serving/busy", event.EventData{
-			event.KeySupernode:        sn.GrpcEndpoint,
-			event.KeySupernodeAddress: sn.CosmosAddress,
-			event.KeyReason:           "precheck_not_serving_or_busy",
-		})
-		return fmt.Errorf("precheck: supernode not serving/busy")
-	}
-
 	ctx, cancel := context.WithTimeout(parent, downloadTimeout)
 	defer cancel()
 
