@@ -21,11 +21,12 @@ CLAUDE.md
 # Go workspace file
 go.work
 go.work.sum
-*tests/system/testnet
+tests/system/testnet
+tests/system/**/supernode-data*
+tests/system/data
+tests/system/1
 # env file
 .env
 /data
 /release
-/tests/system/data
-tests/system/**/supernode-data*
 AGENTS.md

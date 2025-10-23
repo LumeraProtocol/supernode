@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"encoding/json"
 
-	actionapi "github.com/LumeraProtocol/lumera/api/lumera/action"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/util"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func validateRequestActionParams(actionType, metadata, price, expirationTime string) error {
@@ -66,11 +65,11 @@ func createRequestActionMessage(creator, actionType, metadata, price, expiration
 }
 
 func createFinalizeActionMessage(creator, actionId string, rqIdsIds []string) (*actiontypes.MsgFinalizeAction, error) {
-	cascadeMeta := actionapi.CascadeMetadata{
+	cascadeMeta := actiontypes.CascadeMetadata{
 		RqIdsIds: rqIdsIds,
 	}
 
-	metadataBytes, err := protojson.Marshal(&cascadeMeta)
+	metadataBytes, err := json.Marshal(&cascadeMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cascade metadata: %w", err)
 	}

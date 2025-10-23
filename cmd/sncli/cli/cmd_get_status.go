@@ -16,9 +16,9 @@ func (c *CLI) GetSupernodeStatus() error {
 	fmt.Println("Supernode Status:")
 	fmt.Printf("   Version: %s\n", resp.Version)
 	fmt.Printf("   Uptime: %d seconds\n", resp.UptimeSeconds)
-	fmt.Printf("   CPU Usage: %.2f%% (%d cores)\n", resp.Resources.CPU.UsagePercent, resp.Resources.CPU.Cores)
+	fmt.Printf("   CPU Usage: %.2f%% (%d cores)\n", resp.Resources.Cpu.UsagePercent, resp.Resources.Cpu.Cores)
 	fmt.Printf("   Memory: %.2fGB used / %.2fGB total (%.2f%%)\n",
-		resp.Resources.Memory.UsedGB, resp.Resources.Memory.TotalGB, resp.Resources.Memory.UsagePercent)
+		resp.Resources.Memory.UsedGb, resp.Resources.Memory.TotalGb, resp.Resources.Memory.UsagePercent)
 
 	if len(resp.RegisteredServices) > 0 {
 		fmt.Println("   Registered Services:")
@@ -31,8 +31,8 @@ func (c *CLI) GetSupernodeStatus() error {
 	if resp.Rank > 0 {
 		fmt.Printf("   Rank: %d\n", resp.Rank)
 	}
-	if resp.IPAddress != "" {
-		fmt.Printf("   IP Address: %s\n", resp.IPAddress)
+	if resp.IpAddress != "" {
+		fmt.Printf("   IP Address: %s\n", resp.IpAddress)
 	}
 
 	return nil

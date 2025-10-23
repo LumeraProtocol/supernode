@@ -115,14 +115,17 @@ SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 # Install Lumera
 # Optional: specify lumera binary path to skip download
 LUMERAD_BINARY ?=
+# Derive default Lumera version from go.mod (strip pseudo-version suffix if present)
+LUMERA_DEFAULT_VERSION := $(shell awk '/github.com\/LumeraProtocol\/lumera[[:space:]]+v/ {print $$2; exit}' go.mod | sed 's/-.*//')
 # Optional: specify installation mode (latest-release, latest-tag, or vX.Y.Z)
-INSTALL_MODE ?=v1.7.2
+INSTALL_MODE ?= $(if $(LUMERA_DEFAULT_VERSION),$(LUMERA_DEFAULT_VERSION),latest-release)
 
 install-lumera:
 	@echo "Installing Lumera..."
 	@chmod +x tests/scripts/install-lumera.sh
 	@sudo LUMERAD_BINARY="$(LUMERAD_BINARY)" tests/scripts/install-lumera.sh $(INSTALL_MODE)
 	@echo "PtTDUHythfRfXHh63yzyiGDid4TZj2P76Zd,18749999981413" > ~/claims.csv
+	
 # Setup supernode environments
 setup-supernodes:
 	@echo "Setting up all supernode environments..."

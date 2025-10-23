@@ -81,12 +81,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 		logtrace.Debug(ctx, "Verifying configuration against chain registration", logtrace.Fields{})
 		configVerifier := verifier.NewConfigVerifier(appConfig, lumeraClient, kr)
 		verificationResult, err := configVerifier.VerifyConfig(ctx)
-		if err != nil {
-			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"error": err.Error()})
-		}
-
-		if !verificationResult.IsValid() {
-			logtrace.Fatal(ctx, "Config verification failed", logtrace.Fields{"summary": verificationResult.Summary()})
+		if err != nil || (verificationResult != nil && !verificationResult.IsValid()) {
+			logFields := logtrace.Fields{}
+			if err != nil {
+				logFields["error"] = err.Error()
+			}
+			if verificationResult != nil && !verificationResult.IsValid() {
+				logFields["summary"] = verificationResult.Summary()
+			}
+			logtrace.Fatal(ctx, "Config verification failed", logFields)
 		}
 
 		if verificationResult.HasWarnings() {
