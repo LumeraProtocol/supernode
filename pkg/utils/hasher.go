@@ -57,7 +57,7 @@ func hashReaderBLAKE3(r io.Reader, sizeHint int64) ([]byte, error) {
 // chunkSizeFor returns the hashing chunk size based on total input size.
 func chunkSizeFor(total int64) int64 {
 	if total <= 0 {
-		return 1 << 20 // 1 MiB default when total size is unknown
+		return 512 << 10 // 512 KiB default when total size is unknown
 	}
 	switch {
 	case total <= 4<<20: // ≤ 4 MiB
@@ -130,7 +130,8 @@ func Blake3HashWithChunkSize(msg []byte, chunkSize int64) ([]byte, error) {
 }
 
 // GetHashFromBytes generate blake3 hash string from a given byte array
-// and return it as a hex-encoded string.
+// and return it as a hex-encoded string. If an error occurs during hashing,
+// an empty string is returned.
 func GetHashFromBytes(msg []byte) string {
 	sum, err := blake3Hash(msg, 0)
 	if err != nil {

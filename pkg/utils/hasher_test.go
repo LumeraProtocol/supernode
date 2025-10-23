@@ -24,8 +24,8 @@ func TestChunkSizeFor(t *testing.T) {
 		input int64
 		want  int64
 	}{
-		{"unknownOrZero", 0, 1 * mib},
-		{"negative", -1, 1 * mib},
+		{"unknownOrZero", 0, 512 * kib},
+		{"negative", -1, 512 * kib},
 		{"under4MiB", 3*mib + 512*kib, 512 * kib},
 		{"exact4MiB", 4 * mib, 512 * kib},
 		{"justOver4MiB", 4*mib + 1, 1 * mib},
