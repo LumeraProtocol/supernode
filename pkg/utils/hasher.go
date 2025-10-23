@@ -34,9 +34,6 @@ import (
 // up to ~7× faster on large files, with fewer allocations.
 func hashReaderBLAKE3(r io.Reader, sizeHint int64) ([]byte, error) {
 	chunk := chunkSizeFor(sizeHint)
-	if sizeHint <= 0 { // unknown size → reasonable default
-		chunk = 1 << 20 // 1 MiB
-	}
 	buf := make([]byte, chunk)
 
 	h := blake3.New(32, nil)
@@ -59,6 +56,9 @@ func hashReaderBLAKE3(r io.Reader, sizeHint int64) ([]byte, error) {
 
 // chunkSizeFor returns the hashing chunk size based on total input size.
 func chunkSizeFor(total int64) int64 {
+	if total <= 0 {
+		return 1 << 20 // 1 MiB default when total size is unknown
+	}
 	switch {
 	case total <= 4<<20: // ≤ 4 MiB
 		return 512 << 10 // 512 KiB
@@ -71,7 +71,7 @@ func chunkSizeFor(total int64) int64 {
 	}
 }
 
-// Blake3Hash returns BLAKE3 hash of a file (auto-selects chunk size).
+// Blake3HashFile returns BLAKE3 hash of a file (auto-selects chunk size).
 func Blake3HashFile(filePath string) ([]byte, error) {
 	return Blake3HashFileWithChunkSize(filePath, 0)
 }
@@ -79,7 +79,7 @@ func Blake3HashFile(filePath string) ([]byte, error) {
 // Blake3HashFileWithChunkSize returns the BLAKE3 hash of a file.
 // Use chunkSize > 0 to specify chunk size; otherwise auto-selects based on file size.
 func Blake3HashFileWithChunkSize(filePath string, chunkSize int64) ([]byte, error) {
-	// If bufSize > 0, honor caller; otherwise auto-select based on file size.
+	// If chunkSize > 0, honor caller; otherwise auto-select based on file size.
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
