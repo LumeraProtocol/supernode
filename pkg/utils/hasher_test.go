@@ -51,17 +51,17 @@ func TestBlake3Hash(t *testing.T) {
 	msg := []byte(strings.Repeat("blake3 data", 1024))
 	want := blake3.Sum256(msg)
 
-	got, err := blake3Hash(msg, 0)
+	got, err := Blake3Hash(msg)
 	if err != nil {
-		t.Fatalf("blake3Hash returned error: %v", err)
+		t.Fatalf("Blake3Hash returned error: %v", err)
 	}
 	if !bytes.Equal(got, want[:]) {
 		t.Fatalf("hash mismatch for auto chunking")
 	}
 
-	got, err = blake3Hash(msg, 512)
+	got, err = Blake3Hash(msg)
 	if err != nil {
-		t.Fatalf("blake3Hash with buf size returned error: %v", err)
+		t.Fatalf("Blake3Hash with buf size returned error: %v", err)
 	}
 	if !bytes.Equal(got, want[:]) {
 		t.Fatalf("hash mismatch with explicit chunk size")
@@ -169,21 +169,6 @@ func TestBlake3HashWrapper(t *testing.T) {
 	}
 }
 
-func TestBlake3HashWithChunkSizeWrapper(t *testing.T) {
-	t.Parallel()
-
-	msg := []byte(strings.Repeat("chunked data", 256))
-	want := blake3.Sum256(msg)
-
-	got, err := Blake3HashWithChunkSize(msg, 1<<10)
-	if err != nil {
-		t.Fatalf("Blake3HashWithChunkSize returned error: %v", err)
-	}
-	if !bytes.Equal(got, want[:]) {
-		t.Fatalf("Blake3HashWithChunkSize returned unexpected digest")
-	}
-}
-
 func TestBlake3HashFileWrapper(t *testing.T) {
 	t.Parallel()
 
@@ -264,3 +249,4 @@ func TestHashReaderBLAKE3ReadError(t *testing.T) {
 		t.Fatalf("expected read error to propagate, got %v", err)
 	}
 }
+

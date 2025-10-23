@@ -99,44 +99,20 @@ func Blake3HashFileWithChunkSize(filePath string, chunkSize int64) ([]byte, erro
 	return hashReaderBLAKE3(f, chunkSize)
 }
 
-// blake3Hash returns BLAKE3 of msg.
-// Use chunkSize > 0 to specify chunk size; otherwise auto-selects based on msg length.
-func blake3Hash(msg []byte, chunkSize int64) ([]byte, error) {
+// Blake3Hash returns BLAKE3 hash of msg.
+func Blake3Hash(msg []byte) ([]byte, error) {
 	h := blake3.New(32, nil)
-	msgLen := int64(len(msg))
-	var chunk int64
-	if chunkSize <= 0 {
-		chunk = chunkSizeFor(msgLen)
-	} else {
-		chunk = chunkSize
-	}
-	for off := int64(0); off < msgLen; off += chunk {
-		end := off + chunk
-		if end > msgLen {
-			end = msgLen
-		}
-		if _, err := h.Write(msg[off:end]); err != nil {
-			return nil, err
-		}
+	if _, err := h.Write(msg); err != nil {
+		return nil, err
 	}
 	return h.Sum(nil), nil
-}
-
-// Blake3Hash returns BLAKE3 hash of msg (auto-selects chunk size).
-func Blake3Hash(msg []byte) ([]byte, error) {
-	return blake3Hash(msg, 0)
-}
-
-// Blake3HashWithChunkSize returns BLAKE3 hash of msg using specified chunk size.
-func Blake3HashWithChunkSize(msg []byte, chunkSize int64) ([]byte, error) {
-	return blake3Hash(msg, chunkSize)
 }
 
 // GetHashFromBytes generate blake3 hash string from a given byte array
 // and return it as a hex-encoded string. If an error occurs during hashing,
 // an empty string is returned.
 func GetHashFromBytes(msg []byte) string {
-	sum, err := blake3Hash(msg, 0)
+	sum, err := Blake3Hash(msg)
 	if err != nil {
 		return ""
 	}
