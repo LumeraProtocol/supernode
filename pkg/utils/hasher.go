@@ -32,8 +32,11 @@ import (
 //
 // Compared to io.Copy/io.CopyBuffer, the adaptive manual loop is
 // up to ~7× faster on large files, with fewer allocations.
-func hashReaderBLAKE3(r io.Reader, sizeHint int64) ([]byte, error) {
-	chunk := chunkSizeFor(sizeHint)
+func hashReaderBLAKE3(r io.Reader, chunkSize int64) ([]byte, error) {
+	chunk := chunkSize
+	if chunk <= 0 {
+		chunk = chunkSizeFor(0) // fallback to default chunk size
+	}
 	buf := make([]byte, chunk)
 
 	h := blake3.New(32, nil)
