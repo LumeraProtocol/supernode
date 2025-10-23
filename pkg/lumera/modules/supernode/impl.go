@@ -31,6 +31,7 @@ func (m *module) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint6
 	resp, err := m.client.GetTopSuperNodesForBlock(ctx, &types.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
 		State:       types.SuperNodeStateActive.String(),
+		Limit:       10,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top supernodes: %w", err)
