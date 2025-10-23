@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"sync"
+	"os"
 
 	sdkmath "cosmossdk.io/math"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
@@ -24,6 +23,14 @@ type TaskType string
 const (
 	TaskTypeSense   TaskType = "SENSE"
 	TaskTypeCascade TaskType = "CASCADE"
+)
+
+// Package-level thresholds and tuning
+const (
+	// Minimum available storage required on any volume (bytes)
+	minStorageThresholdBytes uint64 = 50 * 1024 * 1024 * 1024 // 50 GB
+	// Upload requires free RAM to be at least 8x the file size
+	uploadRAMMultiplier uint64 = 8
 )
 
 // EventCallback is a function that processes events from tasks
@@ -76,35 +83,6 @@ func (t *BaseTask) LogEvent(ctx context.Context, evt event.EventType, msg string
 	t.emitEvent(ctx, evt, additionalInfo)
 }
 
-// isServing pings the super-node once with a short timeout.
-func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
-	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
-	defer cancel()
-
-	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
-		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
-		PeerType:           t.config.Account.PeerType,
-	}).CreateClient(ctx, sn)
-	if err != nil {
-		t.logger.Info(ctx, "reject supernode: client create failed", "reason", err.Error(), "endpoint", sn.GrpcEndpoint, "cosmos", sn.CosmosAddress)
-		return false
-	}
-	defer client.Close(ctx)
-
-	// First check gRPC health
-	resp, err := client.HealthCheck(ctx)
-	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
-		statusStr := "nil"
-		if resp != nil {
-			statusStr = resp.Status.String()
-		}
-		t.logger.Info(ctx, "reject supernode: health not SERVING", "error", err, "status", statusStr)
-		return false
-	}
-	return true
-}
-
-// No health, status, balance or load checks are done here.
 func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Supernodes, error) {
 	sns, err := t.client.GetSupernodes(ctx, height)
 	if err != nil {
@@ -116,128 +94,108 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 	return sns, nil
 }
 
-func (t *BaseTask) orderByFreeRAM(parent context.Context, sns lumera.Supernodes) lumera.Supernodes {
+// orderByXORDistance ranks supernodes by XOR distance to the action's data hash.
+// If decoding metadata fails, falls back to using the action ID as the seed.
+func (t *BaseTask) orderByXORDistance(ctx context.Context, sns lumera.Supernodes) lumera.Supernodes {
 	if len(sns) <= 1 {
 		return sns
 	}
-
-	type scored struct {
-		idx   int
-		sn    lumera.Supernode
-		ramGb float64
-		known bool
-	}
-
-	out := make([]scored, len(sns))
-	// Best-effort parallel status fetch; do not filter or fail.
-	// We intentionally avoid health/peer/balance checks here.
-	for i, sn := range sns {
-		out[i] = scored{idx: i, sn: sn, ramGb: 0, known: false}
-	}
-
-	// Query in parallel with a short timeout to avoid blocking too long per node
-	// Reuse the connectionTimeout constant for symmetry with health probes.
-	type result struct {
-		i   int
-		ram float64
-		ok  bool
-	}
-	ch := make(chan result, len(sns))
-	for i, sn := range sns {
-		i, sn := i, sn
-		go func() {
-			cctx, cancel := context.WithTimeout(parent, connectionTimeout)
-			defer cancel()
-			client, err := net.NewClientFactory(cctx, t.logger, t.keyring, t.client, net.FactoryConfig{
-				LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
-				PeerType:           t.config.Account.PeerType,
-			}).CreateClient(cctx, sn)
-			if err != nil {
-				ch <- result{i: i, ram: 0, ok: false}
-				return
-			}
-			defer client.Close(cctx)
-
-			status, err := client.GetSupernodeStatus(cctx)
-			if err != nil || status == nil {
-				ch <- result{i: i, ram: 0, ok: false}
-				return
-			}
-			res := status.GetResources()
-			if res == nil || res.GetMemory() == nil {
-				ch <- result{i: i, ram: 0, ok: false}
-				return
-			}
-			ch <- result{i: i, ram: res.GetMemory().GetAvailableGb(), ok: true}
-		}()
-	}
-	// Collect results with a cap bounded by len(sns)
-	for k := 0; k < len(sns); k++ {
-		r := <-ch
-		if r.ok {
-			out[r.i].ramGb = r.ram
-			out[r.i].known = true
+	// Try to decode the action metadata to get the Cascade data hash as seed
+	seed := t.ActionID
+	if t.client != nil && (t.Action.Metadata != nil || t.Action.ActionType != "") {
+		if meta, err := t.client.DecodeCascadeMetadata(ctx, t.Action); err == nil && meta.DataHash != "" {
+			seed = meta.DataHash
 		}
 	}
-
-	// Known RAM first, then by RAM desc. For ties and unknowns, preserve original order.
-	sort.SliceStable(out, func(i, j int) bool {
-		ai, aj := out[i], out[j]
-		if ai.known != aj.known {
-			return ai.known
-		}
-		if ai.known && aj.known && ai.ramGb != aj.ramGb {
-			return ai.ramGb > aj.ramGb
-		}
-		return ai.idx < aj.idx
-	})
-
-	res := make(lumera.Supernodes, len(out))
-	for i := range out {
-		res[i] = out[i].sn
-	}
-	return res
+	return orderSupernodesByDeterministicDistance(seed, sns)
 }
 
-// filterByMinBalance filters supernodes by requiring at least a minimum balance
-// in the default fee denom. This runs concurrently and is intended to be used
-// once during initial discovery only.
-func (t *BaseTask) filterByMinBalance(parent context.Context, sns lumera.Supernodes) lumera.Supernodes {
-	if len(sns) == 0 {
-		return sns
+// filterByResourceThresholds removes supernodes that do not satisfy minimum
+// available storage and free RAM thresholds.
+// - minStorageBytes: minimum available storage on any volume (bytes)
+// - minFreeRamBytes: minimum free RAM (bytes). If 0, RAM check is skipped.
+
+// helper: get file size (bytes). returns 0 on error
+func getFileSizeBytes(p string) int64 {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return 0
 	}
-	// Require at least 1 LUME = 10^6 ulume by default.
-	min := sdkmath.NewInt(1_000_000)
+	return fi.Size()
+}
+
+// nodeQualifies performs balance, health, and resource checks for a supernode.
+func (t *BaseTask) nodeQualifies(parent context.Context, sn lumera.Supernode, minStorageBytes uint64, minFreeRamBytes uint64) bool {
+	// 1) Balance check (require at least 1 LUME)
+	if !t.balanceOK(parent, sn) {
+		return false
+	}
+
+	// 2) Health + resources via a single client session
+	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
+	defer cancel()
+	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
+		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
+		PeerType:           t.config.Account.PeerType,
+	}).CreateClient(ctx, sn)
+	if err != nil {
+		return false
+	}
+	defer client.Close(ctx)
+
+	// Health check
+	h, err := client.HealthCheck(ctx)
+	if err != nil || h == nil || h.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		return false
+	}
+
+	// Resource thresholds
+	return t.resourcesOK(ctx, client, sn, minStorageBytes, minFreeRamBytes)
+}
+
+func (t *BaseTask) balanceOK(parent context.Context, sn lumera.Supernode) bool {
+	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
+	defer cancel()
+	min := sdkmath.NewInt(1_000_000) // 1 LUME in ulume
 	denom := txmod.DefaultFeeDenom
-
-	keep := make([]bool, len(sns))
-	var wg sync.WaitGroup
-	wg.Add(len(sns))
-	for i, sn := range sns {
-		i, sn := i, sn
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(parent, connectionTimeout)
-			defer cancel()
-			bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
-			if err != nil || bal == nil || bal.Balance == nil {
-				t.logger.Info(ctx, "reject supernode: balance fetch failed or empty", "error", err, "address", sn.CosmosAddress)
-				return
-			}
-			if bal.Balance.Amount.LT(min) {
-				t.logger.Info(ctx, "reject supernode: insufficient balance", "amount", bal.Balance.Amount.String(), "min", min.String(), "address", sn.CosmosAddress)
-				return
-			}
-			keep[i] = true
-		}()
+	bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
+	if err != nil || bal == nil || bal.Balance == nil {
+		return false
 	}
-	wg.Wait()
+	if bal.Balance.Amount.LT(min) {
+		return false
+	}
+	return true
+}
 
-	out := make(lumera.Supernodes, 0, len(sns))
-	for i, sn := range sns {
-		if keep[i] {
-			out = append(out, sn)
+func (t *BaseTask) resourcesOK(ctx context.Context, client net.SupernodeClient, sn lumera.Supernode, minStorageBytes uint64, minFreeRamBytes uint64) bool {
+	status, err := client.GetSupernodeStatus(ctx)
+	if err != nil || status == nil || status.Resources == nil {
+		return false
+	}
+	// Storage: any volume must satisfy available >= minStorageBytes
+	if minStorageBytes > 0 {
+		ok := false
+		for _, vol := range status.Resources.StorageVolumes {
+			if vol != nil && vol.AvailableBytes >= minStorageBytes {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
 		}
 	}
-	return out
+	// RAM: available_gb must be >= required GiB
+	if minFreeRamBytes > 0 {
+		mem := status.Resources.Memory
+		if mem == nil {
+			return false
+		}
+		requiredGiB := float64(minFreeRamBytes) / (1024.0 * 1024.0 * 1024.0)
+		if mem.AvailableGb < requiredGiB {
+			return false
+		}
+	}
+	return true
 }

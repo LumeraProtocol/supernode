@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
@@ -50,7 +48,7 @@ func (m *ManagerImpl) validateAction(ctx context.Context, actionID string) (lume
 }
 
 // validateSignature verifies the authenticity of a signature against an action's data hash.
-//
+
 // This function performs the following steps:
 // 1. Decodes the CASCADE metadata from the provided Lumera action
 // 2. Extracts the base64-encoded data hash from the metadata
@@ -103,7 +101,7 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 	return nil
 }
 
-// (Removed) Peers connectivity preflight is now enforced during discovery in isServing.
+//
 
 func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID string) (lumera.Action, error) {
 	action, err := m.lumeraClient.GetAction(ctx, actionID)
@@ -122,22 +120,6 @@ func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID strin
 	}
 
 	return action, nil
-}
-
-// Helper function to ensure output path has the correct filename
-func ensureOutputPathWithFilename(outputPath, filename string) string {
-	// If outputPath is empty, just return the filename
-	if outputPath == "" {
-		return filename
-	}
-
-	// Check if the path already ends with the filename
-	if strings.HasSuffix(outputPath, filename) {
-		return outputPath
-	}
-
-	// Otherwise, append the filename to the path
-	return filepath.Join(outputPath, filename)
 }
 
 func orderSupernodesByDeterministicDistance(seed string, sns lumera.Supernodes) lumera.Supernodes {

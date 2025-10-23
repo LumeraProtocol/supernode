@@ -1395,16 +1395,16 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 	if node.IP == "" || node.IP == "0.0.0.0" || (!isIntegrationTest && node.IP == "127.0.0.1") {
 		logtrace.Info(ctx, "Rejecting node: invalid IP", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
-			"ip": node.IP,
-			"node": node.String(),
-			"integration_test": isIntegrationTest,
+			"ip":                 node.IP,
+			"node":               node.String(),
+			"integration_test":   isIntegrationTest,
 		})
 		return nil
 	}
 	if bytes.Equal(node.ID, s.ht.self.ID) {
 		logtrace.Info(ctx, "Rejecting node: is self", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
-			"node": node.String(),
+			"node":               node.String(),
 		})
 		return nil
 	}
