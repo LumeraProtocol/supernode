@@ -15,7 +15,7 @@ const (
 	rqSymbolSize       uint16 = 65535
 	rqRedundancyFactor uint8  = 6
 	// Limit RaptorQ processor memory usage to ~2 GiB
-	rqMaxMemoryMB uint64 = 4 * 1024 // MB
+	rqMaxMemoryMB uint64 = 8 * 1024 // MB
 	// Concurrency tuned for 2 GiB limit and typical 8+ core CPUs
 	rqConcurrency uint64 = 1
 	// Target single-block output for up to 1 GiB files with padding headroom (~1.25 GiB)
@@ -43,6 +43,7 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 		"data-size":          req.DataSize,
 	}
 
+	logtrace.Info(ctx, "rq: encode start", fields)
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
 		return EncodeResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)
@@ -77,34 +78,35 @@ func (rq *raptorQ) Encode(ctx context.Context, req EncodeRequest) (EncodeRespons
 	}
 
 	var encodeResp EncodeResponse
-	if err := json.Unmarshal(layoutData, &encodeResp.Metadata); err != nil {
+	if err := json.Unmarshal(layoutData, &encodeResp.Layout); err != nil {
 		return EncodeResponse{}, fmt.Errorf("unmarshal layout: %w", err)
 	}
 	encodeResp.SymbolsDir = symbolsDir
 
 	// Enforce single-block output; abort if multiple blocks are produced
-	if n := len(encodeResp.Metadata.Blocks); n != 1 {
+	if n := len(encodeResp.Layout.Blocks); n != 1 {
 		return EncodeResponse{}, fmt.Errorf("raptorq encode produced %d blocks; single-block layout is required", n)
 	}
-
+	logtrace.Info(ctx, "rq: encode ok", logtrace.Fields{"symbols_dir": encodeResp.SymbolsDir})
 	return encodeResp, nil
 }
 
 // CreateMetadata builds only the layout metadata for the given file without generating symbols.
-func (rq *raptorQ) CreateMetadata(ctx context.Context, path string) (Layout, error) {
+func (rq *raptorQ) CreateMetadata(ctx context.Context, req CreateMetadataRequest) (CreateMetadataResponse, error) {
 	// Populate fields; include data-size by stat-ing the file to preserve existing log fields
 	fields := logtrace.Fields{
 		logtrace.FieldMethod: "CreateMetadata",
 		logtrace.FieldModule: "rq",
-		"path":               path,
+		"path":               req.Path,
 	}
-	if fi, err := os.Stat(path); err == nil {
+	if fi, err := os.Stat(req.Path); err == nil {
 		fields["data-size"] = int(fi.Size())
 	}
 
+	logtrace.Info(ctx, "rq: create-metadata start", fields)
 	processor, err := raptorq.NewRaptorQProcessor(rqSymbolSize, rqRedundancyFactor, rqMaxMemoryMB, rqConcurrency)
 	if err != nil {
-		return Layout{}, fmt.Errorf("create RaptorQ processor: %w", err)
+		return CreateMetadataResponse{}, fmt.Errorf("create RaptorQ processor: %w", err)
 	}
 	defer processor.Free()
 	logtrace.Debug(ctx, "RaptorQ processor created", fields)
@@ -120,33 +122,33 @@ func (rq *raptorQ) CreateMetadata(ctx context.Context, path string) (Layout, err
 	tmpDir, err := os.MkdirTemp(base, "rq_meta_*")
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		return Layout{}, fmt.Errorf("mkdir temp dir: %w", err)
+		return CreateMetadataResponse{}, fmt.Errorf("mkdir temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	layoutPath := filepath.Join(tmpDir, "layout.json")
 
 	// Use rq-go's metadata-only creation; no symbols are produced here.
-	resp, err := processor.CreateMetadata(path, layoutPath, blockSize)
+	resp, err := processor.CreateMetadata(req.Path, layoutPath, blockSize)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		return Layout{}, fmt.Errorf("raptorq create metadata: %w", err)
+		return CreateMetadataResponse{}, fmt.Errorf("raptorq create metadata: %w", err)
 	}
 
 	layoutData, err := os.ReadFile(resp.LayoutFilePath)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
-		return Layout{}, fmt.Errorf("read layout %s: %w", resp.LayoutFilePath, err)
+		return CreateMetadataResponse{}, fmt.Errorf("read layout %s: %w", resp.LayoutFilePath, err)
 	}
 
 	var layout Layout
 	if err := json.Unmarshal(layoutData, &layout); err != nil {
-		return Layout{}, fmt.Errorf("unmarshal layout: %w", err)
+		return CreateMetadataResponse{}, fmt.Errorf("unmarshal layout: %w", err)
 	}
 
 	// Enforce single-block output; abort if multiple blocks are produced
 	if n := len(layout.Blocks); n != 1 {
-		return Layout{}, fmt.Errorf("raptorq metadata produced %d blocks; single-block layout is required", n)
+		return CreateMetadataResponse{}, fmt.Errorf("raptorq metadata produced %d blocks; single-block layout is required", n)
 	}
-
-	return layout, nil
+	logtrace.Info(ctx, "rq: create-metadata ok", logtrace.Fields{"blocks": len(layout.Blocks)})
+	return CreateMetadataResponse{Layout: layout}, nil
 }

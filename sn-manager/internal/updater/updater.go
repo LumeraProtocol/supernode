@@ -12,11 +12,11 @@ import (
 	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
-	"github.com/LumeraProtocol/supernode/v2/supernode/node/supernode/gateway"
+	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -28,7 +28,7 @@ const (
 	updateCheckInterval = 10 * time.Minute
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
-	forceUpdateAfter = 30 * time.Minute
+	forceUpdateAfter = 10 * time.Minute
 )
 
 type AutoUpdater struct {
@@ -43,22 +43,25 @@ type AutoUpdater struct {
 	// Gateway error backoff state
 	gwErrCount       int
 	gwErrWindowStart time.Time
+	// Optional hook to handle manager update (restart) orchestration
+	onManagerUpdate func()
 }
 
 // Use protobuf JSON decoding for gateway responses (int64s encoded as strings)
 
-func New(homeDir string, cfg *config.Config, managerVersion string) *AutoUpdater {
+func New(homeDir string, cfg *config.Config, managerVersion string, onManagerUpdate func()) *AutoUpdater {
 	// Use the correct gateway endpoint with imported constants
 	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", gateway.DefaultGatewayPort)
 
 	return &AutoUpdater{
-		config:         cfg,
-		homeDir:        homeDir,
-		githubClient:   github.NewClient(config.GitHubRepo),
-		versionMgr:     version.NewManager(homeDir),
-		gatewayURL:     gatewayURL,
-		stopCh:         make(chan struct{}),
-		managerVersion: managerVersion,
+		config:          cfg,
+		homeDir:         homeDir,
+		githubClient:    github.NewClient(config.GitHubRepo),
+		versionMgr:      version.NewManager(homeDir),
+		gatewayURL:      gatewayURL,
+		stopCh:          make(chan struct{}),
+		managerVersion:  managerVersion,
+		onManagerUpdate: onManagerUpdate,
 	}
 }
 
@@ -133,9 +136,6 @@ func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	return false
 }
 
-// isGatewayIdle returns (idle, isError). When isError is true,
-// the gateway could not be reliably checked (network/error/invalid).
-// When isError is false and idle is false, the gateway is busy.
 func (u *AutoUpdater) isGatewayIdle() (bool, bool) {
 	client := &http.Client{Timeout: gatewayTimeout}
 
@@ -163,16 +163,16 @@ func (u *AutoUpdater) isGatewayIdle() (bool, bool) {
 		return false, true
 	}
 
-	totalTasks := 0
-	for _, service := range status.RunningTasks {
-		totalTasks += int(service.TaskCount)
+	// Idle when there are no running tasks across all services
+	if len(status.GetRunningTasks()) == 0 {
+		return true, false
 	}
-
-	if totalTasks > 0 {
-		log.Printf("Gateway busy: %d running tasks", totalTasks)
-		return false, false
+	for _, st := range status.GetRunningTasks() {
+		if st.GetTaskCount() > 0 || len(st.GetTaskIds()) > 0 {
+			log.Printf("Gateway busy: service=%s tasks=%d", st.GetServiceName(), st.GetTaskCount())
+			return false, false
+		}
 	}
-
 	return true, false
 }
 
@@ -353,10 +353,12 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	// If manager updated, restart service after completing all work
 	if managerUpdated {
 		log.Printf("Self-update applied, restarting service...")
-		go func() {
-			time.Sleep(500 * time.Millisecond)
+		if u.onManagerUpdate != nil {
+			u.onManagerUpdate()
+		} else {
+			// Fallback: immediate process restart signal
 			os.Exit(3)
-		}()
+		}
 	}
 }
 

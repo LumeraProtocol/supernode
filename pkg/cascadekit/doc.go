@@ -5,7 +5,7 @@
 // Scope:
 //   - Build and sign layout metadata (RaptorQ layout) and index files
 //   - Generate redundant metadata files and index files + their IDs
-//   - Extract and decode index payloads from the on-chain signatures string
+//   - Extract and decode index payloads from the on-chain index signature format string
 //   - Compute data hashes for request metadata
 //   - Verify single-block layout consistency (explicit error if more than 1 block)
 //

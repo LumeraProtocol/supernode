@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/manager"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
@@ -121,12 +121,27 @@ func runStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// orchestrator to gracefully stop SuperNode and exit manager with code 3
+	gracefulManagerRestart := func() {
+		// Write stop marker so monitor won't auto-restart SuperNode
+		stopMarkerPath := filepath.Join(home, stopMarkerFile)
+		_ = os.WriteFile(stopMarkerPath, []byte("manager-update"), 0644)
+
+		// Attempt graceful stop of SuperNode if running
+		if mgr.IsRunning() {
+			if err := mgr.Stop(); err != nil {
+				log.Printf("Failed to stop supernode: %v", err)
+			}
+		}
+		os.Exit(3)
+	}
+
 	// Mandatory version sync on startup: ensure both sn-manager and SuperNode
 	// are at the latest stable release. This bypasses regular updater checks
 	// (gateway idleness, same-major policy) to guarantee a consistent baseline.
-	// Runs once before monitoring begins.
+	// Runs once before monitoring begins. If manager updated, restart now.
 	func() {
-		u := updater.New(home, cfg, appVersion)
+		u := updater.New(home, cfg, appVersion, gracefulManagerRestart)
 		// Do not block startup on failures; best-effort sync
 		defer func() { recover() }()
 		u.ForceSyncToLatest(context.Background())
@@ -135,7 +150,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Start auto-updater if enabled
 	var autoUpdater *updater.AutoUpdater
 	if cfg.Updates.AutoUpgrade {
-		autoUpdater = updater.New(home, cfg, appVersion)
+		autoUpdater = updater.New(home, cfg, appVersion, gracefulManagerRestart)
 		autoUpdater.Start(ctx)
 	}
 
@@ -171,7 +186,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 
 	case err := <-monitorDone:
-		// Monitor exited unexpectedly
+		// Monitor exited; ensure SuperNode is stopped as manager exits
+		if autoUpdater != nil {
+			autoUpdater.Stop()
+		}
+		if mgr.IsRunning() {
+			if stopErr := mgr.Stop(); stopErr != nil {
+				log.Printf("Failed to stop supernode: %v", stopErr)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("monitor error: %w", err)
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
@@ -249,17 +250,14 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("stat file: %w", err)
 	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("read file: %w", err)
-	}
 
 	// Build layout metadata only (no symbols). Supernodes will create symbols.
 	rq := codec.NewRaptorQCodec("")
-	layout, err := rq.CreateMetadata(ctx, filePath)
+	metaResp, err := rq.CreateMetadata(ctx, codec.CreateMetadataRequest{Path: filePath})
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("raptorq create metadata: %w", err)
 	}
+	layout := metaResp.Layout
 
 	// Derive `max` from chain params, then create signatures and index IDs
 	paramsResp, err := c.lumeraClient.GetActionParams(ctx)
@@ -277,30 +275,34 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	// Pick a random initial counter in [1,100]
 	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
 	ic := uint32(rnd.Int64() + 1) // 1..100
-	signatures, _, err := cascadekit.CreateSignaturesWithKeyring(layout, c.keyring, c.config.Account.KeyName, ic, max)
+	// Create signatures from the layout struct
+	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyring(layout, c.keyring, c.config.Account.KeyName, ic, max)
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create signatures: %w", err)
 	}
 
-	// Compute data hash (blake3) as base64
-	dataHashB64, err := cascadekit.ComputeBlake3DataHashB64(data)
+	// Compute data hash (blake3) as base64 using a streaming file hash to avoid loading entire file
+	h, err := utils.ComputeHashOfFile(filePath)
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("hash data: %w", err)
 	}
+	dataHashB64 := base64.StdEncoding.EncodeToString(h)
 
 	// Derive file name from path
 	fileName := filepath.Base(filePath)
 
 	// Build metadata proto
-	meta := cascadekit.NewCascadeMetadata(dataHashB64, fileName, uint64(ic), signatures, public)
+	meta := cascadekit.NewCascadeMetadata(dataHashB64, fileName, uint64(ic), indexSignatureFormat, public)
 
 	// Fetch params (already fetched) to get denom and expiration duration
 	denom := paramsResp.Params.BaseActionFee.Denom
 	exp := paramsResp.Params.ExpirationDuration
 
-	// Compute data size in KB for fee
-	kb := int(fi.Size()) / 1024
-	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.Itoa(kb))
+	// Compute data size in KB for fee, rounding up to avoid underpaying
+	// Keep consistent with supernode verification which uses ceil(bytes/1024)
+	sizeBytes := fi.Size()
+	kb := (sizeBytes + 1023) / 1024 // int64 division
+	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.FormatInt(kb, 10))
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("get action fee: %w", err)
 	}
@@ -316,15 +318,11 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 // GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key.
 // Returns base64-encoded signature suitable for StartCascade.
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
-	}
-	hash, err := cascadekit.ComputeBlake3Hash(data)
+	h, err := utils.ComputeHashOfFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("blake3: %w", err)
 	}
-	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, hash)
+	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, h)
 	if err != nil {
 		return "", fmt.Errorf("sign hash: %w", err)
 	}

@@ -48,7 +48,7 @@ message StatusResponse {
     repeated string task_ids = 2;
     int32 task_count = 3;
   }
-  
+
   // Network information
   message Network {
     int32 peers_count = 1;               // Number of connected peers in P2P network
@@ -127,7 +127,6 @@ message StatusResponse {
     DatabaseStats database = 5;
     DiskStatus disk = 6;
   }
-
+  
   P2PMetrics p2p_metrics = 9;
 }
-

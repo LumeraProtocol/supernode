@@ -34,7 +34,7 @@ func TestEncode_ToDirA(t *testing.T) {
 	t.Logf("encoded to: %s", resp.SymbolsDir)
 
 	// Log theoretical minimum percentage of symbols needed per block
-	for _, b := range resp.Metadata.Blocks {
+	for _, b := range resp.Layout.Blocks {
 		s := int64(rqSymbolSize)
 		if s <= 0 {
 			s = 65535
@@ -119,4 +119,37 @@ func itoa(i int) string {
 		b[n] = '-'
 	}
 	return string(b[n:])
+}
+
+// TestCreateMetadata_SaveToFile generates layout metadata only and writes it to a file.
+func TestCreateMetadata_SaveToFile(t *testing.T) {
+	if InputPath == "" {
+		t.Skip("set InputPath constant to a file path to run this test")
+	}
+
+	ctx := context.TODO()
+	c := NewRaptorQCodec(BaseDir)
+
+	// Create metadata using the codec and write it next to the input file.
+	resp, err := c.CreateMetadata(ctx, CreateMetadataRequest{Path: InputPath})
+	if err != nil {
+		t.Fatalf("create metadata: %v", err)
+	}
+	data, err := json.MarshalIndent(resp.Layout, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	outPath := InputPath + ".layout.json"
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		t.Fatalf("write output: %v", err)
+	}
+
+	fi, err := os.Stat(outPath)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Fatalf("output file is empty: %s", outPath)
+	}
+	t.Logf("metadata saved to: %s (%d bytes)", outPath, fi.Size())
 }

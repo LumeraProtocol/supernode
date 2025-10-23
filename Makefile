@@ -1,7 +1,8 @@
-.PHONY: build build-release build-sncli build-sn-manager
+.PHONY: build build-sncli build-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
+.PHONY: release
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -9,9 +10,11 @@ GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
 # Linker flags for version information
+# Optional minimum peer version for DHT gating can be provided via MIN_VER env/make var
 LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERSION) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=$(GIT_COMMIT) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME) \
+          -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.MinVer=$(MIN_VER) \
           -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=$(DD_API_KEY) \
           -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE)
 
@@ -22,11 +25,8 @@ SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
 
 build:
 	@mkdir -p release
-	CGO_ENABLED=1 \
-	GOOS=linux \
-	GOARCH=amd64 \
-	echo "Building supernode..."
-	go build \
+	@echo "Building supernode..."
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
 		-o release/supernode-linux-amd64 \
@@ -116,7 +116,7 @@ SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 # Optional: specify lumera binary path to skip download
 LUMERAD_BINARY ?=
 # Optional: specify installation mode (latest-release, latest-tag, or vX.Y.Z)
-INSTALL_MODE ?=latest-tag
+INSTALL_MODE ?=v1.7.2
 
 install-lumera:
 	@echo "Installing Lumera..."
@@ -148,3 +148,30 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && go test -tags=system_test -v -run '^TestSNManager' .
+
+
+
+# Release command: push branch, tag, and push tag with auto-increment - this is for testing only (including releases) setup a new remote upstream or rename the script
+release:
+	@echo "Getting current branch..."
+	$(eval CURRENT_BRANCH := $(shell git branch --show-current))
+	@echo "Current branch: $(CURRENT_BRANCH)"
+	
+	@echo "Getting latest tag..."
+	$(eval LATEST_TAG := $(shell git tag -l "v*" | sort -V | tail -n1))
+	$(eval NEXT_TAG := $(shell \
+		if [ -z "$(LATEST_TAG)" ]; then \
+			echo "v2.5.0"; \
+		else \
+			echo "$(LATEST_TAG)" | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}'; \
+		fi))
+	@echo "Next tag: $(NEXT_TAG)"
+	
+	@echo "Pushing branch to upstream..."
+	git push upstream $(CURRENT_BRANCH) -f
+	
+	@echo "Creating and pushing tag $(NEXT_TAG)..."
+	git tag $(NEXT_TAG)
+	git push upstream $(NEXT_TAG)
+	
+	@echo "Release complete: $(NEXT_TAG) pushed to upstream"

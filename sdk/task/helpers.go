@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"os"
-	"path/filepath"
-	"strings"
+	"sort"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
@@ -47,7 +48,7 @@ func (m *ManagerImpl) validateAction(ctx context.Context, actionID string) (lume
 }
 
 // validateSignature verifies the authenticity of a signature against an action's data hash.
-//
+
 // This function performs the following steps:
 // 1. Decodes the CASCADE metadata from the provided Lumera action
 // 2. Extracts the base64-encoded data hash from the metadata
@@ -100,7 +101,7 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 	return nil
 }
 
-// (Removed) Peers connectivity preflight is now enforced during discovery in isServing.
+//
 
 func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID string) (lumera.Action, error) {
 	action, err := m.lumeraClient.GetAction(ctx, actionID)
@@ -121,18 +122,46 @@ func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID strin
 	return action, nil
 }
 
-// Helper function to ensure output path has the correct filename
-func ensureOutputPathWithFilename(outputPath, filename string) string {
-	// If outputPath is empty, just return the filename
-	if outputPath == "" {
-		return filename
+func orderSupernodesByDeterministicDistance(seed string, sns lumera.Supernodes) lumera.Supernodes {
+	if len(sns) == 0 || seed == "" {
+		return sns
+	}
+	// Precompute seed hash (blake3)
+	seedHash, err := utils.Blake3Hash([]byte(seed))
+	if err != nil {
+		return sns
 	}
 
-	// Check if the path already ends with the filename
-	if strings.HasSuffix(outputPath, filename) {
-		return outputPath
+	type nodeDist struct {
+		sn       lumera.Supernode
+		distance *big.Int
 	}
-
-	// Otherwise, append the filename to the path
-	return filepath.Join(outputPath, filename)
+	nd := make([]nodeDist, 0, len(sns))
+	for _, sn := range sns {
+		id := sn.CosmosAddress
+		if id == "" {
+			id = sn.GrpcEndpoint
+		}
+		nHash, err := utils.Blake3Hash([]byte(id))
+		if err != nil {
+			nd = append(nd, nodeDist{sn: sn, distance: new(big.Int).SetInt64(0)})
+			continue
+		}
+		// XOR distance across min length
+		l := len(seedHash)
+		if len(nHash) < l {
+			l = len(nHash)
+		}
+		xor := make([]byte, l)
+		for i := 0; i < l; i++ {
+			xor[i] = seedHash[i] ^ nHash[i]
+		}
+		nd = append(nd, nodeDist{sn: sn, distance: new(big.Int).SetBytes(xor)})
+	}
+	sort.Slice(nd, func(i, j int) bool { return nd[i].distance.Cmp(nd[j].distance) < 0 })
+	out := make(lumera.Supernodes, len(nd))
+	for i := range nd {
+		out[i] = nd[i].sn
+	}
+	return out
 }

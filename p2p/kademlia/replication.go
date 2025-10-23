@@ -23,7 +23,7 @@ var (
 	nodeShowUpDeadline = time.Minute * 35
 
 	// check for active & inactive nodes after this interval
-	checkNodeActivityInterval = time.Minute * 2
+	checkNodeActivityInterval = time.Minute * 5
 
 	defaultFetchAndStoreInterval = time.Minute * 10
 

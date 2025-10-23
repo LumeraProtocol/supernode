@@ -23,6 +23,9 @@ type Node struct {
 	// port of the node
 	Port uint16 `json:"port,omitempty"`
 
+	// Version of the supernode binary (advertised to peers; may be used by min-version gating)
+	Version string `json:"version,omitempty"`
+
 	HashedID []byte
 }
 
@@ -180,15 +183,13 @@ func (s *NodeList) DelNode(node *Node) {
 }
 
 func haveAllNodes(a, b []*Node) bool {
+	bSet := make(map[string]bool, len(b))
+	for _, y := range b {
+		bSet[string(y.HashedID)] = true
+	}
+
 	for _, x := range a {
-		found := false
-		for _, y := range b {
-			if bytes.Equal(x.HashedID, y.HashedID) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !bSet[string(x.HashedID)] {
 			return false
 		}
 	}

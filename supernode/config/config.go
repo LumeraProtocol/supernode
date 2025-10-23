@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"gopkg.in/yaml.v3"
 )
 
 type SupernodeConfig struct {
-	KeyName     string `yaml:"key_name"`
-	Identity    string `yaml:"identity"`
-	Host        string `yaml:"host"`
+	KeyName  string `yaml:"key_name"`
+	Identity string `yaml:"identity"`
+	Host     string `yaml:"host"`
+	// IPAddress is an accepted alias for Host to support older configs
+	IPAddress   string `yaml:"ip_address,omitempty"`
 	Port        uint16 `yaml:"port"`
 	GatewayPort uint16 `yaml:"gateway_port,omitempty"`
 }
@@ -125,6 +128,15 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("error parsing config file: %w", err)
+	}
+
+	// Support both 'host' and legacy 'ip_address' fields. If 'host' is empty
+	// and 'ip_address' is provided, use it as the host value.
+	if strings.TrimSpace(config.SupernodeConfig.Host) == "" && strings.TrimSpace(config.SupernodeConfig.IPAddress) != "" {
+		config.SupernodeConfig.Host = strings.TrimSpace(config.SupernodeConfig.IPAddress)
+		logtrace.Debug(ctx, "Using ip_address as host", logtrace.Fields{
+			"ip_address": config.SupernodeConfig.IPAddress,
+		})
 	}
 
 	// Set the base directory

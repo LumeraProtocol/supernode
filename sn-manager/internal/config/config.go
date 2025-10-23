@@ -90,7 +90,3 @@ func Save(cfg *Config, path string) error {
 
 	return nil
 }
-
-// Validate checks if the configuration is valid
-// Validate is kept for compatibility; no-op since interval was removed.
-func (c *Config) Validate() error { return nil }

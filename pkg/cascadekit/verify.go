@@ -20,3 +20,11 @@ func VerifySingleBlockIDs(ticket, local codec.Layout) error {
 	}
 	return nil
 }
+
+// VerifySingleBlock checks that a layout contains exactly one block.
+func VerifySingleBlock(layout codec.Layout) error {
+	if len(layout.Blocks) != 1 {
+		return errors.New("layout must contain exactly one block")
+	}
+	return nil
+}

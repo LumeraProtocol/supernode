@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"os"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/LumeraProtocol/supernode/v2/pkg/errgroup"
-	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
@@ -25,6 +23,14 @@ type TaskType string
 const (
 	TaskTypeSense   TaskType = "SENSE"
 	TaskTypeCascade TaskType = "CASCADE"
+)
+
+// Package-level thresholds and tuning
+const (
+	// Minimum available storage required on any volume (bytes)
+	minStorageThresholdBytes uint64 = 50 * 1024 * 1024 * 1024 // 50 GB
+	// Upload requires free RAM to be at least 8x the file size
+	uploadRAMMultiplier uint64 = 8
 )
 
 // EventCallback is a function that processes events from tasks
@@ -82,78 +88,118 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 	if err != nil {
 		return nil, fmt.Errorf("fetch supernodes: %w", err)
 	}
-
 	if len(sns) == 0 {
 		return nil, errors.New("no supernodes found")
 	}
-
-	// Keep only SERVING nodes (done in parallel – keeps latency flat)
-	healthy := make(lumera.Supernodes, 0, len(sns))
-	eg, ctx := errgroup.WithContext(ctx)
-	mu := sync.Mutex{}
-
-	for _, sn := range sns {
-		sn := sn
-		eg.Go(func() error {
-			if t.isServing(ctx, sn) {
-				mu.Lock()
-				healthy = append(healthy, sn)
-				mu.Unlock()
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("health-check goroutines: %w", err)
-	}
-
-	if len(healthy) == 0 {
-		return nil, errors.New("no healthy supernodes found")
-	}
-
-	return healthy, nil
+	return sns, nil
 }
 
-// isServing pings the super-node once with a short timeout.
-func (t *BaseTask) isServing(parent context.Context, sn lumera.Supernode) bool {
+// orderByXORDistance ranks supernodes by XOR distance to the action's data hash.
+// If decoding metadata fails, falls back to using the action ID as the seed.
+func (t *BaseTask) orderByXORDistance(ctx context.Context, sns lumera.Supernodes) lumera.Supernodes {
+	if len(sns) <= 1 {
+		return sns
+	}
+	// Try to decode the action metadata to get the Cascade data hash as seed
+	seed := t.ActionID
+	if t.client != nil && (t.Action.Metadata != nil || t.Action.ActionType != "") {
+		if meta, err := t.client.DecodeCascadeMetadata(ctx, t.Action); err == nil && meta.DataHash != "" {
+			seed = meta.DataHash
+		}
+	}
+	return orderSupernodesByDeterministicDistance(seed, sns)
+}
+
+// filterByResourceThresholds removes supernodes that do not satisfy minimum
+// available storage and free RAM thresholds.
+// - minStorageBytes: minimum available storage on any volume (bytes)
+// - minFreeRamBytes: minimum free RAM (bytes). If 0, RAM check is skipped.
+
+// helper: get file size (bytes). returns 0 on error
+func getFileSizeBytes(p string) int64 {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
+// nodeQualifies performs balance, health, and resource checks for a supernode.
+func (t *BaseTask) nodeQualifies(parent context.Context, sn lumera.Supernode, minStorageBytes uint64, minFreeRamBytes uint64) bool {
+	// 1) Balance check (require at least 1 LUME)
+	if !t.balanceOK(parent, sn) {
+		return false
+	}
+
+	// 2) Health + resources via a single client session
 	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
 	defer cancel()
-
 	client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 		PeerType:           t.config.Account.PeerType,
 	}).CreateClient(ctx, sn)
 	if err != nil {
-		logtrace.Debug(ctx, "Failed to create client for supernode", logtrace.Fields{logtrace.FieldMethod: "isServing"})
 		return false
 	}
 	defer client.Close(ctx)
 
-	// First check gRPC health
-	resp, err := client.HealthCheck(ctx)
-	if err != nil || resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+	// Health check
+	h, err := client.HealthCheck(ctx)
+	if err != nil || h == nil || h.Status != grpc_health_v1.HealthCheckResponse_SERVING {
 		return false
 	}
 
-	// Then check P2P peers count via status
-	status, err := client.GetSupernodeStatus(ctx)
-	if err != nil {
-		return false
-	}
-	if status.Network.PeersCount <= 1 {
-		return false
-	}
+	// Resource thresholds
+	return t.resourcesOK(ctx, client, sn, minStorageBytes, minFreeRamBytes)
+}
 
-	denom := txmod.DefaultFeeDenom // base denom (micro), e.g., "ulume"
+func (t *BaseTask) balanceOK(parent context.Context, sn lumera.Supernode) bool {
+	ctx, cancel := context.WithTimeout(parent, connectionTimeout)
+	defer cancel()
+	min := sdkmath.NewInt(1_000_000) // 1 LUME in ulume
+	denom := txmod.DefaultFeeDenom
 	bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
 	if err != nil || bal == nil || bal.Balance == nil {
 		return false
 	}
-	// Require at least 1 LUME = 10^6 micro (ulume)
-	min := sdkmath.NewInt(1_000_000)
 	if bal.Balance.Amount.LT(min) {
 		return false
 	}
+	return true
+}
 
+func (t *BaseTask) resourcesOK(ctx context.Context, client net.SupernodeClient, sn lumera.Supernode, minStorageBytes uint64, minFreeRamBytes uint64) bool {
+	// In tests, skip resource thresholds (keep balance + health via nodeQualifies)
+	if os.Getenv("INTEGRATION_TEST") == "true" {
+		return true
+	}
+	status, err := client.GetSupernodeStatus(ctx)
+	if err != nil || status == nil || status.Resources == nil {
+		return false
+	}
+	// Storage: any volume must satisfy available >= minStorageBytes
+	if minStorageBytes > 0 {
+		ok := false
+		for _, vol := range status.Resources.StorageVolumes {
+			if vol != nil && vol.AvailableBytes >= minStorageBytes {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	// RAM: available_gb must be >= required GiB
+	if minFreeRamBytes > 0 {
+		mem := status.Resources.Memory
+		if mem == nil {
+			return false
+		}
+		requiredGiB := float64(minFreeRamBytes) / (1024.0 * 1024.0 * 1024.0)
+		if mem.AvailableGb < requiredGiB {
+			return false
+		}
+	}
 	return true
 }

@@ -16,6 +16,359 @@
     "application/json"
   ],
   "paths": {
+    "/api/v1/debug/raw/pprof": {
+      "get": {
+        "summary": "Raw pprof endpoints - return standard pprof output directly",
+        "operationId": "SupernodeService_GetRawPprof",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/allocs": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofAllocs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/block": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofBlock",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/cmdline": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofCmdline",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/goroutine": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofGoroutine",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/heap": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofHeap",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/mutex": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofMutex",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/profile": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofProfile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "seconds",
+            "description": "CPU profile duration in seconds (default 30)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/symbol": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofSymbol",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/threadcreate": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofThreadcreate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
+    "/api/v1/debug/raw/pprof/trace": {
+      "get": {
+        "operationId": "SupernodeService_GetRawPprofTrace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/supernodeRawPprofResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "debug",
+            "description": "Debug level (0 for binary, \u003e0 for text)",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SupernodeService"
+        ]
+      }
+    },
     "/api/v1/services": {
       "get": {
         "operationId": "SupernodeService_ListServices",
@@ -451,6 +804,16 @@
         "count": {
           "type": "integer",
           "format": "int32"
+        }
+      }
+    },
+    "supernodeRawPprofResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte",
+          "title": "Raw pprof data exactly as returned by runtime/pprof"
         }
       }
     },

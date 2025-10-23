@@ -28,10 +28,10 @@ import (
 
 const (
 	defaultConnRate                    = 1000
-	defaultMaxPayloadSize              = 200 // MB
+	defaultMaxPayloadSize              = 400 // MB
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
-	defaultExecTimeout                 = 10 * time.Second
+	defaultExecTimeout                 = 15 * time.Second
 )
 
 // Global map for message type timeouts
@@ -413,6 +413,20 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 			if o := strings.TrimSpace(request.Origin); o != "" {
 				ctx = logtrace.CtxWithOrigin(ctx, o)
 			}
+		}
+
+		// Minimum-version gating: reject immediately if peer is below configured minimum
+		var senderVer string
+		if request != nil && request.Sender != nil {
+			senderVer = request.Sender.Version
+		}
+		if minRequired, tooOld := versionTooOld(senderVer); tooOld {
+			logtrace.Debug(ctx, "Rejecting connection: peer below minimum version", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"min_required":       minRequired,
+				"peer_version":       strings.TrimSpace(senderVer),
+			})
+			return
 		}
 
 		reqID := uuid.New().String()

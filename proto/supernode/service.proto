@@ -12,10 +12,77 @@ service SupernodeService {
       get: "/api/v1/status"
     };
   }
-  
+
   rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
     option (google.api.http) = {
       get: "/api/v1/services"
+    };
+  }
+
+  // Raw pprof endpoints - return standard pprof output directly
+  rpc GetRawPprof(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof"
+    };
+  }
+
+  rpc GetRawPprofHeap(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/heap"
+    };
+  }
+
+  rpc GetRawPprofGoroutine(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/goroutine"
+    };
+  }
+
+  rpc GetRawPprofAllocs(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/allocs"
+    };
+  }
+
+  rpc GetRawPprofBlock(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/block"
+    };
+  }
+
+  rpc GetRawPprofMutex(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/mutex"
+    };
+  }
+
+  rpc GetRawPprofThreadcreate(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/threadcreate"
+    };
+  }
+
+  rpc GetRawPprofProfile(RawPprofCpuRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/profile"
+    };
+  }
+
+  rpc GetRawPprofCmdline(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/cmdline"
+    };
+  }
+
+  rpc GetRawPprofSymbol(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/symbol"
+    };
+  }
+
+  rpc GetRawPprofTrace(RawPprofRequest) returns (RawPprofResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/debug/raw/pprof/trace"
     };
   }
 }
@@ -30,5 +97,18 @@ message ListServicesResponse {
 message ServiceInfo {
   string name = 1;
   repeated string methods = 2;
+}
+
+// Raw pprof request/response messages
+message RawPprofRequest {
+  int32 debug = 1;  // Debug level (0 for binary, >0 for text)
+}
+
+message RawPprofCpuRequest {
+  int32 seconds = 1; // CPU profile duration in seconds (default 30)
+}
+
+message RawPprofResponse {
+  bytes data = 1;  // Raw pprof data exactly as returned by runtime/pprof
 }
 

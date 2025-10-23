@@ -42,7 +42,7 @@ func (s *DHT) checkNodeActivity(ctx context.Context) {
 
 			var wg sync.WaitGroup
 			for _, info := range repInfo {
-				info := info // capture
+
 				wg.Add(1)
 				sem <- struct{}{} // acquire
 				go func() {
@@ -51,8 +51,8 @@ func (s *DHT) checkNodeActivity(ctx context.Context) {
 
 					node := s.makeNode([]byte(info.ID), info.IP, info.Port)
 
-					// Short per-ping timeout (fail fast)
-					if err := s.pingNode(ctx, node, 3*time.Second); err != nil {
+					// Per-ping timeout
+					if err := s.pingNode(ctx, node, 5*time.Second); err != nil {
 						s.handlePingFailure(ctx, info.Active, node, err)
 						return
 					}
@@ -76,8 +76,15 @@ func (s *DHT) pingNode(ctx context.Context, n *Node, timeout time.Duration) erro
 	pctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req := s.newMessage(Ping, n, nil)
-	_, err := s.network.Call(pctx, req, false)
-	return err
+	resp, err := s.network.Call(pctx, req, false)
+	if err != nil {
+		return err
+	}
+	// Capture remote version from response sender for later gating
+	if resp != nil && resp.Sender != nil {
+		n.Version = resp.Sender.Version
+	}
+	return nil
 }
 
 func (s *DHT) handlePingFailure(ctx context.Context, wasActive bool, n *Node, err error) {
