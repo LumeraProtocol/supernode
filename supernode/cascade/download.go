@@ -12,9 +12,9 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
-	"github.com/LumeraProtocol/supernode/v2/pkg/crypto"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
 )
 
@@ -223,7 +223,7 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(ctx context.Context, 
 	logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
 
 	// Verify reconstructed file hash matches action metadata
-	fileHash, herr := crypto.HashFileIncrementally(decodeInfo.FilePath, 0)
+	fileHash, herr := utils.Blake3HashFile(decodeInfo.FilePath)
 	if herr != nil {
 		fields[logtrace.FieldError] = herr.Error()
 		logtrace.Error(ctx, "failed to hash file", fields)
