@@ -46,8 +46,12 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Log available candidates; streaming will happen within registration
-	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes fetched", event.EventData{event.KeyCount: len(supernodes)})
+	// 2 - Pre-filter: balance -> health -> XOR rank -> resources, then hand over
+	originalCount := len(supernodes)
+	supernodes = t.filterByMinBalance(ctx, supernodes)
+	supernodes = t.filterByHealth(ctx, supernodes)
+	supernodes = t.orderByXORDistance(supernodes)
+	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
 	if err := t.registerWithSupernodes(ctx, supernodes); err != nil {
@@ -73,13 +77,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		TaskId:   t.TaskID,
 	}
 
-	// Strict XOR-first qualification and attempts
-	fileSize := getFileSizeBytes(t.filePath)
-	var minRam uint64
-	if fileSize > 0 {
-		minRam = uint64(fileSize) * uploadRAMMultiplier
-	}
-	ordered := t.orderByXORDistance(ctx, supernodes)
+	ordered := supernodes
 
 	var lastErr error
 	attempted := 0
@@ -91,12 +89,6 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			event.KeySupernodeAddress: sn.CosmosAddress,
 			event.KeyIteration:        iteration,
 		})
-
-		// Re-check serving status just-in-time to avoid calling a node that became down/underpeered
-		// Ensure node qualifies before attempt
-		if !t.nodeQualifies(ctx, sn, minStorageThresholdBytes, minRam) {
-			continue
-		}
 
 		attempted++
 		if err := t.attemptRegistration(ctx, iteration-1, sn, clientFactory, req); err != nil {
@@ -138,6 +130,15 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 		event.KeySupernode:        sn.GrpcEndpoint,
 		event.KeySupernodeAddress: sn.CosmosAddress,
 	})
+
+	// Just-in-time resource check for uploads (storage + RAM >= 8x file size)
+	var minRam uint64
+	if size := getFileSizeBytes(t.filePath); size > 0 {
+		minRam = uint64(size) * uploadRAMMultiplier
+	}
+	if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, minRam); !ok {
+		return fmt.Errorf("resource check failed")
+	}
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)

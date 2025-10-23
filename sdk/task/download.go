@@ -43,8 +43,12 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
-	// Log available candidates; streaming will happen within download phase
-	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes fetched", event.EventData{event.KeyCount: len(supernodes)})
+	// 2 - Pre-filter: balance -> health -> XOR rank
+	originalCount := len(supernodes)
+	supernodes = t.filterByMinBalance(ctx, supernodes)
+	supernodes = t.filterByHealth(ctx, supernodes)
+	supernodes = t.orderByXORDistance(supernodes)
+	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
 	// 2 – download from super-nodes
 	if err := t.downloadFromSupernodes(ctx, supernodes); err != nil {
@@ -77,8 +81,8 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		}
 	}
 
-	// Strict XOR-first qualification and attempts (downloads: storage-only threshold)
-	ordered := t.orderByXORDistance(ctx, supernodes)
+	// Strict XOR-first attempts over pre-filtered nodes (downloads)
+	ordered := supernodes
 
 	var lastErr error
 	attempted := 0
@@ -92,10 +96,7 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			event.KeyIteration:        iteration,
 		})
 
-		// Ensure node qualifies before attempt
-		if !t.nodeQualifies(ctx, sn, minStorageThresholdBytes, 0) {
-			continue
-		}
+		// Pre-filtering done; attempt directly
 
 		attempted++
 		if err := t.attemptDownload(ctx, sn, clientFactory, req); err != nil {
@@ -134,6 +135,11 @@ func (t *CascadeDownloadTask) attemptDownload(
 		return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
 	}
 	defer client.Close(ctx)
+
+	// Just-in-time resource check for downloads (storage only)
+	if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, 0); !ok {
+		return fmt.Errorf("resource check failed")
+	}
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)

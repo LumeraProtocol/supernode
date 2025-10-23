@@ -7,6 +7,7 @@ const (
 	// Common data keys
 	KeyError            EventDataKey = "error"
 	KeyCount            EventDataKey = "count"
+	KeyTotal            EventDataKey = "total"
 	KeySupernode        EventDataKey = "supernode"
 	KeySupernodeAddress EventDataKey = "sn-address"
 	KeyIteration        EventDataKey = "iteration"
