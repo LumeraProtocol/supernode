@@ -165,7 +165,7 @@ type MockSupernodeModule struct {
 	addresses []string
 }
 
-func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*supernodeTypes.QueryGetTopSuperNodesForBlockResponse, error) {
+func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, req *supernodeTypes.QueryGetTopSuperNodesForBlockRequest) (*supernodeTypes.QueryGetTopSuperNodesForBlockResponse, error) {
 	return &supernodeTypes.QueryGetTopSuperNodesForBlockResponse{}, nil
 }
 

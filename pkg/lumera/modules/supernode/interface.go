@@ -19,7 +19,7 @@ type SuperNodeInfo struct {
 
 // Module defines the interface for interacting with the supernode module
 type Module interface {
-	GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error)
+	GetTopSuperNodesForBlock(ctx context.Context, req *types.QueryGetTopSuperNodesForBlockRequest) (*types.QueryGetTopSuperNodesForBlockResponse, error)
 	GetSuperNode(ctx context.Context, address string) (*types.QueryGetSuperNodeResponse, error)
 	GetSupernodeBySupernodeAddress(ctx context.Context, address string) (*types.SuperNode, error)
 	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)

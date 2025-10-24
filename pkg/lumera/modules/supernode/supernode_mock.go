@@ -102,16 +102,16 @@ func (mr *MockModuleMockRecorder) GetSupernodeWithLatestAddress(ctx, address any
 }
 
 // GetTopSuperNodesForBlock mocks base method.
-func (m *MockModule) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
+func (m *MockModule) GetTopSuperNodesForBlock(ctx context.Context, req *types.QueryGetTopSuperNodesForBlockRequest) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTopSuperNodesForBlock", ctx, blockHeight)
+	ret := m.ctrl.Call(m, "GetTopSuperNodesForBlock", ctx, req)
 	ret0, _ := ret[0].(*types.QueryGetTopSuperNodesForBlockResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetTopSuperNodesForBlock indicates an expected call of GetTopSuperNodesForBlock.
-func (mr *MockModuleMockRecorder) GetTopSuperNodesForBlock(ctx, blockHeight any) *gomock.Call {
+func (mr *MockModuleMockRecorder) GetTopSuperNodesForBlock(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTopSuperNodesForBlock", reflect.TypeOf((*MockModule)(nil).GetTopSuperNodesForBlock), ctx, blockHeight)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTopSuperNodesForBlock", reflect.TypeOf((*MockModule)(nil).GetTopSuperNodesForBlock), ctx, req)
 }

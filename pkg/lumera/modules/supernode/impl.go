@@ -26,13 +26,12 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 	}, nil
 }
 
-// GetTopSuperNodesForBlock gets the top supernodes for a specific block height
-func (m *module) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
-	resp, err := m.client.GetTopSuperNodesForBlock(ctx, &types.QueryGetTopSuperNodesForBlockRequest{
-		BlockHeight: int32(blockHeight),
-		State:       types.SuperNodeStateActive.String(),
-		Limit:       10,
-	})
+// GetTopSuperNodesForBlock gets the top supernodes for a specific request
+func (m *module) GetTopSuperNodesForBlock(ctx context.Context, req *types.QueryGetTopSuperNodesForBlockRequest) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	resp, err := m.client.GetTopSuperNodesForBlock(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top supernodes: %w", err)
 	}
