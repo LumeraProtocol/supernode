@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -21,8 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"lukechampine.com/blake3"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"golang.org/x/sync/semaphore"
@@ -130,46 +127,6 @@ func EqualStrList(a, b []string) error {
 	}
 
 	return nil
-}
-
-// Blake3Hash returns Blake3 hash of input message
-func Blake3Hash(msg []byte) ([]byte, error) {
-	hasher := blake3.New(32, nil)
-	if _, err := io.Copy(hasher, bytes.NewReader(msg)); err != nil {
-		return nil, err
-	}
-	return hasher.Sum(nil), nil
-}
-
-// GetHashFromBytes generate blake3 hash string from a given byte array
-func GetHashFromBytes(msg []byte) string {
-	h := blake3.New(32, nil)
-	if _, err := io.Copy(h, bytes.NewReader(msg)); err != nil {
-		return ""
-	}
-
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// GetHashFromString returns blake3 hash of a given string
-func GetHashFromString(s string) []byte {
-	sum := blake3.Sum256([]byte(s))
-	return sum[:]
-}
-
-func ComputeHashOfFile(filePath string) ([]byte, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	hasher := blake3.New(32, nil)
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, err
-	}
-
-	return hasher.Sum(nil), nil
 }
 
 // XORBytes returns the XOR of two same-length byte slices.

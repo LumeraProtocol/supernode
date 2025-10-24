@@ -282,7 +282,7 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	}
 
 	// Compute data hash (blake3) as base64 using a streaming file hash to avoid loading entire file
-	h, err := utils.ComputeHashOfFile(filePath)
+	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("hash data: %w", err)
 	}
@@ -318,7 +318,7 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 // GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key.
 // Returns base64-encoded signature suitable for StartCascade.
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
-	h, err := utils.ComputeHashOfFile(filePath)
+	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("blake3: %w", err)
 	}
