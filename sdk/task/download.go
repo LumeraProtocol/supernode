@@ -45,9 +45,9 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 	}
 	// 2 - Pre-filter: balance -> health -> XOR rank
 	originalCount := len(supernodes)
-	supernodes = t.filterByMinBalance(ctx, supernodes)
+	// supernodes = t.filterByMinBalance(ctx, supernodes)
 	supernodes = t.filterByHealth(ctx, supernodes)
-	supernodes = t.orderByXORDistance(supernodes)
+	// supernodes = t.orderByXORDistance(supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
 	// 2 – download from super-nodes
@@ -136,10 +136,10 @@ func (t *CascadeDownloadTask) attemptDownload(
 	}
 	defer client.Close(ctx)
 
-	// Just-in-time resource check for downloads (storage only)
-	if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, 0); !ok {
-		return fmt.Errorf("resource check failed")
-	}
+	// // Just-in-time resource check for downloads (storage only)
+	// if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, 0); !ok {
+	// 	return fmt.Errorf("resource check failed")
+	// }
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)

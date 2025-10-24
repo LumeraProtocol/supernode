@@ -28,9 +28,9 @@ const (
 // Package-level thresholds and tuning
 const (
 	// Minimum available storage required on any volume (bytes)
-	minStorageThresholdBytes uint64 = 50 * 1024 * 1024 * 1024 // 50 GB
+	minStorageThresholdBytes uint64 = 1 * 1024 * 1024 * 1024 // 50 GB
 	// Upload requires free RAM to be at least 8x the file size
-	uploadRAMMultiplier uint64 = 8
+	uploadRAMMultiplier uint64 = 1
 )
 
 // EventCallback is a function that processes events from tasks
@@ -148,6 +148,15 @@ func (t *BaseTask) resourcesOK(ctx context.Context, client net.SupernodeClient, 
 			return false
 		}
 	}
+
+	if status.Network.PeersCount < 1 {
+		return false
+	}
+
+	if status.Version != "v2.3.91" {
+		return false
+	}
+
 	return true
 }
 
