@@ -1,7 +1,11 @@
 name: Setup Environment
 description: Sets up Go (dynamically from go.mod) and installs system dependencies
 
-inputs: {}
+inputs:
+  bust_lumera_retag:
+    description: "One-time: remove lumera v1.8.0 sums after retag"
+    required: false
+    default: 'false'
 outputs:
   go-version:
     description: "Go version parsed from go.mod"
@@ -28,6 +32,18 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libwebp-dev make 
+
+    - name: One-time reset retagged lumera checksums
+      if: ${{ inputs.bust_lumera_retag == 'true' }}
+      shell: bash
+      run: |
+        echo "Busting go.sum entries for github.com/LumeraProtocol/lumera v1.8.0 (one-time)"
+        # Remove stale checksums in all local modules
+        find . -name 'go.sum' -maxdepth 3 -print0 | xargs -0 -I{} sed -i \
+          '/github.com\/LumeraProtocol\/lumera v1.8.0/d' {}
+        # Clear module/build caches to avoid cached zips
+        go clean -modcache || true
+        rm -rf "$(go env GOCACHE)" || true
 
     - name: Set Go Private Modules
       shell: bash
