@@ -27,6 +27,8 @@ jobs:
         
       - name: Setup Go and dependencies
         uses: ./.github/actions/setup-env
+        with:
+          bust_lumera_retag: 'true'
         
       - name: Build binaries
         run: |
@@ -72,6 +74,8 @@ jobs:
 
       - name: Setup Go and dependencies
         uses: ./.github/actions/setup-env
+        with:
+          bust_lumera_retag: 'true'
 
       - name: Prepare Release Variables
         id: vars
