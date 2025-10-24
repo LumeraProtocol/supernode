@@ -249,4 +249,3 @@ func TestHashReaderBLAKE3ReadError(t *testing.T) {
 		t.Fatalf("expected read error to propagate, got %v", err)
 	}
 }
-

@@ -1,10 +1,10 @@
 package action_msg
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
-	"encoding/json"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/util"

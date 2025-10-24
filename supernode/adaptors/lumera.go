@@ -27,7 +27,9 @@ func (l *lumeraImpl) GetAction(ctx context.Context, actionID string) (*actiontyp
 }
 
 func (l *lumeraImpl) GetTopSupernodes(ctx context.Context, blockHeight uint64) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error) {
-	return l.c.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
+	return l.c.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
+		BlockHeight: int32(blockHeight),
+	})
 }
 
 func (l *lumeraImpl) Verify(ctx context.Context, address string, msg []byte, sig []byte) error {
