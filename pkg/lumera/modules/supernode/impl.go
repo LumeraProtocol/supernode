@@ -30,8 +30,9 @@ func newModule(conn *grpc.ClientConn) (Module, error) {
 func (m *module) GetTopSuperNodesForBlock(ctx context.Context, blockHeight uint64) (*types.QueryGetTopSuperNodesForBlockResponse, error) {
 	resp, err := m.client.GetTopSuperNodesForBlock(ctx, &types.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
-		State:       types.SuperNodeStateActive.String(),
-		Limit:       10,
+		// Commeting the req params is intentional, it matches chain behaviour, at the moment in top 10 verification.
+		// State:       types.SuperNodeStateActive.String(),
+		// Limit:       10,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top supernodes: %w", err)

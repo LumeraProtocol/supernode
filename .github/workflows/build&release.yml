@@ -104,6 +104,7 @@ jobs:
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=${{ steps.vars.outputs.version }} \
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.GitCommit=${{ steps.vars.outputs.git_commit }} \
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }} \
+                    -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.MinVer=${{ vars.MIN_VER }} \
                     -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=${DD_API_KEY} \
                     -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=${DD_SITE}" \
           -o release/supernode \
