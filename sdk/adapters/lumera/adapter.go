@@ -287,7 +287,10 @@ func (a *Adapter) GetSupernodes(ctx context.Context, height int64) ([]Supernode,
 	}
 	blockHeight = uint64(height)
 
-	resp, err := a.client.SuperNode().GetTopSuperNodesForBlock(ctx, blockHeight)
+	resp, err := a.client.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
+		BlockHeight: int32(blockHeight),
+		//TODO : Update after hotfix on chain
+	})
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernodes", "height", height, "error", err)
 		return nil, fmt.Errorf("failed to get supernodes: %w", err)
