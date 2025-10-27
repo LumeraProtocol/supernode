@@ -671,16 +671,18 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 		// Populate the result map with the local values and count the found keys
 		for i, val := range localValues {
 			if len(val) > 0 {
-				count++
 				// When writer is provided, call it and store empty marker
 				// Otherwise store full data in memory
 				if writer != nil {
 					if err := writer(batchHexKeys[i], val); err != nil {
 						logtrace.Error(ctx, "writer error for local key", logtrace.Fields{"key": batchHexKeys[i], logtrace.FieldError: err.Error()})
+						continue // Skip counting failed writes
 					}
 					result.Store(batchHexKeys[i], []byte{}) // Empty marker
+					count++ // Only count successful writes
 				} else {
 					result.Store(batchHexKeys[i], val) // Full data
+					count++ // Count found data
 				}
 				if count >= req {
 					return count, nil
@@ -1012,22 +1014,28 @@ func (s *DHT) iterateBatchGetValues(ctx context.Context, nodes map[string]*Node,
 					}
 					_, loaded := resMap.LoadOrStore(k, storeVal)
 					if !loaded {
+						writeSuccess := true
 						if writer != nil {
 							// decode k (hex) back to base58 key if your writer expects that
 							// or just pass the hex; you control the writer side.
 							if err := writer(k, v.Value); err != nil {
-								// you can choose to log and continue, or treat as failure
-								// here we'll log and continue to avoid losing the rest
+								// Log error and mark write as failed
 								logtrace.Error(ctx, "writer error", logtrace.Fields{"key": k, logtrace.FieldError: err.Error()})
+								writeSuccess = false
+								// Remove from resMap since write failed
+								resMap.Delete(k)
 							}
 						}
 
-						atomic.AddInt32(&foundCount, 1)
-						returned++
-						if atomic.LoadInt32(&foundCount) >= int32(req-alreadyFound) {
-							cancel() // Cancel context to stop other goroutines
-							// don't early return; record metric and exit goroutine
-							break
+						// Only count if write succeeded (or no writer provided)
+						if writeSuccess {
+							atomic.AddInt32(&foundCount, 1)
+							returned++
+							if atomic.LoadInt32(&foundCount) >= int32(req-alreadyFound) {
+								cancel() // Cancel context to stop other goroutines
+								// don't early return; record metric and exit goroutine
+								break
+							}
 						}
 					}
 				}
