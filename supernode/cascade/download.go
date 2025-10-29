@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	actionkeeper "github.com/LumeraProtocol/lumera/x/action/v1/keeper"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
@@ -117,12 +118,24 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 		return fmt.Errorf("get action for signature verification: %w", err)
 	}
 	creator := act.GetAction().Creator
-	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	sigRaw, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return fmt.Errorf("invalid base64 signature: %w", err)
 	}
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(actionID), sigBytes); err != nil {
-		return err
+	sigRS, err := actionkeeper.CoerceToRS64(sigRaw)
+	if err != nil {
+		return fmt.Errorf("coerce signature: %w", err)
+	}
+	if err := task.LumeraClient.Verify(ctx, creator, []byte(actionID), sigRS); err != nil {
+		// Fallback to ADR-36 sign-bytes verification over base64(actionID)
+		dataB64 := base64.StdEncoding.EncodeToString([]byte(actionID))
+		doc, derr := actionkeeper.MakeADR36AminoSignBytes(creator, dataB64)
+		if derr != nil {
+			return fmt.Errorf("build adr36 doc: %w", derr)
+		}
+		if err2 := task.LumeraClient.Verify(ctx, creator, doc, sigRS); err2 != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"cosmossdk.io/math"
+	actionkeeper "github.com/LumeraProtocol/lumera/x/action/v1/keeper"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
@@ -87,12 +88,25 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	creatorSig, err := base64.StdEncoding.DecodeString(creatorSigB64)
+	creatorSigRaw, err := base64.StdEncoding.DecodeString(creatorSigB64)
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexB64), creatorSig); err != nil {
+	// Coerce signature to r||s then try raw -> ADR36
+	sigRS, err := actionkeeper.CoerceToRS64(creatorSigRaw)
+	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
+	}
+	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexB64), sigRS); err != nil {
+		// Fallback to ADR-36 verification
+		dataB64 := base64.StdEncoding.EncodeToString([]byte(indexB64))
+		signDoc, derr := actionkeeper.MakeADR36AminoSignBytes(creator, dataB64)
+		if derr != nil {
+			return cascadekit.IndexFile{}, nil, derr
+		}
+		if err2 := task.LumeraClient.Verify(ctx, creator, signDoc, sigRS); err2 != nil {
+			return cascadekit.IndexFile{}, nil, err
+		}
 	}
 	// Decode index
 	indexFile, err := cascadekit.DecodeIndexB64(indexB64)
@@ -107,12 +121,24 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 	if err := cascadekit.VerifySingleBlock(layout); err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	layoutSig, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
+	layoutSigRaw, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSig); err != nil {
+	layoutSigRS, err := actionkeeper.CoerceToRS64(layoutSigRaw)
+	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
+	}
+	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSigRS); err != nil {
+		// Fallback to ADR-36 verification over string(layoutB64)
+		dataB64 := base64.StdEncoding.EncodeToString([]byte(string(layoutB64)))
+		signDoc, derr := actionkeeper.MakeADR36AminoSignBytes(creator, dataB64)
+		if derr != nil {
+			return cascadekit.IndexFile{}, nil, derr
+		}
+		if err2 := task.LumeraClient.Verify(ctx, creator, signDoc, layoutSigRS); err2 != nil {
+			return cascadekit.IndexFile{}, nil, err
+		}
 	}
 	return indexFile, layoutB64, nil
 }

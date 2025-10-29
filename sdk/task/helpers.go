@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 
+	actionkeeper "github.com/LumeraProtocol/lumera/x/action/v1/keeper"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
@@ -74,28 +75,32 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 		return fmt.Errorf("failed to decode cascade metadata: %w", err)
 	}
 
-	// Extract the base64-encoded data hash from the metadata
-	base64EnTcketDataHash := cascadeMetaData.DataHash
+	// Extract the base64-encoded data hash string from the metadata
+	dataHashB64 := cascadeMetaData.DataHash
 
-	// Decode the data hash from base64 to raw bytes
-	dataHashBytes, err := base64.StdEncoding.DecodeString(base64EnTcketDataHash)
-	if err != nil {
-		return fmt.Errorf("failed to decode data hash: %w", err)
-	}
-
-	// Decode the provided signature from base64 to raw bytes
-	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
+	// Decode the provided signature from base64 to raw bytes and coerce to r||s
+	signatureRaw, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
-
-	// Verify the signature using the Lumera client
-	// This checks if the signature was produced by the action creator
-	// for the given data hash
-	err = m.lumeraClient.VerifySignature(ctx, action.Creator, dataHashBytes, signatureBytes)
+	sigRS, err := actionkeeper.CoerceToRS64(signatureRaw)
 	if err != nil {
-		m.logger.Error(ctx, "Signature validation failed", "actionID", action.ID, "error", err)
-		return fmt.Errorf("signature validation failed: %w", err)
+		return fmt.Errorf("coerce signature: %w", err)
+	}
+
+	// Try raw verification over []byte(dataHashB64). If it fails, try ADR-36 bytes.
+	err = m.lumeraClient.VerifySignature(ctx, action.Creator, []byte(dataHashB64), sigRS)
+	if err != nil {
+		// ADR-36 fallback: sign doc with data = base64(dataHashB64)
+		doc, derr := actionkeeper.MakeADR36AminoSignBytes(action.Creator, base64.StdEncoding.EncodeToString([]byte(dataHashB64)))
+		if derr != nil {
+			m.logger.Error(ctx, "ADR36 doc build failed", "actionID", action.ID, "error", derr)
+			return fmt.Errorf("signature validation failed: %w", err)
+		}
+		if err2 := m.lumeraClient.VerifySignature(ctx, action.Creator, doc, sigRS); err2 != nil {
+			m.logger.Error(ctx, "Signature validation failed", "actionID", action.ID, "error", err)
+			return fmt.Errorf("signature validation failed: %w", err)
+		}
 	}
 
 	return nil
