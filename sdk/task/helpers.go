@@ -2,12 +2,12 @@ package task
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"math/big"
 	"os"
 	"sort"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
@@ -74,26 +74,13 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 		return fmt.Errorf("failed to decode cascade metadata: %w", err)
 	}
 
-	// Extract the base64-encoded data hash from the metadata
-	base64EnTcketDataHash := cascadeMetaData.DataHash
+	// Extract the base64-encoded data hash string from the metadata
+	dataHashB64 := cascadeMetaData.DataHash
 
-	// Decode the data hash from base64 to raw bytes
-	dataHashBytes, err := base64.StdEncoding.DecodeString(base64EnTcketDataHash)
-	if err != nil {
-		return fmt.Errorf("failed to decode data hash: %w", err)
-	}
-
-	// Decode the provided signature from base64 to raw bytes
-	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return fmt.Errorf("failed to decode signature: %w", err)
-	}
-
-	// Verify the signature using the Lumera client
-	// This checks if the signature was produced by the action creator
-	// for the given data hash
-	err = m.lumeraClient.VerifySignature(ctx, action.Creator, dataHashBytes, signatureBytes)
-	if err != nil {
+	// Verify using cascadekit helper (raw -> ADR-36)
+	if err := cascadekit.VerifyStringRawOrADR36(dataHashB64, signature, action.Creator, func(data, sig []byte) error {
+		return m.lumeraClient.VerifySignature(ctx, action.Creator, data, sig)
+	}); err != nil {
 		m.logger.Error(ctx, "Signature validation failed", "actionID", action.ID, "error", err)
 		return fmt.Errorf("signature validation failed: %w", err)
 	}

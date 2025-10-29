@@ -2,7 +2,6 @@ package cascade
 
 import (
 	"context"
-	"encoding/base64"
 	"strconv"
 
 	"cosmossdk.io/math"
@@ -87,11 +86,9 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	creatorSig, err := base64.StdEncoding.DecodeString(creatorSigB64)
-	if err != nil {
-		return cascadekit.IndexFile{}, nil, err
-	}
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(indexB64), creatorSig); err != nil {
+	if err := cascadekit.VerifyIndex(indexB64, creatorSigB64, creator, func(data, sig []byte) error {
+		return task.LumeraClient.Verify(ctx, creator, data, sig)
+	}); err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
 	// Decode index
@@ -104,14 +101,13 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
-	if err := cascadekit.VerifySingleBlock(layout); err != nil {
-		return cascadekit.IndexFile{}, nil, err
+	// Enforce single-block layout for Cascade
+	if len(layout.Blocks) != 1 {
+		return cascadekit.IndexFile{}, nil, errors.New("layout must contain exactly one block")
 	}
-	layoutSig, err := base64.StdEncoding.DecodeString(indexFile.LayoutSignature)
-	if err != nil {
-		return cascadekit.IndexFile{}, nil, err
-	}
-	if err := task.LumeraClient.Verify(ctx, creator, layoutB64, layoutSig); err != nil {
+	if err := cascadekit.VerifyLayout(layoutB64, indexFile.LayoutSignature, creator, func(data, sig []byte) error {
+		return task.LumeraClient.Verify(ctx, creator, data, sig)
+	}); err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
 	return indexFile, layoutB64, nil

@@ -2,7 +2,6 @@ package cascade
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -117,11 +116,9 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 		return fmt.Errorf("get action for signature verification: %w", err)
 	}
 	creator := act.GetAction().Creator
-	sigBytes, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return fmt.Errorf("invalid base64 signature: %w", err)
-	}
-	if err := task.LumeraClient.Verify(ctx, creator, []byte(actionID), sigBytes); err != nil {
+	if err := cascadekit.VerifyStringRawOrADR36(actionID, signature, creator, func(data, sig []byte) error {
+		return task.LumeraClient.Verify(ctx, creator, data, sig)
+	}); err != nil {
 		return err
 	}
 	return nil
