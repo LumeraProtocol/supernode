@@ -318,13 +318,15 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 // GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key.
 // Returns base64-encoded signature suitable for StartCascade.
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
+	// Compute blake3(file), encode as base64 string, and sign the string bytes
 	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("blake3: %w", err)
 	}
-	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, h)
+	dataHashB64 := base64.StdEncoding.EncodeToString(h)
+	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, []byte(dataHashB64))
 	if err != nil {
-		return "", fmt.Errorf("sign hash: %w", err)
+		return "", fmt.Errorf("sign hash string: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
