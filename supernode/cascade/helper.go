@@ -3,6 +3,7 @@ package cascade
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -192,15 +193,19 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	requiredFee := sdk.NewCoin("ulume", math.NewInt(amount))
 	logtrace.Debug(ctx, "calculated required fee", logtrace.Fields{"fee": requiredFee.String(), "dataBytes": dataSize})
 	// Accept paying more than the minimum required fee. Only enforce denom match and Amount >= required.
-	if action.Price == nil {
-		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got <nil>", requiredFee.String()), fields)
+	if strings.TrimSpace(action.Price) == "" {
+		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got empty price", requiredFee.String()), fields)
 	}
-	if action.Price.Denom != requiredFee.Denom {
-		return task.wrapErr(ctx, "invalid fee denom", errors.Errorf("expected denom %s, got %s", requiredFee.Denom, action.Price.Denom), fields)
+	providedFee, err := sdk.ParseCoinNormalized(action.Price)
+	if err != nil {
+		return task.wrapErr(ctx, "invalid fee format", errors.Errorf("price parse error: %v", err), fields)
 	}
-	if action.Price.Amount.LT(requiredFee.Amount) {
-		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got %s", requiredFee.String(), action.Price.String()), fields)
+	if providedFee.Denom != requiredFee.Denom {
+		return task.wrapErr(ctx, "invalid fee denom", errors.Errorf("expected denom %s, got %s", requiredFee.Denom, providedFee.Denom), fields)
 	}
-	logtrace.Info(ctx, "register: verify action fee ok", logtrace.Fields{"required_fee": requiredFee.String(), "provided_fee": action.Price.String()})
+	if providedFee.Amount.LT(requiredFee.Amount) {
+		return task.wrapErr(ctx, "insufficient fee", errors.Errorf("expected at least %s, got %s", requiredFee.String(), providedFee.String()), fields)
+	}
+	logtrace.Info(ctx, "register: verify action fee ok", logtrace.Fields{"required_fee": requiredFee.String(), "provided_fee": providedFee.String()})
 	return nil
 }
