@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"sync"
 
 	sdkmath "cosmossdk.io/math"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
@@ -25,12 +25,9 @@ const (
 	TaskTypeCascade TaskType = "CASCADE"
 )
 
-// Package-level thresholds and tuning
 const (
-	// Minimum available storage required on any volume (bytes)
-	minStorageThresholdBytes uint64 = 50 * 1024 * 1024 * 1024 // 50 GB
-	// Upload requires free RAM to be at least 8x the file size
-	uploadRAMMultiplier uint64 = 8
+	prefilterParallelism    int   = 10
+	minEligibleBalanceULUME int64 = 1_000_000 // 1 LUME in ulume
 )
 
 // EventCallback is a function that processes events from tasks
@@ -106,109 +103,124 @@ func (t *BaseTask) orderByXORDistance(sns lumera.Supernodes) lumera.Supernodes {
 	return orderSupernodesByDeterministicDistance(seed, sns)
 }
 
-// helper: get file size (bytes). returns 0 on error
-func getFileSizeBytes(p string) int64 {
-	fi, err := os.Stat(p)
-	if err != nil {
-		return 0
-	}
-	return fi.Size()
-}
-
-func (t *BaseTask) resourcesOK(ctx context.Context, client net.SupernodeClient, sn lumera.Supernode, minStorageBytes uint64, minFreeRamBytes uint64) bool {
-	// In tests, skip resource thresholds (keep balance + health via nodeQualifies)
-	if os.Getenv("INTEGRATION_TEST") == "true" {
-		return true
-	}
-	status, err := client.GetSupernodeStatus(ctx)
-	if err != nil || status == nil || status.Resources == nil {
-		return false
-	}
-	// Storage: any volume must satisfy available >= minStorageBytes
-	if minStorageBytes > 0 {
-		ok := false
-		for _, vol := range status.Resources.StorageVolumes {
-			if vol != nil && vol.AvailableBytes >= minStorageBytes {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return false
-		}
-	}
-	// RAM: available_gb must be >= required GiB
-	if minFreeRamBytes > 0 {
-		mem := status.Resources.Memory
-		if mem == nil {
-			return false
-		}
-		requiredGiB := float64(minFreeRamBytes) / (1024.0 * 1024.0 * 1024.0)
-		if mem.AvailableGb < requiredGiB {
-			return false
-		}
-	}
-	return true
-}
-
-// filterByHealth returns nodes that report gRPC health SERVING.
-func (t *BaseTask) filterByHealth(parent context.Context, sns lumera.Supernodes) lumera.Supernodes {
+// filterEligibleSupernodesParallel
+// Fast, bounded-concurrency discovery that keeps only nodes that pass:
+//
+//	(1) gRPC Health SERVING
+//	(2) Peers > 1 (via Status API; single-line gate for basic network liveness)
+//	(3) On-chain balance >= 1 LUME (in ulume)
+//
+// Strategy:
+//   - Spawn at most prefilterParallelism goroutines (bounded fan-out).
+//   - For each node, run Health (incl. dial) and Balance concurrently under one timeout.
+//   - Early-cancel sibling work on definitive failure to save time.
+//   - Reuse healthy client connections during registration to skip a second dial.
+func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns lumera.Supernodes) (lumera.Supernodes, map[string]net.SupernodeClient) {
 	if len(sns) == 0 {
-		return sns
+		return sns, nil
 	}
+
+	// Step 0 — shared state for this pass
 	keep := make([]bool, len(sns))
-	for i, sn := range sns {
-		i, sn := i, sn
-		ctx, cancel := context.WithTimeout(parent, connectionTimeout)
-		func() {
-			defer cancel()
-			client, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, net.FactoryConfig{
-				LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
-				PeerType:           t.config.Account.PeerType,
-			}).CreateClient(ctx, sn)
-			if err != nil {
-				return
-			}
-			defer client.Close(ctx)
-			h, err := client.HealthCheck(ctx)
-			if err == nil && h != nil && h.Status == grpc_health_v1.HealthCheckResponse_SERVING {
-				keep[i] = true
-			}
-		}()
-	}
-	out := make(lumera.Supernodes, 0, len(sns))
-	for i, sn := range sns {
-		if keep[i] {
-			out = append(out, sn)
-		}
-	}
-	return out
-}
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, prefilterParallelism)
+	preClients := make(map[string]net.SupernodeClient)
+	var mtx sync.Mutex
 
-// filterByMinBalance filters by requiring at least a minimum balance in the default fee denom.
-func (t *BaseTask) filterByMinBalance(parent context.Context, sns lumera.Supernodes) lumera.Supernodes {
-	if len(sns) == 0 {
-		return sns
-	}
-	min := sdkmath.NewInt(1_000_000) // 1 LUME in ulume
+	// Step 0.1 — constants/resource handles used by probes
+	min := sdkmath.NewInt(minEligibleBalanceULUME) // 1 LUME in ulume
 	denom := txmod.DefaultFeeDenom
-	keep := make([]bool, len(sns))
-	for i, sn := range sns {
-		i, sn := i, sn
-		ctx, cancel := context.WithTimeout(parent, connectionTimeout)
-		func() {
-			defer cancel()
-			bal, err := t.client.GetBalance(ctx, sn.CosmosAddress, denom)
-			if err == nil && bal != nil && bal.Balance != nil && !bal.Balance.Amount.LT(min) {
-				keep[i] = true
-			}
-		}()
+
+	factoryCfg := net.FactoryConfig{
+		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
+		PeerType:           t.config.Account.PeerType,
 	}
+	clientFactory := net.NewClientFactory(parent, t.logger, t.keyring, t.client, factoryCfg)
+
+	// Step 1 — spawn bounded goroutines, one per supernode
+	for i, sn := range sns {
+		wg.Add(1)
+		go func(i int, sn lumera.Supernode) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// Step 1.1 — per-node shared timeout + cancellation for early exit
+			probeCtx, cancel := context.WithTimeout(parent, connectionTimeout)
+			defer cancel()
+
+			var innerWg sync.WaitGroup
+			var healthOK, balanceOK bool
+			var c net.SupernodeClient
+
+			innerWg.Add(2)
+
+			// Step 1.2.1 — Health probe (dial + check) — create client here so balance starts immediately
+			go func() {
+				defer innerWg.Done()
+				client, err := clientFactory.CreateClient(probeCtx, sn)
+				if err != nil {
+					// Unable to connect → ineligible; cancel sibling
+					cancel()
+					return
+				}
+				// Keep reference for potential reuse; close later based on outcome
+				c = client
+				// (1) Health SERVING gate
+				h, err := client.HealthCheck(probeCtx)
+				if err == nil && h != nil && h.Status == grpc_health_v1.HealthCheckResponse_SERVING {
+					healthOK = true
+				} else {
+					// Health failed → ineligible; cancel sibling
+					cancel()
+					return
+				}
+				// (2) One-liner peers>1 gate using Status API to ensure network liveness
+				if st, err := client.GetSupernodeStatus(probeCtx); err != nil || st == nil || st.Network == nil || st.Network.PeersCount <= 1 {
+					healthOK = false
+					cancel()
+					return
+				}
+			}()
+
+			// Step 1.2.2 — Balance probe (chain) — independent of gRPC dial
+			go func() {
+				defer innerWg.Done()
+				bal, err := t.client.GetBalance(probeCtx, sn.CosmosAddress, denom)
+				if err == nil && bal != nil && bal.Balance != nil && !bal.Balance.Amount.LT(min) {
+					balanceOK = true
+				} else {
+					// Insufficient or error → ineligible; cancel sibling
+					cancel()
+				}
+			}()
+
+			// Step 1.3 — Wait for both probes, then decide eligibility and manage client lifecycle
+			innerWg.Wait()
+			if healthOK && balanceOK {
+				keep[i] = true
+				// Stash the client for reuse; key by CosmosAddress
+				if c != nil {
+					mtx.Lock()
+					preClients[sn.CosmosAddress] = c
+					mtx.Unlock()
+				}
+			} else {
+				// Close any created client we won't reuse
+				if c != nil {
+					_ = c.Close(context.Background())
+				}
+			}
+		}(i, sn)
+	}
+	wg.Wait()
+
+	// Step 2 — build output preserving original order
 	out := make(lumera.Supernodes, 0, len(sns))
 	for i, sn := range sns {
 		if keep[i] {
 			out = append(out, sn)
 		}
 	}
-	return out
+	return out, preClients
 }
