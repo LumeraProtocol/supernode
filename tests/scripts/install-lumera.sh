@@ -41,14 +41,25 @@ GITHUB_API="https://api.github.com/repos/$REPO"
 if [ "$MODE" == "latest-tag" ]; then
     if command -v jq >/dev/null 2>&1; then
         TAG_NAME=$(curl -s "$GITHUB_API/tags" | jq -r '.[0].name')
+        DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
+            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
     else
         TAG_NAME=$(curl -s "$GITHUB_API/tags" | grep '"name"' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+        DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
+            | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*linux_amd64\.tar\.gz[^"]*"' \
+            | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
     fi
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/lumera_${TAG_NAME}_linux_amd64.tar.gz"
 
 elif [[ "$MODE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     TAG_NAME="$MODE"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/lumera_${TAG_NAME}_linux_amd64.tar.gz"
+    if command -v jq >/dev/null 2>&1; then
+        DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
+            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
+    else
+        DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
+            | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*linux_amd64\.tar\.gz[^"]*"' \
+            | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    fi
 
 elif [ "$MODE" == "latest-release" ]; then
     RELEASE_INFO=$(curl -s -S -L "$GITHUB_API/releases/latest")
