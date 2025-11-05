@@ -43,15 +43,14 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
-	// 2 - Pre-filter: balance -> health -> XOR rank
+	// 2 - Pre-filter: balance & health concurrently -> XOR rank
 	originalCount := len(supernodes)
-	supernodes = t.filterByMinBalance(ctx, supernodes)
-	supernodes = t.filterByHealth(ctx, supernodes)
+	supernodes, preClients := t.filterEligibleSupernodesParallel(ctx, supernodes)
 	supernodes = t.orderByXORDistance(supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
-	// 2 – download from super-nodes
-	if err := t.downloadFromSupernodes(ctx, supernodes); err != nil {
+	// 2 – download from super-nodes (reuse pre-probed clients when available)
+	if err := t.downloadFromSupernodes(ctx, supernodes, preClients); err != nil {
 		t.LogEvent(ctx, event.SDKTaskFailed, "task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
@@ -60,12 +59,22 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supernodes lumera.Supernodes) error {
+func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supernodes lumera.Supernodes, preClients map[string]net.SupernodeClient) error {
 	factoryCfg := net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 		PeerType:           t.config.Account.PeerType,
 	}
 	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
+
+	// Ensure any unused preClients are closed when we return
+	defer func() {
+		for addr, c := range preClients {
+			if c != nil {
+				_ = c.Close(ctx)
+				_ = addr // retain for linter
+			}
+		}
+	}()
 
 	req := &supernodeservice.CascadeSupernodeDownloadRequest{
 		ActionID:   t.actionId,
@@ -96,10 +105,17 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 			event.KeyIteration:        iteration,
 		})
 
-		// Pre-filtering done; attempt directly
+		// Pre-filtering done; attempt directly (reuse preclient if present)
 
 		attempted++
-		if err := t.attemptDownload(ctx, sn, clientFactory, req); err != nil {
+		var pre net.SupernodeClient
+		if preClients != nil {
+			if c, ok := preClients[sn.CosmosAddress]; ok {
+				pre = c
+				delete(preClients, sn.CosmosAddress)
+			}
+		}
+		if err := t.attemptDownload(ctx, sn, clientFactory, req, pre); err != nil {
 			// Log failure and continue with the rest
 			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
 				event.KeySupernode:        sn.GrpcEndpoint,
@@ -126,20 +142,22 @@ func (t *CascadeDownloadTask) attemptDownload(
 	sn lumera.Supernode,
 	factory *net.ClientFactory,
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
+	preClient net.SupernodeClient,
 ) error {
 	ctx, cancel := context.WithTimeout(parent, downloadTimeout)
 	defer cancel()
 
-	client, err := factory.CreateClient(ctx, sn)
-	if err != nil {
-		return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
+	var client net.SupernodeClient
+	var err error
+	if preClient != nil {
+		client = preClient
+	} else {
+		client, err = factory.CreateClient(ctx, sn)
+		if err != nil {
+			return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
+		}
 	}
 	defer client.Close(ctx)
-
-	// Just-in-time resource check for downloads (storage only)
-	if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, 0); !ok {
-		return fmt.Errorf("resource check failed")
-	}
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)

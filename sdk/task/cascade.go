@@ -46,15 +46,14 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
-	// 2 - Pre-filter: balance -> health -> XOR rank -> resources, then hand over
+	// 2 - Pre-filter: balance & health concurrently -> XOR rank, then hand over
 	originalCount := len(supernodes)
-	supernodes = t.filterByMinBalance(ctx, supernodes)
-	supernodes = t.filterByHealth(ctx, supernodes)
+	supernodes, preClients := t.filterEligibleSupernodesParallel(ctx, supernodes)
 	supernodes = t.orderByXORDistance(supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
 	// 2 - Register with the supernodes
-	if err := t.registerWithSupernodes(ctx, supernodes); err != nil {
+	if err := t.registerWithSupernodes(ctx, supernodes, preClients); err != nil {
 		t.LogEvent(ctx, event.SDKTaskFailed, "Task failed", event.EventData{event.KeyError: err.Error()})
 		return err
 	}
@@ -64,7 +63,7 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lumera.Supernodes) error {
+func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lumera.Supernodes, preClients map[string]net.SupernodeClient) error {
 	factoryCfg := net.FactoryConfig{
 		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
 		PeerType:           t.config.Account.PeerType,
@@ -79,6 +78,16 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 
 	ordered := supernodes
 
+	// Ensure any unused preClients are closed when we return
+	defer func() {
+		for addr, c := range preClients {
+			if c != nil {
+				_ = c.Close(ctx)
+				_ = addr // no-op
+			}
+		}
+	}()
+
 	var lastErr error
 	attempted := 0
 	for i, sn := range ordered {
@@ -91,7 +100,16 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		})
 
 		attempted++
-		if err := t.attemptRegistration(ctx, iteration-1, sn, clientFactory, req); err != nil {
+		// Use pre-probed client if available; remove from map so we don't double-close in deferred cleanup
+		var pre net.SupernodeClient
+		if preClients != nil {
+			if c, ok := preClients[sn.CosmosAddress]; ok {
+				pre = c
+				delete(preClients, sn.CosmosAddress)
+			}
+		}
+
+		if err := t.attemptRegistration(ctx, iteration-1, sn, clientFactory, req, pre); err != nil {
 			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
 				event.KeySupernode:        sn.GrpcEndpoint,
 				event.KeySupernodeAddress: sn.CosmosAddress,
@@ -118,10 +136,16 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	return fmt.Errorf("failed to upload to all supernodes")
 }
 
-func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest) error {
-	client, err := factory.CreateClient(ctx, sn)
-	if err != nil {
-		return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
+func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest, preClient net.SupernodeClient) error {
+	var client net.SupernodeClient
+	var err error
+	if preClient != nil {
+		client = preClient
+	} else {
+		client, err = factory.CreateClient(ctx, sn)
+		if err != nil {
+			return fmt.Errorf("create client %s: %w", sn.CosmosAddress, err)
+		}
 	}
 	defer client.Close(ctx)
 
@@ -130,15 +154,6 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 		event.KeySupernode:        sn.GrpcEndpoint,
 		event.KeySupernodeAddress: sn.CosmosAddress,
 	})
-
-	// Just-in-time resource check for uploads (storage + RAM >= 8x file size)
-	var minRam uint64
-	if size := getFileSizeBytes(t.filePath); size > 0 {
-		minRam = uint64(size) * uploadRAMMultiplier
-	}
-	if ok := t.resourcesOK(ctx, client, sn, minStorageThresholdBytes, minRam); !ok {
-		return fmt.Errorf("resource check failed")
-	}
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
 		t.LogEvent(ctx, evt, msg, data)
