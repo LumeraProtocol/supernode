@@ -78,19 +78,10 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 	sn, err := cv.lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, cv.config.SupernodeConfig.Identity)
 	if err != nil {
 		result.Valid = false
-		result.Errors = append(result.Errors, ConfigError{Field: "registration", Actual: "not_registered", Message: fmt.Sprintf("Supernode not registered on chain for address %s", cv.config.SupernodeConfig.Identity)})
+		result.Errors = append(result.Errors, ConfigError{Field: "registration", Actual: "error", Message: err.Error()})
 		return nil, err
 	}
 	return sn, nil
-}
-
-func (cv *ConfigVerifier) checkP2PPortMatches(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
-	configPort := fmt.Sprintf("%d", cv.config.P2PConfig.Port)
-	chainPort := supernodeInfo.P2PPort
-	if chainPort != "" && chainPort != configPort {
-		result.Valid = false
-		result.Errors = append(result.Errors, ConfigError{Field: "p2p_port", Expected: chainPort, Actual: configPort, Message: fmt.Sprintf("P2P port mismatch: config=%s, chain=%s", configPort, chainPort)})
-	}
 }
 
 func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
