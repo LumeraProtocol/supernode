@@ -19,7 +19,7 @@ import (
 
 const (
 	// Time budget to wait for a candidate to reach READY
-	dialReadyTimeout = 10 * time.Second
+	dialReadyTimeout = 60 * time.Second
 )
 
 // Default ports to try when none is specified (order matters).
