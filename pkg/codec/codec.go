@@ -47,4 +47,12 @@ type Codec interface {
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResponse, error)
 	// without generating RaptorQ symbols.
 	CreateMetadata(ctx context.Context, req CreateMetadataRequest) (CreateMetadataResponse, error)
+	PrepareDecode(ctx context.Context, actionID string, layout Layout) (
+		blockPaths []string,
+		Write func(block int, symbolID string, data []byte) (string, error),
+		Cleanup func() error,
+		ws *Workspace,
+		err error,
+	)
+	DecodeFromPrepared(ctx context.Context, ws *Workspace, layout Layout) (DecodeResponse, error)
 }

@@ -11,6 +11,16 @@ import (
 type CodecService interface {
 	EncodeInput(ctx context.Context, actionID string, filePath string) (EncodeResult, error)
 	Decode(ctx context.Context, req DecodeRequest) (DecodeResult, error)
+
+	PrepareDecode(ctx context.Context, actionID string, layout codec.Layout) (
+		blockPaths []string,
+		Write func(block int, symbolID string, data []byte) (string, error),
+		Cleanup func() error,
+		Workspace *codec.Workspace,
+		err error,
+	)
+
+	DecodeFromPrepared(ctx context.Context, ws *codec.Workspace, layout codec.Layout) (DecodeResult, error)
 }
 
 type EncodeResult struct {
@@ -47,6 +57,26 @@ func (c *codecImpl) EncodeInput(ctx context.Context, actionID, filePath string) 
 
 func (c *codecImpl) Decode(ctx context.Context, req DecodeRequest) (DecodeResult, error) {
 	res, err := c.codec.Decode(ctx, codec.DecodeRequest{ActionID: req.ActionID, Symbols: req.Symbols, Layout: req.Layout})
+	if err != nil {
+		return DecodeResult{}, err
+	}
+	return DecodeResult{FilePath: res.FilePath, DecodeTmpDir: res.DecodeTmpDir}, nil
+}
+
+func (c *codecImpl) PrepareDecode(
+	ctx context.Context,
+	actionID string,
+	layout codec.Layout,
+) ([]string, func(block int, symbolID string, data []byte) (string, error), func() error, *codec.Workspace, error) {
+	return c.codec.PrepareDecode(ctx, actionID, layout)
+}
+
+func (c *codecImpl) DecodeFromPrepared(
+	ctx context.Context,
+	ws *codec.Workspace,
+	layout codec.Layout,
+) (DecodeResult, error) {
+	res, err := c.codec.DecodeFromPrepared(ctx, ws, layout)
 	if err != nil {
 		return DecodeResult{}, err
 	}
