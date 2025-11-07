@@ -684,6 +684,7 @@ func (s *DHT) fetchAndAddLocalKeys(ctx context.Context, hexKeys []string, result
 }
 
 func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, txID string, localOnly ...bool) (result map[string][]byte, err error) {
+	start := time.Now()
 	logtrace.Debug(ctx, "DHT BatchRetrieve begin", logtrace.Fields{"txid": txID, "keys": len(keys), "required": required})
 	result = make(map[string][]byte)
 	var resMap sync.Map
@@ -731,16 +732,20 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	// Found locally count is logged via summary below; no external metrics
 
 	if foundLocalCount >= required {
-		logtrace.Debug(ctx, "DHT BatchRetrieve satisfied from local storage", logtrace.Fields{
-			"txid": txID, "found_local": foundLocalCount, "required": required,
-		})
+		f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": 0, "required": required, "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch retrieve summary", f)
 		return result, nil
 	}
 
 	if len(localOnly) > 0 && localOnly[0] {
-		logtrace.Debug(ctx, "DHT BatchRetrieve local-only mode, insufficient keys", logtrace.Fields{
-			"txid": txID, "found_local": foundLocalCount, "required": required,
-		})
+		f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": 0, "required": required, "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+		if o := logtrace.OriginFromContext(ctx); o != "" {
+			f[logtrace.FieldOrigin] = o
+		}
+		logtrace.Info(ctx, "dht: batch retrieve summary", f)
 		return result, fmt.Errorf("local-only: found %d, required %d", foundLocalCount, required)
 	}
 
@@ -839,13 +844,13 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	wg.Wait()
 
 	netFound := int(atomic.LoadInt32(&networkFound))
-	{
-		f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(netStart).Milliseconds(), logtrace.FieldRole: "client"}
-		if o := logtrace.OriginFromContext(ctx); o != "" {
-			f[logtrace.FieldOrigin] = o
-		}
-		logtrace.Info(ctx, "dht: batch retrieve summary", f)
+
+	f := logtrace.Fields{"txid": txID, "found_local": foundLocalCount, "found_network": netFound, "required": required, "ms": time.Since(start).Milliseconds(), logtrace.FieldRole: "client"}
+	if o := logtrace.OriginFromContext(ctx); o != "" {
+		f[logtrace.FieldOrigin] = o
 	}
+	logtrace.Info(ctx, "dht: batch retrieve summary", f)
+
 	// Record batch retrieve stats for internal DHT snapshot window (network phase only)
 	s.metrics.RecordBatchRetrieve(len(keys), int(required), int(foundLocalCount), netFound, time.Since(netStart))
 	// No per-task metrics collector updates
