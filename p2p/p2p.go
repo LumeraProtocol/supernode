@@ -146,6 +146,16 @@ func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, tx
 	return s.dht.BatchRetrieve(ctx, keys, int32(reqCount), txID, localOnly...)
 }
 
+func (s *p2p) BatchRetrieveStream(ctx context.Context, keys []string, required int32, txID string,
+	onSymbol func(base58Key string, data []byte) error, localOnly ...bool) (written int32, err error) {
+
+	if !s.running {
+		return 0, errors.New("p2p service is not running")
+	}
+
+	return s.dht.BatchRetrieveStream(ctx, keys, int32(required), txID, onSymbol, localOnly...)
+}
+
 // Delete delete key in queries node
 func (s *p2p) Delete(ctx context.Context, key string) error {
 

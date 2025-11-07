@@ -18,6 +18,9 @@ type Client interface {
 	// reqCount is the minimum number of keys that are actually required by the caller
 	// to successfully perform the reuquired operation
 	BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error)
+
+	BatchRetrieveStream(ctx context.Context, keys []string, required int32, txID string, onSymbol func(base58Key string, data []byte) error, localOnly ...bool) (written int32, err error)
+
 	// Store store data to the network, which will trigger the iterative store message
 	// - the base58 encoded identifier will be returned
 	Store(ctx context.Context, data []byte, typ int) (string, error)
