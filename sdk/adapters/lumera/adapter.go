@@ -289,7 +289,8 @@ func (a *Adapter) GetSupernodes(ctx context.Context, height int64) ([]Supernode,
 
 	resp, err := a.client.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
-		//TODO : Update after hotfix on chain
+		State:       string(SUPERNODE_STATE_ACTIVE),
+		Limit:       10,
 	})
 	if err != nil {
 		a.logger.Error(ctx, "Failed to get supernodes", "height", height, "error", err)
@@ -377,7 +378,9 @@ func toSdkAction(resp *actiontypes.QueryGetActionResponse) Action {
 	}
 }
 
+// func toSdkSupernodes(resp *sntypes.QueryListSuperNodesResponse) []Supernode {
 func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supernode {
+
 	var result []Supernode
 	for _, sn := range resp.Supernodes {
 		ipAddress, err := getLatestIP(sn)
