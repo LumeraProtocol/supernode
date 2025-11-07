@@ -180,8 +180,7 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	}
 	fields["data_bytes"] = dataSize
 	logtrace.Info(ctx, "register: verify action fee start", fields)
-	// Round up to the nearest KB to avoid underestimating required fee
-	dataSizeInKBs := (dataSize + 1023) / 1024
+	dataSizeInKBs := actiontypes.RoundBytesToKB(dataSize)
 	fee, err := task.LumeraClient.GetActionFee(ctx, strconv.Itoa(dataSizeInKBs))
 	if err != nil {
 		return task.wrapErr(ctx, "failed to get action fee", err, fields)
@@ -198,7 +197,7 @@ func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action
 	}
 	providedFee, err := sdk.ParseCoinNormalized(action.Price)
 	if err != nil {
-		return task.wrapErr(ctx, "invalid fee format", errors.Errorf("price parse error: %v", err), fields)
+		return task.wrapErr(ctx, "invalid fee format", errors.Errorf("failed to parse price '%s': %v", action.Price, err), fields)
 	}
 	if providedFee.Denom != requiredFee.Denom {
 		return task.wrapErr(ctx, "invalid fee denom", errors.Errorf("expected denom %s, got %s", requiredFee.Denom, providedFee.Denom), fields)
