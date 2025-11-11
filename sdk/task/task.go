@@ -240,7 +240,7 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 	wg.Wait()
 
 	// Step 2 — log eligibility results
-	fmt.Println("\n=== Supernode Eligibility Check Results ===")
+	t.logger.Info(parent, "Supernode eligibility check started")
 	acceptedCount := 0
 	rejectedCount := 0
 	for i, sn := range sns {
@@ -250,19 +250,21 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 		}
 
 		if keep[i] {
-			fmt.Printf("✓ %s - ACCEPTED\n", endpoint)
+			t.logger.Debug(parent, "Supernode accepted", "endpoint", endpoint)
 			acceptedCount++
 		} else {
 			reason := rejectionReasons[i]
 			if reason == "" {
 				reason = "unknown reason"
 			}
-			fmt.Printf("✗ %s - REJECTED: %s\n", endpoint, reason)
+			t.logger.Debug(parent, "Supernode rejected", "endpoint", endpoint, "reason", reason)
 			rejectedCount++
 		}
 	}
-	fmt.Printf("\nSummary: %d accepted, %d rejected out of %d total\n", acceptedCount, rejectedCount, len(sns))
-	fmt.Println("==========================================")
+	t.logger.Info(parent, "Supernode eligibility check completed",
+		"accepted", acceptedCount,
+		"rejected", rejectedCount,
+		"total", len(sns))
 
 	// Step 3 — build output preserving original order
 	out := make(lumera.Supernodes, 0, len(sns))
