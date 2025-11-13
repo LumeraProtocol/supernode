@@ -139,6 +139,7 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 
 	// Step 0 — shared state for this pass
 	keep := make([]bool, len(sns))
+	rejectionReasons := make([]string, len(sns))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, prefilterParallelism)
 	preClients := make(map[string]net.SupernodeClient)
@@ -178,6 +179,7 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 				client, err := clientFactory.CreateClient(probeCtx, sn)
 				if err != nil {
 					// Unable to connect → ineligible; cancel sibling
+					rejectionReasons[i] = fmt.Sprintf("connection failed: %v", err)
 					cancel()
 					return
 				}
@@ -189,12 +191,26 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 					healthOK = true
 				} else {
 					// Health failed → ineligible; cancel sibling
+					if err != nil {
+						rejectionReasons[i] = fmt.Sprintf("health check failed: %v", err)
+					} else if h == nil {
+						rejectionReasons[i] = "health check returned nil"
+					} else {
+						rejectionReasons[i] = fmt.Sprintf("health status: %v (expected SERVING)", h.Status)
+					}
 					cancel()
 					return
 				}
 				// (2) One-liner peers>1 gate using Status API to ensure network liveness
 				if st, err := client.GetSupernodeStatus(probeCtx); err != nil || st == nil || st.Network == nil || st.Network.PeersCount <= 1 {
 					healthOK = false
+					if err != nil {
+						rejectionReasons[i] = fmt.Sprintf("status check failed: %v", err)
+					} else if st == nil || st.Network == nil {
+						rejectionReasons[i] = "status or network info unavailable"
+					} else {
+						rejectionReasons[i] = fmt.Sprintf("insufficient peers: %d (need > 1)", st.Network.PeersCount)
+					}
 					cancel()
 					return
 				}
@@ -208,6 +224,14 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 					balanceOK = true
 				} else {
 					// Insufficient or error → ineligible; cancel sibling
+					if err != nil {
+						rejectionReasons[i] = fmt.Sprintf("balance check failed: %v", err)
+					} else if bal == nil || bal.Balance == nil {
+						rejectionReasons[i] = "balance info unavailable"
+					} else {
+						actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
+						rejectionReasons[i] = fmt.Sprintf("insufficient balance: %s LUME (need >= 1 LUME)", actualLUME.String())
+					}
 					cancel()
 				}
 			}()
@@ -232,7 +256,35 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 	}
 	wg.Wait()
 
-	// Step 2 — build output preserving original order
+	// Step 2 — log eligibility results
+	logtrace.Info(parent, "Supernode eligibility check started", logtrace.Fields{"total": len(sns)})
+	acceptedCount := 0
+	rejectedCount := 0
+	for i, sn := range sns {
+		endpoint := sn.GrpcEndpoint
+		if endpoint == "" {
+			endpoint = sn.CosmosAddress
+		}
+
+		if keep[i] {
+			logtrace.Info(parent, "Supernode accepted", logtrace.Fields{"endpoint": endpoint})
+			acceptedCount++
+		} else {
+			reason := rejectionReasons[i]
+			if reason == "" {
+				reason = "unknown reason"
+			}
+			logtrace.Info(parent, "Supernode rejected", logtrace.Fields{"endpoint": endpoint, "reason": reason})
+			rejectedCount++
+		}
+	}
+	logtrace.Info(parent, "Supernode eligibility check completed", logtrace.Fields{
+		"accepted": acceptedCount,
+		"rejected": rejectedCount,
+		"total":    len(sns),
+	})
+
+	// Step 3 — build output preserving original order
 	out := make(lumera.Supernodes, 0, len(sns))
 	for i, sn := range sns {
 		if keep[i] {
