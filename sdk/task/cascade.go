@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/supernodeservice"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
@@ -44,6 +45,21 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		t.LogEvent(ctx, event.SDKSupernodesUnavailable, "Supernodes unavailable", event.EventData{event.KeyError: err.Error()})
 		t.LogEvent(ctx, event.SDKTaskFailed, "Task failed", event.EventData{event.KeyError: err.Error()})
 		return err
+	}
+
+	// Log all supernodes fetched
+	logtrace.Info(ctx, "Fetched supernodes from chain", logtrace.Fields{"total_count": len(supernodes), "height": t.Action.Height})
+	for i, sn := range supernodes {
+		endpoint := sn.GrpcEndpoint
+		if endpoint == "" {
+			endpoint = sn.CosmosAddress
+		}
+		logtrace.Info(ctx, "Supernode from chain", logtrace.Fields{
+			"index":          i + 1,
+			"cosmos_address": sn.CosmosAddress,
+			"endpoint":       endpoint,
+			"state":          sn.State,
+		})
 	}
 
 	// 2 - Pre-filter: balance & health concurrently -> XOR rank, then hand over
@@ -125,6 +141,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			event.KeySupernodeAddress: sn.CosmosAddress,
 			event.KeyIteration:        iteration,
 		})
+
 		return nil // success
 	}
 	if attempted == 0 {
@@ -153,6 +170,12 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 	t.LogEvent(ctx, event.SDKConnectionEstablished, "Connection to supernode established", event.EventData{
 		event.KeySupernode:        sn.GrpcEndpoint,
 		event.KeySupernodeAddress: sn.CosmosAddress,
+	})
+
+	// Log the successful connection BEFORE upload starts
+	logtrace.Info(ctx, "Successfully connected to supernode", logtrace.Fields{
+		"endpoint":       sn.GrpcEndpoint,
+		"cosmos_address": sn.CosmosAddress,
 	})
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {

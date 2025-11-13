@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
@@ -92,6 +93,22 @@ func (t *BaseTask) fetchSupernodes(ctx context.Context, height int64) (lumera.Su
 	if len(sns) > 10 {
 		sns = sns[:10]
 	}
+
+	// Log all fetched supernodes
+	logtrace.Info(ctx, "Fetched supernodes from chain", logtrace.Fields{"total_count": len(sns), "height": height})
+	for i, sn := range sns {
+		endpoint := sn.GrpcEndpoint
+		if endpoint == "" {
+			endpoint = sn.CosmosAddress // fallback to address if endpoint not available
+		}
+		logtrace.Info(ctx, "Supernode from chain", logtrace.Fields{
+			"index":          i + 1,
+			"cosmos_address": sn.CosmosAddress,
+			"endpoint":       endpoint,
+			"state":          sn.State,
+		})
+	}
+
 	return sns, nil
 }
 
