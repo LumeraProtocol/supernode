@@ -46,6 +46,13 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 		return err
 	}
 
+	t.logger.Debug(ctx, "Fetched supernodes",
+		map[string]interface{}{
+			"count": len(supernodes),
+			"list":  supernodes.String(),
+		},
+	)
+
 	// 2 - Pre-filter: balance & health concurrently -> XOR rank, then hand over
 	originalCount := len(supernodes)
 	supernodes, preClients := t.filterEligibleSupernodesParallel(ctx, supernodes)
@@ -161,9 +168,23 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 	// Use ctx directly; per-phase timers are applied inside the adapter
 	resp, err := client.RegisterCascade(ctx, req)
 	if err != nil {
+		t.logger.Error(ctx, "RegisterCascade RPC failed",
+			map[string]interface{}{
+				"supernode": sn.GrpcEndpoint,
+				"address":   sn.CosmosAddress,
+				"error":     err.Error(),
+			},
+		)
 		return fmt.Errorf("upload to %s: %w", sn.CosmosAddress, err)
 	}
 	if !resp.Success {
+		t.logger.Error(ctx, "RegisterCascade RPC rejected",
+			map[string]interface{}{
+				"supernode": sn.GrpcEndpoint,
+				"address":   sn.CosmosAddress,
+				"message":   resp.Message,
+			},
+		)
 		return fmt.Errorf("upload rejected by %s: %s", sn.CosmosAddress, resp.Message)
 	}
 

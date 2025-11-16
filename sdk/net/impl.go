@@ -76,7 +76,9 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		targetSupernode.GrpcEndpoint,
 	)
 
-	logger.Info(ctx, "Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
+	logger.Debug(ctx, "Preparing to connect to supernode securely",
+		"endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress,
+		"local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions
@@ -93,7 +95,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 			targetSupernode.CosmosAddress, err)
 	}
 
-	logger.Info(ctx, "Connected to supernode securely", "address", targetSupernode.CosmosAddress, "endpoint", targetSupernode.GrpcEndpoint)
+	logger.Debug(ctx, "Connected to supernode securely", "address", targetSupernode.CosmosAddress, "endpoint", targetSupernode.GrpcEndpoint)
 
 	// Create service clients
 	cascadeClient := supernodeservice.NewCascadeAdapter(
@@ -116,9 +118,7 @@ func (c *supernodeClient) RegisterCascade(ctx context.Context, in *supernodeserv
 	if err != nil {
 		return nil, fmt.Errorf("cascade registration failed: %w", err)
 	}
-
-	c.logger.Info(ctx, "Cascade registered successfully",
-		"actionID", in.ActionID, "taskId", in.TaskId)
+	c.logger.Info(ctx, "Cascade Registration request sent to supernode", "actionID", in.ActionID, "taskId", in.TaskId)
 
 	return resp, nil
 }
@@ -140,7 +140,7 @@ func (c *supernodeClient) GetSupernodeStatus(ctx context.Context) (*pb.StatusRes
 		return nil, fmt.Errorf("failed to get supernode status: %w", err)
 	}
 
-	c.logger.Debug(ctx, "Supernode status retrieved successfully")
+	c.logger.Debug(ctx, "Supernode status retrieved successfully", "response", resp.String())
 	return resp, nil
 }
 

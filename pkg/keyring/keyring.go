@@ -173,3 +173,11 @@ func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
 	sig, _, err := kr.SignByAddress(addr, bz, signing.SignMode_SIGN_MODE_DIRECT)
 	return sig, err
 }
+
+func GetAddress(kr sdkkeyring.Keyring, name string) (types.AccAddress, error) {
+	rec, err := kr.Key(name)
+	if err != nil {
+		return nil, err
+	}
+	return rec.GetAddress()
+}
