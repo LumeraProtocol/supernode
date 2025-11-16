@@ -45,7 +45,12 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 	}
 	// 2 - Pre-filter: balance & health concurrently -> XOR rank
 	originalCount := len(supernodes)
-	supernodes, preClients := t.filterEligibleSupernodesParallel(ctx, supernodes)
+	supernodes, preClients, err := t.filterEligibleSupernodesParallel(ctx, supernodes)
+	if err != nil {
+		t.LogEvent(ctx, event.SDKTaskFailed, "task failed during pre-filtering", event.EventData{event.KeyError: err.Error()})
+		return err
+	}
+
 	supernodes = t.orderByXORDistance(supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "super-nodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
 
@@ -61,10 +66,14 @@ func (t *CascadeDownloadTask) Run(ctx context.Context) error {
 
 func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supernodes lumera.Supernodes, preClients map[string]net.SupernodeClient) error {
 	factoryCfg := net.FactoryConfig{
-		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
-		PeerType:           t.config.Account.PeerType,
+		KeyName:  t.config.Account.KeyName,
+		PeerType: t.config.Account.PeerType,
 	}
-	clientFactory := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
+	clientFactory, err := net.NewClientFactory(ctx, t.logger, t.keyring, t.client, factoryCfg)
+	if err != nil {
+		t.LogEvent(ctx, event.SDKTaskFailed, "Failed to create client factory", event.EventData{event.KeyError: err.Error()})
+		return fmt.Errorf("failed to create client factory: %w", err)
+	}
 
 	// Ensure any unused preClients are closed when we return
 	defer func() {

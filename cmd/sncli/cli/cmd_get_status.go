@@ -11,7 +11,7 @@ func (c *CLI) GetSupernodeStatus() error {
 
 	resp, err := c.snClient.GetSupernodeStatus(context.Background())
 	if err != nil {
-		return fmt.Errorf("Get supernode status failed: %v", err)
+		return fmt.Errorf("get supernode status failed: %v", err)
 	}
 	fmt.Println("Supernode Status:")
 	fmt.Printf("   Version: %s\n", resp.Version)
