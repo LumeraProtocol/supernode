@@ -18,6 +18,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 	"github.com/LumeraProtocol/supernode/v2/pkg/random"
+	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 
 const (
 	defaultTimeout       = 30 * time.Second
-	defaultConnWaitTime  = 10 * time.Second
+	defaultConnWaitTime  = 12 * time.Second
 	defaultRetryWaitTime = 1 * time.Second
 	maxRetries           = 3
 
@@ -69,6 +70,7 @@ type Client struct {
 	creds       credentials.TransportCredentials
 	builder     DialOptionBuilder
 	connHandler ConnectionHandler
+	logger      log.Logger
 }
 
 // ClientOptions contains options for creating a new client
@@ -97,6 +99,8 @@ type ClientOptions struct {
 	UserAgent         string        // User-Agent header value for all requests
 	Authority         string        // Value to use as the :authority pseudo-header
 	MinConnectTimeout time.Duration // Minimum time to attempt connection before failing
+
+	Logger log.Logger
 }
 
 // Exponential backoff configuration
@@ -213,16 +217,36 @@ var waitForConnection = func(ctx context.Context, conn ClientConn, timeout time.
 
 	for {
 		state := conn.GetState()
+
+		// Debug log for every state observation
+		logtrace.Debug(timeoutCtx, "gRPC connection state",
+			logtrace.Fields{
+				"state": state.String(),
+			},
+		)
+
 		switch state {
 		case connectivity.Ready:
+			logtrace.Debug(timeoutCtx, "gRPC connection is READY", nil)
 			return nil
+
 		case connectivity.Shutdown:
+			logtrace.Error(timeoutCtx, "gRPC connection is SHUTDOWN", nil)
 			return fmt.Errorf("grpc connection is shutdown")
+
 		case connectivity.TransientFailure:
+			logtrace.Error(timeoutCtx, "gRPC connection in TRANSIENT_FAILURE", nil)
 			return fmt.Errorf("grpc connection is in transient failure")
+
 		default:
-			// For Idle and Connecting states, wait for state change
+			// Idle / Connecting – wait for state change
 			if !conn.WaitForStateChange(timeoutCtx, state) {
+				logtrace.Error(timeoutCtx, "Timeout waiting for gRPC connection state change",
+					logtrace.Fields{
+						"last_state": state.String(),
+						"timeout":    timeout.String(),
+					},
+				)
 				return fmt.Errorf("timeout waiting for grpc connection state change")
 			}
 		}

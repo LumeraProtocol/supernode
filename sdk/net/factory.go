@@ -44,6 +44,7 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 	// Increase per-stream window to provide headroom for first data chunk + events
 	opts.InitialWindowSize = 12 * 1024 * 1024     // 8MB per-stream window
 	opts.InitialConnWindowSize = 64 * 1024 * 1024 // 64MB per-connection window
+	opts.Logger = logger
 
 	return &ClientFactory{
 		logger:        logger,

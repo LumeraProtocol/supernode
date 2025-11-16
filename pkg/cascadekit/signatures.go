@@ -7,6 +7,12 @@ import (
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+
+	actionkeeper "github.com/LumeraProtocol/lumera/x/action/v1/keeper"
+
+	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+
+	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
 // Signer is a function that signs the provided message and returns the raw signature bytes.
@@ -82,4 +88,44 @@ func CreateSignatures(layout codec.Layout, signer Signer, ic, max uint32) (index
 		return "", nil, err
 	}
 	return indexSignatureFormat, indexIDs, nil
+}
+
+// adr36SignerForKeyring creates a signer that signs ADR-36 doc bytes
+// for the given signer address. The "msg" we pass in is the *message*
+// (layoutB64, indexJSON, etc.), and this helper wraps it into ADR-36.
+func adr36SignerForKeyring(
+	kr sdkkeyring.Keyring,
+	keyName string,
+	signerAddr string,
+) Signer {
+	return func(msg []byte) ([]byte, error) {
+		// msg is the cleartext message we want to sign (e.g., layoutB64 or index JSON string)
+		dataB64 := base64.StdEncoding.EncodeToString(msg)
+
+		// Build ADR-36 sign bytes: signerAddr + base64(message)
+		doc, err := actionkeeper.MakeADR36AminoSignBytes(signerAddr, dataB64)
+		if err != nil {
+			return nil, err
+		}
+
+		// Now sign the ADR-36 doc bytes with the keyring (direct secp256k1)
+		return keyringpkg.SignBytes(kr, keyName, doc)
+	}
+}
+
+func CreateSignaturesWithKeyringADR36(
+	layout codec.Layout,
+	kr sdkkeyring.Keyring,
+	keyName string,
+	ic, max uint32,
+) (string, []string, error) {
+	// Resolve signer bech32 address from keyring
+	addr, err := keyringpkg.GetAddress(kr, keyName)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve signer address: %w", err)
+	}
+
+	signer := adr36SignerForKeyring(kr, keyName, addr.String())
+
+	return CreateSignatures(layout, signer, ic, max)
 }
