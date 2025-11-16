@@ -297,7 +297,10 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Requesting cascade action with metadata: %s", metadata)
 	t.Logf("Action type: %s, Price: %s, Expiration: %s", actionType, autoPrice, expirationTime)
 
-	response, _ := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, autoPrice, expirationTime)
+	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, autoPrice, expirationTime)
+	require.NoError(t, err, "RequestAction failed")
+
+	require.NotNil(t, resp, "RequestAction returned nil response")
 
 	txresp := response.TxResponse
 
@@ -356,38 +359,50 @@ func TestCascadeE2E(t *testing.T) {
 	// Step 9: Subscribe to all events and extract tx hash
 	// ---------------------------------------
 
-    // Channels to receive async signals
-    txHashCh := make(chan string, 1)
-    completionCh := make(chan bool, 1)
-    errCh := make(chan string, 1)
+	// Channels to receive async signals
+	txHashCh := make(chan string, 1)
+	completionCh := make(chan bool, 1)
+	errCh := make(chan string, 1)
 
-    // Subscribe to ALL events (non-blocking sends to avoid handler stalls)
-    err = actionClient.SubscribeToAllEvents(context.Background(), func(ctx context.Context, e event.Event) {
-        // Log every event for debugging and capture key ones
-        t.Logf("SDK event: type=%s data=%v", e.Type, e.Data)
-        // Only capture TxhasReceived events
-        if e.Type == event.SDKTaskTxHashReceived {
-            if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
-                // Non-blocking send; drop if buffer full
-                select { case txHashCh <- txHash: default: }
-            }
-        }
+	// Subscribe to ALL events (non-blocking sends to avoid handler stalls)
+	err = actionClient.SubscribeToAllEvents(context.Background(), func(ctx context.Context, e event.Event) {
+		// Log every event for debugging and capture key ones
+		t.Logf("SDK event: type=%s data=%v", e.Type, e.Data)
+		// Only capture TxhasReceived events
+		if e.Type == event.SDKTaskTxHashReceived {
+			if txHash, ok := e.Data[event.KeyTxHash].(string); ok && txHash != "" {
+				// Non-blocking send; drop if buffer full
+				select {
+				case txHashCh <- txHash:
+				default:
+				}
+			}
+		}
 
-        // Also monitor for task completion
-        if e.Type == event.SDKTaskCompleted {
-            // Non-blocking send; drop if buffer full
-            select { case completionCh <- true: default: }
-        }
-        // Capture task failures and propagate error message to main goroutine
-        if e.Type == event.SDKTaskFailed {
-            if msg, ok := e.Data[event.KeyError].(string); ok && msg != "" {
-                select { case errCh <- msg: default: }
-            } else {
-                select { case errCh <- "task failed (no error message)" : default: }
-            }
-        }
-    })
-    require.NoError(t, err, "Failed to subscribe to events")
+		// Also monitor for task completion
+		if e.Type == event.SDKTaskCompleted {
+			// Non-blocking send; drop if buffer full
+			select {
+			case completionCh <- true:
+			default:
+			}
+		}
+		// Capture task failures and propagate error message to main goroutine
+		if e.Type == event.SDKTaskFailed {
+			if msg, ok := e.Data[event.KeyError].(string); ok && msg != "" {
+				select {
+				case errCh <- msg:
+				default:
+				}
+			} else {
+				select {
+				case errCh <- "task failed (no error message)":
+				default:
+				}
+			}
+		}
+	})
+	require.NoError(t, err, "Failed to subscribe to events")
 
 	// Start cascade operation
 
@@ -402,26 +417,28 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to start cascade operation")
 	t.Logf("Cascade operation started with task ID: %s", taskID)
 
-    // Wait for both tx-hash and completion with a timeout
-    var recievedhash string
-    done := false
-    timeout := time.After(2 * time.Minute)
+	// Wait for both tx-hash and completion with a timeout
+	var recievedhash string
+	done := false
+	timeout := time.After(2 * time.Minute)
 waitLoop:
-    for {
-        if recievedhash != "" && done {
-            break waitLoop
-        }
-        select {
-        case h := <-txHashCh:
-            if recievedhash == "" { recievedhash = h }
-        case <-completionCh:
-            done = true
-        case emsg := <-errCh:
-            t.Fatalf("cascade task reported failure: %s", emsg)
-        case <-timeout:
-            t.Fatalf("timeout waiting for events; recievedhash=%q done=%v", recievedhash, done)
-        }
-    }
+	for {
+		if recievedhash != "" && done {
+			break waitLoop
+		}
+		select {
+		case h := <-txHashCh:
+			if recievedhash == "" {
+				recievedhash = h
+			}
+		case <-completionCh:
+			done = true
+		case emsg := <-errCh:
+			t.Fatalf("cascade task reported failure: %s", emsg)
+		case <-timeout:
+			t.Fatalf("timeout waiting for events; recievedhash=%q done=%v", recievedhash, done)
+		}
+	}
 
 	t.Logf("Received transaction hash: %s", recievedhash)
 
