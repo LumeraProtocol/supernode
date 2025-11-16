@@ -278,13 +278,18 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	// Create signatures from the layout struct
 	// get bech32 address for this key
 
-	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36(
+	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyring(
 		layout,
 		c.keyring,
 		c.config.Account.KeyName,
 		ic,
 		max,
 	)
+
+	if err != nil {
+		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create signatures: %w", err)
+	}
+
 	// Compute data hash (blake3) as base64 using a streaming file hash to avoid loading entire file
 	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
