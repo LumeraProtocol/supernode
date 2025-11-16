@@ -74,7 +74,6 @@ import (
 
 // Account configuration
 accountConfig := config.AccountConfig{
-    LocalCosmosAddress: "lumera1abc...",     // Your cosmos address
     KeyName:            "my-key",            // Key name in keyring  
     Keyring:            keyring,             // Cosmos SDK keyring instance
     // PeerType is optional - defaults to SIMPLENODE when omitted (recommended for most users)
@@ -98,7 +97,6 @@ if err := sdkConfig.Validate(); err != nil {
 ### Required Fields
 
 **AccountConfig:**
-- `LocalCosmosAddress`: Your Lumera cosmos address (e.g., "lumera1abc...")
 - `KeyName`: Name of the key in your keyring
 - `Keyring`: Initialized Cosmos SDK keyring containing your keys
 - `PeerType`: Peer type from securekeyx (optional, defaults to SIMPLENODE when left empty, which is suitable for most use cases)
@@ -129,7 +127,6 @@ kr, err := keyring.New("app-name", "file", "/path/to/keys", nil)
 ```go
 config := config.NewConfig(
     config.AccountConfig{
-        LocalCosmosAddress: "lumera1...",
         KeyName:            "my-key",
         Keyring:            keyring,
     },
@@ -158,7 +155,6 @@ import (
 
 // Set up configuration
 accountConfig := config.AccountConfig{
-    LocalCosmosAddress: "lumera1...", // Your cosmos address
     KeyName:            "your-key",   // Name of the key in your keyring
     Keyring:            keyring,      // Cosmos SDK keyring instance
 }

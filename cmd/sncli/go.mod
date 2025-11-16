@@ -10,7 +10,7 @@ replace (
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
-	github.com/LumeraProtocol/lumera v1.8.0
+	github.com/LumeraProtocol/lumera v1.8.4
 	github.com/LumeraProtocol/supernode/v2 v2.3.88
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/spf13/cobra v1.10.1

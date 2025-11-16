@@ -9,10 +9,9 @@ import (
 
 // AccountConfig holds peer-to-peer addresses, ports, etc.
 type AccountConfig struct {
-	LocalCosmosAddress string
-	KeyName            string
-	Keyring            cosmoskeyring.Keyring
-	PeerType           securekeyx.PeerType
+	KeyName  string
+	Keyring  cosmoskeyring.Keyring
+	PeerType securekeyx.PeerType
 }
 
 // LumeraConfig wraps all chain-specific dials.
@@ -35,8 +34,6 @@ func NewConfig(account AccountConfig, lumera LumeraConfig) Config {
 
 func (c Config) Validate() error {
 	switch {
-	case c.Account.LocalCosmosAddress == "":
-		return errors.New("config: Network.LocalCosmosAddress is required")
 	case c.Lumera.GRPCAddr == "":
 		return errors.New("config: Lumera.GRPCAddr is required")
 	case c.Lumera.ChainID == "":

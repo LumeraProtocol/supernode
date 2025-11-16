@@ -272,7 +272,7 @@ func TestCascadeE2E(t *testing.T) {
 
 	// Build action client for metadata generation and cascade operations
 	// Use the same account that submits RequestAction so signatures match the on-chain creator
-	accConfig := sdkconfig.AccountConfig{LocalCosmosAddress: userAddress, KeyName: userKeyName, Keyring: keplrKeyring}
+	accConfig := sdkconfig.AccountConfig{KeyName: userKeyName, Keyring: keplrKeyring}
 	lumraConfig := sdkconfig.LumeraConfig{GRPCAddr: lumeraGRPCAddr, ChainID: lumeraChainID}
 	actionConfig := sdkconfig.Config{Account: accConfig, Lumera: lumraConfig}
 	actionClient, err := action.NewClient(context.Background(), actionConfig, nil)

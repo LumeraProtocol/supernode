@@ -115,9 +115,9 @@ func (t *BaseTask) orderByXORDistance(sns lumera.Supernodes) lumera.Supernodes {
 //   - For each node, run Health (incl. dial) and Balance concurrently under one timeout.
 //   - Early-cancel sibling work on definitive failure to save time.
 //   - Reuse healthy client connections during registration to skip a second dial.
-func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns lumera.Supernodes) (lumera.Supernodes, map[string]net.SupernodeClient) {
+func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns lumera.Supernodes) (lumera.Supernodes, map[string]net.SupernodeClient, error) {
 	if len(sns) == 0 {
-		return sns, nil
+		return sns, nil, nil
 	}
 
 	// Step 0 — shared state for this pass
@@ -133,10 +133,14 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 	denom := txmod.DefaultFeeDenom
 
 	factoryCfg := net.FactoryConfig{
-		LocalCosmosAddress: t.config.Account.LocalCosmosAddress,
-		PeerType:           t.config.Account.PeerType,
+		KeyName:  t.config.Account.KeyName,
+		PeerType: t.config.Account.PeerType,
 	}
-	clientFactory := net.NewClientFactory(parent, t.logger, t.keyring, t.client, factoryCfg)
+	clientFactory, err := net.NewClientFactory(parent, t.logger, t.keyring, t.client, factoryCfg)
+	if err != nil {
+		t.LogEvent(parent, event.SDKTaskFailed, "Failed to create client factory", event.EventData{event.KeyError: err.Error()})
+		return nil, nil, fmt.Errorf("failed to create client factory: %w", err)
+	}
 
 	// Step 1 — spawn bounded goroutines, one per supernode
 	for i, sn := range sns {
@@ -273,5 +277,5 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 			out = append(out, sn)
 		}
 	}
-	return out, preClients
+	return out, preClients, nil
 }

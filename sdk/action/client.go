@@ -60,6 +60,7 @@ type ClientImpl struct {
 	logger       log.Logger
 	keyring      keyring.Keyring
 	lumeraClient lumera.Client
+	signerAddr   string
 }
 
 // Verify interface compliance at compile time
@@ -69,6 +70,11 @@ var _ Client = (*ClientImpl)(nil)
 func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Client, error) {
 	if logger == nil {
 		logger = log.NewNoopLogger()
+	}
+
+	addr, err := keyringpkg.GetAddress(config.Account.Keyring, config.Account.KeyName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve signer address: %w", err)
 	}
 
 	// Create lumera client once
@@ -96,6 +102,7 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Cl
 		logger:       logger,
 		keyring:      config.Account.Keyring,
 		lumeraClient: lumeraClient,
+		signerAddr:   addr.String(),
 	}, nil
 }
 
@@ -196,10 +203,14 @@ func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress st
 	}
 
 	// Create network client factory
-	clientFactory := net.NewClientFactory(ctx, c.logger, c.keyring, c.lumeraClient, net.FactoryConfig{
-		LocalCosmosAddress: c.config.Account.LocalCosmosAddress,
-		PeerType:           c.config.Account.PeerType,
+	clientFactory, err := net.NewClientFactory(ctx, c.logger, c.keyring, c.lumeraClient, net.FactoryConfig{
+		KeyName:  c.config.Account.KeyName,
+		PeerType: c.config.Account.PeerType,
 	})
+	if err != nil {
+		c.logger.Error(ctx, "Failed to create client factory", "error", err)
+		return nil, fmt.Errorf("failed to create client factory: %w", err)
+	}
 
 	// Create client for the specific supernode
 	supernodeClient, err := clientFactory.CreateClient(ctx, lumeraSupernode)
@@ -354,4 +365,8 @@ func (c *ClientImpl) GenerateDownloadSignature(ctx context.Context, actionID, cr
 		return "", fmt.Errorf("sign download payload: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+func (c *ClientImpl) signerAddress() string {
+	return c.signerAddr
 }

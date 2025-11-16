@@ -2,9 +2,9 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
-	"fmt"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -23,7 +23,7 @@ const (
 	// defaultConfigFileName is the default path to the configuration file.
 	defaultConfigFileName = "config.toml"
 
-	// defaultConfigFolder is the default folder for configuration files.	
+	// defaultConfigFolder is the default folder for configuration files.
 	defaultConfigFolder = "~/.sncli"
 )
 
@@ -74,9 +74,9 @@ func (c *CLI) loadCLIConfig() error {
 	_, err := toml.DecodeFile(path, &c.CfgOpts)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("Config file not found at %s", path)
+			return fmt.Errorf("config file not found at %s", path)
 		}
-		return fmt.Errorf("Failed to load config from %s: %v", path, err)
+		return fmt.Errorf("failed to load config from %s: %v", path, err)
 	}
 	c.ConfigPath = path
 
@@ -120,9 +120,8 @@ func (c *CLI) Initialize() error {
 	// Create Lumera client adapter
 	c.SdkConfig = sdkcfg.NewConfig(
 		sdkcfg.AccountConfig{
-			LocalCosmosAddress: c.CfgOpts.Keyring.LocalAddress,
-			KeyName:            c.CfgOpts.Keyring.KeyName,
-			Keyring:            c.kr,
+			KeyName: c.CfgOpts.Keyring.KeyName,
+			Keyring: c.kr,
 		},
 		sdkcfg.LumeraConfig{
 			GRPCAddr: c.CfgOpts.Lumera.GRPCAddr,
@@ -167,18 +166,20 @@ func (c *CLI) snClientInit() {
 		GrpcEndpoint:  c.CfgOpts.Supernode.GRPCEndpoint,
 	}
 
-	clientFactory := sdknet.NewClientFactory(
+	clientFactory, err := sdknet.NewClientFactory(
 		context.Background(),
 		sdklog.NewNoopLogger(),
 		c.kr,
 		c.lumeraClient,
 		sdknet.FactoryConfig{
-			LocalCosmosAddress: c.CfgOpts.Keyring.LocalAddress,
-			PeerType:           1, // Simplenode
+			KeyName:  c.SdkConfig.Account.KeyName,
+			PeerType: 1, // Simplenode
 		},
 	)
+	if err != nil {
+		log.Fatalf("Failed to create client factory: %v", err)
+	}
 
-	var err error
 	c.snClient, err = clientFactory.CreateClient(context.Background(), supernode)
 	if err != nil {
 		log.Fatalf("Supernode client init failed: %v", err)

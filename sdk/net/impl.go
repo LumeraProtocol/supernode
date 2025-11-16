@@ -14,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -49,19 +50,21 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 	if keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if factoryConfig.LocalCosmosAddress == "" {
-		return nil, fmt.Errorf("local cosmos address cannot be empty")
-	}
 
 	if factoryConfig.PeerType == 0 {
 		factoryConfig.PeerType = securekeyx.Simplenode
+	}
+
+	addr, err := keyringpkg.GetAddress(keyring, factoryConfig.KeyName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve signer address: %w", err)
 	}
 
 	// Create client credentials
 	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
 		CommonOptions: ltc.CommonOptions{
 			Keyring:       keyring,
-			LocalIdentity: factoryConfig.LocalCosmosAddress,
+			LocalIdentity: addr.String(),
 			PeerType:      factoryConfig.PeerType,
 			Validator:     lumeraClient,
 		},
@@ -78,7 +81,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 
 	logger.Debug(ctx, "Preparing to connect to supernode securely",
 		"endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress,
-		"local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
+		"local_id", addr.String(), "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions

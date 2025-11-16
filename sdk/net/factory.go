@@ -9,13 +9,14 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
+	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
 // FactoryConfig contains configuration for the ClientFactory
 type FactoryConfig struct {
-	LocalCosmosAddress string
-	PeerType           securekeyx.PeerType
+	KeyName  string
+	PeerType securekeyx.PeerType
 }
 
 // ClientFactory creates and manages supernode clients
@@ -25,16 +26,23 @@ type ClientFactory struct {
 	clientOptions *client.ClientOptions
 	config        FactoryConfig
 	lumeraClient  lumera.Client
+	signerAddr    string
 }
 
 // NewClientFactory creates a new client factory with the provided dependencies
-func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Keyring, lumeraClient lumera.Client, config FactoryConfig) *ClientFactory {
+func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Keyring, lumeraClient lumera.Client, config FactoryConfig) (*ClientFactory, error) {
 	if logger == nil {
 		logger = log.NewNoopLogger()
 	}
 
-	logger.Debug(ctx, "Creating supernode client factory",
-		"localAddress", config.LocalCosmosAddress)
+	addr, err := keyringpkg.GetAddress(keyring, config.KeyName)
+	if err != nil {
+		logger.Error(ctx, "failed to resolve signer address from keyring",
+			map[string]interface{}{"key_name": config.KeyName, "error": err.Error()},
+		)
+
+		return nil, fmt.Errorf("resolve signer address from keyring: %w", err)
+	}
 
 	// Tuned for 1GB max files with 4MB chunks
 	// Reduce in-flight memory by aligning windows and msg sizes to chunk size.
@@ -52,7 +60,8 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 		clientOptions: opts,
 		config:        config,
 		lumeraClient:  lumeraClient,
-	}
+		signerAddr:    addr.String(),
+	}, nil
 }
 
 // CreateClient creates a client for a specific supernode
