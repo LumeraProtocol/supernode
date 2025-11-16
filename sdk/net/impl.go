@@ -76,7 +76,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		targetSupernode.GrpcEndpoint,
 	)
 
-	logger.Info(ctx, "Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
+	fmt.Println("Connecting to supernode securely", "endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress, "local_id", factoryConfig.LocalCosmosAddress, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions

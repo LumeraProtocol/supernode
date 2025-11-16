@@ -42,3 +42,16 @@ type Supernode struct {
 	GrpcEndpoint  string          // Network endpoint for gRPC communication
 	State         SUPERNODE_STATE // Current state of the supernode
 }
+
+func (s Supernodes) String() string {
+	result := "["
+	for i, sn := range s {
+		result += sn.CosmosAddress + "@" + sn.GrpcEndpoint
+
+		if i < len(s)-1 {
+			result += ", "
+		}
+	}
+	result += "]"
+	return result
+}

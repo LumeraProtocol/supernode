@@ -60,7 +60,7 @@ func (f *ClientFactory) CreateClient(ctx context.Context, supernode lumera.Super
 		return nil, fmt.Errorf("supernode has no gRPC endpoint: %s", supernode.CosmosAddress)
 	}
 
-	f.logger.Debug(ctx, "Creating supernode client",
+	f.logger.Info(ctx, "Creating supernode client",
 		"supernode", supernode.CosmosAddress,
 		"endpoint", supernode.GrpcEndpoint)
 

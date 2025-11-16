@@ -29,7 +29,7 @@ const (
 
 const (
 	defaultTimeout       = 30 * time.Second
-	defaultConnWaitTime  = 10 * time.Second
+	defaultConnWaitTime  = 20 * time.Second
 	defaultRetryWaitTime = 1 * time.Second
 	maxRetries           = 3
 
@@ -213,16 +213,22 @@ var waitForConnection = func(ctx context.Context, conn ClientConn, timeout time.
 
 	for {
 		state := conn.GetState()
+		// 👀 debug: see state transitions
+		fmt.Fprintf(os.Stderr, "[grpc-debug] state=%s\n", state.String())
+
 		switch state {
 		case connectivity.Ready:
+			fmt.Fprintln(os.Stderr, "[grpc-debug] connection is READY")
 			return nil
 		case connectivity.Shutdown:
+			fmt.Fprintln(os.Stderr, "[grpc-debug] connection is SHUTDOWN")
 			return fmt.Errorf("grpc connection is shutdown")
 		case connectivity.TransientFailure:
+			fmt.Fprintln(os.Stderr, "[grpc-debug] connection in TRANSIENT_FAILURE")
 			return fmt.Errorf("grpc connection is in transient failure")
 		default:
-			// For Idle and Connecting states, wait for state change
 			if !conn.WaitForStateChange(timeoutCtx, state) {
+				fmt.Fprintln(os.Stderr, "[grpc-debug] state change TIMEOUT")
 				return fmt.Errorf("timeout waiting for grpc connection state change")
 			}
 		}

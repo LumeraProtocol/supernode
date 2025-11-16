@@ -43,7 +43,23 @@ func VerifyStringRawOrADR36(message string, sigB64 string, signer string, verify
 
 // VerifyIndex verifies the creator's signature over indexB64 (string), using the given verifier.
 func VerifyIndex(indexB64 string, sigB64 string, signer string, verify Verifier) error {
-	return VerifyStringRawOrADR36(indexB64, sigB64, signer, verify)
+	// 1) Legacy: message = indexB64
+	if err := VerifyStringRawOrADR36(indexB64, sigB64, signer, verify); err == nil {
+		return nil
+	}
+
+	// 2) JS-style: message = index JSON string (decoded from indexB64)
+	raw, err := base64.StdEncoding.DecodeString(indexB64)
+	if err != nil {
+		return fmt.Errorf("invalid indexB64: %w", err)
+	}
+	indexJSON := string(raw)
+
+	if err := VerifyStringRawOrADR36(indexJSON, sigB64, signer, verify); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("signature verification failed for both legacy and ADR-36 index schemes")
 }
 
 // VerifyLayout verifies the layout signature over base64(JSON(layout)) bytes.

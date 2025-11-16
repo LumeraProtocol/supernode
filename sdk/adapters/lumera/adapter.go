@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
@@ -404,8 +405,8 @@ func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supe
 		}
 
 		result = append(result, Supernode{
-			CosmosAddress: sn.SupernodeAccount,
-			GrpcEndpoint:  ipAddress,
+			CosmosAddress: strings.TrimSpace(sn.SupernodeAccount),
+			GrpcEndpoint:  strings.TrimSpace(ipAddress),
 			State:         SUPERNODE_STATE_ACTIVE,
 		})
 	}
