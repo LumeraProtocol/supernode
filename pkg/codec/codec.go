@@ -2,6 +2,8 @@ package codec
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 )
 
 // EncodeResponse represents the response of the encode request.
@@ -17,12 +19,49 @@ type Layout struct {
 
 // Block is the schema for each entry in the “blocks” array.
 type Block struct {
-	BlockID           int      `json:"block_id"`
-	EncoderParameters []uint8  `json:"encoder_parameters"`
-	OriginalOffset    int64    `json:"original_offset"`
-	Size              int64    `json:"size"`
-	Symbols           []string `json:"symbols"`
-	Hash              string   `json:"hash"`
+	BlockID           int                `json:"block_id"`
+	EncoderParameters EncoderParamsArray `json:"encoder_parameters"`
+	OriginalOffset    int64              `json:"original_offset"`
+	Size              int64              `json:"size"`
+	Symbols           []string           `json:"symbols"`
+	Hash              string             `json:"hash"`
+}
+
+// EncoderParamsArray is a custom type that marshals []uint8 as JSON array instead of base64 string.
+type EncoderParamsArray []uint8
+
+// MarshalJSON implements json.Marshaler to serialize as array instead of base64
+func (e EncoderParamsArray) MarshalJSON() ([]byte, error) {
+	arr := make([]int, len(e))
+	for i, v := range e {
+		arr[i] = int(v)
+	}
+	return json.Marshal(arr)
+}
+
+// UnmarshalJSON implements json.Unmarshaler to deserialize from either array or base64
+func (e *EncoderParamsArray) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as array first (WASM format)
+	var arr []int
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*e = make([]uint8, len(arr))
+		for i, v := range arr {
+			(*e)[i] = uint8(v)
+		}
+		return nil
+	}
+
+	// Fallback: unmarshal as base64 string
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return err
+	}
+	*e = decoded
+	return nil
 }
 
 // EncodeRequest represents the request to encode a file.
