@@ -2,10 +2,8 @@ package action
 
 import (
 	"context"
-	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -284,19 +282,17 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 		max = 50
 	}
 	// Pick a random initial counter in [1,100]
-	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
-	ic := uint32(rnd.Int64() + 1) // 1..100
-	// Create signatures from the layout struct
-	// get bech32 address for this key
+	//rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
+	ic := uint32(6)
 
-	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyring(
+	// Create signatures from the layout struct using ADR-36 scheme (JS compatible).
+	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36(
 		layout,
 		c.keyring,
 		c.config.Account.KeyName,
 		ic,
 		max,
 	)
-
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("create signatures: %w", err)
 	}
@@ -319,7 +315,6 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	exp := paramsResp.Params.ExpirationDuration
 
 	// Compute data size in KB for fee, rounding up to avoid underpaying
-	// Keep consistent with supernode verification which uses ceil(bytes/1024)
 	sizeBytes := fi.Size()
 	kb := (sizeBytes + 1023) / 1024 // int64 division
 	feeResp, err := c.lumeraClient.GetActionFee(ctx, strconv.FormatInt(kb, 10))
@@ -335,9 +330,9 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	return meta, price, expirationTime, nil
 }
 
-// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key.
+// GenerateStartCascadeSignatureFromFileDeprecated computes blake3(file) and signs it with the configured key.
 // Returns base64-encoded signature suitable for StartCascade.
-func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
+func (c *ClientImpl) GenerateStartCascadeSignatureFromFileDeprecated(ctx context.Context, filePath string) (string, error) {
 	// Compute blake3(file), encode as base64 string, and sign the string bytes
 	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
@@ -349,6 +344,31 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, 
 		return "", fmt.Errorf("sign hash string: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key
+// using the ADR-36 scheme, matching Keplr's signArbitrary(dataHash) behavior.
+// Returns base64-encoded signature suitable for StartCascade.
+func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
+	// Compute blake3(file), encode as base64 string
+	h, err := utils.Blake3HashFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("blake3: %w", err)
+	}
+	dataHashB64 := base64.StdEncoding.EncodeToString(h)
+
+	// Sign the dataHashB64 string using ADR-36 (same as JS / Keplr).
+	sigB64, err := cascadekit.SignADR36String(
+		c.keyring,
+		c.config.Account.KeyName,
+		c.signerAddr, // bech32 address resolved in NewClient
+		dataHashB64,
+	)
+	if err != nil {
+		return "", fmt.Errorf("sign adr36 hash string: %w", err)
+	}
+
+	return sigB64, nil
 }
 
 // GenerateDownloadSignature signs the payload "actionID" and returns base64 signature.
