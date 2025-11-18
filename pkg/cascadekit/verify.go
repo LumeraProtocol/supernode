@@ -14,7 +14,7 @@ import (
 type Verifier func(data []byte, signature []byte) error
 
 // VerifyStringRawOrADR36 verifies a signature over a message string in two passes:
-//  1. raw:   verify([]byte(message), sigRS)
+//  1. raw:    verify([]byte(message), sigRS)
 //  2. ADR-36: build amino-JSON sign bytes with data = base64(message) and verify
 //
 // The signature is provided as base64 (DER or 64-byte r||s), and coerced to 64-byte r||s.
@@ -27,9 +27,11 @@ func VerifyStringRawOrADR36(message string, sigB64 string, signer string, verify
 	if err != nil {
 		return fmt.Errorf("coerce signature: %w", err)
 	}
+	// 1) raw
 	if err := verify([]byte(message), sigRS); err == nil {
 		return nil
 	}
+	// 2) ADR-36
 	dataB64 := base64.StdEncoding.EncodeToString([]byte(message))
 	doc, err := actionkeeper.MakeADR36AminoSignBytes(signer, dataB64)
 	if err != nil {
@@ -42,6 +44,9 @@ func VerifyStringRawOrADR36(message string, sigB64 string, signer string, verify
 }
 
 // VerifyIndex verifies the creator's signature over indexB64 (string), using the given verifier.
+// It supports both:
+//   - legacy: message = indexB64
+//   - new (JS-style): message = index JSON string (decoded from indexB64)
 func VerifyIndex(indexB64 string, sigB64 string, signer string, verify Verifier) error {
 	// 1) Legacy: message = indexB64
 	if err := VerifyStringRawOrADR36(indexB64, sigB64, signer, verify); err == nil {
@@ -63,8 +68,28 @@ func VerifyIndex(indexB64 string, sigB64 string, signer string, verify Verifier)
 }
 
 // VerifyLayout verifies the layout signature over base64(JSON(layout)) bytes.
+//
+// It supports both:
+//   - legacy: message = base64(JSON(layout))
+//   - new:    message = JSON(layout) (decoded from base64)
 func VerifyLayout(layoutB64 []byte, sigB64 string, signer string, verify Verifier) error {
-	return VerifyStringRawOrADR36(string(layoutB64), sigB64, signer, verify)
+	msg := string(layoutB64)
+
+	// 1) Legacy: message = base64(layoutBytes)
+	if err := VerifyStringRawOrADR36(msg, sigB64, signer, verify); err == nil {
+		return nil
+	}
+
+	// 2) New-style: message = layout JSON (decoded from base64)
+	raw, err := base64.StdEncoding.DecodeString(msg)
+	if err == nil {
+		layoutJSON := string(raw)
+		if err2 := VerifyStringRawOrADR36(layoutJSON, sigB64, signer, verify); err2 == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("layout signature verification failed for both b64 and JSON schemes")
 }
 
 // VerifySingleBlock ensures the RaptorQ layout contains exactly one block.
