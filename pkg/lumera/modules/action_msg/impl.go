@@ -3,6 +3,7 @@ package action_msg
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
@@ -16,6 +17,7 @@ import (
 type module struct {
 	client   actiontypes.MsgClient
 	txHelper *txmod.TxHelper
+	mu       sync.Mutex
 }
 
 func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
@@ -49,6 +51,9 @@ func (m *module) RequestAction(ctx context.Context, actionType, metadata, price,
 		return nil, err
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
 		return createRequestActionMessage(creator, actionType, metadata, price, expirationTime), nil
 	})
@@ -58,6 +63,9 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
 		return createFinalizeActionMessage(creator, actionId, rqIdsIds)
