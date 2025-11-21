@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
-	"github.com/klauspost/compress/zstd"
+	"github.com/DataDog/zstd"
 )
 
 func TestExtractIndexAndCreatorSig_Strict(t *testing.T) {
@@ -32,9 +32,7 @@ func TestParseCompressedIndexFile_Strict(t *testing.T) {
 	}
 	payload := []byte(idxB64 + "." + base64.StdEncoding.EncodeToString([]byte("sig2")) + ".0")
 
-	enc, _ := zstd.NewWriter(nil)
-	defer enc.Close()
-	compressed := enc.EncodeAll(payload, nil)
+	compressed, _ := zstd.CompressLevel(nil, payload, 3)
 
 	got, err := ParseCompressedIndexFile(compressed)
 	if err != nil {
@@ -45,12 +43,12 @@ func TestParseCompressedIndexFile_Strict(t *testing.T) {
 	}
 
 	// malformed: only two segments
-	compressedBad := enc.EncodeAll([]byte("a.b"), nil)
+	compressedBad, _ := zstd.CompressLevel(nil, []byte("a.b"), 3)
 	if _, err := ParseCompressedIndexFile(compressedBad); err == nil {
 		t.Fatalf("expected error for two segments")
 	}
 	// malformed: four segments
-	compressedBad4 := enc.EncodeAll([]byte("a.b.c.d"), nil)
+	compressedBad4, _ := zstd.CompressLevel(nil, []byte("a.b.c.d"), 3)
 	if _, err := ParseCompressedIndexFile(compressedBad4); err == nil {
 		t.Fatalf("expected error for four segments")
 	}
