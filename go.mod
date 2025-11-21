@@ -7,6 +7,7 @@ replace github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/DataDog/zstd v1.5.7
 	github.com/LumeraProtocol/lumera v1.8.4
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
@@ -24,7 +25,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/json-iterator/go v1.1.12
-	github.com/klauspost/compress v1.18.0
 	github.com/kolesa-team/go-webp v1.0.4
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -60,7 +60,6 @@ require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
-	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -133,6 +132,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
