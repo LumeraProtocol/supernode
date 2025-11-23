@@ -3,6 +3,7 @@ package action_msg
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
@@ -16,6 +17,7 @@ import (
 type module struct {
 	client   actiontypes.MsgClient
 	txHelper *txmod.TxHelper
+	mu       sync.Mutex
 }
 
 func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
@@ -49,6 +51,9 @@ func (m *module) RequestAction(ctx context.Context, actionType, metadata, price,
 		return nil, err
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
 		return createRequestActionMessage(creator, actionType, metadata, price, expirationTime), nil
 	})
@@ -59,6 +64,9 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 		return nil, err
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
 		return createFinalizeActionMessage(creator, actionId, rqIdsIds)
 	})
@@ -68,11 +76,11 @@ func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
 	if config == nil {
 		return
 	}
-	m.txHelper.UpdateConfig(config)
-}
 
-func (m *module) GetTxHelper() *txmod.TxHelper {
-	return m.txHelper
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.txHelper.UpdateConfig(config)
 }
 
 // SimulateFinalizeCascadeAction builds the finalize message and performs a simulation
@@ -82,6 +90,9 @@ func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId str
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	// Gather account info and creator address
 	accountInfo, err := m.txHelper.GetAccountInfo(ctx)
