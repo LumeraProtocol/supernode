@@ -76,11 +76,11 @@ func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
 	if config == nil {
 		return
 	}
-	m.txHelper.UpdateConfig(config)
-}
 
-func (m *module) GetTxHelper() *txmod.TxHelper {
-	return m.txHelper
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.txHelper.UpdateConfig(config)
 }
 
 // SimulateFinalizeCascadeAction builds the finalize message and performs a simulation
@@ -90,6 +90,9 @@ func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId str
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	// Gather account info and creator address
 	accountInfo, err := m.txHelper.GetAccountInfo(ctx)
