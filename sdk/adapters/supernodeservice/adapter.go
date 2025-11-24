@@ -225,9 +225,7 @@ func (a *cascadeAdapter) CascadeSupernodeRegister(ctx context.Context, in *Casca
 		bytesRead += int64(n)
 		progress := float64(bytesRead) / float64(totalBytes) * 100
 
-		// Print upload progress directly to stdout
-		fmt.Printf("Upload progress: task_id=%s action_id=%s chunk_index=%d chunk_size=%d progress=%.1f%% bytes=%d/%d\n",
-			in.TaskId, in.ActionID, chunkIndex, n, progress, bytesRead, totalBytes)
+		a.logger.Info(ctx, "Upload progress", "taskID", in.TaskId, "actionID", in.ActionID, "chunkIndex", chunkIndex, "chunkSize", n, "progress", progress, "bytesRead", bytesRead, "totalBytes", totalBytes)
 
 		chunkIndex++
 	}
@@ -480,9 +478,13 @@ func (a *cascadeAdapter) CascadeSupernodeDownload(
 
 			a.logger.Debug(ctx, "received chunk", "chunk_index", chunkIndex, "chunk_size", len(data), "bytes_written", bytesWritten)
 
-			// Print download progress directly to stdout (similar to upload progress)
-			fmt.Printf("Download progress: action_id=%s chunk_index=%d chunk_size=%d bytes=%d\n",
-				in.ActionID, chunkIndex, len(data), bytesWritten)
+			// Emit download progress via logger instead of stdout
+			a.logger.Info(ctx, "Download progress",
+				"actionID", in.ActionID,
+				"chunkIndex", chunkIndex,
+				"chunkSize", len(data),
+				"bytesWritten", bytesWritten,
+			)
 		}
 	}
 
