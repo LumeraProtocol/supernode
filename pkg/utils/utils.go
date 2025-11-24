@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"math/big"
@@ -16,7 +15,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +22,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/klauspost/compress/zstd"
+	"github.com/DataDog/zstd"
 )
 
 const (
@@ -262,49 +260,22 @@ func Compress(data []byte, level int) ([]byte, error) {
 		return nil, fmt.Errorf("invalid compression level: %d - allowed levels are 1 - 4", level)
 	}
 
-	numCPU := runtime.NumCPU()
-	// Create a buffer to store compressed data
-	var compressedData bytes.Buffer
-
-	// Create a new Zstd encoder with concurrency set to the number of CPU cores
-	encoder, err := zstd.NewWriter(&compressedData, zstd.WithEncoderConcurrency(numCPU), zstd.WithEncoderLevel(zstd.EncoderLevel(level)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Zstd encoder: %v", err)
-	}
-
-	// Perform the compression
-	_, err = io.Copy(encoder, bytes.NewReader(data))
+	compressed, err := zstd.CompressLevel(nil, data, level)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress data: %v", err)
 	}
 
-	// Close the encoder to flush any remaining data
-	if err := encoder.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close encoder: %v", err)
-	}
-
-	return compressedData.Bytes(), nil
+	return compressed, nil
 }
 
 // Decompress decompresses the data
 func Decompress(data []byte) ([]byte, error) {
-	// Get the number of CPU cores available
-	numCPU := runtime.NumCPU()
-
-	// Create a new Zstd decoder with concurrency set to the number of CPU cores
-	decoder, err := zstd.NewReader(bytes.NewReader(data), zstd.WithDecoderConcurrency(numCPU))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Zstd decoder: %v", err)
-	}
-	defer decoder.Close()
-
-	// Perform the decompression
-	decompressedData, err := io.ReadAll(decoder)
+	decompressed, err := zstd.Decompress(nil, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decompress data: %v", err)
 	}
 
-	return decompressedData, nil
+	return decompressed, nil
 }
 
 // RandomDuration returns a random duration between min and max
@@ -319,28 +290,20 @@ func RandomDuration(min, max int) time.Duration {
 }
 
 func ZstdCompress(data []byte) ([]byte, error) {
-	encoder, err := zstd.NewWriter(nil)
+	compressed, err := zstd.CompressLevel(nil, data, 3)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create zstd encoder: %v", err)
+		return nil, fmt.Errorf("failed to compress with zstd: %v", err)
 	}
-	defer encoder.Close()
-
-	return encoder.EncodeAll(data, nil), nil
+	return compressed, nil
 }
 
 func ZstdDecompress(data []byte) ([]byte, error) {
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create zstd decoder: %v", err)
-	}
-	defer decoder.Close()
-
-	decoded, err := decoder.DecodeAll(data, nil)
+	decompressed, err := zstd.Decompress(nil, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decompress zstd data: %v", err)
 	}
 
-	return decoded, nil
+	return decompressed, nil
 }
 
 // HighCompress compresses the data
@@ -354,28 +317,12 @@ func HighCompress(cctx context.Context, data []byte) ([]byte, error) {
 	}
 	defer sem.Release(semaphoreWeight) // Ensure that the semaphore is always released
 
-	numCPU := runtime.NumCPU()
-	// Create a buffer to store compressed data
-	var compressedData bytes.Buffer
-
-	// Create a new Zstd encoder with concurrency set to the number of CPU cores
-	encoder, err := zstd.NewWriter(&compressedData, zstd.WithEncoderConcurrency(numCPU), zstd.WithEncoderLevel(zstd.EncoderLevel(highCompressionLevel)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Zstd encoder: %v", err)
-	}
-
-	// Perform the compression
-	_, err = io.Copy(encoder, bytes.NewReader(data))
+	compressed, err := zstd.CompressLevel(nil, data, highCompressionLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress data: %v", err)
 	}
 
-	// Close the encoder to flush any remaining data
-	if err := encoder.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close encoder: %v", err)
-	}
-
-	return compressedData.Bytes(), nil
+	return compressed, nil
 }
 
 // LoadSymbols takes a directory path and a map where keys are filenames. It reads each file in the directory

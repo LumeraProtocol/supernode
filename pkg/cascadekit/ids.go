@@ -7,7 +7,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
-	"github.com/klauspost/compress/zstd"
+	"github.com/DataDog/zstd"
 )
 
 // GenerateLayoutIDs computes IDs for redundant layout files (not the final index IDs).
@@ -36,13 +36,6 @@ func generateIDFiles(base []byte, ic uint32, max uint32) (ids []string, files []
 	ids = make([]string, 0, max)
 	var buffer bytes.Buffer
 
-	// Reuse a single zstd encoder across iterations
-	enc, zerr := zstd.NewWriter(nil)
-	if zerr != nil {
-		return ids, idFiles, errors.Errorf("compress identifiers file: %w", zerr)
-	}
-	defer enc.Close()
-
 	for i := uint32(0); i < max; i++ {
 		buffer.Reset()
 		counter := ic + i
@@ -54,7 +47,11 @@ func generateIDFiles(base []byte, ic uint32, max uint32) (ids []string, files []
 		cnt := strconv.AppendUint(tmp[:0], uint64(counter), 10)
 		buffer.Write(cnt)
 
-		compressedData := enc.EncodeAll(buffer.Bytes(), nil)
+		// Compress with official zstd C library at level 3 (matches SDK-JS)
+		compressedData, zerr := zstd.CompressLevel(nil, buffer.Bytes(), 3)
+		if zerr != nil {
+			return ids, idFiles, errors.Errorf("compress identifiers file: %w", zerr)
+		}
 
 		idFiles = append(idFiles, compressedData)
 
@@ -70,19 +67,13 @@ func generateIDFiles(base []byte, ic uint32, max uint32) (ids []string, files []
 }
 
 // generateIDs computes base58(blake3(zstd(base + '.' + counter))) for counters ic..ic+max-1.
-// It reuses a single zstd encoder and avoids per-iteration heap churn.
+// Uses official zstd C library at level 3 to match SDK-JS compression.
 func generateIDs(base []byte, ic, max uint32) ([]string, error) {
 	ids := make([]string, max)
 
 	var buffer bytes.Buffer
 	// Reserve base length + dot + up to 10 digits
 	buffer.Grow(len(base) + 12)
-
-	enc, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, errors.Errorf("zstd encoder init: %w", err)
-	}
-	defer enc.Close()
 
 	for i := uint32(0); i < max; i++ {
 		buffer.Reset()
@@ -92,7 +83,11 @@ func generateIDs(base []byte, ic, max uint32) ([]string, error) {
 		cnt := strconv.AppendUint(tmp[:0], uint64(ic+i), 10)
 		buffer.Write(cnt)
 
-		compressed := enc.EncodeAll(buffer.Bytes(), nil)
+		// Compress with official zstd C library at level 3 (matches SDK-JS)
+		compressed, err := zstd.CompressLevel(nil, buffer.Bytes(), 3)
+		if err != nil {
+			return nil, errors.Errorf("zstd compress (i=%d): %w", i, err)
+		}
 		h, err := utils.Blake3Hash(compressed)
 		if err != nil {
 			return nil, errors.Errorf("blake3 hash (i=%d): %w", i, err)
