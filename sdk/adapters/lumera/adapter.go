@@ -308,7 +308,10 @@ func (a *Adapter) VerifySignature(ctx context.Context, accountAddr string, data,
 
 	err := a.client.Auth().Verify(ctx, accountAddr, data, signature)
 	if err != nil {
-		a.logger.Error(ctx, "Signature verification failed", "accountAddr", accountAddr, "error", err)
+		// Demote per-attempt failures to debug; higher-level helpers
+		// (e.g. cascadekit.VerifyStringRawOrADR36 + task.Manager.validateSignature)
+		// will emit a single error if all strategies fail.
+		a.logger.Debug(ctx, "Signature verification failed", "accountAddr", accountAddr, "error", err)
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
 	a.logger.Debug(ctx, "Signature verified successfully", "accountAddr", accountAddr)

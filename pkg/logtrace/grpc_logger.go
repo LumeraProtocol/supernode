@@ -31,14 +31,14 @@ func (g *grpcLogger) Infoln(args ...any) {
 	g.Info(args...)
 }
 
-// Warning logs at warn level
+// Warning logs at debug level to avoid noisy internal gRPC chatter
 func (g *grpcLogger) Warning(args ...any) {
-	Warn(context.Background(), fmt.Sprint(args...), Fields{"module": "grpc"})
+	Debug(context.Background(), fmt.Sprint(args...), Fields{"module": "grpc"})
 }
 
-// Warningf logs at warn level with format
+// Warningf logs at debug level with format to avoid noisy internal gRPC chatter
 func (g *grpcLogger) Warningf(format string, args ...any) {
-	Warn(context.Background(), fmt.Sprintf(format, args...), Fields{"module": "grpc"})
+	Debug(context.Background(), fmt.Sprintf(format, args...), Fields{"module": "grpc"})
 }
 
 // Warningln logs at warn level with newline
@@ -46,14 +46,14 @@ func (g *grpcLogger) Warningln(args ...any) {
 	g.Warning(args...)
 }
 
-// Error logs at error level
+// Error logs at debug level to avoid noisy internal gRPC chatter
 func (g *grpcLogger) Error(args ...any) {
-	Error(context.Background(), fmt.Sprint(args...), Fields{"module": "grpc"})
+	Debug(context.Background(), fmt.Sprint(args...), Fields{"module": "grpc"})
 }
 
-// Errorf logs at error level with format
+// Errorf logs at debug level with format to avoid noisy internal gRPC chatter
 func (g *grpcLogger) Errorf(format string, args ...any) {
-	Error(context.Background(), fmt.Sprintf(format, args...), Fields{"module": "grpc"})
+	Debug(context.Background(), fmt.Sprintf(format, args...), Fields{"module": "grpc"})
 }
 
 // Errorln logs at error level with newline

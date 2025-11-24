@@ -231,17 +231,20 @@ var waitForConnection = func(ctx context.Context, conn ClientConn, timeout time.
 			return nil
 
 		case connectivity.Shutdown:
-			logtrace.Error(timeoutCtx, "gRPC connection is SHUTDOWN", nil)
+			// Demote to debug to avoid noisy connection logs at error level.
+			logtrace.Debug(timeoutCtx, "gRPC connection is SHUTDOWN", nil)
 			return fmt.Errorf("grpc connection is shutdown")
 
 		case connectivity.TransientFailure:
-			logtrace.Error(timeoutCtx, "gRPC connection in TRANSIENT_FAILURE", nil)
+			// Demote to debug so transient failures during discovery do not flood error logs.
+			logtrace.Debug(timeoutCtx, "gRPC connection in TRANSIENT_FAILURE", nil)
 			return fmt.Errorf("grpc connection is in transient failure")
 
 		default:
 			// Idle / Connecting – wait for state change
 			if !conn.WaitForStateChange(timeoutCtx, state) {
-				logtrace.Error(timeoutCtx, "Timeout waiting for gRPC connection state change",
+				// Demote timeout log to debug; callers still receive an error.
+				logtrace.Debug(timeoutCtx, "Timeout waiting for gRPC connection state change",
 					logtrace.Fields{
 						"last_state": state.String(),
 						"timeout":    timeout.String(),
@@ -299,7 +302,8 @@ func (ch *defaultConnectionHandler) attemptConnection(ctx context.Context, targe
 	// Wait for connection to be ready
 	if err := waitForConnection(ctx, gclient, opts.ConnWaitTime); err != nil {
 		gclient.Close()
-		logtrace.Error(ctx, "Connection failed", logtrace.Fields{"target": target, "error": err})
+		// Demote connection failures during preflight/validation to debug-level logs.
+		logtrace.Debug(ctx, "Connection failed", logtrace.Fields{"target": target, "error": err})
 
 		return nil, fmt.Errorf("connection failed: %w", err)
 	}
