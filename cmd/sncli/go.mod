@@ -4,14 +4,13 @@ go 1.25.1
 
 replace (
 	github.com/LumeraProtocol/supernode/v2 => ../..
-	github.com/LumeraProtocol/supernode/v2/supernode => ../../supernode
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
-	github.com/LumeraProtocol/lumera v1.8.4
-	github.com/LumeraProtocol/supernode/v2 v2.3.88
+	github.com/LumeraProtocol/lumera v1.8.5
+	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/spf13/cobra v1.10.1
 	google.golang.org/grpc v1.76.0

@@ -86,8 +86,16 @@ The supernode will connect to the Lumera network and begin participating in the 
 			if err != nil {
 				logFields["error"] = err.Error()
 			}
-			if verificationResult != nil && !verificationResult.IsValid() {
-				logFields["summary"] = verificationResult.Summary()
+			if verificationResult != nil {
+				if len(verificationResult.Errors) > 0 {
+					logFields["errors"] = verificationResult.Errors
+				}
+				if len(verificationResult.Warnings) > 0 {
+					logFields["warnings"] = verificationResult.Warnings
+				}
+				if !verificationResult.IsValid() {
+					logFields["summary"] = verificationResult.Summary()
+				}
 			}
 			logtrace.Fatal(ctx, "Config verification failed", logFields)
 		}
