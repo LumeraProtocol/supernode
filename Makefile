@@ -1,8 +1,15 @@
+###################################################
+###  Supernode Makefile
+###################################################
+
 .PHONY: build build-sncli build-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 .PHONY: test-e2e test-unit test-integration test-system
 .PHONY: release
+
+# tools/paths
+GO ?= go
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -23,10 +30,14 @@ SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
                      -X main.GitCommit=$(GIT_COMMIT) \
                      -X main.BuildTime=$(BUILD_TIME)
 
-build:
+go.sum: go.mod
+	${GO} mod tidy
+	${GO} mod verify
+
+build: go.sum
 	@mkdir -p release
 	@echo "Building supernode..."
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 ${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
 		-o release/supernode-linux-amd64 \
@@ -39,7 +50,11 @@ build-sncli: release/sncli
 SNCLI_SRC := $(wildcard cmd/sncli/*.go) \
              $(wildcard cmd/sncli/**/*.go)
 
-release/sncli: $(SNCLI_SRC) cmd/sncli/go.mod cmd/sncli/go.sum
+cmd/sncli/go.sum: cmd/sncli/go.mod
+	cd cmd/sncli && ${GO} mod tidy
+	cd cmd/sncli && ${GO} mod verify
+
+release/sncli: $(SNCLI_SRC) cmd/sncli/go.sum
 	@mkdir -p release
 	@echo "Building sncli..."
 	@RELEASE_DIR=$(CURDIR)/release && \
@@ -47,7 +62,7 @@ release/sncli: $(SNCLI_SRC) cmd/sncli/go.mod cmd/sncli/go.sum
 	CGO_ENABLED=1 \
 	GOOS=linux \
 	GOARCH=amd64 \
-	go build \
+	${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
 		-o $$RELEASE_DIR/sncli && \
@@ -61,7 +76,7 @@ build-sn-manager:
 	CGO_ENABLED=0 \
 	GOOS=linux \
 	GOARCH=amd64 \
-	go build \
+	${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(SN_MANAGER_LDFLAGS)" \
 		-o ../release/sn-manager \
@@ -70,13 +85,13 @@ build-sn-manager:
 	@echo "sn-manager built successfully at release/sn-manager"
 
 test-unit:
-	go test -v ./...
+	${GO} test -v ./...
 
 test-integration:
-	go test -v -p 1 -count=1 -tags=integration ./...
+	${GO} test -v -p 1 -count=1 -tags=integration ./...
 
 test-system:
-	cd tests/system && go test -tags=system_test -v .
+	cd tests/system && ${GO} test -tags=system_test -v .
 
 gen-cascade:
 	protoc \
@@ -90,7 +105,7 @@ gen-cascade:
 gen-supernode:
 	protoc \
 		--proto_path=proto \
-		--proto_path=$$(go list -m -f '{{.Dir}}' github.com/grpc-ecosystem/grpc-gateway)/third_party/googleapis \
+		--proto_path=$$(${GO} list -m -f '{{.Dir}}' github.com/grpc-ecosystem/grpc-gateway)/third_party/googleapis \
 		--go_out=gen \
 		--go_opt=paths=source_relative \
 		--go-grpc_out=gen \
@@ -140,17 +155,17 @@ system-test-setup: install-lumera setup-supernodes
 # Run system tests with complete setup
 test-e2e:
 	@echo "Running system tests..."
-	@cd tests/system && go test -tags=system_test -v .
+	@cd tests/system && ${GO} test -tags=system_test -v .
 
 # Run cascade e2e tests only
 test-cascade:
 	@echo "Running cascade e2e tests..."
-	@cd tests/system && go mod tidy && go test -tags=system_test -v -run TestCascadeE2E .
+	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run TestCascadeE2E .
 
 # Run sn-manager e2e tests only
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
-	@cd tests/system && go test -tags=system_test -v -run '^TestSNManager' .
+	@cd tests/system && ${GO} test -tags=system_test -v -run '^TestSNManager' .
 
 
 

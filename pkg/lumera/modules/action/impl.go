@@ -30,7 +30,7 @@ func (m *module) GetAction(ctx context.Context, actionID string) (*types.QueryGe
 		ActionID: actionID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get action: %w", err)
+		return nil, err
 	}
 
 	return resp, nil
