@@ -22,7 +22,7 @@ runs:
         echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
 
     - name: Setup Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ steps.get-go-version.outputs.version }}
         cache: true
