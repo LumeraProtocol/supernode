@@ -14,14 +14,20 @@ const SeparatorByte byte = 46
 // IndexFile represents the structure of the index file referenced on-chain.
 // The JSON fields must match the existing format.
 type IndexFile struct {
-	Version         int      `json:"version,omitempty"`
+	// Note: field order is chosen to match the JS SDK's canonical JSON:
+	// {"layout_ids":[...],"layout_signature":"...","version":1}
 	LayoutIDs       []string `json:"layout_ids"`
 	LayoutSignature string   `json:"layout_signature"`
+	Version         int      `json:"version,omitempty"`
 }
 
 // BuildIndex creates an IndexFile from layout IDs and the layout signature.
 func BuildIndex(layoutIDs []string, layoutSigB64 string) IndexFile {
-	return IndexFile{LayoutIDs: layoutIDs, LayoutSignature: layoutSigB64}
+	return IndexFile{
+		LayoutIDs:       layoutIDs,
+		LayoutSignature: layoutSigB64,
+		Version:         1,
+	}
 }
 
 // EncodeIndexB64 marshals an index file and returns its base64-encoded JSON.

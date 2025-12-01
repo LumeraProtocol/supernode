@@ -2,8 +2,10 @@ package action
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -282,8 +284,8 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 		max = 50
 	}
 	// Pick a random initial counter in [1,100]
-	//rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
-	ic := uint32(6)
+	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
+	ic := uint32(rnd.Int64() + 1) // 1..100
 
 	// Create signatures from the layout struct using ADR-36 scheme (JS compatible).
 	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36(
@@ -385,8 +387,4 @@ func (c *ClientImpl) GenerateDownloadSignature(ctx context.Context, actionID, cr
 		return "", fmt.Errorf("sign download payload: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(sig), nil
-}
-
-func (c *ClientImpl) signerAddress() string {
-	return c.signerAddr
 }
