@@ -96,6 +96,14 @@ func promptForManagerConfig(flags *initFlags) error {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// If the user explicitly asks for help on this subcommand, show usage
+	// without performing any initialization or forwarding flags to supernode.
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			return cmd.Help()
+		}
+	}
+
 	// Parse flags
 	flags := parseInitFlags(args)
 
@@ -224,7 +232,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("\nStep 3: Initializing SuperNode...")
 
 	// Check if SuperNode is already initialized
-	supernodeConfigPath := filepath.Join(os.Getenv("HOME"), ".supernode", "config.yml")
+	userHome, _ := os.UserHomeDir()
+	if userHome == "" {
+		userHome = os.Getenv("HOME")
+	}
+	supernodeConfigPath := filepath.Join(userHome, ".supernode", "config.yml")
 	if _, err := os.Stat(supernodeConfigPath); err == nil {
 		fmt.Println("✓ SuperNode already initialized, skipping initialization")
 	} else {
