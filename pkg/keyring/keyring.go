@@ -42,6 +42,11 @@ func InitKeyring(cfg config.KeyringConfig) (sdkkeyring.Keyring, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Validate non-interactive passphrase sources early so we can emit
+	// clear errors for misconfigured environment variables or files.
+	if err := validatePassphraseConfig(cfg, backend); err != nil {
+		return nil, err
+	}
 	// Use the directory as-is, it should already be resolved by the config
 	dir := cfg.Dir
 
@@ -110,6 +115,39 @@ func selectPassphrase(cfg config.KeyringConfig) string {
 		}
 	}
 	return ""
+}
+
+// validatePassphraseConfig ensures that configured non-interactive passphrase
+// sources are usable. It does not enforce that a passphrase is provided at all
+// (interactive mode is still allowed); it only catches obvious misconfigurations
+// such as an empty environment variable or unreadable/empty file.
+func validatePassphraseConfig(cfg config.KeyringConfig, backend string) error {
+	backend = strings.ToLower(backend)
+	// The "test" backend never uses a passphrase.
+	if backend == "test" {
+		return nil
+	}
+
+	// If an environment variable is configured, it must be set and non-empty.
+	if cfg.PassEnv != "" {
+		val, ok := os.LookupEnv(cfg.PassEnv)
+		if !ok || strings.TrimSpace(val) == "" {
+			return fmt.Errorf("keyring passphrase environment variable %q is not set or is empty", cfg.PassEnv)
+		}
+	}
+
+	// If a passphrase file is configured, it must be readable and non-empty.
+	if cfg.PassFile != "" {
+		b, err := os.ReadFile(cfg.PassFile)
+		if err != nil {
+			return fmt.Errorf("failed to read keyring passphrase file %q: %w", cfg.PassFile, err)
+		}
+		if strings.TrimSpace(string(b)) == "" {
+			return fmt.Errorf("keyring passphrase file %q is empty", cfg.PassFile)
+		}
+	}
+
+	return nil
 }
 
 func normaliseBackend(b string) (string, error) {
