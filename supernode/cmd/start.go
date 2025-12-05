@@ -21,6 +21,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
+	"github.com/LumeraProtocol/supernode/v2/supernode/health"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
@@ -147,6 +148,11 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
+		healthMonitor := health.NewHealthMonitor(statusSvc, lumeraClient, appConfig, Version)
+		logtrace.Info(ctx, "Health monitoring enabled", logtrace.Fields{
+			"report_interval": fmt.Sprintf("%d minutes", appConfig.HealthConfig.ReportIntervalMinutes),
+		})
+
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)
 
@@ -179,7 +185,10 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
-		go func() { servicesErr <- RunServices(ctx, grpcServer, cService, p2pService, gatewayServer) }()
+		go func() {
+			services := []service{grpcServer, cService, p2pService, gatewayServer, healthMonitor}
+			servicesErr <- RunServices(ctx, services...)
+		}()
 
 		// Set up signal handling for graceful shutdown
 		sigCh := make(chan os.Signal, 1)
