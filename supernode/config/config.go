@@ -47,12 +47,20 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 }
 
+type HealthConfig struct {
+	// Reporting interval in minutes (default: 90)
+	ReportIntervalMinutes int `yaml:"report_interval_minutes,omitempty"`
+	// Public IP for port checking (optional, auto-detected if not set)
+	PublicIP string `yaml:"public_ip,omitempty"`
+}
+
 type Config struct {
 	SupernodeConfig    `yaml:"supernode"`
 	KeyringConfig      `yaml:"keyring"`
 	P2PConfig          `yaml:"p2p"`
 	LumeraClientConfig `yaml:"lumera"`
 	RaptorQConfig      `yaml:"raptorq"`
+	HealthConfig       `yaml:"health,omitempty"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`
@@ -141,6 +149,11 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 
 	// Set the base directory
 	config.BaseDir = baseDir
+
+	// Apply default values for health config if not specified
+	if config.HealthConfig.ReportIntervalMinutes == 0 {
+		config.HealthConfig.ReportIntervalMinutes = 90 // Default 90 minutes as per LEP-4
+	}
 
 	// Create directories
 	if err := config.EnsureDirs(); err != nil {
