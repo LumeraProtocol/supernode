@@ -22,8 +22,11 @@ func checkInitialized() error {
 	homeDir := config.GetManagerHome()
 	configPath := filepath.Join(homeDir, "config.yml")
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("not initialized. Run: sn-manager init")
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("not initialized. Run: sn-manager init")
+		}
+		return fmt.Errorf("failed to check manager config: %w", err)
 	}
 
 	return nil

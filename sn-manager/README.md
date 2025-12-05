@@ -294,6 +294,22 @@ Auto-update checks run every 10 minutes when enabled.
 - `--lumera-grpc` - gRPC endpoint
 - `--chain-id` - Chain identifier
 
+### Keyring configuration details
+
+All keyring-related flags are forwarded directly to `supernode init` and configure the underlying Cosmos SDK keyring used by SuperNode:
+
+- `--keyring-backend` controls where and how keys are stored:
+  - `file` – encrypted keyring files under `<BASE_DIR>/.supernode/keys/keyring-file` (recommended for servers).
+  - `os` – use the operating system’s keyring (where supported).
+  - `test` – in-memory, unencrypted test keys (development only).
+- Passphrase options configure how the keyring unlocks keys in non-interactive mode:
+  - `--keyring-passphrase` – passphrase provided directly on the command line (only for testing; avoid in production).
+  - `--keyring-passphrase-env` – name of an environment variable containing the passphrase. The variable must be set and non-empty; otherwise `supernode start` will fail with a clear error.
+  - `--keyring-passphrase-file` – path to a file containing the passphrase. The file must be readable and non-empty.
+- If none of the passphrase flags are provided, the keyring will prompt interactively when needed.
+
+For more background and examples, see the `supernode init` section in the top-level `README.md`, which documents these flags in the context of SuperNode itself.
+
 ## Commands
 
 - `init` - Initialize sn-manager and SuperNode
@@ -327,7 +343,8 @@ The auto-updater follows stable-only, same-major update rules and defers updates
 
 Mechanics and notes:
 - Stable-only: auto-updater targets latest stable GitHub release (non-draft, non-prerelease).
-- Same-major only: SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
+- Same-major only (periodic checks): during regular background checks, SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
+- Startup sync: when `sn-manager start` runs, it performs a one-time forced sync to the latest stable release for both sn-manager and SuperNode. This startup sync may update across major versions and does not wait for the gateway to be idle; failures are logged but do not block startup.
 - Gateway-aware: updates are applied only when the gateway reports no running tasks; otherwise they are deferred.
 - Gateway errors: repeated check failures over a 5-minute window request a clean SuperNode restart (no version change) to recover.
 - Combined tarball: when updating, sn-manager downloads a single tarball once, then updates itself first (if eligible), then installs/activates the new SuperNode version.

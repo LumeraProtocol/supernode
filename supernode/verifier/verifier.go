@@ -50,10 +50,28 @@ func (cv *ConfigVerifier) VerifyConfig(ctx context.Context) (*VerificationResult
 
 func (cv *ConfigVerifier) checkKeyExists(result *VerificationResult) error {
 	_, err := cv.keyring.Key(cv.config.SupernodeConfig.KeyName)
-	if err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, ConfigError{Field: "key_name", Actual: cv.config.SupernodeConfig.KeyName, Message: fmt.Sprintf("Key '%s' not found in keyring", cv.config.SupernodeConfig.KeyName)})
+	if err == nil {
+		return nil
 	}
+
+	result.Valid = false
+
+	// Provide a more actionable error message that includes keyring backend and
+	// directory, and preserve the original error for debugging.
+	msg := fmt.Sprintf(
+		"failed to load key %q from keyring (backend=%s, dir=%s): %v. "+
+			"Ensure the key exists and that your keyring passphrase configuration is correct.",
+		cv.config.SupernodeConfig.KeyName,
+		cv.config.KeyringConfig.Backend,
+		cv.config.GetKeyringDir(),
+		err,
+	)
+
+	result.Errors = append(result.Errors, ConfigError{
+		Field:   "key_name",
+		Actual:  cv.config.SupernodeConfig.KeyName,
+		Message: msg,
+	})
 	return nil
 }
 
@@ -78,8 +96,34 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 	sn, err := cv.lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, cv.config.SupernodeConfig.Identity)
 	if err != nil {
 		result.Valid = false
-		result.Errors = append(result.Errors, ConfigError{Field: "registration", Actual: "error", Message: err.Error()})
+
+		msg := fmt.Sprintf(
+			"failed to fetch supernode registration from chain (identity=%s, grpc=%s): %v",
+			cv.config.SupernodeConfig.Identity,
+			cv.config.LumeraClientConfig.GRPCAddr,
+			err,
+		)
+
+		result.Errors = append(result.Errors, ConfigError{
+			Field:   "registration",
+			Actual:  "error",
+			Message: msg,
+		})
 		return nil, err
+	}
+	if sn == nil {
+		result.Valid = false
+		msg := fmt.Sprintf(
+			"supernode identity %s is not registered on chain (grpc=%s)",
+			cv.config.SupernodeConfig.Identity,
+			cv.config.LumeraClientConfig.GRPCAddr,
+		)
+		result.Errors = append(result.Errors, ConfigError{
+			Field:   "registration",
+			Actual:  "not_found",
+			Message: msg,
+		})
+		return nil, nil
 	}
 	return sn, nil
 }
