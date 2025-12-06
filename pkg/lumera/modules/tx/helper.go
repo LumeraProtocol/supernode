@@ -3,6 +3,7 @@ package tx
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -17,6 +18,10 @@ type TxHelper struct {
 	authmod auth.Module
 	txmod   Module
 	config  *TxConfig
+
+	accountNumber uint64
+	nextSequence  uint64
+	seqInit       bool
 }
 
 // TxHelperConfig holds configuration for creating a TxHelper
@@ -67,10 +72,12 @@ func NewTxHelperWithDefaults(authmod auth.Module, txmod Module, chainID, keyName
 	return NewTxHelper(authmod, txmod, config)
 }
 
-// ExecuteTransaction is a convenience method that handles the complete transaction flow
-// for a single message. It gets account info, creates the message, and processes the transaction.
-func (h *TxHelper) ExecuteTransaction(ctx context.Context, msgCreator func(creator string) (types.Msg, error)) (*sdktx.BroadcastTxResponse, error) {
-	// Step 1: Get creator address from keyring
+func (h *TxHelper) ExecuteTransaction(
+	ctx context.Context,
+	msgCreator func(creator string) (types.Msg, error),
+) (*sdktx.BroadcastTxResponse, error) {
+
+	// --- Step 1: Resolve creator address ---
 	key, err := h.config.Keyring.Key(h.config.KeyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key from keyring: %w", err)
@@ -78,24 +85,82 @@ func (h *TxHelper) ExecuteTransaction(ctx context.Context, msgCreator func(creat
 
 	addr, err := key.GetAddress()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get address from key: %w", err)
+		return nil, fmt.Errorf("failed to get address: %w", err)
 	}
 	creator := addr.String()
 
-	// Step 2: Get account info
-	accInfoRes, err := h.authmod.AccountInfoByAddress(ctx, creator)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get account info: %w", err)
+	// --- Step 2: Local sequence initialization (run once) ---
+	if !h.seqInit {
+		accInfoRes, err := h.authmod.AccountInfoByAddress(ctx, creator)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch initial account info: %w", err)
+		}
+
+		h.accountNumber = accInfoRes.Info.AccountNumber
+		h.nextSequence = accInfoRes.Info.Sequence
+		h.seqInit = true
 	}
 
-	// Step 3: Create the message using the provided creator function
+	// --- Step 3: Create message ---
 	msg, err := msgCreator(creator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message: %w", err)
 	}
 
-	// Step 4: Process transaction
-	return h.ExecuteTransactionWithMsgs(ctx, []types.Msg{msg}, accInfoRes.Info)
+	// --- Step 4: Attempt tx (with 1 retry on sequence mismatch) ---
+	const maxAttempts = 2
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+
+		// Build a local accountInfo using in-memory sequence
+		localAcc := &authtypes.BaseAccount{
+			AccountNumber: h.accountNumber,
+			Sequence:      h.nextSequence,
+			Address:       creator,
+		}
+
+		// Run full tx flow
+		resp, err := h.ExecuteTransactionWithMsgs(ctx, []types.Msg{msg}, localAcc)
+		if err == nil {
+			// SUCCESS → bump local sequence and return
+			h.nextSequence++
+			return resp, nil
+		}
+
+		// Check if this is a sequence mismatch error
+		if !isSequenceMismatch(err) {
+			return nil, err // unrelated error → bail out
+		}
+
+		// If retry unavailable, bubble error
+		if attempt == maxAttempts {
+			return nil, fmt.Errorf("sequence mismatch after retry: %w", err)
+		}
+
+		// --- Retry logic: resync from chain ---
+		accInfoRes, err2 := h.authmod.AccountInfoByAddress(ctx, creator)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to resync account info after mismatch: %w", err2)
+		}
+
+		h.accountNumber = accInfoRes.Info.AccountNumber
+		h.nextSequence = accInfoRes.Info.Sequence
+	}
+
+	return nil, fmt.Errorf("unreachable state in ExecuteTransaction")
+}
+
+func isSequenceMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+
+	return strings.Contains(msg, "incorrect account sequence") ||
+		strings.Contains(msg, "account sequence mismatch") ||
+		(strings.Contains(msg, "expected") && strings.Contains(msg, "got"))
+
 }
 
 // ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info
@@ -133,44 +198,46 @@ func (h *TxHelper) GetAccountInfo(ctx context.Context) (*authtypes.BaseAccount, 
 	return accInfoRes.Info, nil
 }
 
-// UpdateConfig allows updating the transaction configuration
 func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
-	// Merge provided fields with existing config to avoid zeroing defaults
 	if h.config == nil {
 		h.config = &TxConfig{}
 	}
 
-	// ChainID
+	keyChanged := false
+
+	if config.Keyring != nil && config.Keyring != h.config.Keyring {
+		h.config.Keyring = config.Keyring
+		keyChanged = true
+	}
+	if config.KeyName != "" && config.KeyName != h.config.KeyName {
+		h.config.KeyName = config.KeyName
+		keyChanged = true
+	}
+
 	if config.ChainID != "" {
 		h.config.ChainID = config.ChainID
 	}
-	// Keyring
-	if config.Keyring != nil {
-		h.config.Keyring = config.Keyring
-	}
-	// KeyName
-	if config.KeyName != "" {
-		h.config.KeyName = config.KeyName
-	}
-	// GasLimit
 	if config.GasLimit != 0 {
 		h.config.GasLimit = config.GasLimit
 	}
-	// GasAdjustment
 	if config.GasAdjustment != 0 {
 		h.config.GasAdjustment = config.GasAdjustment
 	}
-	// GasPadding
 	if config.GasPadding != 0 {
 		h.config.GasPadding = config.GasPadding
 	}
-	// FeeDenom
 	if config.FeeDenom != "" {
 		h.config.FeeDenom = config.FeeDenom
 	}
-	// GasPrice
 	if config.GasPrice != "" {
 		h.config.GasPrice = config.GasPrice
+	}
+
+	// If key has changed, reset sequence tracking so we re-init on next tx
+	if keyChanged {
+		h.seqInit = false
+		h.accountNumber = 0
+		h.nextSequence = 0
 	}
 }
 
