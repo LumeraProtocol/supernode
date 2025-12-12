@@ -21,8 +21,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
-	supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
+	supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
@@ -107,13 +107,13 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		logtrace.Debug(ctx, "Configuration verification successful", logtrace.Fields{})
 
-			// Set Datadog host to identity and service to latest IP address from chain
-			logtrace.SetDatadogHost(appConfig.SupernodeConfig.Identity)
-			if snInfo, err := lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, appConfig.SupernodeConfig.Identity); err == nil && snInfo != nil {
-				if ip := strings.TrimSpace(snInfo.LatestAddress); ip != "" {
-					logtrace.SetDatadogService(ip)
-				}
+		// Set Datadog host to identity and service to latest IP address from chain
+		logtrace.SetDatadogHost(appConfig.SupernodeConfig.Identity)
+		if snInfo, err := lumeraClient.SuperNode().GetSupernodeWithLatestAddress(ctx, appConfig.SupernodeConfig.Identity); err == nil && snInfo != nil {
+			if ip := strings.TrimSpace(snInfo.LatestAddress); ip != "" {
+				logtrace.SetDatadogService(ip)
 			}
+		}
 
 		// Initialize RaptorQ store for Cascade processing
 		rqStore, err := initRQStore(ctx, appConfig)
@@ -142,14 +142,24 @@ The supernode will connect to the Lumera network and begin participating in the 
 		tr := task.New()
 		cascadeActionServer := cascadeRPC.NewCascadeActionServer(cService, tr, 0, 0)
 
-			// Set the version in the status service package
-			statusService.Version = Version
+		// Set the version in the status service package
+		statusService.Version = Version
 
-			// Create supernode status service with injected tracker
-			statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
+		// Create supernode status service with injected tracker
+		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-			metricsCollector := supernodeMetrics.NewCollector(statusSvc, lumeraClient, appConfig.SupernodeConfig.Identity, Version, p2pService, kr)
-			logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
+		metricsCollector := supernodeMetrics.NewCollector(
+			statusSvc,
+			lumeraClient,
+			appConfig.SupernodeConfig.Identity,
+			Version,
+			p2pService,
+			kr,
+			appConfig.SupernodeConfig.Port,
+			appConfig.P2PConfig.Port,
+			appConfig.SupernodeConfig.GatewayPort,
+		)
+		logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
 
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)

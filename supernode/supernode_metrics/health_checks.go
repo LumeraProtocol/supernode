@@ -37,6 +37,9 @@ func (hm *Collector) checkP2PService(ctx context.Context) float64 {
 		host = "127.0.0.1"
 	}
 	target := net.JoinHostPort(host, fmt.Sprintf("%d", P2PPort))
+	if hm.p2pPort != 0 {
+		target = net.JoinHostPort(host, fmt.Sprintf("%d", hm.p2pPort))
+	}
 
 	// Build client credentials using the same ALTS/securekeyx stack as external
 	// P2P clients. We treat the local node as a simplenode peer dialing the
@@ -101,7 +104,11 @@ func (hm *Collector) checkStatusAPI(ctx context.Context) float64 {
 		host = "127.0.0.1"
 	}
 
-	url := fmt.Sprintf("http://%s:%d/api/v1/status", host, StatusPort)
+	port := StatusPort
+	if hm.gatewayPort != 0 {
+		port = int(hm.gatewayPort)
+	}
+	url := fmt.Sprintf("http://%s:%d/api/v1/status", host, port)
 
 	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(PortCheckTimeoutSeconds)*time.Second)
 	defer cancel()
@@ -147,7 +154,11 @@ func (hm *Collector) checkGRPCService(ctx context.Context) float64 {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	grpcEndpoint := fmt.Sprintf("%s:%d", host, APIPort)
+	port := APIPort
+	if hm.grpcPort != 0 {
+		port = int(hm.grpcPort)
+	}
+	grpcEndpoint := fmt.Sprintf("%s:%d", host, port)
 
 	// Build client credentials mirroring external secure supernode clients.
 	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{

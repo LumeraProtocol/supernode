@@ -26,11 +26,11 @@ const (
 	PortCheckTimeoutSeconds = 5
 
 	// Well-known local ports used when reporting `open_ports` metrics.
-	// These must stay aligned with the supernode's configured listener ports
-	// and with the chain's `required_open_ports` parameter.
-	APIPort    = 4444 // Public REST / API gateway
+	// These are defaults; individual nodes may override them via config.
+	// They should stay aligned with the chain's `required_open_ports` parameter.
+	APIPort    = 4444 // Supernode gRPC port
 	P2PPort    = 4445 // Kademlia / P2P port
-	StatusPort = 8002 // Local status/health endpoint
+	StatusPort = 8002 // HTTP gateway port (grpc-gateway: /api/v1/status)
 )
 
 // Collector manages the end-to-end supernode metrics flow:
@@ -66,6 +66,12 @@ type Collector struct {
 	// version is the semantic version of this supernode binary, used to populate
 	// the `version_*` fields in SupernodeMetrics.
 	version string
+
+	// Listener ports for this specific supernode instance.
+	// These are used for self-connect checks and for populating `open_ports`.
+	grpcPort    uint16
+	p2pPort     uint16
+	gatewayPort uint16
 }
 
 // NewCollector creates a new metrics collector instance.
@@ -76,7 +82,20 @@ func NewCollector(
 	version string,
 	p2pClient p2p.Client,
 	kr keyring.Keyring,
+	grpcPort uint16,
+	p2pPort uint16,
+	gatewayPort uint16,
 ) *Collector {
+	if grpcPort == 0 {
+		grpcPort = APIPort
+	}
+	if p2pPort == 0 {
+		p2pPort = P2PPort
+	}
+	if gatewayPort == 0 {
+		gatewayPort = StatusPort
+	}
+
 	return &Collector{
 		statusService: statusSvc,
 		lumeraClient:  lumeraClient,
@@ -86,6 +105,9 @@ func NewCollector(
 		keyring:       kr,
 		stopChan:      make(chan struct{}),
 		version:       version,
+		grpcPort:      grpcPort,
+		p2pPort:       p2pPort,
+		gatewayPort:   gatewayPort,
 	}
 }
 
