@@ -129,7 +129,7 @@ SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
 
 # Install Lumera
 # Optional: specify lumera binary path to skip download
-LUMERAD_BINARY ?=
+LUMERAD_BINARY ?=/home/enxsys/Documents/Github/LumeraProtocol/lumera/release/lumerad
 # Derive default Lumera version from go.mod (strip pseudo-version suffix if present)
 LUMERA_DEFAULT_VERSION := $(shell awk '/github.com\/LumeraProtocol\/lumera[[:space:]]+v/ {print $$2; exit}' go.mod | sed 's/-.*//')
 # Optional: specify installation mode (latest-release, latest-tag, or vX.Y.Z)
@@ -166,6 +166,11 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && ${GO} test -tags=system_test -v -run '^TestSNManager' .
+
+## Run supernode metrics e2e test only
+test-supernode-metrics:
+	@echo "Running supernode metrics e2e test..."
+	@cd tests/system && ${GO} test -tags=system_test -v -run TestSupernodeMetricsE2E .
 
 
 
