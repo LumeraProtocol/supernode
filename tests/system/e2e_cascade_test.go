@@ -70,7 +70,8 @@ func TestCascadeE2E(t *testing.T) {
 	// Update the genesis file with required params before starting
 	// - Set staking bond denom to match ulume used by gentxs
 	// - Configure action module params used by the test
-	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t))
+	// - Relax supernode metrics params so nodes don't get POSTPONED immediately in tests
+	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t), SetSupernodeMetricsParams(t))
 
 	// Reset and start the blockchain
 	sut.StartChain(t)

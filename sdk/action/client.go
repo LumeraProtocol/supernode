@@ -197,7 +197,7 @@ func (c *ClientImpl) GetSupernodeStatus(ctx context.Context, supernodeAddress st
 	lumeraSupernode := lumera.Supernode{
 		CosmosAddress: supernodeAddress,
 		GrpcEndpoint:  supernodeInfo.LatestAddress,
-		State:         lumera.SUPERNODE_STATE_ACTIVE, // Assume active since we're querying
+		State:         lumera.ParseSupernodeState(supernodeInfo.CurrentState),
 	}
 
 	// Create network client factory

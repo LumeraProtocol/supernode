@@ -3,12 +3,14 @@ module github.com/LumeraProtocol/supernode/v2/tests/systemtests
 go 1.25.1
 
 replace (
+	github.com/LumeraProtocol/lumera => ../../../lumera
 	github.com/LumeraProtocol/supernode/v2 => ../../
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
 )
 
 require (
 	cosmossdk.io/math v1.5.3
+	github.com/LumeraProtocol/lumera v1.8.4
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.18
 	github.com/tidwall/gjson v1.14.2
@@ -21,7 +23,7 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/cosmos/gogogateway v1.2.0 // indirect
-	github.com/cosmos/gogoproto v1.7.0 // indirect
+	github.com/cosmos/gogoproto v1.7.0
 	github.com/cosmos/iavl v1.2.4 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -54,8 +56,8 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/LumeraProtocol/lumera v1.8.4 // indirect
 	github.com/LumeraProtocol/rq-go v0.2.1 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect
