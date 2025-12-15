@@ -42,7 +42,7 @@ if [ "$MODE" == "latest-tag" ]; then
     if command -v jq >/dev/null 2>&1; then
         TAG_NAME=$(curl -s "$GITHUB_API/tags" | jq -r '.[0].name')
         DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
-            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
+            | jq -r '.assets[]? | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
     else
         TAG_NAME=$(curl -s "$GITHUB_API/tags" | grep '"name"' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
         DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
@@ -50,11 +50,11 @@ if [ "$MODE" == "latest-tag" ]; then
             | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
     fi
 
-elif [[ "$MODE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+elif [[ "$MODE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
     TAG_NAME="$MODE"
     if command -v jq >/dev/null 2>&1; then
         DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
-            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
+            | jq -r '.assets[]? | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
     else
         DOWNLOAD_URL=$(curl -s "$GITHUB_API/releases/tags/$TAG_NAME" \
             | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*linux_amd64\.tar\.gz[^"]*"' \
@@ -67,7 +67,7 @@ elif [ "$MODE" == "latest-release" ]; then
     # Extract tag name and download URL
     if command -v jq >/dev/null 2>&1; then
         TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
-        DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
+        DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[]? | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url')
     else
         TAG_NAME=$(echo "$RELEASE_INFO" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
         DOWNLOAD_URL=$(echo "$RELEASE_INFO" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*linux_amd64\.tar\.gz[^"]*"' | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')

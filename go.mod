@@ -4,12 +4,11 @@ go 1.25.1
 
 replace github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
 
-
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.8.6-alpha
+	github.com/LumeraProtocol/lumera v1.8.6-rc1
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
