@@ -10,7 +10,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/util"
 )
 
-func validateRequestActionParams(actionType, metadata, price, expirationTime string) error {
+func validateRequestActionParams(actionType, metadata, price, expirationTime, fileSizeKbs string) error {
 	if actionType == "" {
 		return fmt.Errorf("action type cannot be empty")
 	}
@@ -36,6 +36,15 @@ func validateRequestActionParams(actionType, metadata, price, expirationTime str
 	if exp <= time.Now().Add(30*time.Second).Unix() {
 		return fmt.Errorf("expiration time must be in the future")
 	}
+	if fileSizeKbs != "" {
+		parsed, err := strconv.ParseInt(fileSizeKbs, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid fileSizeKbs: %w", err)
+		}
+		if parsed < 0 {
+			return fmt.Errorf("fileSizeKbs must be >= 0")
+		}
+	}
 	return nil
 }
 
@@ -54,13 +63,14 @@ func validateFinalizeActionParams(actionId string, rqIdsIds []string) error {
 	return nil
 }
 
-func createRequestActionMessage(creator, actionType, metadata, price, expirationTime string) *actiontypes.MsgRequestAction {
+func createRequestActionMessage(creator, actionType, metadata, price, expirationTime, fileSizeKbs string) *actiontypes.MsgRequestAction {
 	return &actiontypes.MsgRequestAction{
 		Creator:        creator,
 		ActionType:     actionType,
 		Metadata:       metadata,
 		Price:          price,
 		ExpirationTime: expirationTime,
+		FileSizeKbs:    fileSizeKbs,
 	}
 }
 

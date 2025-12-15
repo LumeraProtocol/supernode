@@ -376,6 +376,7 @@ func toSdkAction(resp *actiontypes.QueryGetActionResponse) Action {
 		State:          ACTION_STATE(resp.Action.State.String()),
 		Height:         resp.Action.BlockHeight,
 		ExpirationTime: resp.Action.ExpirationTime,
+		FileSizeKbs:    resp.Action.FileSizeKbs,
 		ActionType:     resp.Action.ActionType.String(),
 		Metadata:       resp.Action.Metadata,
 		Creator:        resp.Action.Creator,

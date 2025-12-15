@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -297,7 +298,14 @@ func TestCascadeE2E(t *testing.T) {
 	t.Logf("Requesting cascade action with metadata: %s", metadata)
 	t.Logf("Action type: %s, Price: %s, Expiration: %s", actionType, autoPrice, expirationTime)
 
-	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, autoPrice, expirationTime)
+	fi, err := os.Stat(testFileFullpath)
+	require.NoError(t, err, "Failed to stat test file")
+	fileSizeKbs := int64(0)
+	if fi != nil && fi.Size() > 0 {
+		fileSizeKbs = (fi.Size() + 1023) / 1024
+	}
+
+	response, err := lumeraClinet.ActionMsg().RequestAction(ctx, actionType, metadata, autoPrice, expirationTime, strconv.FormatInt(fileSizeKbs, 10))
 	require.NoError(t, err, "RequestAction failed")
 
 	require.NotNil(t, resp, "RequestAction returned nil response")

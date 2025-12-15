@@ -57,18 +57,18 @@ func (mr *MockModuleMockRecorder) FinalizeCascadeAction(ctx, actionId, rqIdsIds 
 }
 
 // RequestAction mocks base method.
-func (m *MockModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*tx.BroadcastTxResponse, error) {
+func (m *MockModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime, fileSizeKbs string) (*tx.BroadcastTxResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RequestAction", ctx, actionType, metadata, price, expirationTime)
+	ret := m.ctrl.Call(m, "RequestAction", ctx, actionType, metadata, price, expirationTime, fileSizeKbs)
 	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RequestAction indicates an expected call of RequestAction.
-func (mr *MockModuleMockRecorder) RequestAction(ctx, actionType, metadata, price, expirationTime any) *gomock.Call {
+func (mr *MockModuleMockRecorder) RequestAction(ctx, actionType, metadata, price, expirationTime, fileSizeKbs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestAction", reflect.TypeOf((*MockModule)(nil).RequestAction), ctx, actionType, metadata, price, expirationTime)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestAction", reflect.TypeOf((*MockModule)(nil).RequestAction), ctx, actionType, metadata, price, expirationTime, fileSizeKbs)
 }
 
 // SimulateFinalizeCascadeAction mocks base method.
