@@ -8,6 +8,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	snmodule "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	adapterlumera "github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -129,10 +130,34 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 }
 
 func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
-	if supernodeInfo.CurrentState != "" && supernodeInfo.CurrentState != "SUPERNODE_STATE_ACTIVE" {
-		result.Valid = false
-		result.Errors = append(result.Errors, ConfigError{Field: "state", Expected: "SUPERNODE_STATE_ACTIVE", Actual: supernodeInfo.CurrentState, Message: fmt.Sprintf("Supernode state is %s (expected ACTIVE)", supernodeInfo.CurrentState)})
+	state := adapterlumera.ParseSupernodeState(supernodeInfo.CurrentState)
+	allowedStates := fmt.Sprintf("%s or %s", adapterlumera.SUPERNODE_STATE_ACTIVE, adapterlumera.SUPERNODE_STATE_POSTPONED)
+
+	if supernodeInfo.CurrentState == "" || state == adapterlumera.SUPERNODE_STATE_ACTIVE {
+		return
 	}
+
+	// Allow POSTPONED nodes to start, but surface this as a warning so that
+	// operators know the node is currently out of compliance and needs to
+	// recover by reporting healthy metrics.
+	if state == adapterlumera.SUPERNODE_STATE_POSTPONED {
+		result.Warnings = append(result.Warnings, ConfigError{
+			Field:    "state",
+			Expected: allowedStates,
+			Actual:   string(state),
+			Message:  fmt.Sprintf("Supernode state is %s; node may be out of compliance but can recover by reporting metrics", state),
+		})
+		return
+	}
+
+	// Any other non-empty state outside the allowed set is treated as a hard error.
+	result.Valid = false
+	result.Errors = append(result.Errors, ConfigError{
+		Field:    "state",
+		Expected: allowedStates,
+		Actual:   supernodeInfo.CurrentState,
+		Message:  fmt.Sprintf("Supernode state is %s (expected %s)", supernodeInfo.CurrentState, allowedStates),
+	})
 }
 
 func (cv *ConfigVerifier) checkPortsAvailable(result *VerificationResult) {
