@@ -168,30 +168,52 @@ func (s *p2p) Delete(ctx context.Context, key string) error {
 
 // Stats return status of p2p
 func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
-	retStats := map[string]interface{}{}
-	dhtStats, err := s.dht.Stats(ctx)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	retStats := map[string]interface{}{}
+	dhtStats := map[string]any{}
+
+	if s.dht != nil {
+		if stats, err := s.dht.Stats(ctx); err != nil {
+			logtrace.Error(ctx, "failed to get dht stats", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
+		} else {
+			dhtStats = stats
+		}
+
+		retStats["ban-list"] = s.dht.BanListSnapshot()
+		retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
+
+		// Expose DHT rolling metrics snapshot both under the top-level key (as expected by
+		// the status service) and also within the DHT map for backward compatibility.
+		snapshot := s.dht.MetricsSnapshot()
+		retStats["dht_metrics"] = snapshot
+		dhtStats["dht_metrics"] = snapshot
+	} else {
+		retStats["ban-list"] = []kademlia.BanSnapshot{}
+		retStats["conn-pool"] = map[string]int64{}
+	}
+
+	if s.store != nil {
+		if dbStats, err := s.store.Stats(ctx); err != nil {
+			logtrace.Error(ctx, "failed to get store stats", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
+		} else if dbStats != nil {
+			dhtStats["database"] = dbStats
+		}
 	}
 
 	retStats["dht"] = dhtStats
 	retStats["config"] = s.config
 
 	// get free space of current kademlia folder
-	diskUse, err := utils.DiskUsage(s.config.DataDir)
-	if err != nil {
-		return nil, errors.Errorf("get disk info failed: %w", err)
+	if s.config != nil {
+		if diskUse, err := utils.DiskUsage(s.config.DataDir); err != nil {
+			logtrace.Error(ctx, "get disk info failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
+		} else {
+			retStats["disk-info"] = &diskUse
+		}
 	}
-
-	retStats["disk-info"] = &diskUse
-	retStats["ban-list"] = s.dht.BanListSnapshot()
-	retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
-
-	// Expose DHT rolling metrics snapshot both under the top-level key (as expected by
-	// the status service) and also within the DHT map for backward compatibility.
-	snapshot := s.dht.MetricsSnapshot()
-	retStats["dht_metrics"] = snapshot
-	dhtStats["dht_metrics"] = snapshot
 
 	return retStats, nil
 }

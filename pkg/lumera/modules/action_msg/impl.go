@@ -46,8 +46,8 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 	}, nil
 }
 
-func (m *module) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
-	if err := validateRequestActionParams(actionType, metadata, price, expirationTime); err != nil {
+func (m *module) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime, fileSizeKbs string) (*sdktx.BroadcastTxResponse, error) {
+	if err := validateRequestActionParams(actionType, metadata, price, expirationTime, fileSizeKbs); err != nil {
 		return nil, err
 	}
 
@@ -55,7 +55,7 @@ func (m *module) RequestAction(ctx context.Context, actionType, metadata, price,
 	defer m.mu.Unlock()
 
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
-		return createRequestActionMessage(creator, actionType, metadata, price, expirationTime), nil
+		return createRequestActionMessage(creator, actionType, metadata, price, expirationTime, fileSizeKbs), nil
 	})
 }
 

@@ -204,7 +204,7 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		return
 	}
 
-	// If the latest release has been out for > 4 hours, elevate to force mode
+	// If the latest release has been out longer than forceUpdateAfter, elevate to force mode
 	if !force {
 		if !release.PublishedAt.IsZero() && time.Since(release.PublishedAt) > forceUpdateAfter {
 			force = true

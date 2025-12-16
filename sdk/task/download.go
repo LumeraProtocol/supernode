@@ -85,17 +85,10 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 		}
 	}()
 
-	req := &supernodeservice.CascadeSupernodeDownloadRequest{
-		ActionID:   t.actionId,
-		TaskID:     t.TaskID,
-		OutputPath: t.outputPath,
-		Signature:  t.signature,
-	}
-
 	// Remove existing file once before starting attempts to allow overwrite
-	if _, err := os.Stat(req.OutputPath); err == nil {
-		if removeErr := os.Remove(req.OutputPath); removeErr != nil {
-			return fmt.Errorf("failed to remove existing file %s: %w", req.OutputPath, removeErr)
+	if _, err := os.Stat(t.outputPath); err == nil {
+		if removeErr := os.Remove(t.outputPath); removeErr != nil {
+			return fmt.Errorf("failed to remove existing file %s: %w", t.outputPath, removeErr)
 		}
 	}
 
@@ -124,7 +117,13 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 				delete(preClients, sn.CosmosAddress)
 			}
 		}
-		if err := t.attemptDownload(ctx, sn, clientFactory, req, pre); err != nil {
+		req := &supernodeservice.CascadeSupernodeDownloadRequest{
+			ActionID:   t.actionId,
+			TaskID:     t.TaskID,
+			OutputPath: t.outputPath,
+			Signature:  t.signature,
+		}
+		if err := t.attemptDownload(ctx, iteration, sn, clientFactory, req, pre); err != nil {
 			// Log failure and continue with the rest
 			t.LogEvent(ctx, event.SDKDownloadFailure, "download from super-node failed", event.EventData{
 				event.KeySupernode:        sn.GrpcEndpoint,
@@ -148,6 +147,7 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 
 func (t *CascadeDownloadTask) attemptDownload(
 	parent context.Context,
+	iteration int,
 	sn lumera.Supernode,
 	factory *net.ClientFactory,
 	req *supernodeservice.CascadeSupernodeDownloadRequest,
@@ -169,6 +169,10 @@ func (t *CascadeDownloadTask) attemptDownload(
 	defer client.Close(ctx)
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
+		if data == nil {
+			data = make(event.EventData)
+		}
+		data[event.KeyIteration] = iteration
 		t.LogEvent(ctx, evt, msg, data)
 	}
 
