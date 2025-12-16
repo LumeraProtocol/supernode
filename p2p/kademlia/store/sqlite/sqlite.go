@@ -24,7 +24,6 @@ var (
 	checkpointInterval = 60 * time.Second // Checkpoint interval in seconds
 	//dbLock             sync.Mutex
 	dbName                 = "data001.sqlite3"
-	dbFilePath             = ""
 	storeBatchRetryTimeout = 5 * time.Second
 )
 
@@ -54,6 +53,7 @@ type Store struct {
 	cloud          cloud.Storage
 	migrationStore *MigrationMetaStore
 	repWriter      *RepWriter
+	dbFilePath     string
 }
 
 // Record is a data record
@@ -156,7 +156,7 @@ func NewStore(ctx context.Context, dataDir string, cloud cloud.Storage, mst *Mig
 	}
 
 	s.db = db
-	dbFilePath = dbFile
+	s.dbFilePath = dbFile
 
 	go s.start(ctx)
 	// Run WAL checkpoint worker every 60 seconds
@@ -662,14 +662,44 @@ func (s *Store) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+func sqliteOnDiskSizeBytes(ctx context.Context, dbPath string) (bytes uint64, ok bool) {
+	if dbPath == "" {
+		return 0, false
+	}
+
+	paths := []string{
+		dbPath,
+		dbPath + "-wal",
+		dbPath + "-shm",
+		dbPath + "-journal",
+	}
+
+	var total uint64
+	var found bool
+	for _, p := range paths {
+		fi, err := os.Stat(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			logtrace.Error(ctx, "failed to stat sqlite file", logtrace.Fields{logtrace.FieldError: err.Error(), "file_path": p})
+			continue
+		}
+		found = true
+		total += uint64(fi.Size())
+	}
+
+	return total, found
+}
+
 // Stats returns stats of store
 func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 	stats := map[string]interface{}{}
-	fi, err := os.Stat(dbFilePath)
-	if err != nil {
-		logtrace.Error(ctx, "failed to get p2p db size", logtrace.Fields{logtrace.FieldError: err.Error()})
+
+	if bytes, ok := sqliteOnDiskSizeBytes(ctx, s.dbFilePath); !ok {
+		logtrace.Error(ctx, "failed to get p2p db size", logtrace.Fields{logtrace.FieldError: "p2p db file not found"})
 	} else {
-		stats["p2p_db_size"] = utils.BytesToMB(uint64(fi.Size()))
+		stats["p2p_db_size"] = utils.BytesToMB(bytes)
 	}
 
 	if count, err := s.Count(ctx); err == nil {
