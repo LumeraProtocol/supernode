@@ -86,12 +86,6 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		return fmt.Errorf("failed to create client factory: %w", err)
 	}
 
-	req := &supernodeservice.CascadeSupernodeRegisterRequest{
-		FilePath: t.filePath,
-		ActionID: t.ActionID,
-		TaskId:   t.TaskID,
-	}
-
 	ordered := supernodes
 
 	// Ensure any unused preClients are closed when we return
@@ -125,7 +119,12 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 			}
 		}
 
-		if err := t.attemptRegistration(ctx, iteration-1, sn, clientFactory, req, pre); err != nil {
+		req := &supernodeservice.CascadeSupernodeRegisterRequest{
+			FilePath: t.filePath,
+			ActionID: t.ActionID,
+			TaskId:   t.TaskID,
+		}
+		if err := t.attemptRegistration(ctx, iteration, sn, clientFactory, req, pre); err != nil {
 			t.LogEvent(ctx, event.SDKRegistrationFailure, "registration with supernode failed", event.EventData{
 				event.KeySupernode:        sn.GrpcEndpoint,
 				event.KeySupernodeAddress: sn.CosmosAddress,
@@ -152,7 +151,7 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 	return fmt.Errorf("failed to upload to all supernodes")
 }
 
-func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest, preClient net.SupernodeClient) error {
+func (t *CascadeTask) attemptRegistration(ctx context.Context, iteration int, sn lumera.Supernode, factory *net.ClientFactory, req *supernodeservice.CascadeSupernodeRegisterRequest, preClient net.SupernodeClient) error {
 	var client net.SupernodeClient
 	var err error
 	if preClient != nil {
@@ -169,9 +168,14 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 	t.LogEvent(ctx, event.SDKConnectionEstablished, "Connection to supernode established", event.EventData{
 		event.KeySupernode:        sn.GrpcEndpoint,
 		event.KeySupernodeAddress: sn.CosmosAddress,
+		event.KeyIteration:        iteration,
 	})
 
 	req.EventLogger = func(ctx context.Context, evt event.EventType, msg string, data event.EventData) {
+		if data == nil {
+			data = make(event.EventData)
+		}
+		data[event.KeyIteration] = iteration
 		t.LogEvent(ctx, evt, msg, data)
 	}
 	// Use ctx directly; per-phase timers are applied inside the adapter
@@ -200,6 +204,7 @@ func (t *CascadeTask) attemptRegistration(ctx context.Context, _ int, sn lumera.
 	t.LogEvent(ctx, event.SDKTaskTxHashReceived, "txhash received", event.EventData{
 		event.KeyTxHash:    resp.TxHash,
 		event.KeySupernode: sn.CosmosAddress,
+		event.KeyIteration: iteration,
 	})
 
 	return nil
