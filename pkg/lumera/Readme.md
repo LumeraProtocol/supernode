@@ -53,6 +53,7 @@ resp, err := cli.ActionMsg().RequestAction(
   metadataJSON,              // stringified JSON
   "23800ulume",             // positive integer ulume amount
   fmt.Sprintf("%d", time.Now().Add(25*time.Hour).Unix()), // future expiry
+  "0",                      // fileSizeKbs (KiB; 0 if unknown)
 )
 ```
 
@@ -68,6 +69,7 @@ Validation rules (built-in)
   - `actionType`, `metadata`, `price`, `expirationTime` required.
   - `price`: must be `<positive-int>ulume`.
   - `expirationTime`: future Unix seconds.
+  - `fileSizeKbs`: optional; if set, must be integer `>= 0`.
 - FinalizeCascadeAction:
   - `actionId` required; `rqIdsIds` must have non-empty entries.
 

@@ -29,6 +29,7 @@ type Action struct {
 	State          ACTION_STATE
 	Height         int64
 	ExpirationTime int64
+	FileSizeKbs    int64
 	ActionType     string // Type of the action (e.g., CASCADE)
 	Metadata       []byte // Raw metadata bytes
 	Creator        string // Creator of the action

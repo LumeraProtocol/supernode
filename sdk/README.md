@@ -16,7 +16,7 @@ Under the hood: encodes file to a single‑block layout, signs layout/index (cre
 2) Submit RequestAction (via pkg/lumera)
 ```
 b, _ := json.Marshal(meta)
-resp, err := lumeraClient.ActionMsg().RequestAction(ctx, "CASCADE", string(b), price, expiration)
+resp, err := lumeraClient.ActionMsg().RequestAction(ctx, "CASCADE", string(b), price, expiration, "0")
 if err != nil { /* handle */ }
 // Extract actionID from tx events or query later
 ```

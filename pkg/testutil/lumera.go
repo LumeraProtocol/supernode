@@ -143,7 +143,7 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsRes
 type MockActionMsgModule struct{}
 
 // RequestAction mocks the behavior of requesting an action.
-func (m *MockActionMsgModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime string) (*sdktx.BroadcastTxResponse, error) {
+func (m *MockActionMsgModule) RequestAction(ctx context.Context, actionType, metadata, price, expirationTime, fileSizeKbs string) (*sdktx.BroadcastTxResponse, error) {
 	// Mock implementation returns success with empty result
 	return &sdktx.BroadcastTxResponse{}, nil
 }
