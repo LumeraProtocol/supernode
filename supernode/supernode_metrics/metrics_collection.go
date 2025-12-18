@@ -105,40 +105,51 @@ func parseVersion(version string) [3]int {
 }
 
 // openPorts returns the set of TCP ports this node advertises as open in its
-// metrics report. For each well-known port we first perform the corresponding
-// self-connect health check; only ports that successfully complete their
-// external-style probe are included.
-func (hm *Collector) openPorts(ctx context.Context) []uint32 {
+// metrics report. For each well-known port we perform the corresponding
+// self-connect health check and report a tri-state status (OPEN/CLOSED).
+func (hm *Collector) openPorts(ctx context.Context) []sntypes.PortStatus {
 	seen := make(map[uint32]struct{}, 3)
-	out := make([]uint32, 0, 3)
+	out := make([]sntypes.PortStatus, 0, 3)
 
 	// gRPC port (supernode service) – include only if the ALTS + gRPC health
 	// check succeeds.
-	if hm.checkGRPCService(ctx) >= 1.0 {
-		val := uint32(hm.grpcPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	grpcPort := uint32(hm.grpcPort)
+	if grpcPort != 0 {
+		state := sntypes.PortState_PORT_STATE_CLOSED
+		if hm.checkGRPCService(ctx) >= 1.0 {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		}
+		if _, ok := seen[grpcPort]; !ok {
+			seen[grpcPort] = struct{}{}
+			out = append(out, sntypes.PortStatus{Port: grpcPort, State: state})
 		}
 	}
 
 	// P2P port – include only if a full ALTS handshake on the P2P socket
 	// succeeds.
-	if hm.checkP2PService(ctx) >= 1.0 {
-		val := uint32(hm.p2pPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	p2pPort := uint32(hm.p2pPort)
+	if p2pPort != 0 {
+		state := sntypes.PortState_PORT_STATE_CLOSED
+		if hm.checkP2PService(ctx) >= 1.0 {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		}
+		if _, ok := seen[p2pPort]; !ok {
+			seen[p2pPort] = struct{}{}
+			out = append(out, sntypes.PortStatus{Port: p2pPort, State: state})
 		}
 	}
 
 	// HTTP gateway / status port – include only if /api/v1/status responds
 	// with a successful status code.
-	if hm.checkStatusAPI(ctx) >= 1.0 {
-		val := uint32(hm.gatewayPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	gatewayPort := uint32(hm.gatewayPort)
+	if gatewayPort != 0 {
+		state := sntypes.PortState_PORT_STATE_CLOSED
+		if hm.checkStatusAPI(ctx) >= 1.0 {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		}
+		if _, ok := seen[gatewayPort]; !ok {
+			seen[gatewayPort] = struct{}{}
+			out = append(out, sntypes.PortStatus{Port: gatewayPort, State: state})
 		}
 	}
 
