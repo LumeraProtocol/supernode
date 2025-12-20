@@ -17,6 +17,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	grpcserver "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
+	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
@@ -77,6 +78,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to connect Lumera, please check your configuration", logtrace.Fields{"error": err.Error()})
 		}
+
+		// Reachability evidence store (used for open_ports inference).
+		reachability.SetDefaultStore(reachability.NewStore(appConfig.SupernodeConfig.Identity))
 
 		// Verify config matches chain registration before starting services
 		logtrace.Debug(ctx, "Verifying configuration against chain registration", logtrace.Fields{})

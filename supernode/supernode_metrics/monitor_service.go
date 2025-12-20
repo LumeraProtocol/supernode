@@ -17,22 +17,6 @@ import (
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 )
 
-const (
-	// DefaultStartupDelaySeconds is a safety delay after process start before
-	// we begin reporting metrics, giving the node time to fully initialize.
-	DefaultStartupDelaySeconds = 30
-	// PortCheckTimeoutSeconds bounds how long we wait when probing port
-	// accessibility, so a single slow check cannot stall the entire loop.
-	PortCheckTimeoutSeconds = 5
-
-	// Well-known local ports used when reporting `open_ports` metrics.
-	// These are defaults; individual nodes may override them via config.
-	// They should stay aligned with the chain's `required_open_ports` parameter.
-	APIPort    = 4444 // Supernode gRPC port
-	P2PPort    = 4445 // Kademlia / P2P port
-	StatusPort = 8002 // HTTP gateway port (grpc-gateway: /api/v1/status)
-)
-
 // Collector manages the end-to-end supernode metrics flow:
 // 1) derive configuration from on-chain params,
 // 2) collect local health data from the status service and helpers, and
@@ -57,18 +41,22 @@ type Collector struct {
 	// stopChan is closed to signal the reporting loop to exit.
 	stopChan chan struct{}
 	// wg tracks the lifetime of background goroutines to enable clean shutdowns.
-	wg sync.WaitGroup
+	wg          sync.WaitGroup
+	probePlanMu sync.RWMutex
+	probePlan   *probePlan
 
 	// Configuration (derived from on-chain params)
 	// reportInterval is the wall-clock interval between metrics reports,
 	// derived from the `metrics_update_interval_blocks` param and the observed block time.
-	reportInterval time.Duration
+	reportInterval              time.Duration
+	metricsUpdateIntervalBlocks uint64
+	metricsFreshnessMaxBlocks   uint64
 	// version is the semantic version of this supernode binary, used to populate
 	// the `version_*` fields in SupernodeMetrics.
 	version string
 
 	// Listener ports for this specific supernode instance.
-	// These are used for self-connect checks and for populating `open_ports`.
+	// These are used for populating `open_ports`.
 	grpcPort    uint16
 	p2pPort     uint16
 	gatewayPort uint16
@@ -125,19 +113,53 @@ func (hm *Collector) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to fetch supernode params for health monitor: %w", err)
 		}
 
-		params := paramsResp.GetParams()
+		params := paramsResp.GetParams().WithDefaults()
 		intervalBlocks := params.GetMetricsUpdateIntervalBlocks()
 		if intervalBlocks == 0 {
 			return fmt.Errorf("supernode params metrics_update_interval_blocks is zero or unset")
 		}
 
+		hm.metricsUpdateIntervalBlocks = intervalBlocks
+		hm.metricsFreshnessMaxBlocks = params.GetMetricsFreshnessMaxBlocks()
 		hm.reportInterval = hm.resolveReportInterval(ctx, intervalBlocks)
 	}
 
 	hm.wg.Add(1)
 	go hm.reportingLoop(ctx)
 
+	// Active probing generates a small amount of deterministic peer-to-peer traffic so
+	// that quiet-but-healthy nodes still receive inbound connections, enabling
+	// evidence-based `open_ports` to converge to OPEN instead of UNKNOWN.
+	hm.wg.Add(1)
+	go hm.probingLoop(ctx)
+
 	return nil
+}
+
+func (hm *Collector) probingEpochBlocks() uint64 {
+	if hm == nil {
+		return 0
+	}
+	return hm.metricsUpdateIntervalBlocks
+}
+
+func (hm *Collector) setProbePlan(plan *probePlan) {
+	if hm == nil {
+		return
+	}
+	hm.probePlanMu.Lock()
+	hm.probePlan = plan
+	hm.probePlanMu.Unlock()
+}
+
+func (hm *Collector) getProbePlan() *probePlan {
+	if hm == nil {
+		return nil
+	}
+	hm.probePlanMu.RLock()
+	plan := hm.probePlan
+	hm.probePlanMu.RUnlock()
+	return plan
 }
 
 // resolveReportInterval converts a block-based interval into a wall-clock

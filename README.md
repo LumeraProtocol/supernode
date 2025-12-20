@@ -200,9 +200,25 @@ enum SupernodeEventType {
 
 See docs/gateway.md for the full gateway guide (endpoints, examples, Swagger links).
 
-### HTTP Gateway
+## Reachability & Active Probing
 
-See docs/gateway.md for the full gateway guide (endpoints, examples, Swagger links).
+The supernode reports external reachability as `open_ports` for the three well-known services:
+
+- gRPC (`4444`)
+- P2P (`4445`)
+- Gateway status (`8002`, `GET /api/v1/status`)
+
+Each port is reported as a tri-state value:
+
+- `OPEN`: we observed real inbound IPv4 traffic recently.
+- `CLOSED`: we have no recent inbound evidence and the deterministic probing quorum rules indicate silence is meaningful.
+- `UNKNOWN`: bootstrap / chain unavailable / not enough eligible peers to establish quorum.
+
+Active probing exists only to generate a small amount of inbound traffic so that quiet-but-healthy nodes can still be marked `OPEN`.
+For full implementation details and the rationale/spec, see:
+
+- `docs/reachability_active_probing.md`
+- `REACHABILITY_ACTIVE_PROBING_SPEC.md`
 
 ## CLI Commands
 

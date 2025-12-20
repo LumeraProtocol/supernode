@@ -6,8 +6,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 )
 
 // collectMetrics gathers a snapshot of local health and resource usage and
@@ -104,42 +106,56 @@ func parseVersion(version string) [3]int {
 	return result
 }
 
-// openPorts returns the set of TCP ports this node advertises as open in its
-// metrics report. For each well-known port we first perform the corresponding
-// self-connect health check; only ports that successfully complete their
-// external-style probe are included.
-func (hm *Collector) openPorts(ctx context.Context) []uint32 {
-	seen := make(map[uint32]struct{}, 3)
-	out := make([]uint32, 0, 3)
+// openPorts returns tri-state status for the node's well-known service ports.
+//
+// Ports are only marked OPEN when we have recent evidence of real inbound
+// traffic. A port is marked CLOSED only when we have no fresh inbound evidence
+// and the deterministic active-probing quorum rules indicate that silence is
+// meaningful (i.e. enough assigned probers are alive this epoch).
+func (hm *Collector) openPorts(ctx context.Context) []sntypes.PortStatus {
+	out := make([]sntypes.PortStatus, 0, 3)
 
-	// gRPC port (supernode service) – include only if the ALTS + gRPC health
-	// check succeeds.
-	if hm.checkGRPCService(ctx) >= 1.0 {
-		val := uint32(hm.grpcPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	now := time.Now()
+	window := time.Duration(EvidenceWindowSeconds) * time.Second
+	if hm.reportInterval > 0 {
+		// Ensure evidence doesn't expire between expected metrics reports.
+		minWindow := hm.reportInterval * 2
+		if minWindow > window {
+			window = minWindow
 		}
 	}
 
-	// P2P port – include only if a full ALTS handshake on the P2P socket
-	// succeeds.
-	if hm.checkP2PService(ctx) >= 1.0 {
-		val := uint32(hm.p2pPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	store := reachability.DefaultStore()
+	canInferClosed := hm.silenceImpliesClosed(ctx)
+
+	if hm.grpcPort != 0 {
+		state := sntypes.PortState_PORT_STATE_UNKNOWN
+		if store != nil && store.IsInboundFresh(reachability.ServiceGRPC, window, now) {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		} else if store != nil && canInferClosed {
+			state = sntypes.PortState_PORT_STATE_CLOSED
 		}
+		out = append(out, sntypes.PortStatus{Port: uint32(hm.grpcPort), State: state})
 	}
 
-	// HTTP gateway / status port – include only if /api/v1/status responds
-	// with a successful status code.
-	if hm.checkStatusAPI(ctx) >= 1.0 {
-		val := uint32(hm.gatewayPort)
-		if _, ok := seen[val]; !ok && val != 0 {
-			seen[val] = struct{}{}
-			out = append(out, val)
+	if hm.p2pPort != 0 {
+		state := sntypes.PortState_PORT_STATE_UNKNOWN
+		if store != nil && store.IsInboundFresh(reachability.ServiceP2P, window, now) {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		} else if store != nil && canInferClosed {
+			state = sntypes.PortState_PORT_STATE_CLOSED
 		}
+		out = append(out, sntypes.PortStatus{Port: uint32(hm.p2pPort), State: state})
+	}
+
+	if hm.gatewayPort != 0 {
+		state := sntypes.PortState_PORT_STATE_UNKNOWN
+		if store != nil && store.IsInboundFresh(reachability.ServiceGateway, window, now) {
+			state = sntypes.PortState_PORT_STATE_OPEN
+		} else if store != nil && canInferClosed {
+			state = sntypes.PortState_PORT_STATE_CLOSED
+		}
+		out = append(out, sntypes.PortStatus{Port: uint32(hm.gatewayPort), State: state})
 	}
 
 	return out
