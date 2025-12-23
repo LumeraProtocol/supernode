@@ -441,7 +441,18 @@ func (hm *Collector) reportHealth(ctx context.Context) {
 	}
 	fields["probe"] = probe
 
-	logtrace.Info(ctx, "Reporting supernode metrics", fields)
+	allPortsOpen := true
+	for _, ps := range metrics.OpenPorts {
+		if ps.State != sntypes.PortState_PORT_STATE_OPEN {
+			allPortsOpen = false
+			break
+		}
+	}
+	if allPortsOpen {
+		logtrace.Info(ctx, "Reporting supernode metrics", fields)
+	} else {
+		logtrace.Warn(ctx, "Reporting supernode metrics (one or more ports not OPEN)", fields)
+	}
 
 	// Report the metrics snapshot to the blockchain using the supernode
 	// module's ReportMetrics Msg. Any failure is logged but does not panic
