@@ -27,9 +27,9 @@ const (
 	// If a port received traffic within this window, it's considered OPEN.
 	// Active probing is designed to refresh evidence before this window expires.
 	//
-	// Example: With 600s (10 min), a port that received traffic 5 minutes ago
-	// is still OPEN; traffic 15 minutes ago is stale and doesn't count.
-	EvidenceWindowSeconds = 600
+	// Example: With 7200s (2 hours), a port that received traffic 30 minutes ago
+	// is still OPEN; traffic 3 hours ago is stale and doesn't count.
+	EvidenceWindowSeconds = 7200
 )
 
 // =============================================================================
