@@ -24,19 +24,6 @@
             "env": {},
             "showLog": true,
             "trace": "verbose"
-        },
-        {
-            "name": "Cascade E2E (test-cascade)",
-            "type": "go",
-            "request": "launch",
-            "mode": "test",
-            "program": "${workspaceFolder}/tests/system",
-            "cwd": "${workspaceFolder}/tests/system",
-            "args": ["-test.run", "TestCascadeE2E", "-test.v"],
-            "buildFlags": "-tags=system_test",
-            "env": {},
-            "showLog": true,
-            "trace": "verbose"
-        }
+        },        
     ]
 }

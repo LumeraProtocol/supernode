@@ -12,7 +12,6 @@ import (
 	bankmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 
 	sdkmath "cosmossdk.io/math"
@@ -26,16 +25,15 @@ import (
 
 // MockLumeraClient implements the lumera.Client interface for testing purposes
 type MockLumeraClient struct {
-	authMod         *MockAuthModule
-	actionMod       *MockActionModule
-	actionMsgMod    *MockActionMsgModule
-	bankMod         *MockBankModule
-	supernodeMod    *MockSupernodeModule
-	supernodeMsgMod supernode_msg.Module
-	txMod           *MockTxModule
-	nodeMod         *MockNodeModule
-	kr              keyring.Keyring
-	addresses       []string // Store node addresses for testing
+	authMod      *MockAuthModule
+	actionMod    *MockActionModule
+	actionMsgMod *MockActionMsgModule
+	bankMod      *MockBankModule
+	supernodeMod *MockSupernodeModule
+	txMod        *MockTxModule
+	nodeMod      *MockNodeModule
+	kr           keyring.Keyring
+	addresses    []string // Store node addresses for testing
 }
 
 // NewMockLumeraClient creates a new mock Lumera client for testing
@@ -44,21 +42,19 @@ func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client,
 	actionMsgMod := &MockActionMsgModule{}
 	bankMod := &MockBankModule{}
 	supernodeMod := &MockSupernodeModule{addresses: addresses}
-	supernodeMsgMod := &MockSupernodeMsgModule{}
 	txMod := &MockTxModule{}
 	nodeMod := &MockNodeModule{}
 
 	return &MockLumeraClient{
-		authMod:         &MockAuthModule{},
-		actionMod:       actionMod,
-		actionMsgMod:    actionMsgMod,
-		bankMod:         bankMod,
-		supernodeMod:    supernodeMod,
-		supernodeMsgMod: supernodeMsgMod,
-		txMod:           txMod,
-		nodeMod:         nodeMod,
-		kr:              kr,
-		addresses:       addresses,
+		authMod:      &MockAuthModule{},
+		actionMod:    actionMod,
+		actionMsgMod: actionMsgMod,
+		bankMod:      bankMod,
+		supernodeMod: supernodeMod,
+		txMod:        txMod,
+		nodeMod:      nodeMod,
+		kr:           kr,
+		addresses:    addresses,
 	}, nil
 }
 
@@ -85,11 +81,6 @@ func (c *MockLumeraClient) Bank() bankmod.Module {
 // SuperNode returns the SuperNode module client
 func (c *MockLumeraClient) SuperNode() supernode.Module {
 	return c.supernodeMod
-}
-
-// SuperNodeMsg returns the SuperNodeMsg module client
-func (c *MockLumeraClient) SuperNodeMsg() supernode_msg.Module {
-	return c.supernodeMsgMod
 }
 
 // Tx returns the Transaction module client
@@ -174,9 +165,6 @@ type MockSupernodeModule struct {
 	addresses []string
 }
 
-// MockSupernodeMsgModule implements the supernode_msg.Module interface for testing.
-type MockSupernodeMsgModule struct{}
-
 func (m *MockSupernodeModule) GetTopSuperNodesForBlock(ctx context.Context, req *supernodeTypes.QueryGetTopSuperNodesForBlockRequest) (*supernodeTypes.QueryGetTopSuperNodesForBlockResponse, error) {
 	return &supernodeTypes.QueryGetTopSuperNodesForBlockResponse{}, nil
 }
@@ -207,11 +195,6 @@ func (m *MockSupernodeModule) GetSupernodeWithLatestAddress(ctx context.Context,
 
 func (m *MockSupernodeModule) ListSuperNodes(ctx context.Context) (*supernodeTypes.QueryListSuperNodesResponse, error) {
 	return &supernodeTypes.QueryListSuperNodesResponse{}, nil
-}
-
-// ReportMetrics mocks broadcasting a metrics report transaction.
-func (m *MockSupernodeMsgModule) ReportMetrics(ctx context.Context, identity string, metrics supernodeTypes.SupernodeMetrics) (*sdktx.BroadcastTxResponse, error) {
-	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // MockTxModule implements the tx.Module interface for testing

@@ -10,21 +10,19 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
-	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 )
 
 type lumeraClient struct {
-	cfg             *Config
-	authMod         auth.Module
-	actionMod       action.Module
-	actionMsgMod    action_msg.Module
-	bankMod         bank.Module
-	supernodeMod    supernode.Module
-	supernodeMsgMod supernode_msg.Module
-	txMod           tx.Module
-	nodeMod         node.Module
-	conn            Connection
+	cfg          *Config
+	authMod      auth.Module
+	actionMod    action.Module
+	actionMsgMod action_msg.Module
+	bankMod      bank.Module
+	supernodeMod supernode.Module
+	txMod        tx.Module
+	nodeMod      node.Module
+	conn         Connection
 }
 
 func newClient(ctx context.Context, cfg *Config) (Client, error) {
@@ -95,31 +93,16 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 		return nil, err
 	}
 
-	supernodeMsgModule, err := supernode_msg.NewModule(
-		conn.GetConn(),
-		authModule,
-		txModule,
-		supernodeModule,
-		cfg.keyring,
-		cfg.KeyName,
-		cfg.ChainID,
-	)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
 	return &lumeraClient{
-		cfg:             cfg,
-		authMod:         authModule,
-		actionMod:       actionModule,
-		actionMsgMod:    actionMsgModule,
-		bankMod:         bankModule,
-		supernodeMod:    supernodeModule,
-		supernodeMsgMod: supernodeMsgModule,
-		txMod:           txModule,
-		nodeMod:         nodeModule,
-		conn:            conn,
+		cfg:          cfg,
+		authMod:      authModule,
+		actionMod:    actionModule,
+		actionMsgMod: actionMsgModule,
+		bankMod:      bankModule,
+		supernodeMod: supernodeModule,
+		txMod:        txModule,
+		nodeMod:      nodeModule,
+		conn:         conn,
 	}, nil
 }
 
@@ -141,10 +124,6 @@ func (c *lumeraClient) Bank() bank.Module {
 
 func (c *lumeraClient) SuperNode() supernode.Module {
 	return c.supernodeMod
-}
-
-func (c *lumeraClient) SuperNodeMsg() supernode_msg.Module {
-	return c.supernodeMsgMod
 }
 
 func (c *lumeraClient) Tx() tx.Module {

@@ -403,15 +403,15 @@ func toSdkSupernodes(resp *sntypes.QueryGetTopSuperNodesForBlockResponse) []Supe
 			continue
 		}
 
-		state := ParseSupernodeState(latestState.State.String())
-		if state == SUPERNODE_STATE_UNSPECIFIED {
+		// Check if the latest state is active
+		if latestState.State.String() != string(SUPERNODE_STATE_ACTIVE) {
 			continue
 		}
 
 		result = append(result, Supernode{
 			CosmosAddress: strings.TrimSpace(sn.SupernodeAccount),
 			GrpcEndpoint:  strings.TrimSpace(ipAddress),
-			State:         state,
+			State:         SUPERNODE_STATE_ACTIVE,
 		})
 	}
 	return result
