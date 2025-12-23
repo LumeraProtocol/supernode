@@ -401,36 +401,45 @@ func (hm *Collector) reportHealth(ctx context.Context) {
 		return
 	}
 
-	fields := logtrace.Fields{
-		"identity":    hm.identity,
-		"open_ports":  metrics.OpenPorts,
-		"uptime_secs": metrics.UptimeSeconds,
-	}
 	// Log the complete metrics message before submission so operators can
 	// inspect exactly what is being broadcast to the chain.
-	fields["metrics"] = metrics
+	fields := logtrace.Fields{"metrics": metrics}
+
+	epochID := reachability.CurrentEpochID()
+	probe := logtrace.Fields{"epoch": epochID}
 
 	// Option A per-service epoch success booleans (no probe RPC/proto).
-	epochID := reachability.CurrentEpochID()
 	if tr := reachability.DefaultEpochTracker(); tr != nil {
-		fields["epoch"] = epochID
-		fields["probe.in.success.grpc"] = tr.Seen(epochID, reachability.ServiceGRPC)
-		fields["probe.in.success.p2p"] = tr.Seen(epochID, reachability.ServiceP2P)
-		fields["probe.in.success.gateway"] = tr.Seen(epochID, reachability.ServiceGateway)
+		probe["in"] = logtrace.Fields{
+			"success": logtrace.Fields{
+				"grpc":    tr.Seen(epochID, reachability.ServiceGRPC),
+				"p2p":     tr.Seen(epochID, reachability.ServiceP2P),
+				"gateway": tr.Seen(epochID, reachability.ServiceGateway),
+			},
+		}
 	}
 	if plan := hm.getProbePlan(); plan != nil && plan.epochID == epochID && plan.expectedInbound != nil {
-		fields["probe.k"] = ProbeAssignmentsPerEpoch
-		fields["probe.in.expected"] = plan.expectedInbound[strings.TrimSpace(hm.identity)]
-		fields["probe.out.expected"] = len(plan.outboundTargets)
-		fields["probe.out.attempted"] = plan.outAttempted.Load()
-		fields["probe.out.success"] = plan.outSuccess.Load()
+		in, _ := probe["in"].(logtrace.Fields)
+		if in == nil {
+			in = logtrace.Fields{}
+		}
+		in["expected"] = plan.expectedInbound[strings.TrimSpace(hm.identity)]
+		probe["in"] = in
+
+		probe["k"] = ProbeAssignmentsPerEpoch
+		probe["out"] = logtrace.Fields{
+			"expected":  len(plan.outboundTargets),
+			"attempted": plan.outAttempted.Load(),
+			"success":   plan.outSuccess.Load(),
+		}
 		if plan.chainID != "" {
-			fields["probe.chain_id"] = plan.chainID
+			probe["chain_id"] = plan.chainID
 		}
 		if plan.randomnessHex != "" {
-			fields["probe.epoch_randomness_hex"] = plan.randomnessHex
+			probe["epoch_randomness_hex"] = plan.randomnessHex
 		}
 	}
+	fields["probe"] = probe
 
 	logtrace.Info(ctx, "Reporting supernode metrics", fields)
 
@@ -465,7 +474,7 @@ func (hm *Collector) submitMetrics(ctx context.Context, metrics sntypes.Supernod
 		logtrace.Error(ctx, fmt.Sprintf("failed to broadcast metrics transaction: %v", err), nil)
 		return err
 	}
-	logtrace.Info(ctx, "Metrics transaction broadcasted", logtrace.Fields{"identity": identity})
+	logtrace.Debug(ctx, "Metrics transaction broadcasted", logtrace.Fields{"identity": identity})
 
 	return nil
 }
