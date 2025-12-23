@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -50,7 +49,7 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	cryptocodec.RegisterInterfaces(registry)
 	authtypes.RegisterInterfaces(registry)
 	actiontypes.RegisterInterfaces(registry)
-	sntypes.RegisterInterfaces(registry)
+	// Add more interface registrations here as you add more modules
 }
 
 // GetEncodingConfig returns the standard encoding config for Lumera client
