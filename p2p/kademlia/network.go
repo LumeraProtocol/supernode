@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	json "github.com/json-iterator/go"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 
 	"github.com/google/uuid"
@@ -360,7 +361,8 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 	})
 	// secure handshake
 	if s.serverTC != nil {
-		conn, err = NewSecureServerConn(ctx, s.serverTC, rawConn)
+		var remoteIdentity string
+		conn, remoteIdentity, err = NewSecureServerConn(ctx, s.serverTC, rawConn)
 		if err != nil {
 			_ = rawConn.Close()
 			logtrace.Warn(ctx, "Server secure handshake failed", logtrace.Fields{
@@ -368,6 +370,11 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 				logtrace.FieldError:  err.Error(),
 			})
 			return
+		}
+
+		// Record inbound evidence for P2P reachability only after the secure handshake succeeds.
+		if store := reachability.DefaultStore(); store != nil {
+			store.RecordInbound(reachability.ServiceP2P, remoteIdentity, rawConn.RemoteAddr(), time.Now())
 		}
 	} else {
 		conn = rawConn

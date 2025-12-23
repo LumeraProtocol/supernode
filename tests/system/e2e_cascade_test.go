@@ -71,7 +71,8 @@ func TestCascadeE2E(t *testing.T) {
 	// Update the genesis file with required params before starting
 	// - Set staking bond denom to match ulume used by gentxs
 	// - Configure action module params used by the test
-	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t))
+	// - Relax supernode metrics params so nodes don't get POSTPONED immediately in tests
+	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t), SetSupernodeMetricsParams(t))
 
 	// Reset and start the blockchain
 	sut.StartChain(t)
@@ -667,3 +668,71 @@ func SetStakingBondDenomUlume(t *testing.T) GenesisMutator {
 		return state
 	}
 }
+
+// SetSupernodeMetricsParams configures supernode metrics-related params for faster testing.
+func SetSupernodeMetricsParams(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+
+		state, err := sjson.SetRawBytes(genesis, "app_state.supernode.params.minimum_stake_for_sn", []byte(`{"denom":"ulume","amount":"100000000"}`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.reporting_threshold", []byte(`"1"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.slashing_threshold", []byte(`"1"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.metrics_thresholds", []byte(`""`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.evidence_retention_period", []byte(`"180days"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.slashing_fraction", []byte(`"0.010000000000000000"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.inactivity_penalty_period", []byte(`"86400s"`))
+		require.NoError(t, err)
+
+		// Allow plenty of time for supernodes to start and report metrics in tests.
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.metrics_update_interval_blocks", []byte(`"120"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.metrics_grace_period_blocks", []byte(`"120"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.metrics_freshness_max_blocks", []byte(`"500"`))
+		require.NoError(t, err)
+
+		// Permit any version in tests; binaries are often built with "dev".
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.min_supernode_version", []byte(`"0.0.0"`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.min_cpu_cores", []byte(`1`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.max_cpu_usage_percent", []byte(`100`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.min_mem_gb", []byte(`1`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.max_mem_usage_percent", []byte(`100`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.min_storage_gb", []byte(`1`))
+		require.NoError(t, err)
+
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.max_storage_usage_percent", []byte(`100`))
+		require.NoError(t, err)
+
+		// Allow any open ports for multi-supernode tests.
+		state, err = sjson.SetRawBytes(state, "app_state.supernode.params.required_open_ports", []byte(`[]`))
+		require.NoError(t, err)
+
+		return state
+	}
+}
+
+//

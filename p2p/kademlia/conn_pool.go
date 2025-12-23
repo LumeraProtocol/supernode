@@ -11,6 +11,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	althandshake "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials/alts/handshake"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -100,8 +101,8 @@ func NewSecureClientConn(ctx context.Context, tc credentials.TransportCredential
 	}, nil
 }
 
-// NewSecureServerConn do server handshake and create a secure connection
-func NewSecureServerConn(_ context.Context, tc credentials.TransportCredentials, rawConn net.Conn) (net.Conn, error) {
+// NewSecureServerConn does server handshake and returns a secure connection along with the authenticated remote identity (when available).
+func NewSecureServerConn(_ context.Context, tc credentials.TransportCredentials, rawConn net.Conn) (net.Conn, string, error) {
 	if tcp, ok := rawConn.(*net.TCPConn); ok {
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(2 * time.Minute) // tune: 2–5 min
@@ -111,15 +112,20 @@ func NewSecureServerConn(_ context.Context, tc credentials.TransportCredentials,
 		_ = tcp.SetNoDelay(true)
 	}
 
-	conn, _, err := tc.ServerHandshake(rawConn)
+	conn, authInfo, err := tc.ServerHandshake(rawConn)
 	if err != nil {
-		return nil, errors.Errorf("server secure establish failed: %w", err)
+		return nil, "", errors.Errorf("server secure establish failed: %w", err)
+	}
+
+	remoteIdentity := ""
+	if ai, ok := authInfo.(*althandshake.AuthInfo); ok && ai != nil {
+		remoteIdentity = ai.RemoteIdentity
 	}
 
 	return &connWrapper{
 		secureConn: conn,
 		rawConn:    rawConn,
-	}, nil
+	}, remoteIdentity, nil
 }
 
 // Read implements net.Conn's Read interface
