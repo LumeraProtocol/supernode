@@ -154,90 +154,113 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 			probeCtx, cancel := context.WithTimeout(parent, connectionTimeout)
 			defer cancel()
 
-			var innerWg sync.WaitGroup
-			var healthOK, balanceOK bool
-			var c net.SupernodeClient
+			type healthResult struct {
+				ok     bool
+				client net.SupernodeClient
+				reason string
+			}
+			type balanceResult struct {
+				ok     bool
+				reason string
+			}
 
-			innerWg.Add(2)
+			healthCh := make(chan healthResult, 1)
+			balanceCh := make(chan balanceResult, 1)
 
-			// Step 1.2.1 — Health probe (dial + check) — create client here so balance starts immediately
+			// Step 1.2.1 — Health probe (dial + check)
 			go func() {
-				defer innerWg.Done()
+				res := healthResult{ok: false}
+				defer func() { healthCh <- res }()
+
 				client, err := clientFactory.CreateClient(probeCtx, sn)
 				if err != nil {
 					// Unable to connect → ineligible; cancel sibling
-					rejectionReasons[i] = fmt.Sprintf("connection failed: %v", err)
+					res.reason = fmt.Sprintf("connection failed: %v", err)
 					cancel()
 					return
 				}
-				// Keep reference for potential reuse; close later based on outcome
-				c = client
+
 				// (1) Health SERVING gate
 				h, err := client.HealthCheck(probeCtx)
-				if err == nil && h != nil && h.Status == grpc_health_v1.HealthCheckResponse_SERVING {
-					healthOK = true
-				} else {
-					// Health failed → ineligible; cancel sibling
+				if err != nil || h == nil || h.Status != grpc_health_v1.HealthCheckResponse_SERVING {
 					if err != nil {
-						rejectionReasons[i] = fmt.Sprintf("health check failed: %v", "")
+						res.reason = fmt.Sprintf("health check failed: %v", err)
 					} else if h == nil {
-						rejectionReasons[i] = "health check returned nil"
+						res.reason = "health check returned nil"
 					} else {
-						rejectionReasons[i] = fmt.Sprintf("health status: %v (expected SERVING)", h.Status)
+						res.reason = fmt.Sprintf("health status: %v (expected SERVING)", h.Status)
 					}
+					_ = client.Close(context.Background())
 					cancel()
 					return
 				}
+
 				// (2) One-liner peers>1 gate using Status API to ensure network liveness
-				if st, err := client.GetSupernodeStatus(probeCtx); err != nil || st == nil || st.Network == nil || st.Network.PeersCount <= 1 {
-					healthOK = false
+				st, err := client.GetSupernodeStatus(probeCtx)
+				if err != nil || st == nil || st.Network == nil || st.Network.PeersCount <= 1 {
 					if err != nil {
-						rejectionReasons[i] = fmt.Sprintf("status check failed: %v", "")
+						res.reason = fmt.Sprintf("status check failed: %v", err)
 					} else if st == nil || st.Network == nil {
-						rejectionReasons[i] = "status or network info unavailable"
+						res.reason = "status or network info unavailable"
 					} else {
-						rejectionReasons[i] = fmt.Sprintf("insufficient peers: %d (need > 1)", st.Network.PeersCount)
+						res.reason = fmt.Sprintf("insufficient peers: %d (need > 1)", st.Network.PeersCount)
 					}
+					_ = client.Close(context.Background())
 					cancel()
 					return
 				}
+
+				res.ok = true
+				res.client = client
 			}()
 
 			// Step 1.2.2 — Balance probe (chain) — independent of gRPC dial
 			go func() {
-				defer innerWg.Done()
+				res := balanceResult{ok: false}
+				defer func() { balanceCh <- res }()
+
 				bal, err := t.client.GetBalance(probeCtx, sn.CosmosAddress, denom)
 				if err == nil && bal != nil && bal.Balance != nil && !bal.Balance.Amount.LT(min) {
-					balanceOK = true
-				} else {
-					// Insufficient or error → ineligible; cancel sibling
-					if err != nil {
-						rejectionReasons[i] = fmt.Sprintf("balance check failed: %v", err)
-					} else if bal == nil || bal.Balance == nil {
-						rejectionReasons[i] = "balance info unavailable"
-					} else {
-						actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
-						rejectionReasons[i] = fmt.Sprintf("insufficient balance: %s LUME (need >= 1 LUME)", actualLUME.String())
-					}
-					cancel()
+					res.ok = true
+					return
 				}
+
+				// Insufficient or error → ineligible; cancel sibling
+				if err != nil {
+					res.reason = fmt.Sprintf("balance check failed: %v", err)
+				} else if bal == nil || bal.Balance == nil {
+					res.reason = "balance info unavailable"
+				} else {
+					actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
+					res.reason = fmt.Sprintf("insufficient balance: %s LUME (need >= 1 LUME)", actualLUME.String())
+				}
+				cancel()
 			}()
 
 			// Step 1.3 — Wait for both probes, then decide eligibility and manage client lifecycle
-			innerWg.Wait()
-			if healthOK && balanceOK {
+			hr := <-healthCh
+			br := <-balanceCh
+
+			if hr.ok && br.ok {
 				keep[i] = true
-				// Stash the client for reuse; key by CosmosAddress
-				if c != nil {
+				if hr.client != nil {
+					// Stash the client for reuse; key by CosmosAddress
 					mtx.Lock()
-					preClients[sn.CosmosAddress] = c
+					preClients[sn.CosmosAddress] = hr.client
 					mtx.Unlock()
 				}
+				return
+			}
+
+			// Close any created client we won't reuse
+			if hr.client != nil {
+				_ = hr.client.Close(context.Background())
+			}
+
+			if hr.reason != "" {
+				rejectionReasons[i] = hr.reason
 			} else {
-				// Close any created client we won't reuse
-				if c != nil {
-					_ = c.Close(context.Background())
-				}
+				rejectionReasons[i] = br.reason
 			}
 		}(i, sn)
 	}

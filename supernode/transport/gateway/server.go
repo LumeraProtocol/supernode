@@ -16,6 +16,7 @@ import (
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 )
 
 // DefaultGatewayPort is an uncommon port for internal gateway use
@@ -150,7 +151,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Create HTTP server
 	s.server = &http.Server{
 		Addr:         net.JoinHostPort(s.ipAddress, strconv.Itoa(s.port)),
-		Handler:      s.corsMiddleware(httpMux),
+		Handler:      s.corsMiddleware(s.reachabilityMiddleware(httpMux)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -190,6 +191,30 @@ func (s *Server) corsMiddleware(h http.Handler) http.Handler {
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
+// reachabilityMiddleware records inbound evidence for the gateway port based on
+// inbound requests to `/api/v1/status`.
+func (s *Server) reachabilityMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL != nil && r.URL.Path == "/api/v1/status" {
+			store := reachability.DefaultStore()
+			if store != nil {
+				var addr net.Addr
+				if host, portStr, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+					if ip := net.ParseIP(host); ip != nil {
+						port, _ := strconv.Atoi(portStr)
+						addr = &net.TCPAddr{IP: ip, Port: port}
+					}
+				} else if ip := net.ParseIP(r.RemoteAddr); ip != nil {
+					addr = &net.TCPAddr{IP: ip}
+				}
+				store.RecordInbound(reachability.ServiceGateway, "", addr, time.Now())
+			}
 		}
 
 		h.ServeHTTP(w, r)

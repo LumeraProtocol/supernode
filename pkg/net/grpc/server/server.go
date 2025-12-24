@@ -18,6 +18,7 @@ import (
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 )
 
 const (
@@ -112,6 +113,18 @@ func DefaultServerOptions() *ServerOptions {
 	}
 }
 
+func recordInboundReachability(ctx context.Context) {
+	store := reachability.DefaultStore()
+	if store == nil {
+		return
+	}
+	// Record inbound gRPC reachability evidence for this node. This does not apply
+	// any IP validation/filtering; the evidence rule is simply "we observed a real
+	// inbound request with a remote address".
+	identity, addr := reachability.GrpcRemoteIdentityAndAddr(ctx)
+	store.RecordInbound(reachability.ServiceGRPC, identity, addr, time.Now())
+}
+
 // defaultServerOptionBuilder is the default implementation of ServerOptionBuilder
 type defaultServerOptionBuilder struct{}
 
@@ -160,6 +173,19 @@ func NewServerWithBuilder(name string, creds credentials.TransportCredentials, b
 
 // buildServerOptions creates all server options including credentials
 func (s *Server) buildServerOptions(opts *ServerOptions) []grpc.ServerOption {
+	unaryInterceptors := []grpc.UnaryServerInterceptor{
+		func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			recordInboundReachability(ctx)
+			return handler(ctx, req)
+		},
+	}
+	streamInterceptors := []grpc.StreamServerInterceptor{
+		func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			recordInboundReachability(ss.Context())
+			return handler(srv, ss)
+		},
+	}
+
 	serverOpts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(opts.MaxRecvMsgSize),
 		grpc.MaxSendMsgSize(opts.MaxSendMsgSize),
@@ -170,6 +196,8 @@ func (s *Server) buildServerOptions(opts *ServerOptions) []grpc.ServerOption {
 		grpc.KeepaliveEnforcementPolicy(s.builder.buildKeepAlivePolicy(opts)),
 		grpc.WriteBufferSize(opts.WriteBufferSize),
 		grpc.ReadBufferSize(opts.ReadBufferSize),
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
 	}
 
 	if opts.NumServerWorkers > 0 {

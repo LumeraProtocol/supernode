@@ -21,6 +21,7 @@ const (
 	SUPERNODE_STATE_DISABLED    SUPERNODE_STATE = "SUPERNODE_STATE_DISABLED"
 	SUPERNODE_STATE_STOPPED     SUPERNODE_STATE = "SUPERNODE_STATE_STOPPED"
 	SUPERNODE_STATE_PENALIZED   SUPERNODE_STATE = "SUPERNODE_STATE_PENALIZED"
+	SUPERNODE_STATE_POSTPONED   SUPERNODE_STATE = "SUPERNODE_STATE_POSTPONED"
 )
 
 // Action represents an action registered on the Lumera blockchain
@@ -55,4 +56,18 @@ func (s Supernodes) String() string {
 	}
 	result += "]"
 	return result
+}
+
+// ParseSupernodeState normalizes a raw state string into the SUPERNODE_STATE enum.
+func ParseSupernodeState(state string) SUPERNODE_STATE {
+	switch SUPERNODE_STATE(state) {
+	case SUPERNODE_STATE_ACTIVE,
+		SUPERNODE_STATE_DISABLED,
+		SUPERNODE_STATE_STOPPED,
+		SUPERNODE_STATE_PENALIZED,
+		SUPERNODE_STATE_POSTPONED:
+		return SUPERNODE_STATE(state)
+	default:
+		return SUPERNODE_STATE_UNSPECIFIED
+	}
 }
