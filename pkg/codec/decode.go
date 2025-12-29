@@ -13,6 +13,7 @@ import (
 	raptorq "github.com/LumeraProtocol/rq-go"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/google/uuid"
 )
 
 type DecodeRequest struct {
@@ -29,7 +30,7 @@ type DecodeResponse struct {
 // Workspace holds paths & reverse index for prepared decoding.
 type Workspace struct {
 	ActionID      string
-	SymbolsDir    string   // .../<base>/<actionID>
+	SymbolsDir    string   // .../<base>/downloads/<actionID>/<uuid>
 	BlockDirs     []string // index = blockID (or 0 if single block)
 	symbolToBlock map[string]int
 	mu            sync.RWMutex // protects symbolToBlock reads if you expand it later
@@ -51,8 +52,12 @@ func (rq *raptorQ) PrepareDecode(
 	}
 	logtrace.Info(ctx, "rq: prepare-decode start", fields)
 
-	// Create root symbols dir for this action
-	symbolsDir := filepath.Join(rq.symbolsBaseDir, actionID)
+	// Create per-request workspace under <base>/downloads/<actionID>/<uuid>
+	base := rq.symbolsBaseDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	symbolsDir := filepath.Join(base, "downloads", actionID, uuid.NewString())
 	if err := os.MkdirAll(symbolsDir, 0o755); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Error(ctx, "mkdir symbols base dir failed", fields)
