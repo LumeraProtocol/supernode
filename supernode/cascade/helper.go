@@ -165,13 +165,13 @@ func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, er
 	return status.Errorf(codes.Internal, "%s", msg)
 }
 
-func (task *CascadeRegistrationTask) emitArtefactsStored(ctx context.Context, fields logtrace.Fields, _ codec.Layout, send func(resp *RegisterResponse) error) {
+func (task *CascadeRegistrationTask) emitArtefactsStored(ctx context.Context, fields logtrace.Fields, _ codec.Layout, send func(resp *RegisterResponse) error) error {
 	if fields == nil {
 		fields = logtrace.Fields{}
 	}
 	msg := "Artefacts stored"
 	logtrace.Info(ctx, "register: artefacts stored", fields)
-	task.streamEvent(SupernodeEventTypeArtefactsStored, msg, "", send)
+	return task.streamEvent(ctx, SupernodeEventTypeArtefactsStored, msg, "", send)
 }
 
 func (task *CascadeRegistrationTask) verifyActionFee(ctx context.Context, action *actiontypes.Action, dataSize int, fields logtrace.Fields) error {

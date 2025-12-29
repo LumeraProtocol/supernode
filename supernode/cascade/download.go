@@ -48,7 +48,9 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return task.wrapErr(ctx, "failed to get action", err, fields)
 	}
 	logtrace.Info(ctx, "download: action fetched", fields)
-	task.streamDownloadEvent(SupernodeEventTypeActionRetrieved, "Action retrieved", "", "", send)
+	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeActionRetrieved, "Action retrieved", "", "", send); err != nil {
+		return err
+	}
 
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
 		err = errors.New("action is not in a valid state")
@@ -64,7 +66,9 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return task.wrapErr(ctx, "error decoding cascade metadata", err, fields)
 	}
 	logtrace.Info(ctx, "download: metadata decoded", fields)
-	task.streamDownloadEvent(SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", "", send)
+	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeMetadataDecoded, "Cascade metadata decoded", "", "", send); err != nil {
+		return err
+	}
 
 	if !metadata.Public {
 		if req.Signature == "" {
@@ -80,7 +84,9 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		logtrace.Info(ctx, "download: public cascade (no signature)", fields)
 	}
 
-	task.streamDownloadEvent(SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send)
+	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send); err != nil {
+		return err
+	}
 
 	logtrace.Info(ctx, "download: network retrieval start", logtrace.Fields{logtrace.FieldActionID: actionDetails.GetAction().ActionID})
 	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields, send)
@@ -91,10 +97,20 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 				logtrace.Warn(ctx, "cleanup of tmp dir after error failed", logtrace.Fields{"tmp_dir": tmpDir, logtrace.FieldError: cerr.Error()})
 			}
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
 	}
 	logtrace.Debug(ctx, "File reconstructed and hash verified", fields)
-	task.streamDownloadEvent(SupernodeEventTypeDecodeCompleted, "Decode completed", filePath, tmpDir, send)
+	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeDecodeCompleted, "Decode completed", filePath, tmpDir, send); err != nil {
+		if tmpDir != "" {
+			if cerr := task.CleanupDownload(ctx, tmpDir); cerr != nil {
+				logtrace.Warn(ctx, "cleanup of tmp dir after stream failure failed", logtrace.Fields{"tmp_dir": tmpDir, logtrace.FieldError: cerr.Error()})
+			}
+		}
+		return err
+	}
 
 	return nil
 }
@@ -127,8 +143,11 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	return nil
 }
 
-func (task *CascadeRegistrationTask) streamDownloadEvent(eventType SupernodeEventType, msg, filePath, dir string, send func(resp *DownloadResponse) error) {
-	_ = send(&DownloadResponse{EventType: eventType, Message: msg, FilePath: filePath, DownloadedDir: dir})
+func (task *CascadeRegistrationTask) streamDownloadEvent(ctx context.Context, eventType SupernodeEventType, msg, filePath, dir string, send func(resp *DownloadResponse) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return send(&DownloadResponse{EventType: eventType, Message: msg, FilePath: filePath, DownloadedDir: dir})
 }
 
 func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, actionID string, metadata actiontypes.CascadeMetadata, fields logtrace.Fields, send func(resp *DownloadResponse) error) (string, string, error) {
@@ -244,7 +263,9 @@ func (task *CascadeRegistrationTask) restoreFileFromLayoutDeprecated(ctx context
 	// Emit minimal JSON payload (metrics system removed)
 	info := map[string]interface{}{"action_id": actionID, "found_symbols": len(symbols), "target_percent": targetRequiredPercent}
 	if b, err := json.Marshal(info); err == nil {
-		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send)
+		if err := task.streamDownloadEvent(ctx, SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send); err != nil {
+			return "", decodeInfo.DecodeTmpDir, err
+		}
 	}
 	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, nil
 }
@@ -399,7 +420,9 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	// Event
 	info := map[string]interface{}{"action_id": actionID, "found_symbols": int(atomic.LoadInt32(&written)), "target_percent": targetRequiredPercent}
 	if b, err := json.Marshal(info); err == nil {
-		task.streamDownloadEvent(SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send)
+		if err := task.streamDownloadEvent(ctx, SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send); err != nil {
+			return "", decodeInfo.DecodeTmpDir, err
+		}
 	}
 
 	success = true
