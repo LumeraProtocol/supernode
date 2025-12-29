@@ -5,9 +5,13 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode/action/cascade"
+	tasks "github.com/LumeraProtocol/supernode/v2/pkg/task"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type fakeRegisterStream struct {
@@ -66,5 +70,37 @@ func TestRegister_CleansTempDirOnHandlerError(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected TMPDIR to be empty, found %d entries", len(entries))
+	}
+}
+
+func TestRegister_RejectsDuplicateActionID(t *testing.T) {
+	tmpRoot := t.TempDir()
+
+	prevTmpDir, hadPrevTmpDir := os.LookupEnv("TMPDIR")
+	t.Cleanup(func() {
+		if hadPrevTmpDir {
+			_ = os.Setenv("TMPDIR", prevTmpDir)
+		} else {
+			_ = os.Unsetenv("TMPDIR")
+		}
+	})
+	if err := os.Setenv("TMPDIR", tmpRoot); err != nil {
+		t.Fatalf("set TMPDIR: %v", err)
+	}
+
+	tr := tasks.New()
+	actionID := "action-1"
+	tr.Start(serviceCascadeUpload, actionID)
+
+	server := &ActionServer{tracker: tr, uploadTimeout: time.Second}
+	stream := &fakeRegisterStream{
+		reqs: []*pb.RegisterRequest{
+			{RequestType: &pb.RegisterRequest_Metadata{Metadata: &pb.Metadata{TaskId: "task-1", ActionId: actionID}}},
+		},
+	}
+
+	err := server.Register(stream)
+	if status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("expected AlreadyExists, got %v", err)
 	}
 }

@@ -13,6 +13,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	tasks "github.com/LumeraProtocol/supernode/v2/pkg/task"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"lukechampine.com/blake3"
 )
 
@@ -98,9 +100,21 @@ func (server *ActionServer) Register(stream pb.CascadeService_RegisterServer) er
 			fields[logtrace.FieldTaskID] = metadata.GetTaskId()
 			fields[logtrace.FieldActionID] = metadata.GetActionId()
 			logtrace.Info(ctx, "register: metadata received", fields)
-			// Start live task tracking on first metadata (covers remaining stream and processing)
+			actionID := metadata.GetActionId()
+			if actionID == "" {
+				return status.Error(codes.InvalidArgument, "missing action_id")
+			}
+			// Start live task tracking on first metadata (covers remaining stream and processing).
+			// Track by ActionID to prevent duplicate in-flight uploads for the same action.
 			if uploadHandle == nil {
-				uploadHandle = tasks.StartWith(server.tracker, ctx, serviceCascadeUpload, metadata.ActionId, server.uploadTimeout)
+				h, herr := tasks.StartUniqueWith(server.tracker, ctx, serviceCascadeUpload, actionID, server.uploadTimeout)
+				if herr != nil {
+					if errors.Is(herr, tasks.ErrAlreadyRunning) {
+						return status.Errorf(codes.AlreadyExists, "upload already in progress for %s", actionID)
+					}
+					return herr
+				}
+				uploadHandle = h
 				defer uploadHandle.End(ctx)
 			}
 		}

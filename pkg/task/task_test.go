@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -154,4 +155,28 @@ func TestHandleIdempotentAndWatchdog(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestStartUniqueWith_PreventsDuplicates(t *testing.T) {
+	tr := New()
+	ctx := context.Background()
+
+	h1, err := StartUniqueWith(tr, ctx, "svc.unique", "id-1", 0)
+	if err != nil {
+		t.Fatalf("StartUniqueWith 1: %v", err)
+	}
+	t.Cleanup(func() { h1.End(ctx) })
+
+	h2, err := StartUniqueWith(tr, ctx, "svc.unique", "id-1", 0)
+	if !errors.Is(err, ErrAlreadyRunning) {
+		t.Fatalf("expected ErrAlreadyRunning, got handle=%v err=%v", h2, err)
+	}
+
+	// After ending, it should be startable again.
+	h1.End(ctx)
+	h3, err := StartUniqueWith(tr, ctx, "svc.unique", "id-1", 0)
+	if err != nil {
+		t.Fatalf("StartUniqueWith 2: %v", err)
+	}
+	h3.End(ctx)
 }
