@@ -368,6 +368,16 @@ func (ht *HashTable) nodes() []*Node {
 	return out
 }
 
+func (ht *HashTable) peersCount() int {
+	ht.mutex.RLock()
+	defer ht.mutex.RUnlock()
+	total := 0
+	for _, b := range ht.routeTable {
+		total += len(b)
+	}
+	return total
+}
+
 // newRandomID: match B=256 (32 bytes)
 func newRandomID() ([]byte, error) {
 	id := make([]byte, B/8)

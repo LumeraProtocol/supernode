@@ -218,8 +218,11 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	return s, nil
 }
 
-func (s *DHT) NodesLen() int {
-	return len(s.ht.nodes())
+func (s *DHT) PeersCount() int {
+	if s == nil || s.ht == nil {
+		return 0
+	}
+	return s.ht.peersCount()
 }
 
 func (s *DHT) getSupernodeAddress(ctx context.Context) (string, error) {
@@ -469,8 +472,9 @@ func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
 
 	dhtStats := map[string]any{}
 	dhtStats["self"] = s.ht.self
-	dhtStats["peers_count"] = len(s.ht.nodes())
-	dhtStats["peers"] = s.ht.nodes()
+	nodes := s.ht.nodes()
+	dhtStats["peers_count"] = len(nodes)
+	dhtStats["peers"] = nodes
 	dhtStats["network"] = s.network.HandleMetricsSnapshot()
 	// Removed: recent per-request snapshots (logs provide visibility)
 	dhtStats["database"] = dbStats

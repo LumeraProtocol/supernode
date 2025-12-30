@@ -18,8 +18,11 @@ service SupernodeService {
 // Optional request flags
 message StatusRequest {
   // When true, the response includes detailed P2P metrics and
-  // network peer information. This is gated to avoid heavy work
-  // unless explicitly requested.
+  // network peer information.
+  //
+  // This is gated to avoid heavy work unless explicitly requested:
+  // - peers_count is kept fast
+  // - heavier diagnostics are served from a cached last-known-good snapshot
   bool include_p2p_metrics = 1;
 }
 
