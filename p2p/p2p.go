@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
@@ -49,6 +50,7 @@ type p2p struct {
 	keyring      keyring.Keyring // Add the keyring field
 	rqstore      rqstore.Store
 	stats        *p2pStatsManager
+	statsOnce    sync.Once
 }
 
 // Run the kademlia network
@@ -172,8 +174,13 @@ func (s *p2p) Stats(ctx context.Context) (*StatsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	s.statsOnce.Do(func() {
+		if s.stats == nil {
+			s.stats = newP2PStatsManager()
+		}
+	})
 	if s.stats == nil {
-		s.stats = newP2PStatsManager()
+		return nil, errors.New("p2p stats manager is nil")
 	}
 	return s.stats.Stats(ctx, s)
 }

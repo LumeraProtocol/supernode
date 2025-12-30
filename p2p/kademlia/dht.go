@@ -463,7 +463,26 @@ func (s *DHT) PeersSnapshot() []*Node {
 	if s == nil || s.ht == nil {
 		return nil
 	}
-	return s.ht.nodes()
+	in := s.ht.nodes()
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make([]*Node, 0, len(in))
+	for _, n := range in {
+		if n == nil {
+			continue
+		}
+		cp := *n
+		if n.ID != nil {
+			cp.ID = append([]byte(nil), n.ID...)
+		}
+		if n.HashedID != nil {
+			cp.HashedID = append([]byte(nil), n.HashedID...)
+		}
+		out = append(out, &cp)
+	}
+	return out
 }
 
 func (s *DHT) NetworkHandleMetricsSnapshot() map[string]HandleCounters {

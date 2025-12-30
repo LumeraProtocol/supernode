@@ -136,6 +136,9 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		if peers := snap.Peers; len(peers) > 0 {
 			resp.Network.PeerAddresses = make([]string, 0, len(peers))
 			for _, peer := range peers {
+				if peer == nil {
+					continue
+				}
 				resp.Network.PeerAddresses = append(resp.Network.PeerAddresses, fmt.Sprintf("%s@%s:%d", string(peer.ID), peer.IP, peer.Port))
 			}
 		}

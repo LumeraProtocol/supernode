@@ -210,7 +210,20 @@ func cloneSnapshot(in *StatsSnapshot) *StatsSnapshot {
 	out := *in
 
 	if in.Peers != nil {
-		out.Peers = append([]*kademlia.Node(nil), in.Peers...)
+		out.Peers = make([]*kademlia.Node, len(in.Peers))
+		for i, peer := range in.Peers {
+			if peer == nil {
+				continue
+			}
+			cp := *peer
+			if peer.ID != nil {
+				cp.ID = append([]byte(nil), peer.ID...)
+			}
+			if peer.HashedID != nil {
+				cp.HashedID = append([]byte(nil), peer.HashedID...)
+			}
+			out.Peers[i] = &cp
+		}
 	}
 
 	if in.BanList != nil {
