@@ -116,7 +116,10 @@ func (m *p2pStatsManager) Stats(ctx context.Context, p *p2p) (*StatsSnapshot, er
 	prev := m.getSnapshot()
 	snap := cloneSnapshot(prev)
 	snap.PeersCount = peersCount
-	m.setSnapshot(cloneSnapshot(snap))
+	// Store a separate struct instance in the cache to avoid aliasing with the returned snapshot,
+	// while avoiding an extra deep clone on every Stats() call.
+	cachedSnap := *snap
+	m.setSnapshot(&cachedSnap)
 
 	if !m.isFresh() {
 		m.maybeRefreshDiagnostics(ctx, p)
