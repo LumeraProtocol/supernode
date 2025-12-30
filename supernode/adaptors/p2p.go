@@ -134,7 +134,7 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 		}
 		start = end
 	}
-	if err := p.rqStore.UpdateIsFirstBatchStored(actionID); err != nil {
+	if err := p.rqStore.UpdateIsFirstBatchStored(taskID); err != nil {
 		return totalSymbols, totalAvailable, fmt.Errorf("update first-batch flag: %w", err)
 	}
 	return totalSymbols, totalAvailable, nil

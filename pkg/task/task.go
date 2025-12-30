@@ -30,6 +30,28 @@ func New() *InMemoryTracker {
 	return &InMemoryTracker{data: make(map[string]map[string]struct{})}
 }
 
+// TryStart attempts to mark a task as running under a given service.
+// It returns true if the task was newly started, or false if it was already running
+// (or if inputs are invalid). This is useful for "only one in-flight task" guards.
+func (t *InMemoryTracker) TryStart(service, taskID string) bool {
+	if service == "" || taskID == "" {
+		return false
+	}
+	t.mu.Lock()
+	m, ok := t.data[service]
+	if !ok {
+		m = make(map[string]struct{})
+		t.data[service] = m
+	}
+	if _, exists := m[taskID]; exists {
+		t.mu.Unlock()
+		return false
+	}
+	m[taskID] = struct{}{}
+	t.mu.Unlock()
+	return true
+}
+
 // Start marks a task as running under a given service. Empty arguments
 // are ignored. Calling Start with the same (service, taskID) pair is idempotent.
 func (t *InMemoryTracker) Start(service, taskID string) {
