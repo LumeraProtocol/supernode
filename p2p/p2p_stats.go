@@ -48,11 +48,17 @@ type p2pStatsManager struct {
 }
 
 func newP2PStatsManager() *p2pStatsManager {
-	c, _ := ristretto.NewCache(&ristretto.Config[string, any]{
+	c, err := ristretto.NewCache(&ristretto.Config[string, any]{
 		NumCounters: 100,
 		MaxCost:     10,
 		BufferItems: 64,
 	})
+	if err != nil {
+		logtrace.Error(context.Background(), "failed to create p2p stats cache (continuing without caching)", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
+	}
 	return &p2pStatsManager{cache: c}
 }
 
