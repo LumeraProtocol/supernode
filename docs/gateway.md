@@ -9,6 +9,9 @@ Returns supernode status: system resources (CPU, memory, storage), service info,
 
 - Query `include_p2p_metrics=true` enables detailed P2P metrics and peer info.
 - When omitted or false, peer count, peer addresses, and `p2p_metrics` are not included.
+- When `include_p2p_metrics=true`, the response is designed to be latency-predictable:
+  - `network.peers_count` is computed on every request via a fast DHT path.
+  - Heavier diagnostics (peer list, DB stats, disk usage) are served from a single cached “last-known-good” snapshot and refreshed asynchronously at most once per a short TTL (see `p2p/p2p_stats.go` constants).
 
 Examples:
 

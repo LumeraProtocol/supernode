@@ -5,6 +5,7 @@ package mocks
 import (
 	context "context"
 
+	p2p "github.com/LumeraProtocol/supernode/v2/p2p"
 	mock "github.com/stretchr/testify/mock"
 
 	time "time"
@@ -201,15 +202,15 @@ func (_m *Client) Retrieve(ctx context.Context, key string, localOnly ...bool) (
 }
 
 // Stats provides a mock function with given fields: ctx
-func (_m *Client) Stats(ctx context.Context) (map[string]interface{}, error) {
+func (_m *Client) Stats(ctx context.Context) (*p2p.StatsSnapshot, error) {
 	ret := _m.Called(ctx)
 
-	var r0 map[string]interface{}
-	if rf, ok := ret.Get(0).(func(context.Context) map[string]interface{}); ok {
+	var r0 *p2p.StatsSnapshot
+	if rf, ok := ret.Get(0).(func(context.Context) *p2p.StatsSnapshot); ok {
 		r0 = rf(ctx)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(map[string]interface{})
+			r0 = ret.Get(0).(*p2p.StatsSnapshot)
 		}
 	}
 

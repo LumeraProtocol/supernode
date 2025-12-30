@@ -31,8 +31,8 @@ type Client interface {
 	// Delete a key, value
 	Delete(ctx context.Context, key string) error
 
-	// Stats return status of p2p
-	Stats(ctx context.Context) (map[string]interface{}, error)
+	// Stats returns a typed snapshot of P2P state for internal/monitoring use.
+	Stats(ctx context.Context) (*StatsSnapshot, error)
 
 	// NClosestNodes return n closest supernodes to a given key string (NB full node string formatting)
 	NClosestNodes(ctx context.Context, n int, key string, ignores ...string) []string

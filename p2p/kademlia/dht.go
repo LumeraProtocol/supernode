@@ -218,8 +218,11 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	return s, nil
 }
 
-func (s *DHT) NodesLen() int {
-	return len(s.ht.nodes())
+func (s *DHT) PeersCount() int {
+	if s == nil || s.ht == nil {
+		return 0
+	}
+	return s.ht.peersCount()
 }
 
 func (s *DHT) getSupernodeAddress(ctx context.Context) (string, error) {
@@ -456,26 +459,44 @@ func (s *DHT) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Stats returns stats of DHT
-func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
-	if s.store == nil {
-		return nil, fmt.Errorf("store is nil")
+func (s *DHT) PeersSnapshot() []*Node {
+	if s == nil || s.ht == nil {
+		return nil
+	}
+	in := s.ht.nodes()
+	if len(in) == 0 {
+		return nil
 	}
 
-	dbStats, err := s.store.Stats(ctx)
-	if err != nil {
-		return nil, err
+	out := make([]*Node, 0, len(in))
+	for _, n := range in {
+		if n == nil {
+			continue
+		}
+		cp := *n
+		if n.ID != nil {
+			cp.ID = append([]byte(nil), n.ID...)
+		}
+		if n.HashedID != nil {
+			cp.HashedID = append([]byte(nil), n.HashedID...)
+		}
+		out = append(out, &cp)
 	}
+	return out
+}
 
-	dhtStats := map[string]any{}
-	dhtStats["self"] = s.ht.self
-	dhtStats["peers_count"] = len(s.ht.nodes())
-	dhtStats["peers"] = s.ht.nodes()
-	dhtStats["network"] = s.network.HandleMetricsSnapshot()
-	// Removed: recent per-request snapshots (logs provide visibility)
-	dhtStats["database"] = dbStats
+func (s *DHT) NetworkHandleMetricsSnapshot() map[string]HandleCounters {
+	if s == nil || s.network == nil {
+		return nil
+	}
+	return s.network.HandleMetricsSnapshot()
+}
 
-	return dhtStats, nil
+func (s *DHT) DatabaseStats(ctx context.Context) (DatabaseStats, error) {
+	if s == nil || s.store == nil {
+		return DatabaseStats{}, fmt.Errorf("store is nil")
+	}
+	return s.store.Stats(ctx)
 }
 
 // newMessage creates a new message

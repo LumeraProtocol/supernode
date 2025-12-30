@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
@@ -48,6 +49,8 @@ type p2p struct {
 	lumeraClient lumera.Client
 	keyring      keyring.Keyring // Add the keyring field
 	rqstore      rqstore.Store
+	stats        *p2pStatsManager
+	statsOnce    sync.Once
 }
 
 // Run the kademlia network
@@ -166,56 +169,20 @@ func (s *p2p) Delete(ctx context.Context, key string) error {
 	return s.dht.Delete(ctx, key)
 }
 
-// Stats return status of p2p
-func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
+// Stats returns a typed snapshot of the P2P subsystem state.
+func (s *p2p) Stats(ctx context.Context) (*StatsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	retStats := map[string]interface{}{}
-	dhtStats := map[string]any{}
-
-	if s.dht != nil {
-		if stats, err := s.dht.Stats(ctx); err != nil {
-			logtrace.Error(ctx, "failed to get dht stats", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
-		} else {
-			dhtStats = stats
+	s.statsOnce.Do(func() {
+		if s.stats == nil {
+			s.stats = newP2PStatsManager()
 		}
-
-		retStats["ban-list"] = s.dht.BanListSnapshot()
-		retStats["conn-pool"] = s.dht.ConnPoolSnapshot()
-
-		// Expose DHT rolling metrics snapshot both under the top-level key (as expected by
-		// the status service) and also within the DHT map for backward compatibility.
-		snapshot := s.dht.MetricsSnapshot()
-		retStats["dht_metrics"] = snapshot
-		dhtStats["dht_metrics"] = snapshot
-	} else {
-		retStats["ban-list"] = []kademlia.BanSnapshot{}
-		retStats["conn-pool"] = map[string]int64{}
+	})
+	if s.stats == nil {
+		return nil, errors.New("p2p stats manager is nil")
 	}
-
-	if s.store != nil {
-		if dbStats, err := s.store.Stats(ctx); err != nil {
-			logtrace.Error(ctx, "failed to get store stats", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
-		} else if dbStats != nil {
-			dhtStats["database"] = dbStats
-		}
-	}
-
-	retStats["dht"] = dhtStats
-	retStats["config"] = s.config
-
-	// get free space of current kademlia folder
-	if s.config != nil {
-		if diskUse, err := utils.DiskUsage(s.config.DataDir); err != nil {
-			logtrace.Error(ctx, "get disk info failed", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
-		} else {
-			retStats["disk-info"] = &diskUse
-		}
-	}
-
-	return retStats, nil
+	return s.stats.Stats(ctx, s)
 }
 
 // NClosestNodes returns a list of n closest masternode to a given string
@@ -301,6 +268,7 @@ func New(ctx context.Context, config *Config, lumeraClient lumera.Client, kr key
 		lumeraClient: lumeraClient,
 		keyring:      kr, // Store the keyring
 		rqstore:      rqstore,
+		stats:        newP2PStatsManager(),
 	}, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/store/cloud"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
@@ -693,17 +694,17 @@ func sqliteOnDiskSizeBytes(ctx context.Context, dbPath string) (bytes uint64, ok
 }
 
 // Stats returns stats of store
-func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
-	stats := map[string]interface{}{}
+func (s *Store) Stats(ctx context.Context) (kademlia.DatabaseStats, error) {
+	stats := kademlia.DatabaseStats{}
 
 	if bytes, ok := sqliteOnDiskSizeBytes(ctx, s.dbFilePath); !ok {
 		logtrace.Error(ctx, "failed to get p2p db size", logtrace.Fields{logtrace.FieldError: "p2p db file not found"})
 	} else {
-		stats["p2p_db_size"] = utils.BytesToMB(bytes)
+		stats.P2PDbSizeMb = utils.BytesToMB(bytes)
 	}
 
 	if count, err := s.Count(ctx); err == nil {
-		stats["p2p_db_records_count"] = count
+		stats.P2PDbRecordsCount = int64(count)
 	} else {
 		logtrace.Error(ctx, "failed to get p2p records count", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
