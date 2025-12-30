@@ -7,6 +7,11 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 )
 
+type DatabaseStats struct {
+	P2PDbSizeMb       float64
+	P2PDbRecordsCount int64
+}
+
 // Store is the interface for implementing the storage mechanism for the DHT
 type Store interface {
 	// Store a key/value pair for the queries node with the replication
@@ -22,7 +27,7 @@ type Store interface {
 	GetKeysForReplication(ctx context.Context, from time.Time, to time.Time) domain.KeysWithTimestamp
 
 	// Stats returns stats of store
-	Stats(ctx context.Context) (map[string]interface{}, error)
+	Stats(ctx context.Context) (DatabaseStats, error)
 
 	// Close the store
 	Close(ctx context.Context)

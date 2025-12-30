@@ -459,27 +459,25 @@ func (s *DHT) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Stats returns stats of DHT
-func (s *DHT) Stats(ctx context.Context) (map[string]interface{}, error) {
-	if s.store == nil {
-		return nil, fmt.Errorf("store is nil")
+func (s *DHT) PeersSnapshot() []*Node {
+	if s == nil || s.ht == nil {
+		return nil
 	}
+	return s.ht.nodes()
+}
 
-	dbStats, err := s.store.Stats(ctx)
-	if err != nil {
-		return nil, err
+func (s *DHT) NetworkHandleMetricsSnapshot() map[string]HandleCounters {
+	if s == nil || s.network == nil {
+		return nil
 	}
+	return s.network.HandleMetricsSnapshot()
+}
 
-	dhtStats := map[string]any{}
-	dhtStats["self"] = s.ht.self
-	nodes := s.ht.nodes()
-	dhtStats["peers_count"] = len(nodes)
-	dhtStats["peers"] = nodes
-	dhtStats["network"] = s.network.HandleMetricsSnapshot()
-	// Removed: recent per-request snapshots (logs provide visibility)
-	dhtStats["database"] = dbStats
-
-	return dhtStats, nil
+func (s *DHT) DatabaseStats(ctx context.Context) (DatabaseStats, error) {
+	if s == nil || s.store == nil {
+		return DatabaseStats{}, fmt.Errorf("store is nil")
+	}
+	return s.store.Stats(ctx)
 }
 
 // newMessage creates a new message

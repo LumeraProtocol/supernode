@@ -7,11 +7,9 @@ import (
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/p2p"
-	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
-	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
 
@@ -96,12 +94,6 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		})
 	}
 
-	if resp.Network == nil {
-		resp.Network = &pb.StatusResponse_Network{}
-	}
-	resp.Network.PeersCount = 0
-	resp.Network.PeerAddresses = []string{}
-
 	// Populate running tasks from injected tracker
 	if s.tracker != nil {
 		snap := s.tracker.Snapshot()
@@ -116,100 +108,69 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		}
 	}
 
-	// Prepare optional P2P metrics container
-	pm := &pb.StatusResponse_P2PMetrics{
-		DhtMetrics:           &pb.StatusResponse_P2PMetrics_DhtMetrics{},
-		NetworkHandleMetrics: map[string]*pb.StatusResponse_P2PMetrics_HandleCounters{},
-		ConnPoolMetrics:      map[string]int64{},
-		BanList:              []*pb.StatusResponse_P2PMetrics_BanEntry{},
-		Database:             &pb.StatusResponse_P2PMetrics_DatabaseStats{},
-		Disk:                 &pb.StatusResponse_P2PMetrics_DiskStatus{},
-	}
-
 	if includeP2PMetrics && s.p2pService != nil {
+		// Prepare optional P2P metrics container (only when requested).
+		pm := &pb.StatusResponse_P2PMetrics{
+			DhtMetrics:           &pb.StatusResponse_P2PMetrics_DhtMetrics{},
+			NetworkHandleMetrics: map[string]*pb.StatusResponse_P2PMetrics_HandleCounters{},
+			ConnPoolMetrics:      map[string]int64{},
+			BanList:              []*pb.StatusResponse_P2PMetrics_BanEntry{},
+			Database:             &pb.StatusResponse_P2PMetrics_DatabaseStats{},
+			Disk:                 &pb.StatusResponse_P2PMetrics_DiskStatus{},
+		}
+
 		// Bound P2P metrics collection so status can't hang if P2P is slow
 		p2pCtx, cancel := context.WithTimeout(ctx, statusSubsystemTimeout)
 		defer cancel()
-		p2pStats, err := s.p2pService.Stats(p2pCtx)
+		snap, err := s.p2pService.Stats(p2pCtx)
 		if err != nil {
-			logtrace.Error(ctx, "failed to get p2p stats", logtrace.Fields{logtrace.FieldError: err.Error()})
-		} else {
-			if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
-				if peersCount, ok := dhtStats["peers_count"].(int); ok {
-					resp.Network.PeersCount = int32(peersCount)
-				}
-				if peers, ok := dhtStats["peers"].([]*kademlia.Node); ok {
-					resp.Network.PeerAddresses = make([]string, 0, len(peers))
-					for _, peer := range peers {
-						resp.Network.PeerAddresses = append(resp.Network.PeerAddresses, fmt.Sprintf("%s@%s:%d", string(peer.ID), peer.IP, peer.Port))
-					}
-				} else {
-					resp.Network.PeerAddresses = []string{}
-				}
-			}
-			if du, ok := p2pStats["disk-info"].(utils.DiskStatus); ok {
-				pm.Disk.AllMb = du.All
-				pm.Disk.UsedMb = du.Used
-				pm.Disk.FreeMb = du.Free
-			} else if duPtr, ok := p2pStats["disk-info"].(*utils.DiskStatus); ok && duPtr != nil {
-				pm.Disk.AllMb = duPtr.All
-				pm.Disk.UsedMb = duPtr.Used
-				pm.Disk.FreeMb = duPtr.Free
-			}
-			if bans, ok := p2pStats["ban-list"].([]kademlia.BanSnapshot); ok {
-				for _, b := range bans {
-					pm.BanList = append(pm.BanList, &pb.StatusResponse_P2PMetrics_BanEntry{Id: b.ID, Ip: b.IP, Port: uint32(b.Port), Count: int32(b.Count), CreatedAtUnix: b.CreatedAt.Unix(), AgeSeconds: int64(b.Age.Seconds())})
-				}
-			}
-			if pool, ok := p2pStats["conn-pool"].(map[string]int64); ok {
-				for k, v := range pool {
-					pm.ConnPoolMetrics[k] = v
-				}
-			}
-			if dhtStats, ok := p2pStats["dht"].(map[string]interface{}); ok {
-				if db, ok := dhtStats["database"].(map[string]interface{}); ok {
-					var sizeMB float64
-					if v, ok := db["p2p_db_size"].(float64); ok {
-						sizeMB = v
-					}
-					var recs int64
-					switch v := db["p2p_db_records_count"].(type) {
-					case int:
-						recs = int64(v)
-					case int64:
-						recs = v
-					case float64:
-						recs = int64(v)
-					}
-					pm.Database.P2PDbSizeMb = sizeMB
-					pm.Database.P2PDbRecordsCount = recs
-				}
-				if nhm, ok := dhtStats["network"].(map[string]kademlia.HandleCounters); ok {
-					for k, c := range nhm {
-						pm.NetworkHandleMetrics[k] = &pb.StatusResponse_P2PMetrics_HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
-					}
-				} else if nhmI, ok := dhtStats["network"].(map[string]interface{}); ok {
-					for k, vi := range nhmI {
-						if c, ok := vi.(kademlia.HandleCounters); ok {
-							pm.NetworkHandleMetrics[k] = &pb.StatusResponse_P2PMetrics_HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
-						}
-					}
-				}
-			}
-			if snap, ok := p2pStats["dht_metrics"].(kademlia.DHTMetricsSnapshot); ok {
-				for _, sp := range snap.StoreSuccessRecent {
-					pm.DhtMetrics.StoreSuccessRecent = append(pm.DhtMetrics.StoreSuccessRecent, &pb.StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint{TimeUnix: sp.Time.Unix(), Requests: int32(sp.Requests), Successful: int32(sp.Successful), SuccessRate: sp.SuccessRate})
-				}
-				for _, bp := range snap.BatchRetrieveRecent {
-					pm.DhtMetrics.BatchRetrieveRecent = append(pm.DhtMetrics.BatchRetrieveRecent, &pb.StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint{TimeUnix: bp.Time.Unix(), Keys: int32(bp.Keys), Required: int32(bp.Required), FoundLocal: int32(bp.FoundLocal), FoundNetwork: int32(bp.FoundNet), DurationMs: bp.Duration.Milliseconds()})
-				}
-				pm.DhtMetrics.HotPathBannedSkips = snap.HotPathBannedSkips
-				pm.DhtMetrics.HotPathBanIncrements = snap.HotPathBanIncrements
+			logtrace.Error(ctx, "failed to get p2p stats snapshot", logtrace.Fields{logtrace.FieldError: err.Error()})
+			return resp, err
+		}
+
+		if resp.Network == nil {
+			resp.Network = &pb.StatusResponse_Network{}
+		}
+		resp.Network.PeersCount = snap.PeersCount
+		resp.Network.PeerAddresses = []string{}
+		if peers := snap.Peers; len(peers) > 0 {
+			resp.Network.PeerAddresses = make([]string, 0, len(peers))
+			for _, peer := range peers {
+				resp.Network.PeerAddresses = append(resp.Network.PeerAddresses, fmt.Sprintf("%s@%s:%d", string(peer.ID), peer.IP, peer.Port))
 			}
 		}
-	}
-	if includeP2PMetrics {
+
+		if snap.DiskInfo != nil {
+			pm.Disk.AllMb = snap.DiskInfo.All
+			pm.Disk.UsedMb = snap.DiskInfo.Used
+			pm.Disk.FreeMb = snap.DiskInfo.Free
+		}
+		for _, b := range snap.BanList {
+			pm.BanList = append(pm.BanList, &pb.StatusResponse_P2PMetrics_BanEntry{Id: b.ID, Ip: b.IP, Port: uint32(b.Port), Count: int32(b.Count), CreatedAtUnix: b.CreatedAt.Unix(), AgeSeconds: int64(b.Age.Seconds())})
+		}
+		for k, v := range snap.ConnPool {
+			pm.ConnPoolMetrics[k] = v
+		}
+
+		pm.Database.P2PDbSizeMb = snap.Database.P2PDbSizeMb
+		pm.Database.P2PDbRecordsCount = snap.Database.P2PDbRecordsCount
+
+		for k, c := range snap.NetworkHandleMetrics {
+			pm.NetworkHandleMetrics[k] = &pb.StatusResponse_P2PMetrics_HandleCounters{Total: c.Total, Success: c.Success, Failure: c.Failure, Timeout: c.Timeout}
+		}
+
+		for _, sp := range snap.DHTMetrics.StoreSuccessRecent {
+			pm.DhtMetrics.StoreSuccessRecent = append(pm.DhtMetrics.StoreSuccessRecent, &pb.StatusResponse_P2PMetrics_DhtMetrics_StoreSuccessPoint{TimeUnix: sp.Time.Unix(), Requests: int32(sp.Requests), Successful: int32(sp.Successful), SuccessRate: sp.SuccessRate})
+		}
+		for _, bp := range snap.DHTMetrics.BatchRetrieveRecent {
+			pm.DhtMetrics.BatchRetrieveRecent = append(pm.DhtMetrics.BatchRetrieveRecent, &pb.StatusResponse_P2PMetrics_DhtMetrics_BatchRetrievePoint{TimeUnix: bp.Time.Unix(), Keys: int32(bp.Keys), Required: int32(bp.Required), FoundLocal: int32(bp.FoundLocal), FoundNetwork: int32(bp.FoundNet), DurationMs: bp.Duration.Milliseconds()})
+		}
+		pm.DhtMetrics.HotPathBannedSkips = snap.DHTMetrics.HotPathBannedSkips
+		pm.DhtMetrics.HotPathBanIncrements = snap.DHTMetrics.HotPathBanIncrements
+
 		resp.P2PMetrics = pm
+	} else if includeP2PMetrics {
+		return resp, fmt.Errorf("p2p service is nil")
 	}
 
 	if s.config != nil && s.lumeraClient != nil {

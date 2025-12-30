@@ -448,10 +448,10 @@ func (hm *Collector) reportHealth(ctx context.Context) {
 			break
 		}
 	}
-	if allPortsOpen {
+	if allPortsOpen && metrics.PeersCount > 0 {
 		logtrace.Info(ctx, "Reporting supernode metrics", fields)
 	} else {
-		logtrace.Warn(ctx, "Reporting supernode metrics (one or more ports not OPEN)", fields)
+		logtrace.Warn(ctx, "Reporting supernode metrics (one or more ports not OPEN or peers_count=0)", fields)
 	}
 
 	// Report the metrics snapshot to the blockchain using the supernode

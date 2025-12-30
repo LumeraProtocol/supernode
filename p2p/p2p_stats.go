@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	ristretto "github.com/dgraph-io/ristretto/v2"
-	"golang.org/x/sync/singleflight"
-	"sync/atomic"
 )
 
 const (
@@ -41,19 +41,8 @@ const (
 	p2pStatsSlowRefreshThreshold = 750 * time.Millisecond
 )
 
-type p2pStatsSnapshot struct {
-	PeersCount int
-
-	DHT        map[string]any
-	BanList    []kademlia.BanSnapshot
-	ConnPool   map[string]int64
-	DHTMetrics kademlia.DHTMetricsSnapshot
-	DiskInfo   *utils.DiskStatus
-}
-
 type p2pStatsManager struct {
 	cache *ristretto.Cache[string, any]
-	sf    singleflight.Group
 
 	refreshInFlight atomic.Bool
 }
@@ -67,7 +56,7 @@ func newP2PStatsManager() *p2pStatsManager {
 	return &p2pStatsManager{cache: c}
 }
 
-func (m *p2pStatsManager) getSnapshot() *p2pStatsSnapshot {
+func (m *p2pStatsManager) getSnapshot() *StatsSnapshot {
 	if m == nil || m.cache == nil {
 		return nil
 	}
@@ -75,11 +64,11 @@ func (m *p2pStatsManager) getSnapshot() *p2pStatsSnapshot {
 	if !ok {
 		return nil
 	}
-	snap, _ := v.(*p2pStatsSnapshot)
+	snap, _ := v.(*StatsSnapshot)
 	return snap
 }
 
-func (m *p2pStatsManager) setSnapshot(snap *p2pStatsSnapshot) {
+func (m *p2pStatsManager) setSnapshot(snap *StatsSnapshot) {
 	if m == nil || m.cache == nil || snap == nil {
 		return
 	}
@@ -101,39 +90,33 @@ func (m *p2pStatsManager) markFresh() {
 	m.cache.SetWithTTL(p2pStatsFreshKey, true, 1, p2pStatsFreshTTL)
 }
 
-// Stats returns a status map compatible with the existing p2p.Client.Stats API.
+// Stats returns a typed snapshot compatible with the p2p.Client interface.
 //
 // Incoming call semantics:
 //   - The call stays latency-predictable: it returns immediately from the cached snapshot.
 //   - PeersCount is always refreshed via a fast DHT path on every call (no peer list allocation).
 //   - Heavy diagnostics are refreshed in the background at most once per p2pStatsFreshTTL, deduped
-//     across concurrent callers (singleflight + refreshInFlight).
-//
-// The status service only calls Stats() when include_p2p_metrics=true; when false, no refresh work
-// is triggered at all.
-func (m *p2pStatsManager) Stats(ctx context.Context, p *p2p) (map[string]interface{}, error) {
+//     across concurrent callers (refreshInFlight).
+func (m *p2pStatsManager) Stats(ctx context.Context, p *p2p) (*StatsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	peersCount := 0
+	peersCount := int32(0)
 	if p != nil && p.dht != nil {
-		peersCount = p.dht.PeersCount()
+		peersCount = int32(p.dht.PeersCount())
 	}
 
 	prev := m.getSnapshot()
-	snap := &p2pStatsSnapshot{}
-	if prev != nil {
-		*snap = *prev
-	}
+	snap := cloneSnapshot(prev)
 	snap.PeersCount = peersCount
-	m.setSnapshot(snap)
+	m.setSnapshot(cloneSnapshot(snap))
 
 	if !m.isFresh() {
 		m.maybeRefreshDiagnostics(ctx, p)
 	}
 
-	return snapshotToMap(snap, p), nil
+	return snap, nil
 }
 
 func (m *p2pStatsManager) maybeRefreshDiagnostics(ctx context.Context, p *p2p) {
@@ -149,11 +132,9 @@ func (m *p2pStatsManager) maybeRefreshDiagnostics(ctx context.Context, p *p2p) {
 		defer m.refreshInFlight.Store(false)
 
 		start := time.Now()
-		_, err, _ := m.sf.Do("p2p_stats/refresh_diagnostics", func() (any, error) {
-			refreshCtx, cancel := context.WithTimeout(context.Background(), p2pStatsRefreshTimeout)
-			defer cancel()
-			return nil, m.refreshDiagnostics(refreshCtx, p)
-		})
+		refreshCtx, cancel := context.WithTimeout(context.Background(), p2pStatsRefreshTimeout)
+		err := m.refreshDiagnostics(refreshCtx, p)
+		cancel()
 		dur := time.Since(start)
 
 		if err != nil {
@@ -180,28 +161,26 @@ func (m *p2pStatsManager) refreshDiagnostics(ctx context.Context, p *p2p) error 
 	}
 
 	prev := m.getSnapshot()
-	next := &p2pStatsSnapshot{}
-	if prev != nil {
-		*next = *prev
-	}
+	next := cloneSnapshot(prev)
 
 	var refreshErr error
 
 	if p != nil && p.dht != nil {
-		dhtStats, err := p.dht.Stats(ctx)
+		peers := p.dht.PeersSnapshot()
+		next.Peers = peers
+		next.PeersCount = int32(len(peers))
+		next.NetworkHandleMetrics = p.dht.NetworkHandleMetricsSnapshot()
+		dbStats, err := p.dht.DatabaseStats(ctx)
 		if err != nil {
 			refreshErr = err
-		} else if dhtStats != nil {
-			next.DHT = dhtStats
+		} else {
+			next.Database = dbStats
 		}
 		next.BanList = p.dht.BanListSnapshot()
 		next.ConnPool = p.dht.ConnPoolSnapshot()
 
 		metricsSnap := p.dht.MetricsSnapshot()
 		next.DHTMetrics = metricsSnap
-		if next.DHT != nil {
-			next.DHT["dht_metrics"] = metricsSnap
-		}
 	}
 
 	if p != nil && p.config != nil {
@@ -220,43 +199,46 @@ func (m *p2pStatsManager) refreshDiagnostics(ctx context.Context, p *p2p) error 
 	return refreshErr
 }
 
-func snapshotToMap(snap *p2pStatsSnapshot, p *p2p) map[string]interface{} {
-	ret := map[string]interface{}{}
-
-	dhtStats := map[string]any{}
-	if snap != nil && snap.DHT != nil {
-		dhtStats = make(map[string]any, len(snap.DHT)+2)
-		for k, v := range snap.DHT {
-			dhtStats[k] = v
+func cloneSnapshot(in *StatsSnapshot) *StatsSnapshot {
+	if in == nil {
+		return &StatsSnapshot{
+			BanList:  []kademlia.BanSnapshot{},
+			ConnPool: map[string]int64{},
 		}
 	}
-	if snap != nil {
-		dhtStats["peers_count"] = snap.PeersCount
-		ret["dht_metrics"] = snap.DHTMetrics
-		dhtStats["dht_metrics"] = snap.DHTMetrics
 
-		bans := snap.BanList
-		if bans == nil {
-			bans = []kademlia.BanSnapshot{}
-		}
-		pool := snap.ConnPool
-		if pool == nil {
-			pool = map[string]int64{}
-		}
-		ret["ban-list"] = bans
-		ret["conn-pool"] = pool
+	out := *in
 
-		if snap.DiskInfo != nil {
-			ret["disk-info"] = snap.DiskInfo
+	if in.Peers != nil {
+		out.Peers = append([]*kademlia.Node(nil), in.Peers...)
+	}
+
+	if in.BanList != nil {
+		out.BanList = append([]kademlia.BanSnapshot(nil), in.BanList...)
+	} else {
+		out.BanList = []kademlia.BanSnapshot{}
+	}
+
+	if in.ConnPool != nil {
+		out.ConnPool = make(map[string]int64, len(in.ConnPool))
+		for k, v := range in.ConnPool {
+			out.ConnPool[k] = v
 		}
 	} else {
-		ret["ban-list"] = []kademlia.BanSnapshot{}
-		ret["conn-pool"] = map[string]int64{}
+		out.ConnPool = map[string]int64{}
 	}
 
-	ret["dht"] = dhtStats
-	if p != nil {
-		ret["config"] = p.config
+	if in.NetworkHandleMetrics != nil {
+		out.NetworkHandleMetrics = make(map[string]kademlia.HandleCounters, len(in.NetworkHandleMetrics))
+		for k, v := range in.NetworkHandleMetrics {
+			out.NetworkHandleMetrics[k] = v
+		}
 	}
-	return ret
+
+	if in.DiskInfo != nil {
+		du := *in.DiskInfo
+		out.DiskInfo = &du
+	}
+
+	return &out
 }

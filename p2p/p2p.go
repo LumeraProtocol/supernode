@@ -167,8 +167,8 @@ func (s *p2p) Delete(ctx context.Context, key string) error {
 	return s.dht.Delete(ctx, key)
 }
 
-// Stats return status of p2p
-func (s *p2p) Stats(ctx context.Context) (map[string]interface{}, error) {
+// Stats returns a typed snapshot of the P2P subsystem state.
+func (s *p2p) Stats(ctx context.Context) (*StatsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

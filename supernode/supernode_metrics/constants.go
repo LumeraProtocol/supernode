@@ -11,7 +11,7 @@ const (
 	// metrics reporting and active probing begin. This allows the node to fully
 	// initialize (establish P2P connections, sync state, etc.) before participating
 	// in the reachability protocol.
-	DefaultStartupDelaySeconds = 30
+	DefaultStartupDelaySeconds = 300
 
 	// FallbackMetricsUpdateIntervalBlocks is used when chain params are unavailable
 	// or return an invalid/zero value. This should be conservative and stable.

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 )
 
@@ -68,9 +69,8 @@ func (s *Store) Close(_ context.Context) {
 }
 
 // Stats returns stats of store
-func (s *Store) Stats(_ context.Context) (map[string]interface{}, error) {
-	stats := map[string]interface{}{}
-	return stats, nil
+func (s *Store) Stats(_ context.Context) (kademlia.DatabaseStats, error) {
+	return kademlia.DatabaseStats{}, nil
 }
 
 // Count the records in store
