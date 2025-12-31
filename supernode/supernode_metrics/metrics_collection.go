@@ -3,7 +3,6 @@ package supernode_metrics
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -49,14 +48,15 @@ func (hm *Collector) collectMetrics(ctx context.Context) (sntypes.SupernodeMetri
 	}
 
 	if statusResp.Resources != nil && len(statusResp.Resources.StorageVolumes) > 0 {
+		// Storage is sourced from the status service. Any disk-size adjustment
+		// must happen there (single source of truth) so status + on-chain metrics
+		// stay consistent.
 		storage := statusResp.Resources.StorageVolumes[0] // 9–11: first volume is reported
 		const bytesToGB = 1024.0 * 1024.0 * 1024.0
 
-		// Compensates for observed differences between reported and actual disk size.
-		const diskTotalAdjustFactor = 1.05                                                                  // 5%
-		metrics.DiskTotalGb = math.Floor((float64(storage.TotalBytes) / bytesToGB) * diskTotalAdjustFactor) // 9: disk_total_gb
-		metrics.DiskFreeGb = float64(storage.AvailableBytes) / bytesToGB                                    // 11: disk_free_gb
-		metrics.DiskUsagePercent = storage.UsagePercent                                                     // 10: disk_usage_percent
+		metrics.DiskTotalGb = float64(storage.TotalBytes) / bytesToGB    // 9: disk_total_gb
+		metrics.DiskFreeGb = float64(storage.AvailableBytes) / bytesToGB // 11: disk_free_gb
+		metrics.DiskUsagePercent = storage.UsagePercent                  // 10: disk_usage_percent
 
 		if metrics.DiskUsagePercent == 0 && storage.TotalBytes > 0 {
 			used := storage.TotalBytes - storage.AvailableBytes
