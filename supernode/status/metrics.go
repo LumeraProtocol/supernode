@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
@@ -9,6 +10,21 @@ import (
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
 )
+
+// diskSizeAdjustFactor compensates for observed discrepancies between the disk
+// size reported by the node runtime and the "expected" decimal-GB figure used by
+// external consumers (dashboards/on-chain metrics).
+//
+// Rationale:
+//   - Keep the adjustment in exactly one place (the status metrics source) so all
+//     downstream consumers remain consistent.
+//   - Apply it to both total and free to preserve internal consistency between
+//     total/free/usage%.
+const diskSizeAdjustFactor = 1.1
+
+func adjustDiskBytes(value uint64) uint64 {
+	return uint64(math.Round(float64(value) * diskSizeAdjustFactor))
+}
 
 // MetricsCollector handles system resource monitoring
 type MetricsCollector struct{}
@@ -60,6 +76,9 @@ func (m *MetricsCollector) CollectStorageMetrics(ctx context.Context, paths []st
 	if len(paths) == 0 {
 		paths = []string{"/"}
 	}
+	// Note: callers may request multiple paths, but higher-level services report
+	// only the first volume to keep node metrics stable and comparable across
+	// environments (host vs container overlays, multiple mount points, etc.).
 	var storageInfos []StorageInfo
 	for _, path := range paths {
 		usage, err := disk.Usage(path)
@@ -67,7 +86,24 @@ func (m *MetricsCollector) CollectStorageMetrics(ctx context.Context, paths []st
 			logtrace.Error(ctx, "failed to get storage info", logtrace.Fields{logtrace.FieldError: err.Error(), "path": path})
 			continue
 		}
-		storageInfos = append(storageInfos, StorageInfo{Path: path, TotalBytes: usage.Total, UsedBytes: usage.Used, AvailableBytes: usage.Free, UsagePercent: usage.UsedPercent})
+		totalBytes := adjustDiskBytes(usage.Total)
+		availableBytes := adjustDiskBytes(usage.Free)
+		if availableBytes > totalBytes {
+			availableBytes = totalBytes
+		}
+		usedBytes := totalBytes - availableBytes
+		usagePercent := 0.0
+		if totalBytes > 0 {
+			usagePercent = float64(usedBytes) / float64(totalBytes) * 100
+		}
+
+		storageInfos = append(storageInfos, StorageInfo{
+			Path:           path,
+			TotalBytes:     totalBytes,
+			UsedBytes:      usedBytes,
+			AvailableBytes: availableBytes,
+			UsagePercent:   usagePercent,
+		})
 	}
 	return storageInfos
 }

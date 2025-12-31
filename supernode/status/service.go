@@ -84,7 +84,12 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 		resp.Resources.HardwareSummary = fmt.Sprintf("%d cores / %.0fGB RAM", cores, resp.Resources.Memory.TotalGb)
 	}
 	// Storage metrics
-	for _, si := range s.metrics.CollectStorageMetrics(ctx, s.storagePaths) {
+	if storageInfos := s.metrics.CollectStorageMetrics(ctx, s.storagePaths); len(storageInfos) > 0 {
+		// Rationale: report only the first volume everywhere (status + on-chain
+		// metrics) to avoid ambiguity across environments where multiple mounts
+		// exist (e.g. container overlay + host filesystem). The configured default
+		// is "/" so this remains stable.
+		si := storageInfos[0]
 		resp.Resources.StorageVolumes = append(resp.Resources.StorageVolumes, &pb.StatusResponse_Resources_Storage{
 			Path:           si.Path,
 			TotalBytes:     si.TotalBytes,

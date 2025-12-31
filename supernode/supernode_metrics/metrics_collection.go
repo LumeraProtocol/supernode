@@ -48,6 +48,9 @@ func (hm *Collector) collectMetrics(ctx context.Context) (sntypes.SupernodeMetri
 	}
 
 	if statusResp.Resources != nil && len(statusResp.Resources.StorageVolumes) > 0 {
+		// Storage is sourced from the status service. Any disk-size adjustment
+		// must happen there (single source of truth) so status + on-chain metrics
+		// stay consistent.
 		storage := statusResp.Resources.StorageVolumes[0] // 9–11: first volume is reported
 		const bytesToGB = 1024.0 * 1024.0 * 1024.0
 

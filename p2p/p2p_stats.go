@@ -114,6 +114,14 @@ func (m *p2pStatsManager) Stats(ctx context.Context, p *p2p) (*StatsSnapshot, er
 	}
 
 	prev := m.getSnapshot()
+	if prev == nil {
+		next, _ := m.refreshDiagnosticsSync(ctx, p)
+		if next != nil {
+			prev = next
+		} else {
+			prev = m.getSnapshot()
+		}
+	}
 	snap := cloneSnapshot(prev)
 	snap.PeersCount = peersCount
 	// Store a separate struct instance in the cache to avoid aliasing with the returned snapshot,
@@ -126,6 +134,45 @@ func (m *p2pStatsManager) Stats(ctx context.Context, p *p2p) (*StatsSnapshot, er
 	}
 
 	return snap, nil
+}
+
+func (m *p2pStatsManager) refreshDiagnosticsSync(ctx context.Context, p *p2p) (*StatsSnapshot, error) {
+	if m == nil || p == nil {
+		return nil, nil
+	}
+	if !m.refreshInFlight.CompareAndSwap(false, true) {
+		return nil, nil
+	}
+
+	defer m.refreshInFlight.Store(false)
+	start := time.Now()
+	refreshCtx, cancel := context.WithTimeout(context.Background(), p2pStatsRefreshTimeout)
+	next, err := m.collectDiagnostics(refreshCtx, p, m.getSnapshot())
+	cancel()
+	dur := time.Since(start)
+
+	if next != nil {
+		m.setSnapshot(next)
+		m.markFresh()
+	}
+
+	if err != nil {
+		logtrace.Warn(ctx, "p2p stats diagnostics initial refresh failed", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"refresh":            "diagnostics",
+			"ms":                 dur.Milliseconds(),
+			logtrace.FieldError:  err.Error(),
+		})
+	}
+	if dur > p2pStatsSlowRefreshThreshold {
+		logtrace.Warn(ctx, "p2p stats diagnostics initial refresh slow", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"refresh":            "diagnostics",
+			"ms":                 dur.Milliseconds(),
+		})
+	}
+
+	return next, err
 }
 
 func (m *p2pStatsManager) maybeRefreshDiagnostics(ctx context.Context, p *p2p) {
@@ -142,9 +189,14 @@ func (m *p2pStatsManager) maybeRefreshDiagnostics(ctx context.Context, p *p2p) {
 
 		start := time.Now()
 		refreshCtx, cancel := context.WithTimeout(context.Background(), p2pStatsRefreshTimeout)
-		err := m.refreshDiagnostics(refreshCtx, p)
+		next, err := m.collectDiagnostics(refreshCtx, p, m.getSnapshot())
 		cancel()
 		dur := time.Since(start)
+
+		if next != nil {
+			m.setSnapshot(next)
+			m.markFresh()
+		}
 
 		if err != nil {
 			logtrace.Warn(logCtx, "p2p stats diagnostics refresh failed", logtrace.Fields{
@@ -164,12 +216,11 @@ func (m *p2pStatsManager) maybeRefreshDiagnostics(ctx context.Context, p *p2p) {
 	}()
 }
 
-func (m *p2pStatsManager) refreshDiagnostics(ctx context.Context, p *p2p) error {
+func (m *p2pStatsManager) collectDiagnostics(ctx context.Context, p *p2p, prev *StatsSnapshot) (*StatsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
-	prev := m.getSnapshot()
 	next := cloneSnapshot(prev)
 
 	var refreshErr error
@@ -203,9 +254,7 @@ func (m *p2pStatsManager) refreshDiagnostics(ctx context.Context, p *p2p) error 
 		}
 	}
 
-	m.setSnapshot(next)
-	m.markFresh()
-	return refreshErr
+	return next, refreshErr
 }
 
 func cloneSnapshot(in *StatsSnapshot) *StatsSnapshot {
