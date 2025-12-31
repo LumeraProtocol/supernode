@@ -53,7 +53,7 @@ func (hm *Collector) collectMetrics(ctx context.Context) (sntypes.SupernodeMetri
 		const bytesToGB = 1024.0 * 1024.0 * 1024.0
 
 		// Compensates for observed differences between reported and actual disk size.
-		const diskTotalAdjustFactor = 1.034
+		const diskTotalAdjustFactor = 1.05                                                                  // 5%
 		metrics.DiskTotalGb = math.Floor((float64(storage.TotalBytes) / bytesToGB) * diskTotalAdjustFactor) // 9: disk_total_gb
 		metrics.DiskFreeGb = float64(storage.AvailableBytes) / bytesToGB                                    // 11: disk_free_gb
 		metrics.DiskUsagePercent = storage.UsagePercent                                                     // 10: disk_usage_percent
