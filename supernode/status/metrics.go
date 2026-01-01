@@ -18,8 +18,8 @@ import (
 // Rationale:
 //   - Keep the adjustment in exactly one place (the status metrics source) so all
 //     downstream consumers remain consistent.
-//   - Apply it to both total and free to preserve internal consistency between
-//     total/free/usage%.
+//   - Apply it to total only to match the expected decimal-GB figure while
+//     leaving free as reported by the runtime.
 const diskSizeAdjustFactor = 1.1
 
 func adjustDiskBytes(value uint64) uint64 {
@@ -87,10 +87,8 @@ func (m *MetricsCollector) CollectStorageMetrics(ctx context.Context, paths []st
 			continue
 		}
 		totalBytes := adjustDiskBytes(usage.Total)
-		availableBytes := adjustDiskBytes(usage.Free)
-		if availableBytes > totalBytes {
-			availableBytes = totalBytes
-		}
+		availableBytes := usage.Free
+		availableBytes = min(availableBytes, totalBytes)
 		usedBytes := totalBytes - availableBytes
 		usagePercent := 0.0
 		if totalBytes > 0 {

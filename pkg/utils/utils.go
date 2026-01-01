@@ -364,6 +364,36 @@ func DeleteSymbols(ctx context.Context, dir string, keys []string) error {
 	return nil
 }
 
+// PruneEmptyBlockDirs removes empty "block_*" directories under dir.
+// Best-effort: errors are returned but callers may choose to log and continue.
+func PruneEmptyBlockDirs(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		if !strings.HasPrefix(name, "block_") {
+			continue
+		}
+		p := filepath.Join(dir, name)
+		children, err := os.ReadDir(p)
+		if err != nil {
+			return err
+		}
+		if len(children) != 0 {
+			continue
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 // ReadDirFilenames returns a map whose keys are "block_*/file" paths, values nil.
 func ReadDirFilenames(dirPath string) (map[string][]byte, error) {
 	idMap := make(map[string][]byte)
