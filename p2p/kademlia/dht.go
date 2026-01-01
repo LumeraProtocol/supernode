@@ -791,6 +791,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 	}
 
 	ignoreList := s.ignorelist.ToNodeList()
+	ignoredSet := hashedIDSetFromNodes(ignoreList)
 
 	globalClosestContacts := make(map[string]*NodeList)
 	var closestMu sync.RWMutex
@@ -800,7 +801,7 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 			continue
 		}
 
-		top6 := s.ht.closestContactsWithIncludingNode(Alpha, hashes[i], ignoreList, nil)
+		top6 := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, hashes[i], ignoredSet, nil)
 		closestMu.Lock()
 		globalClosestContacts[keys[i]] = top6
 		closestMu.Unlock()
@@ -1144,6 +1145,7 @@ func (s *DHT) BatchRetrieveStream(
 	delete(knownNodes, string(self.ID))
 
 	ignoreList := s.ignorelist.ToNodeList()
+	ignoredSet := hashedIDSetFromNodes(ignoreList)
 	globalClosestContacts := make(map[string]*NodeList)
 	var closestMu sync.RWMutex
 
@@ -1152,7 +1154,7 @@ func (s *DHT) BatchRetrieveStream(
 		if _, found := resSeen.Load(hexKeys[i]); found {
 			continue
 		}
-		topK := s.ht.closestContactsWithIncludingNode(Alpha, hashes[i], ignoreList, nil)
+		topK := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, hashes[i], ignoredSet, nil)
 		closestMu.Lock()
 		globalClosestContacts[keys[i]] = topK
 		closestMu.Unlock()
@@ -2134,6 +2136,8 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
+	ignoreList := s.ignorelist.ToNodeList()
+	ignoredSet := hashedIDSetFromNodes(ignoreList)
 
 	{
 		f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
@@ -2145,7 +2149,7 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	for i := 0; i < len(values); i++ {
 		target, _ := utils.Blake3Hash(values[i])
 		hashes[i] = target
-		top6 := s.ht.closestContactsWithIncludingNode(Alpha, target, s.ignorelist.ToNodeList(), nil)
+		top6 := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, target, ignoredSet, nil)
 
 		globalClosestContacts[base58.Encode(target)] = top6
 		// log.WithContext(ctx).WithField("top 6", top6).Info("iterate batch store begin")
