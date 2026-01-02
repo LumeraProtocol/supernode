@@ -203,6 +203,95 @@ func ensureHashedTarget(target []byte) []byte {
 	return target
 }
 
+type hashedIDKey [32]byte
+
+func hashedKeyFromNode(node *Node) (hashedIDKey, bool) {
+	var k hashedIDKey
+	if node == nil {
+		return k, false
+	}
+
+	hashedID := node.HashedID
+	if len(hashedID) != 32 {
+		if len(node.ID) == 0 {
+			return k, false
+		}
+		h, err := utils.Blake3Hash(node.ID)
+		if err != nil || len(h) != 32 {
+			return k, false
+		}
+		hashedID = h
+	}
+
+	copy(k[:], hashedID)
+	return k, true
+}
+
+type hashedIDSet map[hashedIDKey]struct{}
+
+func hashedIDSetFromNodes(nodes []*Node) hashedIDSet {
+	if len(nodes) == 0 {
+		return nil
+	}
+	set := make(hashedIDSet, len(nodes))
+	for _, n := range nodes {
+		if k, ok := hashedKeyFromNode(n); ok {
+			set[k] = struct{}{}
+		}
+	}
+	return set
+}
+
+func (s hashedIDSet) contains(hashedID []byte) bool {
+	if len(s) == 0 || len(hashedID) != 32 {
+		return false
+	}
+	var k hashedIDKey
+	copy(k[:], hashedID)
+	_, ok := s[k]
+	return ok
+}
+
+func hashedKeysFromNodes(nodes []*Node) []hashedIDKey {
+	if len(nodes) == 0 {
+		return nil
+	}
+	keys := make([]hashedIDKey, 0, len(nodes))
+	for _, n := range nodes {
+		if k, ok := hashedKeyFromNode(n); ok {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+func hasHashedID(hashedID []byte, keys []hashedIDKey) bool {
+	if len(keys) == 0 || len(hashedID) != 32 {
+		return false
+	}
+	for i := range keys {
+		if bytes.Equal(hashedID, keys[i][:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNodeWithHashedID(nodes []*Node, hashedID []byte) bool {
+	if len(hashedID) != 32 {
+		return false
+	}
+	for _, n := range nodes {
+		if n == nil || len(n.HashedID) != 32 {
+			continue
+		}
+		if bytes.Equal(n.HashedID, hashedID) {
+			return true
+		}
+	}
+	return false
+}
+
 // hasBucketNode: compare on HashedID
 func (ht *HashTable) hasBucketNode(bucket int, hashedID []byte) bool {
 	ht.mutex.RLock()
@@ -250,26 +339,31 @@ func (ht *HashTable) RemoveNode(index int, hashedID []byte) bool {
 
 // closestContacts: use HashedID in ignored-map
 func (ht *HashTable) closestContacts(num int, target []byte, ignoredNodes []*Node) (*NodeList, int) {
-	ht.mutex.RLock()
-	defer ht.mutex.RUnlock()
-
 	hashedTarget := ensureHashedTarget(target)
+	ignoredKeys := hashedKeysFromNodes(ignoredNodes)
 
-	ignoredMap := make(map[string]bool, len(ignoredNodes))
-	for _, node := range ignoredNodes {
-		ignoredMap[string(node.HashedID)] = true
+	ht.mutex.RLock()
+	total := 0
+	for _, bucket := range ht.routeTable {
+		total += len(bucket)
 	}
-
-	nl := &NodeList{Comparator: hashedTarget}
+	nodes := make([]*Node, 0, total)
 	counter := 0
 	for _, bucket := range ht.routeTable {
 		for _, node := range bucket {
 			counter++
-			if !ignoredMap[string(node.HashedID)] {
-				nl.AddNodes([]*Node{node})
+			if node == nil {
+				continue
 			}
+			if hasHashedID(node.HashedID, ignoredKeys) {
+				continue
+			}
+			nodes = append(nodes, node)
 		}
 	}
+	ht.mutex.RUnlock()
+
+	nl := &NodeList{Comparator: hashedTarget, Nodes: nodes}
 	nl.Sort()
 	nl.TopN(num)
 	return nl, counter
@@ -277,58 +371,115 @@ func (ht *HashTable) closestContacts(num int, target []byte, ignoredNodes []*Nod
 
 // keep an alias for old callers; fix typo in new name
 func (ht *HashTable) closestContactsWithIncludingNode(num int, target []byte, ignoredNodes []*Node, includeNode *Node) *NodeList {
-	ht.mutex.RLock()
-	defer ht.mutex.RUnlock()
-
 	hashedTarget := ensureHashedTarget(target)
-	ignoredMap := make(map[string]bool, len(ignoredNodes))
-	for _, node := range ignoredNodes {
-		ignoredMap[string(node.HashedID)] = true
-	}
+	ignoredKeys := hashedKeysFromNodes(ignoredNodes)
 
-	nl := &NodeList{Comparator: hashedTarget}
+	ht.mutex.RLock()
+	total := 0
+	for _, bucket := range ht.routeTable {
+		total += len(bucket)
+	}
+	nodes := make([]*Node, 0, total+1)
 	for _, bucket := range ht.routeTable {
 		for _, node := range bucket {
-			if !ignoredMap[string(node.HashedID)] {
-				nl.AddNodes([]*Node{node})
+			if node == nil {
+				continue
 			}
+			if hasHashedID(node.HashedID, ignoredKeys) {
+				continue
+			}
+			nodes = append(nodes, node)
 		}
 	}
+	ht.mutex.RUnlock()
+
 	if includeNode != nil {
-		nl.AddNodes([]*Node{includeNode})
+		includeNode.SetHashedID()
+		if !hasNodeWithHashedID(nodes, includeNode.HashedID) {
+			nodes = append(nodes, includeNode)
+		}
 	}
+
+	nl := &NodeList{Comparator: hashedTarget, Nodes: nodes}
+	nl.Sort()
+	nl.TopN(num)
+	return nl
+}
+
+// closestContactsWithIncludingNodeWithIgnoredSet is an optimized variant for batch callers that
+// can precompute the ignored hashed-ID set once and reuse it across many lookups.
+func (ht *HashTable) closestContactsWithIncludingNodeWithIgnoredSet(num int, target []byte, ignoredSet hashedIDSet, includeNode *Node) *NodeList {
+	hashedTarget := ensureHashedTarget(target)
+
+	ht.mutex.RLock()
+	total := 0
+	for _, bucket := range ht.routeTable {
+		total += len(bucket)
+	}
+	nodes := make([]*Node, 0, total+1)
+	for _, bucket := range ht.routeTable {
+		for _, node := range bucket {
+			if node == nil {
+				continue
+			}
+			if ignoredSet.contains(node.HashedID) {
+				continue
+			}
+			nodes = append(nodes, node)
+		}
+	}
+	ht.mutex.RUnlock()
+
+	if includeNode != nil {
+		includeNode.SetHashedID()
+		if !hasNodeWithHashedID(nodes, includeNode.HashedID) {
+			nodes = append(nodes, includeNode)
+		}
+	}
+
+	nl := &NodeList{Comparator: hashedTarget, Nodes: nodes}
 	nl.Sort()
 	nl.TopN(num)
 	return nl
 }
 
 func (ht *HashTable) closestContactsWithIncludingNodeList(num int, target []byte, ignoredNodes []*Node, nodesToInclude []*Node) *NodeList {
-	ht.mutex.RLock()
-	defer ht.mutex.RUnlock()
-
 	hashedTarget := ensureHashedTarget(target)
-	ignoredMap := make(map[string]bool, len(ignoredNodes))
-	for _, node := range ignoredNodes {
-		ignoredMap[string(node.HashedID)] = true
-	}
+	ignoredKeys := hashedKeysFromNodes(ignoredNodes)
 
-	nl := &NodeList{Comparator: hashedTarget}
+	ht.mutex.RLock()
+	total := 0
+	for _, bucket := range ht.routeTable {
+		total += len(bucket)
+	}
+	nodes := make([]*Node, 0, total+len(nodesToInclude))
 	for _, bucket := range ht.routeTable {
 		for _, node := range bucket {
-			if !ignoredMap[string(node.HashedID)] {
-				nl.AddNodes([]*Node{node})
+			if node == nil {
+				continue
 			}
+			if hasHashedID(node.HashedID, ignoredKeys) {
+				continue
+			}
+			nodes = append(nodes, node)
 		}
 	}
+	ht.mutex.RUnlock()
 
 	if len(nodesToInclude) > 0 {
 		for _, node := range nodesToInclude {
-			if !nl.exists(node) {
-				nl.AddNodes([]*Node{node})
+			if node == nil {
+				continue
 			}
+			node.SetHashedID()
+			if hasNodeWithHashedID(nodes, node.HashedID) {
+				continue
+			}
+			nodes = append(nodes, node)
 		}
 	}
 
+	nl := &NodeList{Comparator: hashedTarget, Nodes: nodes}
 	nl.Sort()
 	nl.TopN(num)
 	return nl

@@ -167,7 +167,7 @@ func (task *CascadeRegistrationTask) Register(
 	}
 
 	// Step 12: Store artefacts to the network store
-	if err := task.storeArtefacts(ctx, action.ActionID, idFiles, encodeResult.SymbolsDir, fields); err != nil {
+	if err := task.storeArtefacts(ctx, action.ActionID, idFiles, encodeResult.SymbolsDir, encodeResult.Layout, fields); err != nil {
 		return err
 	}
 	if err := task.emitArtefactsStored(ctx, fields, encodeResult.Layout, send); err != nil {

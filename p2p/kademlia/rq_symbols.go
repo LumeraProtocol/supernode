@@ -3,6 +3,8 @@ package kademlia
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -19,9 +21,12 @@ func (s *DHT) startStoreSymbolsWorker(ctx context.Context) {
 	// Minimal visibility for lifecycle + each tick
 	logtrace.Debug(ctx, "rq_symbols worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
 
+	ticker := time.NewTicker(defaultSoreSymbolsInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-time.After(defaultSoreSymbolsInterval):
+		case <-ticker.C:
 			if err := s.storeSymbols(ctx); err != nil {
 				logtrace.Error(ctx, "store symbols", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 			}
@@ -101,6 +106,19 @@ func (s *DHT) scanDirAndStoreSymbols(ctx context.Context, dir, txid string) erro
 	// Mark this directory as completed in rqstore
 	if err := s.rqstore.SetIsCompleted(txid); err != nil {
 		return fmt.Errorf("set is-completed: %w", err)
+	}
+
+	cleanDir := filepath.Clean(dir)
+	if txid == "" || cleanDir == "" || cleanDir == "." || cleanDir == ".." || cleanDir == string(filepath.Separator) {
+		logtrace.Warn(ctx, "worker: skip removing unsafe symbols dir", logtrace.Fields{"dir": dir, "txid": txid, "clean_dir": cleanDir})
+		return nil
+	}
+	if filepath.Base(cleanDir) != txid {
+		logtrace.Warn(ctx, "worker: skip removing symbols dir with unexpected base", logtrace.Fields{"dir": dir, "txid": txid, "clean_dir": cleanDir})
+		return nil
+	}
+	if err := os.RemoveAll(cleanDir); err != nil {
+		logtrace.Warn(ctx, "worker: remove symbols dir failed", logtrace.Fields{"dir": cleanDir, "txid": txid, logtrace.FieldError: err.Error()})
 	}
 	return nil
 }

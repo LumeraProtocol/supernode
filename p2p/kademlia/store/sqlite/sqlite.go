@@ -39,6 +39,9 @@ type Job struct {
 	ReqID        string
 	DataType     int
 	IsOriginal   bool
+	// Done is an optional completion signal for callers that need to know when the DB write finished.
+	// The sqlite worker will attempt a non-blocking send to avoid stalling the write loop.
+	Done chan error
 }
 
 // Worker represents the worker that executes the job
@@ -309,7 +312,16 @@ func (s *Store) start(ctx context.Context) {
 	for {
 		select {
 		case job := <-s.worker.JobQueue:
-			if err := s.performJob(job); err != nil {
+			err := s.performJob(job)
+			if job.Done != nil {
+				// Never block the DB worker on a completion signal.
+				// Callers that need the result should provide a buffered channel and wait on it.
+				select {
+				case job.Done <- err:
+				default:
+				}
+			}
+			if err != nil {
 				logtrace.Error(ctx, "Failed to perform job", logtrace.Fields{logtrace.FieldError: err.Error()})
 			}
 		case <-s.worker.quit:
@@ -358,11 +370,18 @@ func (s *Store) Store(ctx context.Context, key []byte, value []byte, datatype in
 
 // StoreBatch stores a batch of key/value pairs for the queries node with the replication
 func (s *Store) StoreBatch(ctx context.Context, values [][]byte, datatype int, isOriginal bool) error {
+	var done chan error
+	if isOriginal {
+		// For original/local batches, "success" must mean "durably stored":
+		// first-pass callers may delete the source symbol files right after StoreBatch returns.
+		done = make(chan error, 1)
+	}
 	job := Job{
 		JobType:    "BatchInsert",
 		Values:     values,
 		DataType:   datatype,
 		IsOriginal: isOriginal,
+		Done:       done,
 	}
 
 	if val := ctx.Value(logtrace.CorrelationIDKey); val != nil {
@@ -378,7 +397,17 @@ func (s *Store) StoreBatch(ctx context.Context, values [][]byte, datatype int, i
 	case s.worker.JobQueue <- job:
 	}
 
-	return nil
+	if done == nil {
+		return nil
+	}
+
+	// Wait for the DB worker so original/local data is committed before returning to the caller.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
 }
 
 // Delete a key/value pair from the store

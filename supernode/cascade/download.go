@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +19,22 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
 )
 
-const targetRequiredPercent = 17
+// Step 0: Download reconstruction parameters.
+//
+// targetRequiredPercent is the initial minimum symbol coverage we require before the first decode attempt.
+// Empirically, decode tends to succeed around ~17–18% for single-block cascades; we use a small buffer.
+// Decode may require more than this, so the algorithm can progressively fetch more symbols.
+const targetRequiredPercent = 20
+
+// retrieveKeyFanoutFactor caps how many candidate keys we pass to BatchRetrieveStream relative to `need`.
+// The DHT implementation does per-key preprocessing (e.g., base58 decode, routing/contact setup), so
+// passing huge key lists when `need` is small can waste CPU and allocations.
+// The fanout factor + minimum are chosen to keep a high probability of satisfying `need` even if some
+// keys are unavailable.
+const (
+	retrieveKeyFanoutFactor  = 50
+	retrieveKeyMinCandidates = 5000
+)
 
 type DownloadRequest struct {
 	ActionID  string
@@ -42,6 +56,7 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 	fields := logtrace.Fields{logtrace.FieldMethod: "Download", logtrace.FieldRequest: req}
 	logtrace.Info(ctx, "download: request", fields)
 
+	// Step 1: Fetch action.
 	actionDetails, err := task.LumeraClient.GetAction(ctx, req.ActionID)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -52,6 +67,7 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return err
 	}
 
+	// Step 2: Validate action state.
 	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
 		err = errors.New("action is not in a valid state")
 		fields[logtrace.FieldError] = "action state is not done yet"
@@ -60,6 +76,7 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 	}
 	logtrace.Info(ctx, "download: action state ok", fields)
 
+	// Step 3: Decode cascade metadata.
 	metadata, err := cascadekit.UnmarshalCascadeMetadata(actionDetails.GetAction().Metadata)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
@@ -70,12 +87,13 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return err
 	}
 
+	// Step 4: Verify download signature for private cascades.
 	if !metadata.Public {
 		if req.Signature == "" {
 			fields[logtrace.FieldError] = "missing signature for private download"
 			return task.wrapErr(ctx, "private cascade requires a download signature", nil, fields)
 		}
-		if err := task.VerifyDownloadSignature(ctx, req.ActionID, req.Signature); err != nil {
+		if err := task.verifyDownloadSignatureWithCreator(ctx, req.ActionID, req.Signature, actionDetails.GetAction().Creator); err != nil {
 			fields[logtrace.FieldError] = err.Error()
 			return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 		}
@@ -84,15 +102,18 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		logtrace.Info(ctx, "download: public cascade (no signature)", fields)
 	}
 
+	// Step 5: Emit retrieval-start event.
 	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeNetworkRetrieveStarted, "Network retrieval started", "", "", send); err != nil {
 		return err
 	}
 
+	// Step 6: Resolve layout + retrieve symbols + decode + verify hash.
 	logtrace.Info(ctx, "download: network retrieval start", logtrace.Fields{logtrace.FieldActionID: actionDetails.GetAction().ActionID})
 	filePath, tmpDir, err := task.downloadArtifacts(ctx, actionDetails.GetAction().ActionID, metadata, fields, send)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		if tmpDir != "" {
+			// Step 7: Clean up temporary workspace on failure.
 			if cerr := task.CleanupDownload(ctx, tmpDir); cerr != nil {
 				logtrace.Warn(ctx, "cleanup of tmp dir after error failed", logtrace.Fields{"tmp_dir": tmpDir, logtrace.FieldError: cerr.Error()})
 			}
@@ -103,6 +124,8 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return task.wrapErr(ctx, "failed to download artifacts", err, fields)
 	}
 	logtrace.Debug(ctx, "File reconstructed and hash verified", fields)
+
+	// Step 8: Emit decode-completed event.
 	if err := task.streamDownloadEvent(ctx, SupernodeEventTypeDecodeCompleted, "Decode completed", filePath, tmpDir, send); err != nil {
 		if tmpDir != "" {
 			if cerr := task.CleanupDownload(ctx, tmpDir); cerr != nil {
@@ -116,6 +139,7 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 }
 
 func (task *CascadeRegistrationTask) CleanupDownload(ctx context.Context, tmpDir string) error {
+	// Step 0: Best-effort cleanup of any temporary workspace created during download/decode.
 	if tmpDir == "" {
 		return nil
 	}
@@ -129,12 +153,18 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	if signature == "" {
 		return errors.New("signature required")
 	}
-	// Fetch the action to get the creator address for verification
+	// Fetch the action to get the creator address for verification.
 	act, err := task.LumeraClient.GetAction(ctx, actionID)
 	if err != nil {
 		return fmt.Errorf("get action for signature verification: %w", err)
 	}
-	creator := act.GetAction().Creator
+	return task.verifyDownloadSignatureWithCreator(ctx, actionID, signature, act.GetAction().Creator)
+}
+
+func (task *CascadeRegistrationTask) verifyDownloadSignatureWithCreator(ctx context.Context, actionID, signature, creator string) error {
+	if signature == "" || creator == "" {
+		return errors.New("signature and creator are required")
+	}
 	if err := cascadekit.VerifyStringRawOrADR36(actionID, signature, creator, func(data, sig []byte) error {
 		return task.LumeraClient.Verify(ctx, creator, data, sig)
 	}); err != nil {
@@ -155,7 +185,7 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 	var layoutFetchMS, layoutDecodeMS int64
 	var layoutAttempts int
 
-	// Retrieve via index IDs
+	// Step 1: Retrieve index file(s) via index IDs.
 	if len(metadata.RqIdsIds) > 0 {
 		for _, indexID := range metadata.RqIdsIds {
 			iStart := time.Now()
@@ -173,6 +203,8 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 			}
 			var netMS, decMS int64
 			var attempts int
+
+			// Step 2: Resolve and decode layout referenced by the index.
 			layout, netMS, decMS, attempts, err = task.retrieveLayoutFromIndex(ctx, indexData, fields)
 			if err != nil {
 				logtrace.Warn(ctx, "failed to retrieve layout from index", logtrace.Fields{"index_id": indexID, logtrace.FieldError: err.Error(), "attempts": attempts})
@@ -189,85 +221,9 @@ func (task *CascadeRegistrationTask) downloadArtifacts(ctx context.Context, acti
 		return "", "", errors.New("no symbols found in RQ metadata")
 	}
 	fields["layout_fetch_ms"], fields["layout_decode_ms"], fields["layout_attempts"] = layoutFetchMS, layoutDecodeMS, layoutAttempts
+
+	// Step 3: Reconstruct file from layout + symbols; verify hash.
 	return task.restoreFileFromLayout(ctx, layout, metadata.DataHash, actionID, send)
-}
-
-func (task *CascadeRegistrationTask) restoreFileFromLayoutDeprecated(ctx context.Context, layout codec.Layout, dataHash string, actionID string, send func(resp *DownloadResponse) error) (string, string, error) {
-	fields := logtrace.Fields{logtrace.FieldActionID: actionID}
-	symSet := make(map[string]struct{})
-	for _, block := range layout.Blocks {
-		for _, s := range block.Symbols {
-			symSet[s] = struct{}{}
-		}
-	}
-	allSymbols := make([]string, 0, len(symSet))
-	for s := range symSet {
-		allSymbols = append(allSymbols, s)
-	}
-	sort.Strings(allSymbols)
-	totalSymbols := len(allSymbols)
-	fields["totalSymbols"] = totalSymbols
-	targetRequiredCount := (totalSymbols*targetRequiredPercent + 99) / 100
-	if targetRequiredCount < 1 && totalSymbols > 0 {
-		targetRequiredCount = 1
-	}
-	logtrace.Info(ctx, "download: plan symbols", logtrace.Fields{"total_symbols": totalSymbols, "target_required_percent": targetRequiredPercent, "target_required_count": targetRequiredCount})
-	retrieveStart := time.Now()
-	reqCount := targetRequiredCount
-	if reqCount > totalSymbols {
-		reqCount = totalSymbols
-	}
-	rStart := time.Now()
-	logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{"action_id": actionID, "requested": reqCount, "total_candidates": totalSymbols})
-	symbols, err := task.P2PClient.BatchRetrieve(ctx, allSymbols, reqCount, actionID)
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "batch retrieve failed", fields)
-		return "", "", fmt.Errorf("batch retrieve symbols: %w", err)
-	}
-	retrieveMS := time.Since(retrieveStart).Milliseconds()
-	logtrace.Info(ctx, "download: batch retrieve ok", logtrace.Fields{"action_id": actionID, "received": len(symbols), "ms": time.Since(rStart).Milliseconds()})
-	decodeStart := time.Now()
-	dStart := time.Now()
-	logtrace.Info(ctx, "download: decode start", logtrace.Fields{"action_id": actionID})
-	decodeInfo, err := task.RQ.Decode(ctx, adaptors.DecodeRequest{ActionID: actionID, Symbols: symbols, Layout: layout})
-	if err != nil {
-		fields[logtrace.FieldError] = err.Error()
-		logtrace.Error(ctx, "decode failed", fields)
-		return "", "", fmt.Errorf("decode symbols using RaptorQ: %w", err)
-	}
-	decodeMS := time.Since(decodeStart).Milliseconds()
-	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{"action_id": actionID, "ms": time.Since(dStart).Milliseconds(), "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath})
-	// Emit timing metrics for network retrieval and decode phases
-	logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
-
-	// Verify reconstructed file hash matches action metadata
-	fileHash, herr := utils.Blake3HashFile(decodeInfo.FilePath)
-	if herr != nil {
-		fields[logtrace.FieldError] = herr.Error()
-		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", "", fmt.Errorf("hash file: %w", herr)
-	}
-	if fileHash == nil {
-		fields[logtrace.FieldError] = "file hash is nil"
-		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", "", errors.New("file hash is nil")
-	}
-	if verr := cascadekit.VerifyB64DataHash(fileHash, dataHash); verr != nil {
-		fields[logtrace.FieldError] = verr.Error()
-		logtrace.Error(ctx, "failed to verify hash", fields)
-		return "", decodeInfo.DecodeTmpDir, verr
-	}
-	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
-	logtrace.Info(ctx, "download: file verified", fields)
-	// Emit minimal JSON payload (metrics system removed)
-	info := map[string]interface{}{"action_id": actionID, "found_symbols": len(symbols), "target_percent": targetRequiredPercent}
-	if b, err := json.Marshal(info); err == nil {
-		if err := task.streamDownloadEvent(ctx, SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send); err != nil {
-			return "", decodeInfo.DecodeTmpDir, err
-		}
-	}
-	return decodeInfo.FilePath, decodeInfo.DecodeTmpDir, nil
 }
 
 func (task *CascadeRegistrationTask) restoreFileFromLayout(
@@ -277,24 +233,46 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	actionID string,
 	send func(resp *DownloadResponse) error,
 ) (string, string, error) {
-
 	fields := logtrace.Fields{logtrace.FieldActionID: actionID}
 
-	// Unique symbols
-	symSet := make(map[string]struct{}, 1024)
-	for _, block := range layout.Blocks {
-		for _, s := range block.Symbols {
-			symSet[s] = struct{}{}
+	// Step 1: Build symbol candidate list from the layout.
+	// Prefer layout order for single-block Cascade (reduces "missing open" churn vs lexicographic sorts).
+	var allSymbols []string
+	writeBlockID := -1
+	if len(layout.Blocks) == 1 {
+		writeBlockID = layout.Blocks[0].BlockID
+		allSymbols = make([]string, 0, len(layout.Blocks[0].Symbols))
+		seen := make(map[string]struct{}, len(layout.Blocks[0].Symbols))
+		for _, s := range layout.Blocks[0].Symbols {
+			if s == "" {
+				continue
+			}
+			if _, ok := seen[s]; ok {
+				continue
+			}
+			seen[s] = struct{}{}
+			allSymbols = append(allSymbols, s)
 		}
+	} else {
+		symSet := make(map[string]struct{}, 1024)
+		for _, block := range layout.Blocks {
+			for _, s := range block.Symbols {
+				if s == "" {
+					continue
+				}
+				symSet[s] = struct{}{}
+			}
+		}
+		allSymbols = make([]string, 0, len(symSet))
+		for s := range symSet {
+			allSymbols = append(allSymbols, s)
+		}
+		sort.Strings(allSymbols)
 	}
-	allSymbols := make([]string, 0, len(symSet))
-	for s := range symSet {
-		allSymbols = append(allSymbols, s)
-	}
-	sort.Strings(allSymbols)
 	totalSymbols := len(allSymbols)
 	fields["totalSymbols"] = totalSymbols
 
+	// Step 2: Compute initial required symbol count (ceil(targetRequiredPercent%)).
 	targetRequiredCount := (totalSymbols*targetRequiredPercent + 99) / 100
 	if targetRequiredCount < 1 && totalSymbols > 0 {
 		targetRequiredCount = 1
@@ -309,7 +287,8 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		return "", "", errors.New("no symbols present in layout")
 	}
 
-	// Prepare RQ workspace once; stream symbols directly into it
+	// Step 3: Prepare RQ workspace once; stream symbols into it across attempts.
+	// Prepare RQ workspace once; stream symbols directly into it, and retry decode by fetching more.
 	logtrace.Info(ctx, "download: prepare RQ workspace", logtrace.Fields{"action_id": actionID})
 	_, writeSymbol, cleanup, ws, perr := task.RQ.PrepareDecode(ctx, actionID, layout)
 	if perr != nil {
@@ -324,89 +303,183 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 		}
 	}()
 
-	// Track exactly which symbol IDs we wrote (base58 IDs)
+	var writtenSet sync.Map // base58 symbol id -> struct{}
 	var written int32
-	var writtenSet sync.Map // b58 symbol id -> struct{}
 	onSymbol := func(symbolID string, data []byte) error {
-		if _, err := writeSymbol(-1, symbolID, data); err != nil {
+		// Write each retrieved symbol into the prepared workspace.
+		// Count unique symbol IDs only, so progress reflects real coverage (not duplicates).
+		// In the single-block case, write directly to the known block to avoid per-symbol block lookup.
+		if _, err := writeSymbol(writeBlockID, symbolID, data); err != nil {
 			return err
 		}
-		writtenSet.Store(symbolID, struct{}{})
-		atomic.AddInt32(&written, 1)
+		if _, loaded := writtenSet.LoadOrStore(symbolID, struct{}{}); !loaded {
+			atomic.AddInt32(&written, 1)
+		}
 		return nil
 	}
 
-	// 1) Local batched streaming
 	retrieveStart := time.Now()
-	logtrace.Info(ctx, "download: local scan start", logtrace.Fields{"action_id": actionID, "requested": targetRequiredCount, "total_candidates": totalSymbols})
-	localFound, lerr := task.P2PClient.BatchRetrieveStream(ctx, allSymbols, int32(targetRequiredCount), actionID, onSymbol, true)
-	if lerr != nil && !strings.Contains(strings.ToLower(lerr.Error()), "local-only") {
-		fields[logtrace.FieldError] = lerr.Error()
-		logtrace.Error(ctx, "local batch retrieve stream failed", fields)
-		return "", ws.SymbolsDir, fmt.Errorf("local batch retrieve stream: %w", lerr)
+	reqCount := targetRequiredCount
+	step := (totalSymbols*5 + 99) / 100 // +5% of total symbols (rounded up)
+	if step < 1 {
+		step = 1
 	}
+	const maxDecodeAttempts = 4
 
-	// If needed, compute the remaining keys that were NOT written in pass 1
-	if int(localFound) < targetRequiredCount {
-		remaining := int32(targetRequiredCount) - localFound
-
-		// Build a compact slice of only the symbols not written by the local pass
-		remainingKeys := make([]string, 0, len(allSymbols))
-		for _, k := range allSymbols {
-			if _, ok := writtenSet.Load(k); !ok {
-				remainingKeys = append(remainingKeys, k)
+	var decodeInfo adaptors.DecodeResult
+	var lastDecodeErr error
+	for attempt := 1; attempt <= maxDecodeAttempts; attempt++ {
+		// Step 4.1: Determine how many unique symbols we have vs the current target.
+		have := int(atomic.LoadInt32(&written))
+		need := reqCount - have
+		if need > 0 {
+			// Step 4.2: Fetch exactly the delta (`need`) from not-yet-written candidate keys.
+			// Select a candidate slice to spread load across the keyspace; fall back to all keys if needed.
+			// Start with a smaller candidate set; expand if we don't have enough remaining keys.
+			candidates := allSymbols
+			if want := reqCount * 2; want < len(allSymbols) {
+				candidateCount := want
+				maxStart := len(allSymbols) - candidateCount
+				start := ((attempt - 1) * candidateCount) % (maxStart + 1)
+				candidates = allSymbols[start : start+candidateCount]
 			}
+
+			// Cap how many keys we pass to the DHT when `need` is small, and stop scanning once reached.
+			keyCap := need * retrieveKeyFanoutFactor
+			if keyCap < retrieveKeyMinCandidates {
+				keyCap = retrieveKeyMinCandidates
+			}
+			if keyCap < need {
+				keyCap = need
+			}
+			remainingKeys := make([]string, 0, min(keyCap, len(candidates)))
+			for _, k := range candidates {
+				if k == "" {
+					continue
+				}
+				if _, ok := writtenSet.Load(k); ok {
+					continue
+				}
+				remainingKeys = append(remainingKeys, k)
+				if len(remainingKeys) >= keyCap {
+					break
+				}
+			}
+
+			if len(remainingKeys) < need && len(candidates) < len(allSymbols) {
+				// Fall back to all symbols to avoid getting stuck on a narrow prefix.
+				remainingKeys = remainingKeys[:0]
+				for _, k := range allSymbols {
+					if k == "" {
+						continue
+					}
+					if _, ok := writtenSet.Load(k); ok {
+						continue
+					}
+					remainingKeys = append(remainingKeys, k)
+					if len(remainingKeys) >= keyCap {
+						break
+					}
+				}
+			}
+
+			logtrace.Info(ctx, "download: batch retrieve start", logtrace.Fields{
+				"action_id":  actionID,
+				"attempt":    attempt,
+				"requested":  need,
+				"have":       have,
+				"target":     reqCount,
+				"candidates": len(candidates),
+				"keys":       len(remainingKeys),
+			})
+			rStart := time.Now()
+			if _, rerr := task.P2PClient.BatchRetrieveStream(ctx, remainingKeys, int32(need), actionID, onSymbol); rerr != nil {
+				fields[logtrace.FieldError] = rerr.Error()
+				logtrace.Error(ctx, "batch retrieve stream failed", fields)
+				return "", ws.SymbolsDir, fmt.Errorf("batch retrieve stream: %w", rerr)
+			}
+			logtrace.Info(ctx, "download: batch retrieve ok", logtrace.Fields{
+				"action_id": actionID,
+				"attempt":   attempt,
+				"ms":        time.Since(rStart).Milliseconds(),
+				"have":      atomic.LoadInt32(&written),
+			})
 		}
 
-		logtrace.Info(ctx, "download: network retrieve start", logtrace.Fields{
-			"action_id": actionID, "remaining": remaining, "candidate_keys": len(remainingKeys),
+		// Don't spend CPU attempting decode until we have at least the requested count for this attempt.
+		// Step 4.3: Skip decode until `have >= reqCount`.
+		have = int(atomic.LoadInt32(&written))
+		if have < reqCount {
+			lastDecodeErr = fmt.Errorf("insufficient symbols to attempt decode: have %d want %d", have, reqCount)
+			logtrace.Warn(ctx, "download: skip decode; insufficient symbols", logtrace.Fields{
+				"action_id": actionID,
+				"attempt":   attempt,
+				"received":  have,
+				"target":    reqCount,
+			})
+			continue
+		}
+
+		decodeStart := time.Now()
+		// Step 4.4: Attempt decode from the prepared workspace.
+		logtrace.Info(ctx, "download: decode start", logtrace.Fields{
+			"action_id": actionID,
+			"attempt":   attempt,
+			"received":  atomic.LoadInt32(&written),
+			"target":    reqCount,
+		})
+		decodeInfo, lastDecodeErr = task.RQ.DecodeFromPrepared(ctx, ws, layout)
+		if lastDecodeErr == nil {
+			retrieveMS := time.Since(retrieveStart).Milliseconds()
+			decodeMS := time.Since(decodeStart).Milliseconds()
+			logtrace.Info(ctx, "download: decode ok", logtrace.Fields{
+				"action_id": actionID,
+				"attempt":   attempt,
+				"ms":        decodeMS,
+				"tmp_dir":   decodeInfo.DecodeTmpDir,
+				"file_path": decodeInfo.FilePath,
+			})
+			logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
+			break
+		}
+
+		fields[logtrace.FieldError] = lastDecodeErr.Error()
+		logtrace.Warn(ctx, "decode failed; will fetch more symbols and retry", logtrace.Fields{
+			"action_id": actionID,
+			"attempt":   attempt,
+			"received":  atomic.LoadInt32(&written),
+			"target":    reqCount,
+			"err":       lastDecodeErr.Error(),
 		})
 
-		if len(remainingKeys) == 0 {
-			logtrace.Warn(ctx, "no remaining keys after local pass but remaining > 0; proceeding with allSymbols as fallback",
-				logtrace.Fields{"action_id": actionID, "remaining": remaining})
-			remainingKeys = allSymbols
+		if reqCount >= totalSymbols {
+			return "", ws.SymbolsDir, fmt.Errorf("decode symbols using RaptorQ: %w", lastDecodeErr)
 		}
-
-		// Network phase on only the remaining keys; avoids a second local scan & duplicate writes
-		if _, nerr := task.P2PClient.BatchRetrieveStream(ctx, remainingKeys, remaining, actionID, onSymbol /* network allowed */); nerr != nil {
-			fields[logtrace.FieldError] = nerr.Error()
-			logtrace.Error(ctx, "network batch retrieve stream failed", fields)
-			return "", ws.SymbolsDir, fmt.Errorf("network batch retrieve stream: %w", nerr)
+		reqCount += step
+		if reqCount > totalSymbols {
+			reqCount = totalSymbols
 		}
 	}
 
-	retrieveMS := time.Since(retrieveStart).Milliseconds()
-	logtrace.Info(ctx, "download: batch retrieve (stream) ok", logtrace.Fields{
-		"action_id": actionID, "received": atomic.LoadInt32(&written), "retrieve_ms": retrieveMS,
-	})
-
-	// 2) Decode from prepared workspace
-	decodeStart := time.Now()
-	logtrace.Info(ctx, "download: decode start", logtrace.Fields{"action_id": actionID})
-	decodeInfo, derr := task.RQ.DecodeFromPrepared(ctx, ws, layout)
-	if derr != nil {
-		fields[logtrace.FieldError] = derr.Error()
-		logtrace.Error(ctx, "decode failed", fields)
-		return "", ws.SymbolsDir, fmt.Errorf("decode RaptorQ: %w", derr)
+	if decodeInfo.FilePath == "" {
+		if lastDecodeErr != nil {
+			return "", ws.SymbolsDir, fmt.Errorf("decode symbols using RaptorQ: %w", lastDecodeErr)
+		}
+		return "", ws.SymbolsDir, errors.New("decode failed after retries")
 	}
-	decodeMS := time.Since(decodeStart).Milliseconds()
-	logtrace.Info(ctx, "download: decode ok", logtrace.Fields{
-		"action_id": actionID, "ms": decodeMS, "tmp_dir": decodeInfo.DecodeTmpDir, "file_path": decodeInfo.FilePath,
-	})
-	logtrace.Debug(ctx, "download: timing", logtrace.Fields{"action_id": actionID, "retrieve_ms": retrieveMS, "decode_ms": decodeMS})
 
+	// Step 5: Verify reconstructed file hash matches action metadata.
 	// 3) Verify hash
 	fileHash, herr := utils.Blake3HashFile(decodeInfo.FilePath)
 	if herr != nil {
 		fields[logtrace.FieldError] = herr.Error()
 		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", ws.SymbolsDir, fmt.Errorf("hash file: %w", herr)
+		return "", decodeInfo.DecodeTmpDir, fmt.Errorf("hash file: %w", herr)
 	}
 	if fileHash == nil {
 		fields[logtrace.FieldError] = "file hash is nil"
 		logtrace.Error(ctx, "failed to hash file", fields)
-		return "", ws.SymbolsDir, errors.New("file hash is nil")
+		return "", decodeInfo.DecodeTmpDir, errors.New("file hash is nil")
 	}
 	if verr := cascadekit.VerifyB64DataHash(fileHash, dataHash); verr != nil {
 		fields[logtrace.FieldError] = verr.Error()
@@ -417,8 +490,9 @@ func (task *CascadeRegistrationTask) restoreFileFromLayout(
 	logtrace.Debug(ctx, "request data-hash has been matched with the action data-hash", fields)
 	logtrace.Info(ctx, "download: file verified", fields)
 
+	// Step 6: Emit final download event and return.
 	// Event
-	info := map[string]interface{}{"action_id": actionID, "found_symbols": int(atomic.LoadInt32(&written)), "target_percent": targetRequiredPercent}
+	info := map[string]interface{}{"action_id": actionID, "found_symbols": atomic.LoadInt32(&written), "target_percent": targetRequiredPercent}
 	if b, err := json.Marshal(info); err == nil {
 		if err := task.streamDownloadEvent(ctx, SupernodeEventTypeArtefactsDownloaded, string(b), decodeInfo.FilePath, decodeInfo.DecodeTmpDir, send); err != nil {
 			return "", decodeInfo.DecodeTmpDir, err

@@ -137,7 +137,7 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 	return indexIDs, allFiles, nil
 }
 
-func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, f logtrace.Fields) error {
+func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, layout codec.Layout, f logtrace.Fields) error {
 	if f == nil {
 		f = logtrace.Fields{}
 	}
@@ -147,7 +147,7 @@ func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionI
 	}
 	ctx = logtrace.CtxWithOrigin(ctx, "first_pass")
 	logtrace.Info(ctx, "store: first-pass begin", lf)
-	if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{IDFiles: idFiles, SymbolsDir: symbolsDir, TaskID: task.taskID, ActionID: actionID}, f); err != nil {
+	if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{IDFiles: idFiles, SymbolsDir: symbolsDir, Layout: layout, TaskID: task.taskID, ActionID: actionID}, f); err != nil {
 		return task.wrapErr(ctx, "failed to store artefacts", err, lf)
 	}
 	logtrace.Info(ctx, "store: first-pass ok", lf)
