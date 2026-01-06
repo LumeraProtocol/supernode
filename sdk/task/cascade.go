@@ -63,6 +63,14 @@ func (t *CascadeTask) Run(ctx context.Context) error {
 
 	supernodes = t.orderByXORDistance(supernodes)
 	t.LogEvent(ctx, event.SDKSupernodesFound, "Supernodes filtered", event.EventData{event.KeyTotal: originalCount, event.KeyCount: len(supernodes)})
+	if len(supernodes) == 0 {
+		t.logger.Info(ctx, "No eligible supernodes after filtering",
+			map[string]interface{}{
+				"total":    originalCount,
+				"eligible": 0,
+			},
+		)
+	}
 
 	// 2 - Register with the supernodes
 	if err := t.registerWithSupernodes(ctx, supernodes, preClients); err != nil {
@@ -143,6 +151,11 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 		return nil // success
 	}
 	if attempted == 0 {
+		t.logger.Info(ctx, "No eligible supernodes to register",
+			map[string]interface{}{
+				"eligible": 0,
+			},
+		)
 		return fmt.Errorf("no eligible supernodes to register")
 	}
 	if lastErr != nil {

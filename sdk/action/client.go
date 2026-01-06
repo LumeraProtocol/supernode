@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
@@ -23,6 +24,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
@@ -45,8 +47,9 @@ type Client interface {
 	// generates the cascade signatures, computes the blake3 data hash (base64),
 	// and returns CascadeMetadata (with signatures) along with price and expiration time.
 	// Internally derives ic (random in [1..100]), max (from chain params), price (GetActionFee),
-	// and expiration (params duration + 1h buffer).
-	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error)
+	// and expiration (params duration + 1h buffer). signerAddr overrides the bech32 signer
+	// used in ADR-36 sign bytes; pass empty string to use the keyring address.
+	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool, signerAddr string) (actiontypes.CascadeMetadata, string, string, error)
 	// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key; returns base64 signature.
 	GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error)
 	// GenerateDownloadSignature signs the payload "actionID" and returns a base64 signature.
@@ -253,7 +256,7 @@ func (c *ClientImpl) DownloadCascade(ctx context.Context, actionID, outputDir, s
 // BuildCascadeMetadataFromFile produces Cascade metadata (including signatures) from a local file path.
 // It generates only the single-block RaptorQ layout metadata (no symbols), signs it,
 // and returns metadata, price and expiration.
-func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool) (actiontypes.CascadeMetadata, string, string, error) {
+func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool, signerAddr string) (actiontypes.CascadeMetadata, string, string, error) {
 	if filePath == "" {
 		return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("file path is empty")
 	}
@@ -288,10 +291,27 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	ic := uint32(rnd.Int64() + 1) // 1..100
 
 	// Create signatures from the layout struct using ADR-36 scheme (JS compatible).
-	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36(
+	if signerAddr == "" {
+		signerAddr = c.signerAddr
+	}
+	keyName, usedICAKey := c.resolveSigningKeyName(signerAddr)
+	if signerAddr != c.signerAddr {
+		logFields := logtrace.Fields{"signer": signerAddr, "key_name": keyName}
+		if usedICAKey {
+			logFields["ica_owner_key"] = true
+		}
+		logtrace.Info(ctx, "auth: ICA metadata signing", logFields)
+		c.logger.Info(ctx, "Signing cascade metadata with ICA signer", "signer", signerAddr, "key_name", keyName)
+		c.taskManager.PublishEvent(ctx, event.NewEvent(ctx, event.SDKMetadataICASigned, "", string(task.TaskTypeCascade), "", event.EventData{
+			event.KeySignerAddress: signerAddr,
+			event.KeyMessage:       "metadata signed with ICA signer address",
+		}))
+	}
+	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36WithSigner(
 		layout,
 		c.keyring,
-		c.config.Account.KeyName,
+		keyName,
+		signerAddr,
 		ic,
 		max,
 	)
@@ -352,6 +372,12 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFileDeprecated(ctx context
 // using the ADR-36 scheme, matching Keplr's signArbitrary(dataHash) behavior.
 // Returns base64-encoded signature suitable for StartCascade.
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
+	return c.GenerateStartCascadeSignatureFromFileWithSigner(ctx, filePath, "")
+}
+
+// GenerateStartCascadeSignatureFromFileWithSigner computes blake3(file) and signs it with the configured key,
+// using the provided bech32 signer address for ADR-36 sign bytes.
+func (c *ClientImpl) GenerateStartCascadeSignatureFromFileWithSigner(ctx context.Context, filePath string, signerAddr string) (string, error) {
 	// Compute blake3(file), encode as base64 string
 	h, err := utils.Blake3HashFile(filePath)
 	if err != nil {
@@ -360,10 +386,22 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, 
 	dataHashB64 := base64.StdEncoding.EncodeToString(h)
 
 	// Sign the dataHashB64 string using ADR-36 (same as JS / Keplr).
+	if signerAddr == "" {
+		signerAddr = c.signerAddr
+	}
+	keyName, usedICAKey := c.resolveSigningKeyName(signerAddr)
+	if signerAddr != c.signerAddr {
+		logFields := logtrace.Fields{"signer": signerAddr, "key_name": keyName}
+		if usedICAKey {
+			logFields["ica_owner_key"] = true
+		}
+		logtrace.Info(ctx, "auth: ICA start signature", logFields)
+		c.logger.Info(ctx, "Signing cascade start with ICA signer", "signer", signerAddr, "key_name", keyName)
+	}
 	sigB64, err := cascadekit.SignADR36String(
 		c.keyring,
-		c.config.Account.KeyName,
-		c.signerAddr, // bech32 address resolved in NewClient
+		keyName,
+		signerAddr, // bech32 address for ADR-36 sign bytes
 		dataHashB64,
 	)
 	if err != nil {
@@ -371,6 +409,17 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, 
 	}
 
 	return sigB64, nil
+}
+
+func (c *ClientImpl) resolveSigningKeyName(signerAddr string) (string, bool) {
+	keyName := c.config.Account.KeyName
+	if signerAddr != "" && signerAddr != c.signerAddr {
+		icaKeyName := strings.TrimSpace(c.config.Account.ICAOwnerKeyName)
+		if icaKeyName != "" {
+			return icaKeyName, true
+		}
+	}
+	return keyName, false
 }
 
 // GenerateDownloadSignature signs the payload "actionID" and returns base64 signature.
@@ -381,8 +430,18 @@ func (c *ClientImpl) GenerateDownloadSignature(ctx context.Context, actionID, cr
 	if creatorAddr == "" {
 		return "", fmt.Errorf("creator address is empty")
 	}
-	// Sign only the actionID; creatorAddr is provided but not included in payload.
-	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, []byte(actionID))
+	signerAddr := creatorAddr
+	keyName, usedICAKey := c.resolveSigningKeyName(signerAddr)
+	if signerAddr != c.signerAddr {
+		logFields := logtrace.Fields{"signer": signerAddr, "key_name": keyName}
+		if usedICAKey {
+			logFields["ica_owner_key"] = true
+		}
+		logtrace.Info(ctx, "auth: ICA download signature", logFields)
+		c.logger.Info(ctx, "Signing download with ICA signer", "signer", signerAddr, "key_name", keyName)
+	}
+	// Sign only the actionID using raw bytes so verification can succeed without ADR-36 signer context.
+	sig, err := keyringpkg.SignBytes(c.keyring, keyName, []byte(actionID))
 	if err != nil {
 		return "", fmt.Errorf("sign download payload: %w", err)
 	}

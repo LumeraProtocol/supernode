@@ -2,10 +2,12 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
@@ -77,15 +79,36 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 	// Extract the base64-encoded data hash string from the metadata
 	dataHashB64 := cascadeMetaData.DataHash
 
-	// Verify using cascadekit helper (raw -> ADR-36)
-	if err := cascadekit.VerifyStringRawOrADR36(dataHashB64, signature, action.Creator, func(data, sig []byte) error {
-		return m.lumeraClient.VerifySignature(ctx, action.Creator, data, sig)
-	}); err != nil {
-		m.logger.Error(ctx, "Signature validation failed", "actionID", action.ID, "error", err)
-		return fmt.Errorf("signature validation failed: %w", err)
+	// Prefer ICA validation when ICA context is configured to avoid noise from non-ICA verification.
+	var icaErr error
+	if strings.TrimSpace(m.config.Account.ICAOwnerHRP) != "" || strings.TrimSpace(m.config.Account.ICAOwnerKeyName) != "" {
+		icaErr = m.validateICASignature(ctx, action, dataHashB64, signature)
+		if icaErr == nil {
+			return nil
+		}
 	}
 
-	return nil
+	// Verify using cascadekit helper (raw -> ADR-36)
+	verifyErr := cascadekit.VerifyStringRawOrADR36(dataHashB64, signature, action.Creator, func(data, sig []byte) error {
+		return m.lumeraClient.VerifySignature(ctx, action.Creator, data, sig)
+	})
+	if verifyErr == nil {
+		return nil
+	}
+
+	// If ICA validation wasn't attempted earlier, try it as a fallback.
+	if icaErr == nil {
+		icaErr = m.validateICASignature(ctx, action, dataHashB64, signature)
+		if icaErr == nil {
+			return nil
+		}
+	}
+
+	if icaErr != nil && !errors.Is(icaErr, errNotICA) {
+		m.logger.Error(ctx, "ICA signature validation failed", "actionID", action.ID, "error", icaErr)
+	}
+	m.logger.Error(ctx, "Signature validation failed", "actionID", action.ID, "error", verifyErr)
+	return fmt.Errorf("signature validation failed: %w", verifyErr)
 }
 
 //

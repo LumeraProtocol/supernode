@@ -39,6 +39,29 @@ func (m *module) AccountInfoByAddress(ctx context.Context, addr string) (*authty
 	return accountResp, nil
 }
 
+func (m *module) AccountByAddress(ctx context.Context, addr string) (types.AccountI, error) {
+	// Validate the address
+	if _, err := types.AccAddressFromBech32(addr); err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	accResp, err := m.client.Account(ctx, &authtypes.QueryAccountRequest{
+		Address: addr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account: %w", err)
+	}
+
+	var account types.AccountI
+	if err := lumeracodec.GetEncodingConfig().InterfaceRegistry.UnpackAny(accResp.Account, &account); err != nil {
+		return nil, fmt.Errorf("failed to unpack account: %w", err)
+	}
+	if account == nil {
+		return nil, fmt.Errorf("account not found")
+	}
+	return account, nil
+}
+
 func (m *module) Verify(ctx context.Context, accAddress string, data, signature []byte) (err error) {
 	// Validate the address
 	addr, err := types.AccAddressFromBech32(accAddress)
@@ -47,18 +70,9 @@ func (m *module) Verify(ctx context.Context, accAddress string, data, signature 
 	}
 	logtrace.Info(ctx, "auth: verify signature start", logtrace.Fields{"address": addr.String()})
 
-	// Use Account RPC instead of AccountInfo to get the full account with public key
-	accResp, err := m.client.Account(ctx, &authtypes.QueryAccountRequest{
-		Address: addr.String(),
-	})
+	account, err := m.AccountByAddress(ctx, addr.String())
 	if err != nil {
-		return fmt.Errorf("failed to get account: %w", err)
-	}
-
-	// Unpack the account from Any type
-	var account types.AccountI
-	if err := lumeracodec.GetEncodingConfig().InterfaceRegistry.UnpackAny(accResp.Account, &account); err != nil {
-		return fmt.Errorf("failed to unpack account: %w", err)
+		return err
 	}
 
 	pubKey := account.GetPubKey()

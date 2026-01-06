@@ -1,6 +1,8 @@
 package system
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +25,12 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 	}
 
 	cmds := make([]*exec.Cmd, len(dataDirs))
+	logFiles := make([]*os.File, 0, len(dataDirs))
+	t.Cleanup(func() {
+		for _, f := range logFiles {
+			_ = f.Close()
+		}
+	})
 
 	// Start each supernode
 	for i, dataDir := range dataDirs {
@@ -39,11 +47,18 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 			"--basedir", dataDir,
 		)
 
-		// Pipe logs to test output
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		logPath := filepath.Join(wd, fmt.Sprintf("supernode%d.out", i))
+		logFile, err := os.Create(logPath)
+		if err != nil {
+			t.Fatalf("failed to create supernode log file %s: %v", logPath, err)
+		}
+		logFiles = append(logFiles, logFile)
+
+		cmd.Stdout = io.MultiWriter(os.Stdout, logFile)
+		cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
 
 		t.Logf("Starting supernode %d from directory: %s", i+1, dataDir)
+		t.Logf("Supernode %d log: %s", i+1, logPath)
 
 		if err := cmd.Start(); err != nil {
 			// Clean up any already started processes before failing

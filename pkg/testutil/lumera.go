@@ -127,6 +127,11 @@ func (m *MockAuthModule) AccountInfoByAddress(ctx context.Context, addr string) 
 	}, nil
 }
 
+// AccountByAddress mocks retrieving an on-chain account for the given address.
+func (m *MockAuthModule) AccountByAddress(ctx context.Context, addr string) (sdktypes.AccountI, error) {
+	return &authtypes.BaseAccount{Address: addr}, nil
+}
+
 // Verify mocks the behavior of verifying data with a given account address
 func (m *MockAuthModule) Verify(ctx context.Context, accAddress string, data, signature []byte) error {
 	// In the mock implementation, we just return nil to indicate success
@@ -251,6 +256,11 @@ func (m *MockTxModule) ProcessTransaction(ctx context.Context, msgs []sdktypes.M
 func (m *MockTxModule) GetTransaction(ctx context.Context, txHash string) (*sdktx.GetTxResponse, error) {
 	// Mock implementation returns empty transaction response
 	return &sdktx.GetTxResponse{}, nil
+}
+
+// GetTxsEvent queries transactions by event query.
+func (m *MockTxModule) GetTxsEvent(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error) {
+	return &sdktx.GetTxsEventResponse{}, nil
 }
 
 // MockNodeModule implements the node.Module interface for testing

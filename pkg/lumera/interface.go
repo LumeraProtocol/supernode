@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=lumera_mock.go -package=lumera -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=lumera_mock.go -package=lumera -source=interface.go
 package lumera
 
 import (

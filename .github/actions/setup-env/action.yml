@@ -3,7 +3,7 @@ description: Sets up Go (dynamically from go.mod) and installs system dependenci
 
 inputs:
   bust_lumera_retag:
-    description: "One-time: remove lumera v1.8.0 sums after retag"
+    description: "One-time: remove lumera sums after retag"
     required: false
     default: 'false'
 outputs:

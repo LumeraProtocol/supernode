@@ -217,6 +217,22 @@ func (m *module) GetTransaction(ctx context.Context, txHash string) (*sdktx.GetT
 	return resp, nil
 }
 
+// GetTxsEvent queries transactions by event query.
+func (m *module) GetTxsEvent(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error) {
+	if query == "" {
+		return nil, fmt.Errorf("query cannot be empty")
+	}
+	resp, err := m.client.GetTxsEvent(ctx, &sdktx.GetTxsEventRequest{
+		Query: query,
+		Page:  page,
+		Limit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query txs by events: %w", err)
+	}
+	return resp, nil
+}
+
 // CalculateFee calculates the transaction fee based on gas usage and config
 func (m *module) CalculateFee(gasAmount uint64, config *TxConfig) string {
 	// Determine gas price (numeric) and denom. Accept both plain number (e.g., "0.025")

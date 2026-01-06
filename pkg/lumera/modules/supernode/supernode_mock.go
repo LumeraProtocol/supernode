@@ -115,3 +115,18 @@ func (mr *MockModuleMockRecorder) GetTopSuperNodesForBlock(ctx, req any) *gomock
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTopSuperNodesForBlock", reflect.TypeOf((*MockModule)(nil).GetTopSuperNodesForBlock), ctx, req)
 }
+
+// ListSuperNodes mocks base method.
+func (m *MockModule) ListSuperNodes(ctx context.Context) (*types.QueryListSuperNodesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSuperNodes", ctx)
+	ret0, _ := ret[0].(*types.QueryListSuperNodesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSuperNodes indicates an expected call of ListSuperNodes.
+func (mr *MockModuleMockRecorder) ListSuperNodes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSuperNodes", reflect.TypeOf((*MockModule)(nil).ListSuperNodes), ctx)
+}

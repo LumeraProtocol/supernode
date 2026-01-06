@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=bank_mock.go -package=bank -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=bank_mock.go -package=bank -source=interface.go
 package bank
 
 import (

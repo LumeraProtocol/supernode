@@ -20,7 +20,7 @@ func (s *DHT) startDisabledKeysCleanupWorker(ctx context.Context) error {
 		case <-time.After(defaultCleanupInterval):
 			s.cleanupDisabledKeys(ctx)
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -57,7 +57,7 @@ func (s *DHT) startCleanupRedundantDataWorker(ctx context.Context) {
 		case <-time.After(defaultRedundantDataCleanupInterval):
 			s.cleanupRedundantDataWorker(ctx)
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "closing disabled keys cleanup worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return
 		}
 	}

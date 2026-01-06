@@ -13,7 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	types "github.com/cosmos/cosmos-sdk/x/auth/types"
+	types "github.com/cosmos/cosmos-sdk/types"
+	types0 "github.com/cosmos/cosmos-sdk/x/auth/types"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,11 +42,26 @@ func (m *MockModule) EXPECT() *MockModuleMockRecorder {
 	return m.recorder
 }
 
+// AccountByAddress mocks base method.
+func (m *MockModule) AccountByAddress(ctx context.Context, addr string) (types.AccountI, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AccountByAddress", ctx, addr)
+	ret0, _ := ret[0].(types.AccountI)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AccountByAddress indicates an expected call of AccountByAddress.
+func (mr *MockModuleMockRecorder) AccountByAddress(ctx, addr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccountByAddress", reflect.TypeOf((*MockModule)(nil).AccountByAddress), ctx, addr)
+}
+
 // AccountInfoByAddress mocks base method.
-func (m *MockModule) AccountInfoByAddress(ctx context.Context, addr string) (*types.QueryAccountInfoResponse, error) {
+func (m *MockModule) AccountInfoByAddress(ctx context.Context, addr string) (*types0.QueryAccountInfoResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AccountInfoByAddress", ctx, addr)
-	ret0, _ := ret[0].(*types.QueryAccountInfoResponse)
+	ret0, _ := ret[0].(*types0.QueryAccountInfoResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

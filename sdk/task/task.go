@@ -292,6 +292,26 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 		"accepted", acceptedCount,
 		"rejected", rejectedCount,
 		"total", len(sns))
+	if acceptedCount == 0 {
+		reasonCounts := make(map[string]int)
+		for i, sn := range sns {
+			if keep[i] {
+				continue
+			}
+			reason := rejectionReasons[i]
+			if reason == "" {
+				reason = "unknown reason"
+			}
+			reasonCounts[reason]++
+
+			endpoint := sn.GrpcEndpoint
+			if endpoint == "" {
+				endpoint = sn.CosmosAddress
+			}
+			t.logger.Info(parent, "Supernode rejected (eligible=0)", "endpoint", endpoint, "reason", reason)
+		}
+		t.logger.Info(parent, "Supernode rejection summary", "reasons", reasonCounts)
+	}
 
 	// Step 3 — build output preserving original order
 	out := make(lumera.Supernodes, 0, len(sns))

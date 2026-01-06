@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=server_mock.go -package=server -source=server.go
+//go:generate go run go.uber.org/mock/mockgen -destination=server_mock.go -package=server -source=server.go
 
 package server
 

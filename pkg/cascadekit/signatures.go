@@ -146,6 +146,28 @@ func adr36SignerForKeyring(
 	}
 }
 
+// CreateSignaturesWithKeyringADR36WithSigner creates signatures in the SAME way as the JS SDK,
+// allowing an explicit bech32 signer address override for ADR-36 sign bytes.
+func CreateSignaturesWithKeyringADR36WithSigner(
+	layout codec.Layout,
+	kr sdkkeyring.Keyring,
+	keyName string,
+	signerAddr string,
+	ic, max uint32,
+) (string, []string, error) {
+	if signerAddr == "" {
+		addr, err := keyringpkg.GetAddress(kr, keyName)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolve signer address: %w", err)
+		}
+		signerAddr = addr.String()
+	}
+
+	signer := adr36SignerForKeyring(kr, keyName, signerAddr)
+
+	return CreateSignatures(layout, signer, ic, max)
+}
+
 // CreateSignaturesWithKeyringADR36 creates signatures in the SAME way as the JS SDK:
 //
 //   - layout: Keplr-like ADR-36 signature over layoutB64 string
@@ -159,15 +181,7 @@ func CreateSignaturesWithKeyringADR36(
 	keyName string,
 	ic, max uint32,
 ) (string, []string, error) {
-	// Resolve signer bech32 address from keyring
-	addr, err := keyringpkg.GetAddress(kr, keyName)
-	if err != nil {
-		return "", nil, fmt.Errorf("resolve signer address: %w", err)
-	}
-
-	signer := adr36SignerForKeyring(kr, keyName, addr.String())
-
-	return CreateSignatures(layout, signer, ic, max)
+	return CreateSignaturesWithKeyringADR36WithSigner(layout, kr, keyName, "", ic, max)
 }
 
 // SignADR36String signs a message string using the ADR-36 scheme that Keplr uses.

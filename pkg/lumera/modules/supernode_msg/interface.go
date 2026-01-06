@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=supernode_msg_mock.go -package=supernode_msg -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=supernode_msg_mock.go -package=supernode_msg -source=interface.go
 package supernode_msg
 
 import (
