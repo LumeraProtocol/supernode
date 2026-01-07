@@ -1,15 +1,11 @@
 ###################################################
 ###  Supernode Makefile
 ###################################################
-
-.PHONY: build build-sncli build-sn-manager
-.PHONY: install-lumera setup-supernodes system-test-setup install-deps
-.PHONY: gen-cascade gen-supernode
-.PHONY: test-e2e test-unit test-integration test-system
 .PHONY: release
 
 # tools/paths
 GO ?= go
+RELEASE_DIR ?= release
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -30,20 +26,32 @@ SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \
                      -X main.GitCommit=$(GIT_COMMIT) \
                      -X main.BuildTime=$(BUILD_TIME)
 
+###################################################
+###              Build / Release                ###
+###################################################
+.PHONY: build build-sncli build-sn-manager release
+
+SN_SRC := $(shell find p2p -name "*.go") \
+	$(shell find pkg -name "*.go") \
+	$(shell find sdk -name "*.go") \
+	$(shell find supernode -name "*.go") \
+	$(shell find tools -name "*.go")
+
 go.sum: go.mod
+	@echo "Verifying and tidying go modules..."	\
 	${GO} mod tidy
 	${GO} mod verify
 
-build: go.sum
-	@mkdir -p release
+build: $(SN_SRC) go.sum Makefile
 	@echo "Building supernode..."
+	@mkdir -p $(RELEASE_DIR)
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 ${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
-		-o release/supernode-linux-amd64 \
+		-o $(RELEASE_DIR)/supernode-linux-amd64 \
 		./supernode
-	@chmod +x release/supernode-linux-amd64
-	@echo "supernode built successfully at release/supernode-linux-amd64"
+	@chmod +x $(RELEASE_DIR)/supernode-linux-amd64
+	@echo "supernode built successfully in $(RELEASE_DIR)/supernode-linux-amd64"
 
 build-sncli: release/sncli
 
@@ -55,23 +63,22 @@ cmd/sncli/go.sum: cmd/sncli/go.mod
 	cd cmd/sncli && ${GO} mod verify
 
 release/sncli: $(SNCLI_SRC) cmd/sncli/go.sum
-	@mkdir -p release
 	@echo "Building sncli..."
-	@RELEASE_DIR=$(CURDIR)/release && \
-	cd cmd/sncli && \
+	@mkdir -p $(RELEASE_DIR)
+	@cd cmd/sncli && \
 	CGO_ENABLED=1 \
 	GOOS=linux \
 	GOARCH=amd64 \
 	${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
-		-o $$RELEASE_DIR/sncli && \
-	chmod +x $$RELEASE_DIR/sncli && \
-	echo "sncli built successfully at $$RELEASE_DIR/sncli"
+		-o $(RELEASE_DIR)/sncli && \
+	chmod +x $(RELEASE_DIR)/sncli && \
+	echo "sncli built successfully at $(RELEASE_DIR)/sncli"
 
 build-sn-manager:
-	@mkdir -p release
 	@echo "Building sn-manager..."
+	@mkdir -p $(RELEASE_DIR)
 	@cd sn-manager && \
 	CGO_ENABLED=0 \
 	GOOS=linux \
@@ -79,11 +86,42 @@ build-sn-manager:
 	${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(SN_MANAGER_LDFLAGS)" \
-		-o ../release/sn-manager \
+		-o ../$(RELEASE_DIR)/sn-manager \
 		.
-	@chmod +x release/sn-manager
-	@echo "sn-manager built successfully at release/sn-manager"
+	@chmod +x $(RELEASE_DIR)/sn-manager
+	@echo "sn-manager built successfully at $(RELEASE_DIR)/sn-manager"
 
+# Release command: push branch, tag, and push tag with auto-increment - this is for testing only (including releases) setup a new remote upstream or rename the script
+release:
+	@echo "Getting current branch..."
+	$(eval CURRENT_BRANCH := $(shell git branch --show-current))
+	@echo "Current branch: $(CURRENT_BRANCH)"
+	
+	@echo "Getting latest tag..."
+	$(eval LATEST_TAG := $(shell git tag -l "v*" | sort -V | tail -n1))
+	$(eval NEXT_TAG := $(shell \
+		if [ -z "$(LATEST_TAG)" ]; then \
+			echo "v2.5.0"; \
+		else \
+			echo "$(LATEST_TAG)" | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}'; \
+		fi))
+	@echo "Next tag: $(NEXT_TAG)"
+	
+	@echo "Pushing branch to upstream..."
+	git push upstream $(CURRENT_BRANCH) -f
+	
+	@echo "Creating and pushing tag $(NEXT_TAG)..."
+	git tag $(NEXT_TAG)
+	git push upstream $(NEXT_TAG)
+	
+	@echo "Release complete: $(NEXT_TAG) pushed to upstream"
+
+###################################################
+###              Tests and Simulation           ###
+###################################################
+.PHONY: test-e2e test-unit test-integration test-system test-cascade test-sn-manager
+.PHONY: install-lumera setup-supernodes system-test-setup install-deps
+.PHONY: gen-cascade gen-supernode
 test-unit:
 	${GO} test -v ./...
 
@@ -169,27 +207,3 @@ test-sn-manager:
 
 
 
-# Release command: push branch, tag, and push tag with auto-increment - this is for testing only (including releases) setup a new remote upstream or rename the script
-release:
-	@echo "Getting current branch..."
-	$(eval CURRENT_BRANCH := $(shell git branch --show-current))
-	@echo "Current branch: $(CURRENT_BRANCH)"
-	
-	@echo "Getting latest tag..."
-	$(eval LATEST_TAG := $(shell git tag -l "v*" | sort -V | tail -n1))
-	$(eval NEXT_TAG := $(shell \
-		if [ -z "$(LATEST_TAG)" ]; then \
-			echo "v2.5.0"; \
-		else \
-			echo "$(LATEST_TAG)" | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}'; \
-		fi))
-	@echo "Next tag: $(NEXT_TAG)"
-	
-	@echo "Pushing branch to upstream..."
-	git push upstream $(CURRENT_BRANCH) -f
-	
-	@echo "Creating and pushing tag $(NEXT_TAG)..."
-	git tag $(NEXT_TAG)
-	git push upstream $(NEXT_TAG)
-	
-	@echo "Release complete: $(NEXT_TAG) pushed to upstream"

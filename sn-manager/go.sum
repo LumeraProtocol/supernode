@@ -109,8 +109,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.50
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.50.0 h1:ig/FpDD2JofP/NExKQUbn7uOSZzJAQqogfqluZK4ed4=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.50.0/go.mod h1:otE2jQekW/PqXk1Awf5lmfokJx4uwuqcj1ab5SpGeW0=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
-github.com/LumeraProtocol/lumera v1.9.0 h1:HeUkRxTVtEuS9vLc3BFJgAeEclpPLFzE3YL8kU1fuqs=
-github.com/LumeraProtocol/lumera v1.9.0/go.mod h1:sq4A8DTNOTVxukLi2ydYg9z8tfv3Uq0Pn1tBCgtAy1U=
+github.com/LumeraProtocol/lumera v1.9.1 h1:4hI0sHHrZOiKP+S3GpLNHYeQTatXBftmcUE3ZDA91mU=
+github.com/LumeraProtocol/lumera v1.9.1/go.mod h1:38BX04sncJe191asQ4rU/EeYyVflybkU0VN4LDvLKps=
 github.com/Masterminds/semver/v3 v3.3.1 h1:QtNSWtVZ3nBfk8mAOu/B6v7FMJ+NHTIgUPi7rj+4nv4=
 github.com/Masterminds/semver/v3 v3.3.1/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
