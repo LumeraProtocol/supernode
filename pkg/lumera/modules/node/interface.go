@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=node_mock.go -package=node -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=node_mock.go -package=node -source=interface.go
 package node
 
 import (

@@ -14,6 +14,8 @@ import (
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	lumeraclient "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	ristretto "github.com/dgraph-io/ristretto/v2"
@@ -39,6 +41,10 @@ type Client interface {
 	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)
 	DecodeCascadeMetadata(ctx context.Context, action Action) (actiontypes.CascadeMetadata, error)
 	VerifySignature(ctx context.Context, accountAddr string, data []byte, signature []byte) error
+	// AccountByAddress returns the full on-chain account for the given address.
+	AccountByAddress(ctx context.Context, addr string) (sdk.AccountI, error)
+	// QueryTxsByEvents queries txs using the provided event query string.
+	QueryTxsByEvents(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error)
 	// GetBalance returns the bank balance for the given address and denom.
 	GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
 	// GetActionParams returns the action module parameters.
@@ -316,6 +322,27 @@ func (a *Adapter) VerifySignature(ctx context.Context, accountAddr string, data,
 	}
 	a.logger.Debug(ctx, "Signature verified successfully", "accountAddr", accountAddr)
 	return nil
+}
+
+func (a *Adapter) AccountByAddress(ctx context.Context, addr string) (sdk.AccountI, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("lumera client is nil")
+	}
+	return a.client.Auth().AccountByAddress(ctx, addr)
+}
+
+func (a *Adapter) QueryTxsByEvents(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, fmt.Errorf("query is empty")
+	}
+	if a.client == nil {
+		return nil, fmt.Errorf("lumera client is nil")
+	}
+	resp, err := a.client.Tx().GetTxsEvent(ctx, query, page, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query txs by events: %w", err)
+	}
+	return resp, nil
 }
 
 // RequestAction intentionally not exposed via this adapter; use pkg/lumera directly if needed.

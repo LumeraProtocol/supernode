@@ -16,6 +16,7 @@ const (
 	KeyProgress         EventDataKey = "progress"
 	KeyEventType        EventDataKey = "event_type"
 	KeyOutputPath       EventDataKey = "output_path"
+	KeySignerAddress    EventDataKey = "signer_address"
 
 	// Upload/download metrics keys (no progress events; start/complete metrics only)
 	KeyBytesTotal     EventDataKey = "bytes_total"

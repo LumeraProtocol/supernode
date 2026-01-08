@@ -46,7 +46,7 @@ func (s *DHT) StartReplicationWorker(ctx context.Context) error {
 			//log.WithContext(ctx).Info("replication worker disabled")
 			s.Replicate(ctx)
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing replication worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "closing replication worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -61,7 +61,7 @@ func (s *DHT) StartBatchFetchAndStoreWorker(ctx context.Context) error {
 		case <-time.After(defaultBatchFetchAndStoreInterval):
 			s.BatchFetchAndStore(ctx)
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing batch fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "closing batch fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}
@@ -76,7 +76,7 @@ func (s *DHT) StartFailedFetchAndStoreWorker(ctx context.Context) error {
 		case <-time.After(defaultFetchAndStoreInterval):
 			s.BatchFetchAndStoreFailedKeys(ctx)
 		case <-ctx.Done():
-			logtrace.Error(ctx, "closing fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
+			logtrace.Info(ctx, "closing fetch & store worker", logtrace.Fields{logtrace.FieldModule: "p2p"})
 			return nil
 		}
 	}

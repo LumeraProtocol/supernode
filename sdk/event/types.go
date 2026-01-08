@@ -31,6 +31,7 @@ const (
 	SDKProcessingStarted EventType = "sdk:processing_started"
 	SDKProcessingFailed  EventType = "sdk:processing_failed"
 	SDKProcessingTimeout EventType = "sdk:processing_timeout"
+	SDKMetadataICASigned EventType = "sdk:metadata_ica_signed"
 
 	SDKDownloadAttempt   EventType = "sdk:download_attempt"
 	SDKDownloadFailure   EventType = "sdk:download_failure"

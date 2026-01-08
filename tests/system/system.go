@@ -128,6 +128,7 @@ func (s *SystemUnderTest) SetupChain() {
 	}
 	s.Log(string(out))
 	s.nodesCount = s.initialNodesCount
+	s.disableStateSyncInConfigs()
 
 	// modify genesis with system test defaults
 	src := filepath.Join(WorkDir, s.nodePath(0), "config", "genesis.json")
@@ -157,6 +158,54 @@ func (s *SystemUnderTest) SetupChain() {
 	if err := copyFilesInDir(src, dest); err != nil {
 		panic(fmt.Sprintf("copy files from dir :%#+v", err))
 	}
+}
+
+func (s *SystemUnderTest) disableStateSyncInConfigs() {
+	s.withEachNodeHome(func(i int, home string) {
+		configPath := filepath.Join(WorkDir, home, "config", "config.toml")
+		if err := disableStateSyncConfig(configPath); err != nil {
+			panic(fmt.Sprintf("failed to disable state sync in %s: %s", configPath, err))
+		}
+	})
+}
+
+func disableStateSyncConfig(configPath string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	stateSyncLine := -1
+	inStateSync := false
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inStateSync = trimmed == "[statesync]"
+			if inStateSync {
+				stateSyncLine = i
+			}
+			continue
+		}
+		if !inStateSync {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "enable") {
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			lines[i] = fmt.Sprintf("%senable = false", indent)
+			found = true
+		}
+	}
+
+	if stateSyncLine >= 0 && !found {
+		lines = append(lines[:stateSyncLine+1], append([]string{"enable = false"}, lines[stateSyncLine+1:]...)...)
+	}
+
+	perm := os.FileMode(0o644)
+	if info, err := os.Stat(configPath); err == nil {
+		perm = info.Mode().Perm()
+	}
+	return os.WriteFile(configPath, []byte(strings.Join(lines, "\n")), perm)
 }
 
 func (s *SystemUnderTest) StartChain(t *testing.T, xargs ...string) {

@@ -18,7 +18,7 @@ const createRQSymbolsDir string = `
   PRIMARY KEY (txid)
 );`
 
-//go:generate mockgen -destination=rq_mock.go -package=rqstore -source=store.go
+//go:generate go run go.uber.org/mock/mockgen -destination=rq_mock.go -package=rqstore -source=store.go
 type Store interface {
 	DeleteSymbolsByTxID(txid string) error
 	StoreSymbolDirectory(txid, dir string) error

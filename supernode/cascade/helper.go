@@ -81,14 +81,15 @@ func (task *CascadeRegistrationTask) encodeInput(ctx context.Context, actionID s
 // - creator signature over the index payload (index_b64)
 // - layout signature over base64(JSON(layout))
 // Returns the decoded index and layoutB64. No logging here; callers handle it.
-func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context, creator string, indexSignatureFormat string, layout codec.Layout) (cascadekit.IndexFile, []byte, error) {
+func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context, creator string, actionID string, appPubkey []byte, indexSignatureFormat string, layout codec.Layout) (cascadekit.IndexFile, []byte, error) {
 	// Extract and verify creator signature on index
+	verify := task.buildSignatureVerifier(ctx, actionID, creator, appPubkey)
 	indexB64, creatorSigB64, err := cascadekit.ExtractIndexAndCreatorSig(indexSignatureFormat)
 	if err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
 	if err := cascadekit.VerifyIndex(indexB64, creatorSigB64, creator, func(data, sig []byte) error {
-		return task.LumeraClient.Verify(ctx, creator, data, sig)
+		return verify(data, sig)
 	}); err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}
@@ -107,7 +108,7 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 		return cascadekit.IndexFile{}, nil, errors.New("layout must contain exactly one block")
 	}
 	if err := cascadekit.VerifyLayout(layoutB64, indexFile.LayoutSignature, creator, func(data, sig []byte) error {
-		return task.LumeraClient.Verify(ctx, creator, data, sig)
+		return verify(data, sig)
 	}); err != nil {
 		return cascadekit.IndexFile{}, nil, err
 	}

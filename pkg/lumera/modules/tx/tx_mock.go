@@ -58,21 +58,6 @@ func (mr *MockModuleMockRecorder) BroadcastTransaction(ctx, txBytes any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BroadcastTransaction", reflect.TypeOf((*MockModule)(nil).BroadcastTransaction), ctx, txBytes)
 }
 
-// GetTransaction mocks base method.
-func (m *MockModule) GetTransaction(ctx context.Context, txHash string) (*tx.GetTxResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTransaction", ctx, txHash)
-	ret0, _ := ret[0].(*tx.GetTxResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetTransaction indicates an expected call of GetTransaction.
-func (mr *MockModuleMockRecorder) GetTransaction(ctx, txHash any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTransaction", reflect.TypeOf((*MockModule)(nil).GetTransaction), ctx, txHash)
-}
-
 // BuildAndSignTransaction mocks base method.
 func (m *MockModule) BuildAndSignTransaction(ctx context.Context, msgs []types.Msg, accountInfo *types0.BaseAccount, gasLimit uint64, fee string, config *TxConfig) ([]byte, error) {
 	m.ctrl.T.Helper()
@@ -100,6 +85,36 @@ func (m *MockModule) CalculateFee(gasAmount uint64, config *TxConfig) string {
 func (mr *MockModuleMockRecorder) CalculateFee(gasAmount, config any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CalculateFee", reflect.TypeOf((*MockModule)(nil).CalculateFee), gasAmount, config)
+}
+
+// GetTransaction mocks base method.
+func (m *MockModule) GetTransaction(ctx context.Context, txHash string) (*tx.GetTxResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTransaction", ctx, txHash)
+	ret0, _ := ret[0].(*tx.GetTxResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetTransaction indicates an expected call of GetTransaction.
+func (mr *MockModuleMockRecorder) GetTransaction(ctx, txHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTransaction", reflect.TypeOf((*MockModule)(nil).GetTransaction), ctx, txHash)
+}
+
+// GetTxsEvent mocks base method.
+func (m *MockModule) GetTxsEvent(ctx context.Context, query string, page, limit uint64) (*tx.GetTxsEventResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTxsEvent", ctx, query, page, limit)
+	ret0, _ := ret[0].(*tx.GetTxsEventResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetTxsEvent indicates an expected call of GetTxsEvent.
+func (mr *MockModuleMockRecorder) GetTxsEvent(ctx, query, page, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTxsEvent", reflect.TypeOf((*MockModule)(nil).GetTxsEvent), ctx, query, page, limit)
 }
 
 // ProcessTransaction mocks base method.

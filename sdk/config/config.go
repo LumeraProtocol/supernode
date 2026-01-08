@@ -9,9 +9,11 @@ import (
 
 // AccountConfig holds peer-to-peer addresses, ports, etc.
 type AccountConfig struct {
-	KeyName  string
-	Keyring  cosmoskeyring.Keyring
-	PeerType securekeyx.PeerType
+	KeyName         string
+	Keyring         cosmoskeyring.Keyring
+	PeerType        securekeyx.PeerType
+	ICAOwnerKeyName string
+	ICAOwnerHRP     string
 }
 
 // LumeraConfig wraps all chain-specific dials.

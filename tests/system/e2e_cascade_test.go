@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
@@ -23,9 +25,24 @@ import (
 
 	sdkconfig "github.com/LumeraProtocol/supernode/v2/sdk/config"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	gogoproto "github.com/cosmos/gogoproto/proto"
+	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
+	chantypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+)
+
+const (
+	icaAckRetries        = 120
+	icaAckDelay          = 3 * time.Second
+	icaPacketInfoRetries = 20
+	icaPacketInfoDelay   = 3 * time.Second
+	actionStateRetries   = 40
+	actionStateDelay     = 3 * time.Second
 )
 
 // TestCascadeE2E performs an end-to-end test of the Cascade functionality in the Lumera network.
@@ -281,7 +298,7 @@ func TestCascadeE2E(t *testing.T) {
 	require.NoError(t, err, "Failed to create action client")
 
 	// Use the new SDK helper to build Cascade metadata (includes signatures, price, and expiration)
-	builtMeta, autoPrice, expirationTime, err := actionClient.BuildCascadeMetadataFromFile(ctx, testFileFullpath, false)
+	builtMeta, autoPrice, expirationTime, err := actionClient.BuildCascadeMetadataFromFile(ctx, testFileFullpath, false, "")
 	require.NoError(t, err, "Failed to build cascade metadata from file")
 
 	// Create a signature for StartCascade using the SDK helper
@@ -629,6 +646,78 @@ waitLoop:
 	t.Logf("Supernode status: %+v", status)
 	require.NoError(t, err, "Failed to get supernode status")
 
+	// ---------------------------------------
+	// Step 13: ICA request + upload/download flow (optional)
+	// ---------------------------------------
+	t.Log("Step 13: ICA request + upload/download flow")
+	icaCfg, ok := loadICAControllerConfig()
+	if !ok {
+		t.Skip("ICA controller env not configured; set ICA_CONTROLLER_* and ICA_CONNECTION_ID to run")
+	}
+
+	icaCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	ownerAddr, err := icaControllerKeyAddress(icaCtx, icaCfg)
+	require.NoError(t, err, "resolve ICA controller owner address")
+
+	icaAddr, err := queryICAAddress(icaCtx, icaCfg, ownerAddr)
+	require.NoError(t, err, "resolve ICA address")
+	require.NotEmpty(t, icaAddr, "ICA address is empty")
+
+	icaMeta, icaPrice, icaExpiration, err := actionClient.BuildCascadeMetadataFromFile(icaCtx, testFileFullpath, false, icaAddr)
+	require.NoError(t, err, "build ICA cascade metadata")
+	icaMetaBytes, err := json.Marshal(icaMeta)
+	require.NoError(t, err, "marshal ICA metadata")
+
+	icaMsg := &actiontypes.MsgRequestAction{
+		Creator:        icaAddr,
+		ActionType:     actionType,
+		Metadata:       string(icaMetaBytes),
+		Price:          icaPrice,
+		ExpirationTime: icaExpiration,
+		FileSizeKbs:    strconv.FormatInt(fileSizeKbs, 10),
+	}
+
+	_, err = sendICARequestAction(icaCtx, icaCfg, icaMsg)
+	require.Error(t, err, "missing app_pubkey should be rejected")
+	if err != nil {
+		require.Contains(t, err.Error(), "app_pubkey")
+	}
+
+	userPubKey, err := userRecord.GetPubKey()
+	require.NoError(t, err, "get user pubkey for ICA request")
+	icaMsg.AppPubkey = userPubKey.Bytes()
+	actionIDs, err := sendICARequestAction(icaCtx, icaCfg, icaMsg)
+	require.NoError(t, err, "ICA request action failed")
+	require.NotEmpty(t, actionIDs, "ICA request action returned no IDs")
+	icaActionID := actionIDs[0]
+	require.NotEmpty(t, icaActionID, "ICA action ID is empty")
+
+	require.NoError(t, waitForActionStateWithClient(icaCtx, lumeraClinet, icaActionID, actiontypes.ActionStatePending))
+
+	actionClientImpl, ok := actionClient.(*action.ClientImpl)
+	require.True(t, ok, "action client must be ClientImpl for ICA signing")
+
+	icaStartSig, err := actionClientImpl.GenerateStartCascadeSignatureFromFileWithSigner(icaCtx, testFileFullpath, icaAddr)
+	require.NoError(t, err, "generate ICA start signature")
+
+	icaTaskID, err := actionClient.StartCascade(icaCtx, testFileFullpath, icaActionID, icaStartSig)
+	require.NoError(t, err, "start ICA cascade")
+	t.Logf("ICA cascade task started: %s", icaTaskID)
+
+	require.NoError(t, waitForActionStateWithClient(icaCtx, lumeraClinet, icaActionID, actiontypes.ActionStateDone))
+
+	icaDownloadSig, err := actionClient.GenerateDownloadSignature(icaCtx, icaActionID, icaAddr)
+	require.NoError(t, err, "generate ICA download signature")
+
+	icaDownloadDir := t.TempDir()
+	icaDownloadTaskID, err := actionClient.DownloadCascade(icaCtx, icaActionID, icaDownloadDir, icaDownloadSig)
+	require.NoError(t, err, "download ICA cascade")
+	t.Logf("ICA download task started: %s", icaDownloadTaskID)
+
+	verifyDownloadedFile(t, icaDownloadDir, icaActionID, testFileFullpath, data, originalHash)
+
 }
 
 // SetActionParams sets the initial parameters for the action module in genesis
@@ -735,4 +824,352 @@ func SetSupernodeMetricsParams(t *testing.T) GenesisMutator {
 	}
 }
 
-//
+type icaControllerConfig struct {
+	Bin          string
+	RPC          string
+	ChainID      string
+	KeyName      string
+	Keyring      string
+	Home         string
+	GasPrices    string
+	ConnectionID string
+}
+
+func loadICAControllerConfig() (icaControllerConfig, bool) {
+	cfg := icaControllerConfig{
+		Bin:          strings.TrimSpace(os.Getenv("ICA_CONTROLLER_BIN")),
+		RPC:          strings.TrimSpace(os.Getenv("ICA_CONTROLLER_RPC")),
+		ChainID:      strings.TrimSpace(os.Getenv("ICA_CONTROLLER_CHAIN_ID")),
+		KeyName:      strings.TrimSpace(os.Getenv("ICA_CONTROLLER_KEY_NAME")),
+		Keyring:      strings.TrimSpace(os.Getenv("ICA_CONTROLLER_KEYRING")),
+		Home:         strings.TrimSpace(os.Getenv("ICA_CONTROLLER_HOME")),
+		GasPrices:    strings.TrimSpace(os.Getenv("ICA_CONTROLLER_GAS_PRICES")),
+		ConnectionID: strings.TrimSpace(os.Getenv("ICA_CONNECTION_ID")),
+	}
+	if cfg.Keyring == "" {
+		cfg.Keyring = "test"
+	}
+	if cfg.Bin == "" || cfg.RPC == "" || cfg.ChainID == "" || cfg.KeyName == "" || cfg.ConnectionID == "" {
+		return cfg, false
+	}
+	return cfg, true
+}
+
+func icaControllerKeyAddress(ctx context.Context, cfg icaControllerConfig) (string, error) {
+	out, err := runICAControllerCmd(ctx, cfg,
+		"keys", "show", cfg.KeyName, "-a",
+		"--keyring-backend", cfg.Keyring,
+	)
+	if err != nil {
+		return "", err
+	}
+	addr := strings.TrimSpace(out)
+	if addr == "" {
+		return "", fmt.Errorf("controller owner address is empty")
+	}
+	return addr, nil
+}
+
+func queryICAAddress(ctx context.Context, cfg icaControllerConfig, ownerAddr string) (string, error) {
+	out, err := runICAControllerCmd(ctx, cfg,
+		"q", "interchain-accounts", "controller", "interchain-account",
+		ownerAddr, cfg.ConnectionID,
+		"--node", cfg.RPC,
+		"--output", "json",
+	)
+	if err != nil {
+		return "", err
+	}
+	addr := gjson.Get(out, "address").String()
+	if addr == "" {
+		return "", fmt.Errorf("ICA address not found for owner %s", ownerAddr)
+	}
+	return addr, nil
+}
+
+type icaPacketInfo struct {
+	Port     string
+	Channel  string
+	Sequence uint64
+}
+
+func sendICARequestAction(ctx context.Context, cfg icaControllerConfig, msg *actiontypes.MsgRequestAction) ([]string, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("request action msg is nil")
+	}
+	any, err := codectypes.NewAnyWithValue(msg)
+	if err != nil {
+		return nil, fmt.Errorf("pack msg: %w", err)
+	}
+	tx := &icatypes.CosmosTx{Messages: []*codectypes.Any{any}}
+	data, err := gogoproto.Marshal(tx)
+	if err != nil {
+		return nil, fmt.Errorf("marshal cosmos tx: %w", err)
+	}
+	packet := icatypes.InterchainAccountPacketData{
+		Type: icatypes.EXECUTE_TX,
+		Data: data,
+	}
+	packetJSON, err := marshalICAPacketJSON(packet)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpFile, err := os.CreateTemp("", "ica-packet-*.json")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tmpFile.Write(packetJSON); err != nil {
+		_ = tmpFile.Close()
+		return nil, err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, err
+	}
+
+	txArgs := []string{
+		"tx", "interchain-accounts", "controller", "send-tx", cfg.ConnectionID, tmpFile.Name(),
+		"--from", cfg.KeyName,
+		"--chain-id", cfg.ChainID,
+		"--keyring-backend", cfg.Keyring,
+		"--node", cfg.RPC,
+		"--gas", "auto",
+		"--gas-adjustment", "1.3",
+		"--broadcast-mode", "sync",
+		"--output", "json",
+		"--yes",
+	}
+	if cfg.GasPrices != "" {
+		txArgs = append(txArgs, "--gas-prices", cfg.GasPrices)
+	}
+
+	out, err := runICAControllerCmd(ctx, cfg, txArgs...)
+	if err != nil {
+		return nil, err
+	}
+	txHash, err := parseTxHash(out)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := waitForICAPacketInfo(ctx, cfg, txHash)
+	if err != nil {
+		return nil, err
+	}
+	ackBytes, err := waitForICAAck(ctx, cfg, info)
+	if err != nil {
+		return nil, err
+	}
+	return extractActionIDsFromAck(ackBytes)
+}
+
+func marshalICAPacketJSON(packet icatypes.InterchainAccountPacketData) ([]byte, error) {
+	cdc := codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
+	return cdc.MarshalJSON(&packet)
+}
+
+func parseTxHash(output string) (string, error) {
+	txHash := gjson.Get(output, "txhash").String()
+	if txHash != "" {
+		return txHash, nil
+	}
+	txHash = gjson.Get(output, "tx_response.txhash").String()
+	if txHash != "" {
+		return txHash, nil
+	}
+	return "", fmt.Errorf("tx hash not found in output")
+}
+
+func waitForICAPacketInfo(ctx context.Context, cfg icaControllerConfig, txHash string) (icaPacketInfo, error) {
+	for i := 0; i < icaPacketInfoRetries; i++ {
+		out, err := runICAControllerCmd(ctx, cfg,
+			"q", "tx", txHash,
+			"--node", cfg.RPC,
+			"--output", "json",
+		)
+		if err == nil {
+			if info, ok := extractPacketInfoFromTxJSON(out); ok {
+				return info, nil
+			}
+		}
+		time.Sleep(icaPacketInfoDelay)
+	}
+	return icaPacketInfo{}, fmt.Errorf("packet info not found for tx %s", txHash)
+}
+
+func extractPacketInfoFromTxJSON(txJSON string) (icaPacketInfo, bool) {
+	eventSets := []gjson.Result{
+		gjson.Get(txJSON, "events"),
+		gjson.Get(txJSON, "tx_response.events"),
+		gjson.Get(txJSON, "tx_response.logs.0.events"),
+		gjson.Get(txJSON, "logs.0.events"),
+	}
+	for _, events := range eventSets {
+		for _, evt := range events.Array() {
+			if evt.Get("type").String() != "send_packet" {
+				continue
+			}
+			attr := make(map[string]string)
+			for _, a := range evt.Get("attributes").Array() {
+				key := decodeEventValue(a.Get("key").String())
+				val := decodeEventValue(a.Get("value").String())
+				if key != "" {
+					attr[key] = val
+				}
+			}
+			seqStr := attr["packet_sequence"]
+			port := attr["packet_src_port"]
+			channel := attr["packet_src_channel"]
+			if seqStr == "" || port == "" || channel == "" {
+				continue
+			}
+			seq, err := strconv.ParseUint(seqStr, 10, 64)
+			if err != nil {
+				return icaPacketInfo{}, false
+			}
+			return icaPacketInfo{Port: port, Channel: channel, Sequence: seq}, true
+		}
+	}
+	return icaPacketInfo{}, false
+}
+
+func waitForICAAck(ctx context.Context, cfg icaControllerConfig, info icaPacketInfo) ([]byte, error) {
+	for i := 0; i < icaAckRetries; i++ {
+		out, err := runICAControllerCmd(ctx, cfg,
+			"q", "ibc", "channel", "packet-acknowledgement",
+			info.Port, info.Channel, fmt.Sprint(info.Sequence),
+			"--node", cfg.RPC,
+			"--output", "json",
+		)
+		if err == nil {
+			ackB64 := gjson.Get(out, "acknowledgement").String()
+			if ackB64 != "" {
+				ackBytes, err := base64.StdEncoding.DecodeString(ackB64)
+				if err == nil {
+					return ackBytes, nil
+				}
+			}
+		}
+		time.Sleep(icaAckDelay)
+	}
+	return nil, fmt.Errorf("packet acknowledgement not found")
+}
+
+func extractActionIDsFromAck(ackBytes []byte) ([]string, error) {
+	var ack chantypes.Acknowledgement
+	if err := gogoproto.Unmarshal(ackBytes, &ack); err != nil {
+		if err := chantypes.SubModuleCdc.UnmarshalJSON(ackBytes, &ack); err != nil {
+			return nil, err
+		}
+	}
+	if ack.GetError() != "" {
+		return nil, fmt.Errorf("ica ack error: %s", ack.GetError())
+	}
+	result := ack.GetResult()
+	if len(result) == 0 {
+		return nil, fmt.Errorf("ack result is empty")
+	}
+	var msgData sdk.TxMsgData
+	if err := gogoproto.Unmarshal(result, &msgData); err != nil {
+		return nil, err
+	}
+	ids := extractActionIDsFromTxMsgData(&msgData)
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no action ids found in ack result")
+	}
+	return ids, nil
+}
+
+func extractActionIDsFromTxMsgData(msgData *sdk.TxMsgData) []string {
+	var ids []string
+	if msgData == nil {
+		return ids
+	}
+	for _, any := range msgData.MsgResponses {
+		if any == nil || any.TypeUrl == "" {
+			continue
+		}
+		if !strings.HasSuffix(any.TypeUrl, "MsgRequestActionResponse") {
+			continue
+		}
+		var resp actiontypes.MsgRequestActionResponse
+		if err := gogoproto.Unmarshal(any.Value, &resp); err != nil {
+			continue
+		}
+		if resp.ActionId != "" {
+			ids = append(ids, resp.ActionId)
+		}
+	}
+	return ids
+}
+
+func runICAControllerCmd(ctx context.Context, cfg icaControllerConfig, args ...string) (string, error) {
+	cmdArgs := append([]string{}, args...)
+	if cfg.Home != "" {
+		cmdArgs = append([]string{"--home", cfg.Home}, cmdArgs...)
+	}
+	cmd := exec.CommandContext(ctx, locateExecutable(cfg.Bin), cmdArgs...) //nolint:gosec
+	cmd.Dir = WorkDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("ica controller cmd failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func decodeEventValue(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return raw
+	}
+	return string(decoded)
+}
+
+func waitForActionStateWithClient(ctx context.Context, client lumera.Client, actionID string, state actiontypes.ActionState) error {
+	for i := 0; i < actionStateRetries; i++ {
+		resp, err := client.Action().GetAction(ctx, actionID)
+		if err == nil && resp != nil && resp.Action != nil && resp.Action.State == state {
+			return nil
+		}
+		time.Sleep(actionStateDelay)
+	}
+	return fmt.Errorf("action %s did not reach state %s", actionID, state.String())
+}
+
+func verifyDownloadedFile(t *testing.T, baseDir, actionID, originalPath string, originalData []byte, originalHash [32]byte) {
+	t.Helper()
+
+	expectedDownloadDir := filepath.Join(baseDir, actionID)
+	if _, err := os.Stat(expectedDownloadDir); os.IsNotExist(err) {
+		t.Fatalf("expected download directory does not exist: %s", expectedDownloadDir)
+	}
+	files, err := os.ReadDir(expectedDownloadDir)
+	require.NoError(t, err, "failed to read download directory: %s", expectedDownloadDir)
+
+	var downloadedFilePath string
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if filepath.Base(file.Name()) == filepath.Base(originalPath) {
+			downloadedFilePath = filepath.Join(expectedDownloadDir, file.Name())
+			break
+		}
+	}
+	if downloadedFilePath == "" && len(files) > 0 {
+		downloadedFilePath = filepath.Join(expectedDownloadDir, files[0].Name())
+	}
+	if downloadedFilePath == "" {
+		t.Fatalf("no files found in download directory for content verification")
+	}
+
+	downloadedData, err := os.ReadFile(downloadedFilePath)
+	require.NoError(t, err, "failed to read downloaded file")
+
+	downloadedHash := sha256.Sum256(downloadedData)
+	require.Equal(t, len(originalData), len(downloadedData), "downloaded file size should match original file size")
+	require.Equal(t, originalHash, downloadedHash, "downloaded file hash should match original file hash")
+}

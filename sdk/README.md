@@ -8,7 +8,7 @@ This walks through building Cascade metadata, submitting the on‑chain action, 
 
 1) Build metadata (+ price, expiration)
 ```
-meta, price, expiration, err := client.BuildCascadeMetadataFromFile(ctx, filePath, /*public=*/false)
+meta, price, expiration, err := client.BuildCascadeMetadataFromFile(ctx, filePath, /*public=*/false, "")
 if err != nil { /* handle */ }
 ```
 Under the hood: encodes file to a single‑block layout, signs layout/index (creator key), computes blake3(data), picks a random ic (1..100), derives max from chain params, computes price from file size + fee params, and expiration from chain duration (+1h buffer).

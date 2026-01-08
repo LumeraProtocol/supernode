@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"

@@ -26,6 +26,7 @@ type Manager interface {
 	SubscribeToAllEvents(ctx context.Context, handler event.Handler)
 
 	CreateDownloadTask(ctx context.Context, actionID, outputPath, signature string) (string, error)
+	PublishEvent(ctx context.Context, e event.Event)
 }
 
 type ManagerImpl struct {
@@ -195,6 +196,12 @@ func (m *ManagerImpl) SubscribeToAllEvents(ctx context.Context, handler event.Ha
 		m.eventBus.SubscribeAll(ctx, handler)
 	} else {
 		m.logger.Warn(ctx, "EventBus is nil, cannot subscribe to events")
+	}
+}
+
+func (m *ManagerImpl) PublishEvent(ctx context.Context, e event.Event) {
+	if m.eventBus != nil {
+		m.eventBus.Publish(ctx, e)
 	}
 }
 

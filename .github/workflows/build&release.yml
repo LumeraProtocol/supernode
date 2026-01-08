@@ -23,7 +23,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
         
       - name: Setup Go and dependencies
         uses: ./.github/actions/setup-env
@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
 
@@ -199,7 +199,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create release with composed body (no existing release)
-        uses: softprops/action-gh-release@v0.1.15
+        uses: softprops/action-gh-release@v2
         if: success() && steps.rel_check.outputs.exists != 'true'
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}
@@ -210,7 +210,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload assets to existing release (preserve manual notes)
-        uses: softprops/action-gh-release@v0.1.15
+        uses: softprops/action-gh-release@v2
         if: success() && steps.rel_check.outputs.exists == 'true'
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}

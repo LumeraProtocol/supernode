@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/LumeraProtocol/supernode/v2/supernode/adaptors"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // Step 0: Download reconstruction parameters.
@@ -93,7 +96,7 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 			fields[logtrace.FieldError] = "missing signature for private download"
 			return task.wrapErr(ctx, "private cascade requires a download signature", nil, fields)
 		}
-		if err := task.verifyDownloadSignatureWithCreator(ctx, req.ActionID, req.Signature, actionDetails.GetAction().Creator); err != nil {
+		if err := task.VerifyDownloadSignature(ctx, req.ActionID, req.Signature); err != nil {
 			fields[logtrace.FieldError] = err.Error()
 			return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 		}
@@ -158,16 +161,45 @@ func (task *CascadeRegistrationTask) VerifyDownloadSignature(ctx context.Context
 	if err != nil {
 		return fmt.Errorf("get action for signature verification: %w", err)
 	}
-	return task.verifyDownloadSignatureWithCreator(ctx, actionID, signature, act.GetAction().Creator)
-}
-
-func (task *CascadeRegistrationTask) verifyDownloadSignatureWithCreator(ctx context.Context, actionID, signature, creator string) error {
-	if signature == "" || creator == "" {
-		return errors.New("signature and creator are required")
+	creator := act.GetAction().Creator
+	appPubkey := act.GetAction().AppPubkey
+	baseFields := logtrace.Fields{
+		logtrace.FieldActionID: actionID,
+		logtrace.FieldCreator:  creator,
 	}
+	if hrp := strings.SplitN(creator, "1", 2); len(appPubkey) > 0 && len(hrp) == 2 && hrp[0] != "" {
+		pubKey := secp256k1.PubKey{Key: appPubkey}
+		addr, err := sdk.Bech32ifyAddressBytes(hrp[0], pubKey.Address())
+		if err == nil {
+			logtrace.Info(ctx, "download: app_pubkey derived address", logtrace.WithFields(baseFields, logtrace.Fields{
+				"creator_prefix":  hrp[0],
+				"app_pubkey_addr": addr,
+			}))
+		} else {
+			logtrace.Debug(ctx, "download: app_pubkey address derivation failed", logtrace.WithFields(baseFields, logtrace.Fields{
+				logtrace.FieldError: err.Error(),
+			}))
+		}
+	}
+	logtrace.Info(ctx, "download: signature verify start", logtrace.WithFields(baseFields, logtrace.Fields{
+		"pubkey_len":  len(appPubkey),
+		"sig_b64_len": len(signature),
+	}))
+	verify := task.buildSignatureVerifier(ctx, actionID, creator, appPubkey)
 	if err := cascadekit.VerifyStringRawOrADR36(actionID, signature, creator, func(data, sig []byte) error {
-		return task.LumeraClient.Verify(ctx, creator, data, sig)
+		if vErr := verify(data, sig); vErr == nil {
+			logtrace.Info(ctx, "download: signature verify ok", baseFields)
+			return nil
+		} else {
+			logtrace.Debug(ctx, "download: signature verify attempt failed", logtrace.WithFields(baseFields, logtrace.Fields{
+				logtrace.FieldError: vErr.Error(),
+			}))
+			return vErr
+		}
 	}); err != nil {
+		logtrace.Warn(ctx, "download: signature verify failed", logtrace.WithFields(baseFields, logtrace.Fields{
+			logtrace.FieldError: err.Error(),
+		}))
 		return err
 	}
 	return nil

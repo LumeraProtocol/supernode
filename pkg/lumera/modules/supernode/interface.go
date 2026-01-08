@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=supernode_mock.go -package=supernode -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=supernode_mock.go -package=supernode -source=interface.go
 package supernode
 
 import (

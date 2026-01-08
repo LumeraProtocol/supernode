@@ -3,6 +3,18 @@ package logtrace
 // Fields is a type alias for structured log fields
 type Fields map[string]interface{}
 
+// WithFields returns a copy of base with extra fields merged in.
+func WithFields(base Fields, extra Fields) Fields {
+	fields := Fields{}
+	for key, value := range base {
+		fields[key] = value
+	}
+	for key, value := range extra {
+		fields[key] = value
+	}
+	return fields
+}
+
 const (
 	FieldCorrelationID  = "correlation_id"
 	FieldOrigin         = "origin"

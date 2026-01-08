@@ -115,7 +115,7 @@ func (task *CascadeRegistrationTask) Register(
 
 	// Step 9: Verify index and layout signatures; produce layoutB64
 	logtrace.Info(ctx, "register: verify+decode layout start", fields)
-	indexFile, layoutB64, vErr := task.validateIndexAndLayout(ctx, action.Creator, cascadeMeta.Signatures, encodeResult.Layout)
+	indexFile, layoutB64, vErr := task.validateIndexAndLayout(ctx, action.Creator, action.ActionID, action.AppPubkey, cascadeMeta.Signatures, encodeResult.Layout)
 	if vErr != nil {
 		return task.wrapErr(ctx, "signature or index validation failed", vErr, fields)
 	}

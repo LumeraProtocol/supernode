@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/health"

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=tx_mock.go -package=tx -source=interface.go
+//go:generate go run go.uber.org/mock/mockgen -destination=tx_mock.go -package=tx -source=interface.go
 package tx
 
 import (
@@ -37,6 +37,9 @@ type Module interface {
 
 	// GetTransaction queries a transaction by its hash
 	GetTransaction(ctx context.Context, txHash string) (*sdktx.GetTxResponse, error)
+
+	// GetTxsEvent queries transactions by event query.
+	GetTxsEvent(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error)
 
 	// CalculateFee calculates the transaction fee based on gas usage and config
 	CalculateFee(gasAmount uint64, config *TxConfig) string

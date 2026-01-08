@@ -18,6 +18,7 @@ import (
 	bank "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	node "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	supernode "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
+	supernode_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	tx "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -142,6 +143,20 @@ func (m *MockClient) SuperNode() supernode.Module {
 func (mr *MockClientMockRecorder) SuperNode() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuperNode", reflect.TypeOf((*MockClient)(nil).SuperNode))
+}
+
+// SuperNodeMsg mocks base method.
+func (m *MockClient) SuperNodeMsg() supernode_msg.Module {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SuperNodeMsg")
+	ret0, _ := ret[0].(supernode_msg.Module)
+	return ret0
+}
+
+// SuperNodeMsg indicates an expected call of SuperNodeMsg.
+func (mr *MockClientMockRecorder) SuperNodeMsg() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SuperNodeMsg", reflect.TypeOf((*MockClient)(nil).SuperNodeMsg))
 }
 
 // Tx mocks base method.
