@@ -194,7 +194,8 @@ func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port ui
 		}
 
 		// Prepare insert statement
-		stmt, err := tx.PrepareNamed(`INSERT INTO replication_keys(key, id, ip, port, updatedAt) values(:key, :id, :ip, :port, :updatedAt) ON CONFLICT(key) DO UPDATE SET id=:id,ip=:ip,port=:port,updatedAt=:updatedAt`)
+		// Important: reset attempts on re-announce so keys don't get permanently stuck above the worker thresholds.
+		stmt, err := tx.PrepareNamed(`INSERT INTO replication_keys(key, id, ip, port, updatedAt) values(:key, :id, :ip, :port, :updatedAt) ON CONFLICT(key) DO UPDATE SET id=:id,ip=:ip,port=:port,updatedAt=:updatedAt,attempts=0`)
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return fmt.Errorf("statement preparation failed, rollback failed: %v, original error: %w", rollbackErr, err)
@@ -241,7 +242,8 @@ func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port ui
 // replicated across the network. Typically all data should be
 // replicated every tReplicate seconds.
 func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to time.Time) domain.KeysWithTimestamp {
-	var results []domain.KeyWithTimestamp
+	// Important: return a non-nil empty slice on success so callers can safely treat nil as "DB error".
+	results := make([]domain.KeyWithTimestamp, 0)
 	query := `SELECT key, createdAt FROM data WHERE createdAt > ? AND createdAt < ? ORDER BY createdAt ASC`
 
 	logtrace.Debug(ctx, "fetching keys for replication", logtrace.Fields{

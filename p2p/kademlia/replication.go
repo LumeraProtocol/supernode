@@ -11,8 +11,11 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cenkalti/backoff/v4"
 )
+
+const replicateKeysRequestBatchSize = 5000
 
 var (
 	// defaultReplicationInterval is the default interval for replication.
@@ -31,6 +34,27 @@ var (
 
 	maxBackOff = 45 * time.Second
 )
+
+func splitReplicateKeys(keys []string) [][]string {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	batchSize := replicateKeysRequestBatchSize
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+
+	out := make([][]string, 0, (len(keys)+batchSize-1)/batchSize)
+	for i := 0; i < len(keys); i += batchSize {
+		j := i + batchSize
+		if j > len(keys) {
+			j = len(keys)
+		}
+		out = append(out, keys[i:j])
+	}
+	return out
+}
 
 // StartReplicationWorker starts replication
 func (s *DHT) StartReplicationWorker(ctx context.Context) error {
@@ -115,8 +139,11 @@ func (s *DHT) updateReplicationNode(ctx context.Context, nodeID []byte, ip strin
 }
 
 func (s *DHT) updateLastReplicated(ctx context.Context, nodeID []byte, timestamp time.Time) error {
+	// Important: callers must be able to detect failures here; advancing lastReplicatedAt incorrectly can
+	// permanently skip keys in subsequent runs.
 	if err := s.store.UpdateLastReplicated(ctx, string(nodeID), timestamp); err != nil {
 		logtrace.Error(ctx, "failed to update replication info last replicated", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "node_id": string(nodeID)})
+		return err
 	}
 
 	return nil
@@ -154,14 +181,57 @@ func (s *DHT) Replicate(ctx context.Context) {
 		return
 	}
 
-	from := historicStart
-	if repInfo[0].LastReplicatedAt != nil {
-		from = *repInfo[0].LastReplicatedAt
+	// Important: compute a global window based on ACTIVE peers only.
+	// - Avoids an inactive/uninitialized node forcing perpetual historic scans.
+	// - Still includes keys needed by the most "behind" active peer (min lastReplicatedAt).
+	// - Does not advance any cursor when the underlying key scan fails (handled below).
+	var globalFrom time.Time
+	haveActivePeer := false
+	for _, info := range repInfo {
+		if !info.Active {
+			continue
+		}
+		start := historicStart
+		if info.LastReplicatedAt != nil {
+			start = *info.LastReplicatedAt
+		}
+		if !haveActivePeer {
+			globalFrom = start
+			haveActivePeer = true
+			continue
+		}
+		if start.Before(globalFrom) {
+			globalFrom = start
+		}
 	}
 
-	logtrace.Debug(ctx, "getting all possible replication keys", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
+	if !haveActivePeer {
+		// Important: even when there are no active peers to replicate TO, we still want to run
+		// the offline-node adjustment logic (it uses last_seen and is_adjusted).
+		logtrace.Debug(ctx, "no active replication peers; skipping replicate send phase", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		for _, info := range repInfo {
+			if !info.Active {
+				s.checkAndAdjustNode(ctx, info, historicStart)
+			}
+		}
+		return
+	}
+
+	logtrace.Debug(ctx, "getting all possible replication keys", logtrace.Fields{logtrace.FieldModule: "p2p", "from": globalFrom})
 	to := time.Now().UTC()
-	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
+	replicationKeys := s.store.GetKeysForReplication(ctx, globalFrom, to)
+	if replicationKeys == nil {
+		// Important: treat nil as "DB error" (store returns non-nil empty slice on success).
+		// Never advance lastReplicatedAt in this case, otherwise we can skip keys permanently.
+		// Still run offline-node adjustment.
+		logtrace.Error(ctx, "get keys for replication failed (nil); skipping replicate send phase", logtrace.Fields{logtrace.FieldModule: "p2p"})
+		for _, info := range repInfo {
+			if !info.Active {
+				s.checkAndAdjustNode(ctx, info, historicStart)
+			}
+		}
+		return
+	}
 
 	ignores := s.ignorelist.ToNodeList()
 	closestContactsMap := make(map[string][][]byte)
@@ -200,8 +270,11 @@ func (s *DHT) Replicate(ctx context.Context) {
 		}
 		countToSendKeys := len(replicationKeys) - idx
 		logtrace.Debug(ctx, "count of replication keys to be checked", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": countToSendKeys})
-		// Preallocate a slice with a capacity equal to the number of keys.
-		closestContactKeys := make([]string, 0, countToSendKeys)
+		preAlloc := countToSendKeys
+		if preAlloc > replicateKeysRequestBatchSize {
+			preAlloc = replicateKeysRequestBatchSize
+		}
+		closestContactKeys := make([]string, 0, preAlloc)
 
 		for i := idx; i < len(replicationKeys); i++ {
 			for j := 0; j < len(closestContactsMap[replicationKeys[i].Key]); j++ {
@@ -212,7 +285,24 @@ func (s *DHT) Replicate(ctx context.Context) {
 			}
 		}
 
-		logtrace.Debug(ctx, "closest contact keys count", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": len(closestContactKeys)})
+		batches := splitReplicateKeys(closestContactKeys)
+		if len(batches) > 1 {
+			keysBytes := 0
+			for _, k := range closestContactKeys {
+				keysBytes += len(k)
+			}
+			logtrace.Info(ctx, "replicate batching keys", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"rep-ip":             info.IP,
+				"rep-id":             string(info.ID),
+				"keys":               len(closestContactKeys),
+				"batches":            len(batches),
+				"batch_size":         replicateKeysRequestBatchSize,
+				"keys_mb_lower":      utils.BytesIntToMB(keysBytes),
+			})
+		}
+
+		logtrace.Debug(ctx, "closest contact keys count", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": len(closestContactKeys), "batches": len(batches)})
 
 		if len(closestContactKeys) == 0 {
 			if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
@@ -224,33 +314,61 @@ func (s *DHT) Replicate(ctx context.Context) {
 			continue
 		}
 
-		// TODO: Check if data size is bigger than 32 MB
-		request := &ReplicateDataRequest{
-			Keys: closestContactKeys,
+		n := &Node{ID: info.ID, IP: info.IP, Port: info.Port}
+		sendErr := error(nil)
+		for batchIdx, batchKeys := range batches {
+			batchNum := batchIdx + 1
+			request := &ReplicateDataRequest{Keys: batchKeys}
+
+			b := backoff.NewExponentialBackOff()
+			b.MaxElapsedTime = maxBackOff
+
+			logtrace.Debug(ctx, "sending replicate batch", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"rep-ip":             info.IP,
+				"rep-id":             string(info.ID),
+				"batch":              batchNum,
+				"batches":            len(batches),
+				"batch_keys":         len(batchKeys),
+			})
+
+			sendErr = backoff.RetryNotify(func() error {
+				response, err := s.sendReplicateData(ctx, n, request)
+				if err != nil {
+					return err
+				}
+
+				if response.Status.Result != ResultOk {
+					return errors.New(response.Status.ErrMsg)
+				}
+
+				return nil
+			}, b, func(err error, duration time.Duration) {
+				logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+					"rep-ip":             info.IP,
+					"rep-id":             string(info.ID),
+					"batch":              batchNum,
+					"batches":            len(batches),
+					"duration":           duration,
+				})
+			})
+
+			if sendErr != nil {
+				logtrace.Error(ctx, "send replicate batch failed after retries", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  sendErr.Error(),
+					"rep-ip":             info.IP,
+					"rep-id":             string(info.ID),
+					"batch":              batchNum,
+					"batches":            len(batches),
+				})
+				break
+			}
 		}
 
-		n := &Node{ID: info.ID, IP: info.IP, Port: info.Port}
-
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = maxBackOff
-
-		err = backoff.RetryNotify(func() error {
-			response, err := s.sendReplicateData(ctx, n, request)
-			if err != nil {
-				return err
-			}
-
-			if response.Status.Result != ResultOk {
-				return errors.New(response.Status.ErrMsg)
-			}
-
-			return nil
-		}, b, func(err error, duration time.Duration) {
-			logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID), "duration": duration})
-		})
-
-		if err != nil {
-			logtrace.Error(ctx, "send replicate data failed after retries", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "rep-ip": info.IP, "rep-id": string(info.ID)})
+		if sendErr != nil {
 			continue
 		}
 
@@ -258,7 +376,7 @@ func (s *DHT) Replicate(ctx context.Context) {
 		if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
 			logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 		} else {
-			logtrace.Debug(ctx, "replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "expected-rep-keys": len(closestContactKeys)})
+			logtrace.Debug(ctx, "replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "expected-rep-keys": len(closestContactKeys), "batches": len(batches)})
 		}
 	}
 
@@ -323,32 +441,84 @@ func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.No
 			return fmt.Errorf("failed to parse node info from key: %w", err)
 		}
 
-		// TODO: Check if data size is bigger than 32 MB
-		request := &ReplicateDataRequest{
-			Keys: keys,
+		batches := splitReplicateKeys(keys)
+		if len(batches) > 1 {
+			keysBytes := 0
+			for _, k := range keys {
+				keysBytes += len(k)
+			}
+			logtrace.Info(ctx, "adjust batching keys", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"offline-node-ip":    info.IP,
+				"offline-node-id":    string(info.ID),
+				"adjust-to-node":     nodeInfoKey,
+				"keys":               len(keys),
+				"batches":            len(batches),
+				"batch_size":         replicateKeysRequestBatchSize,
+				"keys_mb_lower":      utils.BytesIntToMB(keysBytes),
+			})
 		}
 
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = maxBackOff
+		nodeSuccess := true
+		for batchIdx, batchKeys := range batches {
+			batchNum := batchIdx + 1
+			request := &ReplicateDataRequest{Keys: batchKeys}
 
-		err = backoff.RetryNotify(func() error {
-			response, err := s.sendReplicateData(ctx, node, request)
+			b := backoff.NewExponentialBackOff()
+			b.MaxElapsedTime = maxBackOff
+
+			logtrace.Debug(ctx, "sending adjusted replicate batch", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"offline-node-ip":    info.IP,
+				"offline-node-id":    string(info.ID),
+				"adjust-to-node":     nodeInfoKey,
+				"batch":              batchNum,
+				"batches":            len(batches),
+				"batch_keys":         len(batchKeys),
+			})
+
+			err = backoff.RetryNotify(func() error {
+				response, err := s.sendReplicateData(ctx, node, request)
+				if err != nil {
+					return err
+				}
+
+				if response.Status.Result != ResultOk {
+					return errors.New(response.Status.ErrMsg)
+				}
+
+				return nil
+			}, b, func(err error, duration time.Duration) {
+				logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+					"offline-node-ip":    info.IP,
+					"offline-node-id":    string(info.ID),
+					"adjust-to-node":     nodeInfoKey,
+					"batch":              batchNum,
+					"batches":            len(batches),
+					"duration":           duration,
+				})
+			})
+
 			if err != nil {
-				return err
+				logtrace.Error(ctx, "send adjusted replicate batch failed after retries", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+					"offline-node-ip":    info.IP,
+					"offline-node-id":    string(info.ID),
+					"adjust-to-node":     nodeInfoKey,
+					"batch":              batchNum,
+					"batches":            len(batches),
+				})
+				nodeSuccess = false
+				break
 			}
+		}
 
-			if response.Status.Result != ResultOk {
-				return errors.New(response.Status.ErrMsg)
-			}
-
+		if nodeSuccess {
 			successCount++
-			return nil
-		}, b, func(err error, duration time.Duration) {
-			logtrace.Error(ctx, "retrying send replicate data", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "offline-node-ip": info.IP, "offline-node-id": string(info.ID), "duration": duration})
-		})
-
-		if err != nil {
-			logtrace.Error(ctx, "send replicate data failed after retries", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error(), "offline-node-ip": info.IP, "offline-node-id": string(info.ID)})
+		} else {
 			failureCount++
 		}
 	}
