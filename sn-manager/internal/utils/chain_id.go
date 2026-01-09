@@ -77,9 +77,7 @@ func LatestTestnetRelease(client github.GithubClient) (*github.Release, error) {
 // falls back to the latest stable release.
 func LatestReleaseForChainID(client github.GithubClient, chainID string) (*github.Release, error) {
 	if IsTestnetChainID(chainID) {
-		if r, err := LatestTestnetRelease(client); err == nil {
-			return r, nil
-		}
+		return LatestTestnetRelease(client)
 	}
 	return client.GetLatestStableRelease()
 }

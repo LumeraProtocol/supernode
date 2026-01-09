@@ -51,13 +51,15 @@ func CompareVersions(v1, v2 string) int {
 		max = len(p2.prerelease)
 	}
 	for i := 0; i < max; i++ {
-		id1, id2 := "", ""
-		if i < len(p1.prerelease) {
-			id1 = p1.prerelease[i]
+		// SemVer: when identifiers are equal up to the length of one list,
+		// the shorter list has lower precedence.
+		if i >= len(p1.prerelease) {
+			return -1
 		}
-		if i < len(p2.prerelease) {
-			id2 = p2.prerelease[i]
+		if i >= len(p2.prerelease) {
+			return 1
 		}
+		id1, id2 := p1.prerelease[i], p2.prerelease[i]
 		if id1 == id2 {
 			continue
 		}
@@ -78,12 +80,6 @@ func CompareVersions(v1, v2 string) int {
 		if id1 < id2 {
 			return -1
 		}
-		return 1
-	}
-	if len(p1.prerelease) < len(p2.prerelease) {
-		return -1
-	}
-	if len(p1.prerelease) > len(p2.prerelease) {
 		return 1
 	}
 	return 0
