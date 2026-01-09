@@ -109,6 +109,14 @@ func (u *AutoUpdater) ShouldUpdate(current, latest string) bool {
 	current = strings.TrimPrefix(current, "v")
 	latest = strings.TrimPrefix(latest, "v")
 
+	// Allow testnet-tagged releases (e.g., v1.2.3-testnet.1).
+	if utils.IsTestnetReleaseTag(latest) {
+		if !utils.SameMajor(current, latest) {
+			return false
+		}
+		return utils.CompareVersions(current, latest) < 0
+	}
+
 	// Skip pre-release targets (beta, alpha, rc, etc.)
 	if strings.Contains(latest, "-") {
 		return false
@@ -192,8 +200,10 @@ func (u *AutoUpdater) ForceSyncToLatest(_ context.Context) {
 // If force is true, bypass gateway idleness and version policy checks.
 func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 
-	// Fetch latest stable release once
-	release, err := u.githubClient.GetLatestStableRelease()
+	chainID, _ := utils.ReadSupernodeChainID()
+
+	// Fetch latest release once (testnet prefers "-testnet" tags, otherwise stable)
+	release, err := utils.LatestReleaseForChainID(u.githubClient, chainID)
 	if err != nil {
 		log.Printf("Failed to check releases: %v", err)
 		return
