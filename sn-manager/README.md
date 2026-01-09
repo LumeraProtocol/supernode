@@ -342,9 +342,14 @@ The auto-updater follows stable-only, same-major update rules and defers updates
 | Any | Any | Yes, but gateway busy | ❌ (deferred) | Manual allowed |
 
 Mechanics and notes:
-- Stable-only: auto-updater targets latest stable GitHub release (non-draft, non-prerelease).
+- Network-aware selection (mainnet vs testnet):
+  - sn-manager reads `lumera.chain_id` from `~/.supernode/config.yml`.
+  - If the chain ID contains `testnet`, sn-manager tracks **testnet releases only** (tags containing `-testnet`).
+  - Otherwise, sn-manager tracks **stable releases only** (tags without `-`).
+- Stable-only (mainnet): auto-updater targets latest stable GitHub release (non-draft, non-prerelease, tag without `-`).
+- Testnet-only (testnet): auto-updater targets the most recent non-draft release whose tag contains `-testnet` (recommended tag format: `vX.Y.Z-testnet.N`). If no testnet-tagged release exists, auto-update is skipped (no stable fallback).
 - Same-major only (periodic checks): during regular background checks, SuperNode and sn-manager auto-update only when the latest is the same major version (the number before the first dot). Example: 1.7 → 1.8 = allowed; 1.x → 2.0 = manual.
-- Startup sync: when `sn-manager start` runs, it performs a one-time forced sync to the latest stable release for both sn-manager and SuperNode. This startup sync may update across major versions and does not wait for the gateway to be idle; failures are logged but do not block startup.
+- Startup sync: when `sn-manager start` runs, it performs a one-time forced sync to the latest release for the detected network (stable on mainnet, `-testnet` on testnet) for both sn-manager and SuperNode. This startup sync may update across major versions and does not wait for the gateway to be idle; failures are logged but do not block startup.
 - Gateway-aware: updates are applied only when the gateway reports no running tasks; otherwise they are deferred.
 - Gateway errors: repeated check failures over a 5-minute window request a clean SuperNode restart (no version change) to recover.
 - Combined tarball: when updating, sn-manager downloads a single tarball once, then updates itself first (if eligible), then installs/activates the new SuperNode version.
