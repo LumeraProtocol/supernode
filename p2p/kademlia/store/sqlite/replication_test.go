@@ -22,13 +22,14 @@ func TestStoreBatchRepKeys(t *testing.T) {
 
 	// Create the table
 	_, err = db.Exec(`CREATE TABLE replication_keys (
-		key TEXT NOT NULL,
-		updatedAt DATETIME NOT NULL,
-		ip TEXT NOT NULL,
-		port INTEGER NOT NULL,
-		id TEXT NOT NULL,
-		PRIMARY KEY(key)
-	)`)
+			key TEXT NOT NULL,
+			updatedAt DATETIME NOT NULL,
+			ip TEXT NOT NULL,
+			port INTEGER NOT NULL,
+			attempts INTEGER DEFAULT 0,
+			id TEXT NOT NULL,
+			PRIMARY KEY(key)
+		)`)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -65,6 +66,22 @@ func TestStoreBatchRepKeys(t *testing.T) {
 		assert.Equal(t, testIP, res.IP)
 		assert.Equal(t, testPort, res.Port)
 	}
+
+	// If a key is re-announced, attempts should be reset so it can be retried by workers.
+	_, err = db.Exec("UPDATE replication_keys SET attempts = 7 WHERE key = ?", testValues[0])
+	if err != nil {
+		t.Fatalf("Failed to bump attempts: %v", err)
+	}
+	err = store.StoreBatchRepKeys([]string{testValues[0]}, testID, testIP, testPort)
+	if err != nil {
+		t.Fatalf("Failed to re-store rep key: %v", err)
+	}
+	var attempts int
+	err = db.Get(&attempts, "SELECT attempts FROM replication_keys WHERE key = ?", testValues[0])
+	if err != nil {
+		t.Fatalf("Failed to read attempts: %v", err)
+	}
+	assert.Equal(t, 0, attempts)
 }
 
 func TestGetBatchRepKeys(t *testing.T) {

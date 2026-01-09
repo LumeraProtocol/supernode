@@ -253,14 +253,17 @@ func (s *DHT) GroupAndBatchFetch(ctx context.Context, repKeys []domain.ToRepKey,
 					logtrace.Warn(ctx, "no values found in batch fetch", logtrace.Fields{"node-ip": node.IP})
 				}
 
-				if isDone && len(failedKeys) > 0 {
-					if err := s.store.IncrementAttempts(failedKeys); err != nil {
-						logtrace.Debug(ctx, "failed to increment attempts", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
-						// not adding 'continue' here because we want to delete the keys from the todo list
+				if isDone {
+					if len(failedKeys) > 0 {
+						if err := s.store.IncrementAttempts(failedKeys); err != nil {
+							logtrace.Debug(ctx, "failed to increment attempts", logtrace.Fields{"node-ip": node.IP, logtrace.FieldError: err})
+						}
+						// Important: the server is done producing results for this batch. Re-requesting the same
+						// keys from the same node in a tight loop is unlikely to change outcomes; instead we bump
+						// attempts so the scheduler can try alternate nodes on a later cycle.
 					}
-				} else if isDone {
 					stringKeys = []string{}
-				} else if !isDone {
+				} else {
 					stringKeys = failedKeys
 				}
 			}
