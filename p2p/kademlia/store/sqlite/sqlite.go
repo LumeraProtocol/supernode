@@ -738,7 +738,7 @@ func (s *Store) Stats(ctx context.Context) (kademlia.DatabaseStats, error) {
 	} else {
 		// This is often a best-effort metric and can time out under heavy DB load; avoid noisy ERROR logs.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			logtrace.Debug(ctx, "failed to get p2p records count", logtrace.Fields{logtrace.FieldError: err.Error()})
+			logtrace.Info(ctx, "failed to get p2p records count", logtrace.Fields{logtrace.FieldError: err.Error()})
 		} else {
 			logtrace.Error(ctx, "failed to get p2p records count", logtrace.Fields{logtrace.FieldError: err.Error()})
 		}

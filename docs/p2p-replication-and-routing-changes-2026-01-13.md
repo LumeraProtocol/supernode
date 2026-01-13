@@ -1,6 +1,6 @@
 # P2P Replication + Routing Eligibility Changes (2026-01-13)
 
-This document describes all currently uncommitted changes in the `supernode` repository that affect the P2P/Kademlia subsystem, including the replication/backlog fixes and routing-table eligibility gating.
+This document describes all  changes in the `https://github.com/LumeraProtocol/supernode/pull/259`  that affect the P2P/Kademlia subsystem, including the replication/backlog fixes and routing-table eligibility gating.
 
 ## Context / Symptoms Observed
 
@@ -209,7 +209,7 @@ The following files are modified:
 **What changed**
 
 - When `Store.Count(ctx)` fails inside `Store.Stats(ctx)`:
-  - If the error is `context.DeadlineExceeded` or `context.Canceled`, it logs at Debug instead of Error.
+  - If the error is `context.DeadlineExceeded` or `context.Canceled`, it logs at Info instead of Error.
   - Other errors remain Error.
 
 **Why**
@@ -222,12 +222,3 @@ The following files are modified:
 - Replication assignment uses the current routing table’s `closestContactsWithIncludingNode(...)`. If an otherwise active peer is not present in routing-table-derived closest sets, it may receive zero keys for a window and still have its `lastReplicatedAt` advanced to `windowEnd`. This behavior existed in the prior approach as well (advancing on “no closest keys”), but bounding makes it more visible as replication progresses window-by-window.
 - `replicateKeysScanMax` is a constant. If you need environment-specific tuning, consider making it configurable (config file/env var), but this change intentionally keeps scope minimal.
 - The bounded sqlite query may return slightly more than `maxKeys` due to the “same createdAt extension” for correctness.
-
-## Verification Performed
-
-Local targeted unit tests were run for the modified packages:
-
-- `go test ./p2p/kademlia/...` (passes)
-
-Full `go test ./...` may fail in restricted environments due to network/port permissions in integration tests; those failures are unrelated to the code changes described here.
-
