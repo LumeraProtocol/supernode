@@ -68,7 +68,7 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 
 	logtrace.Debug(ctx, "getting all possible replication keys past five years", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
 	to := time.Now().UTC()
-	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
+	replicationKeys := s.store.GetKeysForReplication(ctx, from, to, 0)
 
 	ignores := s.ignorelist.ToNodeList()
 	supernodeAddr, _ := s.getSupernodeAddress(ctx)
