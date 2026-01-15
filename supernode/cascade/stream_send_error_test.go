@@ -3,6 +3,7 @@ package cascade
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -79,5 +80,41 @@ func TestDownload_AbortsOnEventSendError(t *testing.T) {
 	}
 	if sendCalls != 1 {
 		t.Fatalf("expected 1 send call, got %d", sendCalls)
+	}
+}
+
+func TestDownload_AllowsApprovedState(t *testing.T) {
+	service := &CascadeService{
+		LumeraClient: &stubLumeraClient{action: &actiontypes.Action{ActionID: "action123", State: actiontypes.ActionStateApproved, Metadata: []byte("bad")}},
+	}
+	task := NewCascadeRegistrationTask(service)
+
+	err := task.Download(context.Background(), &DownloadRequest{ActionID: "action123"}, func(*DownloadResponse) error {
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "error decoding cascade metadata") {
+		t.Fatalf("expected metadata decode error, got %v", err)
+	}
+}
+
+func TestDownload_RejectsInvalidState(t *testing.T) {
+	service := &CascadeService{
+		LumeraClient: &stubLumeraClient{action: &actiontypes.Action{ActionID: "action123", State: actiontypes.ActionStatePending}},
+	}
+	task := NewCascadeRegistrationTask(service)
+
+	err := task.Download(context.Background(), &DownloadRequest{ActionID: "action123"}, func(*DownloadResponse) error {
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "action not ready for download") {
+		t.Fatalf("expected action state error, got %v", err)
 	}
 }

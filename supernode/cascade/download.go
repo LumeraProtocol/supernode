@@ -71,11 +71,12 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 	}
 
 	// Step 2: Validate action state.
-	if actionDetails.GetAction().State != actiontypes.ActionStateDone {
-		err = errors.New("action is not in a valid state")
-		fields[logtrace.FieldError] = "action state is not done yet"
-		fields[logtrace.FieldActionState] = actionDetails.GetAction().State
-		return task.wrapErr(ctx, "action not finalized yet", err, fields)
+	state := actionDetails.GetAction().State
+	if state != actiontypes.ActionStateDone && state != actiontypes.ActionStateApproved {
+		err = errors.New("action must be in DONE or APPROVED state to download")
+		fields[logtrace.FieldError] = err.Error()
+		fields[logtrace.FieldActionState] = state
+		return task.wrapErr(ctx, "action not ready for download", err, fields)
 	}
 	logtrace.Info(ctx, "download: action state ok", fields)
 
