@@ -111,8 +111,7 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 	return fmt.Errorf("signature validation failed: %w", verifyErr)
 }
 
-//
-
+// validateDownloadAction checks if the specified action is valid for downloading.
 func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID string) (lumera.Action, error) {
 	action, err := m.lumeraClient.GetAction(ctx, actionID)
 	if err != nil {
@@ -125,8 +124,8 @@ func (m *ManagerImpl) validateDownloadAction(ctx context.Context, actionID strin
 	}
 
 	// Check action state
-	if action.State != lumera.ACTION_STATE_DONE {
-		return lumera.Action{}, fmt.Errorf("action is in %s state, expected DONE", action.State)
+	if action.State != lumera.ACTION_STATE_DONE && action.State != lumera.ACTION_STATE_APPROVED {
+		return lumera.Action{}, fmt.Errorf("action is in %s state, expected DONE or APPROVED", action.State)
 	}
 
 	return action, nil

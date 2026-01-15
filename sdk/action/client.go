@@ -23,7 +23,7 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
-	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -68,6 +68,7 @@ type ClientImpl struct {
 
 // Verify interface compliance at compile time
 var _ Client = (*ClientImpl)(nil)
+var newLumeraAdapter = lumera.NewAdapter
 
 // NewClient creates a new action client
 func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Client, error) {
@@ -75,13 +76,14 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Cl
 		logger = log.NewNoopLogger()
 	}
 
-	addr, err := keyringpkg.GetAddress(config.Account.Keyring, config.Account.KeyName)
+	// Enforce Lumera HRP for secure transport identity, independent of global SDK config.
+	addr, err := snkeyring.GetBech32Address(config.Account.Keyring, config.Account.KeyName, snkeyring.AccountAddressPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("resolve signer address: %w", err)
 	}
 
 	// Create lumera client once
-	lumeraClient, err := lumera.NewAdapter(ctx,
+	lumeraClient, err := newLumeraAdapter(ctx,
 		lumera.ConfigParams{
 			GRPCAddr: config.Lumera.GRPCAddr,
 			ChainID:  config.Lumera.ChainID,
@@ -105,7 +107,7 @@ func NewClient(ctx context.Context, config config.Config, logger log.Logger) (Cl
 		logger:       logger,
 		keyring:      config.Account.Keyring,
 		lumeraClient: lumeraClient,
-		signerAddr:   addr.String(),
+		signerAddr:   addr,
 	}, nil
 }
 
@@ -361,7 +363,7 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFileDeprecated(ctx context
 		return "", fmt.Errorf("blake3: %w", err)
 	}
 	dataHashB64 := base64.StdEncoding.EncodeToString(h)
-	sig, err := keyringpkg.SignBytes(c.keyring, c.config.Account.KeyName, []byte(dataHashB64))
+	sig, err := snkeyring.SignBytes(c.keyring, c.config.Account.KeyName, []byte(dataHashB64))
 	if err != nil {
 		return "", fmt.Errorf("sign hash string: %w", err)
 	}
@@ -441,7 +443,7 @@ func (c *ClientImpl) GenerateDownloadSignature(ctx context.Context, actionID, cr
 		c.logger.Info(ctx, "Signing download with ICA signer", "signer", signerAddr, "key_name", keyName)
 	}
 	// Sign only the actionID using raw bytes so verification can succeed without ADR-36 signer context.
-	sig, err := keyringpkg.SignBytes(c.keyring, keyName, []byte(actionID))
+	sig, err := snkeyring.SignBytes(c.keyring, keyName, []byte(actionID))
 	if err != nil {
 		return "", fmt.Errorf("sign download payload: %w", err)
 	}
