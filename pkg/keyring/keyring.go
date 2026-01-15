@@ -219,3 +219,15 @@ func GetAddress(kr sdkkeyring.Keyring, name string) (types.AccAddress, error) {
 	}
 	return rec.GetAddress()
 }
+
+func GetBech32Address(kr sdkkeyring.Keyring, name, hrp string) (string, error) {
+	rec, err := kr.Key(name)
+	if err != nil {
+		return "", err
+	}
+	addr, err := rec.GetAddress()
+	if err != nil {
+		return "", err
+	}
+	return types.Bech32ifyAddressBytes(hrp, addr.Bytes())
+}

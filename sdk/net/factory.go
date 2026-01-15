@@ -9,7 +9,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
-	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
@@ -35,7 +35,8 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 		logger = log.NewNoopLogger()
 	}
 
-	addr, err := keyringpkg.GetAddress(keyring, config.KeyName)
+	// Enforce Lumera HRP for secure transport identity, independent of global SDK config.
+	addr, err := snkeyring.GetBech32Address(keyring, config.KeyName, snkeyring.AccountAddressPrefix)
 	if err != nil {
 		logger.Error(ctx, "failed to resolve signer address from keyring",
 			map[string]interface{}{"key_name": config.KeyName, "error": err.Error()},
@@ -60,7 +61,7 @@ func NewClientFactory(ctx context.Context, logger log.Logger, keyring keyring.Ke
 		clientOptions: opts,
 		config:        config,
 		lumeraClient:  lumeraClient,
-		signerAddr:    addr.String(),
+		signerAddr:    addr,
 	}, nil
 }
 

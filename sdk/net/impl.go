@@ -14,7 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
-	keyringpkg "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
+	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -33,6 +33,7 @@ var _ SupernodeClient = (*supernodeClient)(nil)
 
 // ensure ALTS protocols are registered once per process
 var registerALTSOnce sync.Once
+var newClientCreds = ltc.NewClientCreds
 
 // NewSupernodeClient creates a new supernode client
 func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.Keyring,
@@ -55,16 +56,17 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 		factoryConfig.PeerType = securekeyx.Simplenode
 	}
 
-	addr, err := keyringpkg.GetAddress(keyring, factoryConfig.KeyName)
+	// Enforce Lumera HRP for secure transport identity, independent of global SDK config.
+	addr, err := snkeyring.GetBech32Address(keyring, factoryConfig.KeyName, snkeyring.AccountAddressPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("resolve signer address: %w", err)
 	}
 
 	// Create client credentials
-	clientCreds, err := ltc.NewClientCreds(&ltc.ClientOptions{
+	clientCreds, err := newClientCreds(&ltc.ClientOptions{
 		CommonOptions: ltc.CommonOptions{
 			Keyring:       keyring,
-			LocalIdentity: addr.String(),
+			LocalIdentity: addr,
 			PeerType:      factoryConfig.PeerType,
 			Validator:     lumeraClient,
 		},
@@ -81,7 +83,7 @@ func NewSupernodeClient(ctx context.Context, logger log.Logger, keyring keyring.
 
 	logger.Debug(ctx, "Preparing to connect to supernode securely",
 		"endpoint", targetSupernode.GrpcEndpoint, "target_id", targetSupernode.CosmosAddress,
-		"local_id", addr.String(), "peer_type", factoryConfig.PeerType)
+		"local_id", addr, "peer_type", factoryConfig.PeerType)
 
 	// Use provided client options or defaults
 	options := clientOptions
