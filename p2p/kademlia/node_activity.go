@@ -51,6 +51,23 @@ func (s *DHT) checkNodeActivity(ctx context.Context) {
 
 					node := s.makeNode([]byte(info.ID), info.IP, info.Port)
 
+					// Chain-state gating: do not spend cycles pinging or promoting peers that
+					// are not eligible to participate in routing (e.g., postponed).
+					if !s.eligibleForRouting(node) {
+						if info.Active {
+							s.removeNode(ctx, node)
+							if uerr := s.store.UpdateIsActive(ctx, string(node.ID), false, false); uerr != nil {
+								logtrace.Error(ctx, "failed to update replication info, node is inactive (ineligible)", logtrace.Fields{
+									logtrace.FieldModule: "p2p",
+									logtrace.FieldError:  uerr.Error(),
+									"ip":                 node.IP,
+									"node_id":            string(node.ID),
+								})
+							}
+						}
+						return
+					}
+
 					// Per-ping timeout
 					if err := s.pingNode(ctx, node, 5*time.Second); err != nil {
 						s.handlePingFailure(ctx, info.Active, node, err)
@@ -118,6 +135,22 @@ func (s *DHT) handlePingFailure(ctx context.Context, wasActive bool, n *Node, er
 }
 
 func (s *DHT) handlePingSuccess(ctx context.Context, wasActive bool, n *Node) {
+	// Never promote an ineligible node into routing/active replication set.
+	if !s.eligibleForRouting(n) {
+		if wasActive {
+			s.removeNode(ctx, n)
+			if uerr := s.store.UpdateIsActive(ctx, string(n.ID), false, false); uerr != nil {
+				logtrace.Error(ctx, "failed to update replication info, node is inactive (ineligible)", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  uerr.Error(),
+					"ip":                 n.IP,
+					"node_id":            string(n.ID),
+				})
+			}
+		}
+		return
+	}
+
 	// clear from ignorelist and ensure presence in routing
 	s.ignorelist.Delete(n)
 

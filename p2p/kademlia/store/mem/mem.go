@@ -22,7 +22,7 @@ type Store struct {
 // GetKeysForReplication should return the keys of all data to be
 // replicated across the network. Typically all data should be
 // replicated every tReplicate seconds.
-func (s *Store) GetKeysForReplication(_ context.Context, _ time.Time, _ time.Time) domain.KeysWithTimestamp {
+func (s *Store) GetKeysForReplication(_ context.Context, _ time.Time, _ time.Time, _ int) domain.KeysWithTimestamp {
 	return nil
 }
 

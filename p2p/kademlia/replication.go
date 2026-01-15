@@ -15,7 +15,12 @@ import (
 	"github.com/cenkalti/backoff/v4"
 )
 
-const replicateKeysRequestBatchSize = 5000
+const (
+	replicateKeysRequestBatchSize = 5000
+	// replicateKeysScanMax bounds the per-cycle DB scan so we can make steady progress on large backlogs
+	// without generating millions of keys / thousands of batches in a single replication interval.
+	replicateKeysScanMax = 200000
+)
 
 var (
 	// defaultReplicationInterval is the default interval for replication.
@@ -219,7 +224,7 @@ func (s *DHT) Replicate(ctx context.Context) {
 
 	logtrace.Debug(ctx, "getting all possible replication keys", logtrace.Fields{logtrace.FieldModule: "p2p", "from": globalFrom})
 	to := time.Now().UTC()
-	replicationKeys := s.store.GetKeysForReplication(ctx, globalFrom, to)
+	replicationKeys := s.store.GetKeysForReplication(ctx, globalFrom, to, replicateKeysScanMax)
 	if replicationKeys == nil {
 		// Important: treat nil as "DB error" (store returns non-nil empty slice on success).
 		// Never advance lastReplicatedAt in this case, otherwise we can skip keys permanently.
@@ -233,17 +238,46 @@ func (s *DHT) Replicate(ctx context.Context) {
 		return
 	}
 
+	// Use the last returned createdAt as a stable "window end". If we were limited, this ensures we
+	// don't incorrectly advance cursors past keys we haven't processed yet.
+	windowEnd := to
+	if len(replicationKeys) > 0 {
+		windowEnd = replicationKeys[len(replicationKeys)-1].CreatedAt
+	}
+
 	ignores := s.ignorelist.ToNodeList()
-	closestContactsMap := make(map[string][][]byte)
 
 	supernodeAddr, _ := s.getSupernodeAddress(ctx)
 	hostIP := parseSupernodeAddress(supernodeAddr)
 	self := &Node{ID: s.ht.self.ID, IP: hostIP, Port: s.ht.self.Port}
 	self.SetHashedID()
 
+	peerStart := make(map[string]time.Time)
+	for _, info := range repInfo {
+		if !info.Active {
+			continue
+		}
+		start := historicStart
+		if info.LastReplicatedAt != nil {
+			start = *info.LastReplicatedAt
+		}
+		peerStart[string(info.ID)] = start
+	}
+
+	assignedKeys := make(map[string][]string, len(peerStart))
 	for i := 0; i < len(replicationKeys); i++ {
 		decKey, _ := hex.DecodeString(replicationKeys[i].Key)
-		closestContactsMap[replicationKeys[i].Key] = s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self).NodeIDs()
+		closestIDs := s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self).NodeIDs()
+		for _, id := range closestIDs {
+			idStr := string(id)
+			start, ok := peerStart[idStr]
+			if !ok {
+				continue
+			}
+			if replicationKeys[i].CreatedAt.After(start) {
+				assignedKeys[idStr] = append(assignedKeys[idStr], replicationKeys[i].Key)
+			}
+		}
 	}
 
 	for _, info := range repInfo {
@@ -256,35 +290,11 @@ func (s *DHT) Replicate(ctx context.Context) {
 		if info.LastReplicatedAt != nil {
 			start = *info.LastReplicatedAt
 		}
-
-		idx := replicationKeys.FindFirstAfter(start)
-		if idx == -1 {
-			// Now closestContactKeys contains all the keys that are in the closest contacts.
-			if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
-				logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
-			} else {
-				logtrace.Debug(ctx, "no replication keys - replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "fetch-keys": 0})
-			}
-
+		if !windowEnd.After(start) {
 			continue
 		}
-		countToSendKeys := len(replicationKeys) - idx
-		logtrace.Debug(ctx, "count of replication keys to be checked", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": countToSendKeys})
-		preAlloc := countToSendKeys
-		if preAlloc > replicateKeysRequestBatchSize {
-			preAlloc = replicateKeysRequestBatchSize
-		}
-		closestContactKeys := make([]string, 0, preAlloc)
 
-		for i := idx; i < len(replicationKeys); i++ {
-			for j := 0; j < len(closestContactsMap[replicationKeys[i].Key]); j++ {
-				if bytes.Equal(closestContactsMap[replicationKeys[i].Key][j], info.ID) {
-					// the node is supposed to hold this key as it's in the 6 closest contacts
-					closestContactKeys = append(closestContactKeys, replicationKeys[i].Key)
-				}
-			}
-		}
-
+		closestContactKeys := assignedKeys[string(info.ID)]
 		batches := splitReplicateKeys(closestContactKeys)
 		if len(batches) > 1 {
 			keysBytes := 0
@@ -305,10 +315,10 @@ func (s *DHT) Replicate(ctx context.Context) {
 		logtrace.Debug(ctx, "closest contact keys count", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID), "len-rep-keys": len(closestContactKeys), "batches": len(batches)})
 
 		if len(closestContactKeys) == 0 {
-			if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
+			if err := s.updateLastReplicated(ctx, info.ID, windowEnd); err != nil {
 				logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 			} else {
-				logtrace.Debug(ctx, "no closest keys found - replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "closest-contact-keys": 0})
+				logtrace.Debug(ctx, "no closest keys found - replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": windowEnd.String(), "closest-contact-keys": 0})
 			}
 
 			continue
@@ -372,11 +382,10 @@ func (s *DHT) Replicate(ctx context.Context) {
 			continue
 		}
 
-		// Now closestContactKeys contains all the keys that are in the closest contacts.
-		if err := s.updateLastReplicated(ctx, info.ID, to); err != nil {
+		if err := s.updateLastReplicated(ctx, info.ID, windowEnd); err != nil {
 			logtrace.Error(ctx, "replicate update lastReplicated failed", logtrace.Fields{logtrace.FieldModule: "p2p", "rep-ip": info.IP, "rep-id": string(info.ID)})
 		} else {
-			logtrace.Debug(ctx, "replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": to.String(), "expected-rep-keys": len(closestContactKeys), "batches": len(batches)})
+			logtrace.Debug(ctx, "replicate update lastReplicated success", logtrace.Fields{logtrace.FieldModule: "p2p", "node": info.IP, "to": windowEnd.String(), "expected-rep-keys": len(closestContactKeys), "batches": len(batches)})
 		}
 	}
 
@@ -384,7 +393,7 @@ func (s *DHT) Replicate(ctx context.Context) {
 }
 
 func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.NodeReplicationInfo) error {
-	replicationKeys := s.store.GetKeysForReplication(ctx, from, time.Now().UTC())
+	replicationKeys := s.store.GetKeysForReplication(ctx, from, time.Now().UTC(), 0)
 
 	logtrace.Debug(ctx, "begin adjusting node keys process for offline node", logtrace.Fields{logtrace.FieldModule: "p2p", "offline-node-ip": info.IP, "offline-node-id": string(info.ID), "total-rep-keys": len(replicationKeys), "from": from.String()})
 
