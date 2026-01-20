@@ -4,10 +4,13 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/lumera/x/action/v1/types"
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
+	auditmsgmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	bankmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
@@ -29,6 +32,8 @@ type MockLumeraClient struct {
 	authMod         *MockAuthModule
 	actionMod       *MockActionModule
 	actionMsgMod    *MockActionMsgModule
+	auditMod        *MockAuditModule
+	auditMsgMod     *MockAuditMsgModule
 	bankMod         *MockBankModule
 	supernodeMod    *MockSupernodeModule
 	supernodeMsgMod supernode_msg.Module
@@ -42,6 +47,8 @@ type MockLumeraClient struct {
 func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client, error) {
 	actionMod := &MockActionModule{}
 	actionMsgMod := &MockActionMsgModule{}
+	auditMod := &MockAuditModule{}
+	auditMsgMod := &MockAuditMsgModule{}
 	bankMod := &MockBankModule{}
 	supernodeMod := &MockSupernodeModule{addresses: addresses}
 	supernodeMsgMod := &MockSupernodeMsgModule{}
@@ -52,6 +59,8 @@ func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client,
 		authMod:         &MockAuthModule{},
 		actionMod:       actionMod,
 		actionMsgMod:    actionMsgMod,
+		auditMod:        auditMod,
+		auditMsgMod:     auditMsgMod,
 		bankMod:         bankMod,
 		supernodeMod:    supernodeMod,
 		supernodeMsgMod: supernodeMsgMod,
@@ -75,6 +84,14 @@ func (c *MockLumeraClient) Action() action.Module {
 // ActionMsg returns the ActionMsg module client
 func (c *MockLumeraClient) ActionMsg() action_msg.Module {
 	return c.actionMsgMod
+}
+
+func (c *MockLumeraClient) Audit() auditmod.Module {
+	return c.auditMod
+}
+
+func (c *MockLumeraClient) AuditMsg() auditmsgmod.Module {
+	return c.auditMsgMod
 }
 
 // Bank returns the Bank module client
@@ -105,6 +122,22 @@ func (c *MockLumeraClient) Node() node.Module {
 // Close closes all connections
 func (c *MockLumeraClient) Close() error {
 	return nil
+}
+
+type MockAuditModule struct{}
+
+func (m *MockAuditModule) CurrentWindow(ctx context.Context) (*audittypes.QueryCurrentWindowResponse, error) {
+	return &audittypes.QueryCurrentWindowResponse{}, nil
+}
+
+func (m *MockAuditModule) AssignedTargets(ctx context.Context, supernodeAccount string, windowID uint64) (*audittypes.QueryAssignedTargetsResponse, error) {
+	return &audittypes.QueryAssignedTargetsResponse{}, nil
+}
+
+type MockAuditMsgModule struct{}
+
+func (m *MockAuditMsgModule) SubmitAuditReport(ctx context.Context, windowID uint64, selfReport audittypes.AuditSelfReport, peerObservations []*audittypes.AuditPeerObservation) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{TxResponse: &sdktypes.TxResponse{TxHash: ""}}, nil
 }
 
 // MockBankModule implements the bank.Module interface for testing

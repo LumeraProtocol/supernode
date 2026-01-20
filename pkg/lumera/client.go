@@ -6,6 +6,8 @@ import (
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
@@ -19,6 +21,8 @@ type lumeraClient struct {
 	authMod         auth.Module
 	actionMod       action.Module
 	actionMsgMod    action_msg.Module
+	auditMod        audit.Module
+	auditMsgMod     audit_msg.Module
 	bankMod         bank.Module
 	supernodeMod    supernode.Module
 	supernodeMsgMod supernode_msg.Module
@@ -47,6 +51,12 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 	}
 
 	actionModule, err := action.NewModule(conn.GetConn())
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	auditModule, err := audit.NewModule(conn.GetConn())
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -95,6 +105,19 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 		return nil, err
 	}
 
+	auditMsgModule, err := audit_msg.NewModule(
+		conn.GetConn(),
+		authModule,
+		txModule,
+		cfg.keyring,
+		cfg.KeyName,
+		cfg.ChainID,
+	)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	supernodeMsgModule, err := supernode_msg.NewModule(
 		conn.GetConn(),
 		authModule,
@@ -114,6 +137,8 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 		authMod:         authModule,
 		actionMod:       actionModule,
 		actionMsgMod:    actionMsgModule,
+		auditMod:        auditModule,
+		auditMsgMod:     auditMsgModule,
 		bankMod:         bankModule,
 		supernodeMod:    supernodeModule,
 		supernodeMsgMod: supernodeMsgModule,
@@ -133,6 +158,14 @@ func (c *lumeraClient) Action() action.Module {
 
 func (c *lumeraClient) ActionMsg() action_msg.Module {
 	return c.actionMsgMod
+}
+
+func (c *lumeraClient) Audit() audit.Module {
+	return c.auditMod
+}
+
+func (c *lumeraClient) AuditMsg() audit_msg.Module {
+	return c.auditMsgMod
 }
 
 func (c *lumeraClient) Bank() bank.Module {

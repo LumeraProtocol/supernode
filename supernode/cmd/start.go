@@ -20,6 +20,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
+	auditService "github.com/LumeraProtocol/supernode/v2/supernode/audit"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
@@ -167,6 +168,20 @@ The supernode will connect to the Lumera network and begin participating in the 
 		)
 		logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
 
+		var auditSvc service
+		if svc, err := auditService.NewService(
+			lumeraClient,
+			statusSvc,
+			kr,
+			appConfig.SupernodeConfig.Identity,
+			filepath.Join(appConfig.BaseDir, auditService.SQLiteFilename),
+		); err != nil {
+			logtrace.Warn(ctx, "Audit service disabled: failed to initialize", logtrace.Fields{logtrace.FieldError: err.Error()})
+		} else {
+			auditSvc = svc
+			logtrace.Info(ctx, "Audit service enabled", logtrace.Fields{})
+		}
+
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)
 
@@ -201,6 +216,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 		servicesErr := make(chan error, 1)
 		go func() {
 			services := []service{grpcServer, cService, p2pService, gatewayServer, metricsCollector}
+			if auditSvc != nil {
+				services = append(services, auditSvc)
+			}
 			servicesErr <- RunServices(ctx, services...)
 		}()
 
