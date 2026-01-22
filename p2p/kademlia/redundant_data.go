@@ -68,7 +68,7 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 
 	logtrace.Debug(ctx, "getting all possible replication keys past five years", logtrace.Fields{logtrace.FieldModule: "p2p", "from": from})
 	to := time.Now().UTC()
-	replicationKeys := s.store.GetKeysForReplication(ctx, from, to)
+	replicationKeys := s.store.GetKeysForReplication(ctx, from, to, 0)
 
 	ignores := s.ignorelist.ToNodeList()
 	supernodeAddr, _ := s.getSupernodeAddress(ctx)
@@ -79,7 +79,15 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	closestContactsMap := make(map[string][][]byte)
 
 	for i := 0; i < len(replicationKeys); i++ {
-		decKey, _ := hex.DecodeString(replicationKeys[i].Key)
+		decKey, err := hex.DecodeString(replicationKeys[i].Key)
+		if err != nil {
+			logtrace.Debug(ctx, "skip invalid replication key (hex decode failed)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"key":                replicationKeys[i].Key,
+			})
+			continue
+		}
 		nodes := s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self)
 		closestContactsMap[replicationKeys[i].Key] = nodes.NodeIDs()
 	}

@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +67,16 @@ type DHT struct {
 	replicationMtx sync.RWMutex
 	rqstore        rqstore.Store
 	metrics        DHTMetrics
+
+	// routingAllowlist is a fast in-memory gate of which peers are eligible to
+	// participate in the routing table (based on chain state: Active only).
+	//
+	// Hot paths do only an atomic check + map lookup; updates happen on the
+	// bootstrap refresh cadence.
+	routingAllowMu    sync.RWMutex
+	routingAllow      map[[32]byte]struct{} // blake3(peerID) -> exists
+	routingAllowReady atomic.Bool
+	routingAllowCount atomic.Int64
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -122,6 +131,121 @@ func (s *DHT) BanListSnapshot() []BanSnapshot {
 
 func (s *DHT) ConnPoolSnapshot() map[string]int64 {
 	return s.network.connPool.metrics.Snapshot()
+}
+
+func (s *DHT) setRoutingAllowlist(ctx context.Context, allow map[[32]byte]struct{}) {
+	if s == nil {
+		return
+	}
+	// Integration tests may use synthetic bootstrap sets; do not enforce chain-state gating.
+	if integrationTestEnabled() {
+		return
+	}
+	// Avoid accidentally locking ourselves out due to transient chain issues.
+	if len(allow) == 0 {
+		if !s.routingAllowReady.Load() {
+			logtrace.Debug(ctx, "routing allowlist from chain is empty; leaving gating disabled (bootstrap)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		} else {
+			logtrace.Warn(ctx, "routing allowlist update skipped: chain returned zero active supernodes; retaining previous allowlist", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		}
+		return
+	}
+
+	s.routingAllowMu.Lock()
+	s.routingAllow = allow
+	s.routingAllowMu.Unlock()
+
+	s.routingAllowCount.Store(int64(len(allow)))
+	s.routingAllowReady.Store(true)
+
+	logtrace.Debug(ctx, "routing allowlist updated", logtrace.Fields{
+		logtrace.FieldModule: "p2p",
+		"active_peers":       len(allow),
+	})
+}
+
+func (s *DHT) eligibleForRouting(n *Node) bool {
+	if s == nil {
+		return false
+	}
+	// In integration tests allow everything; chain state gating is not stable/available there.
+	if integrationTestEnabled() {
+		return true
+	}
+	// If allowlist isn't ready (or was never populated), do not gate to avoid blocking bootstrap.
+	if !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+		return true
+	}
+	if n == nil || len(n.ID) == 0 {
+		return false
+	}
+
+	n.SetHashedID()
+	if len(n.HashedID) != 32 {
+		return false
+	}
+	var key [32]byte
+	copy(key[:], n.HashedID)
+
+	s.routingAllowMu.RLock()
+	_, ok := s.routingAllow[key]
+	s.routingAllowMu.RUnlock()
+	return ok
+}
+
+func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
+	if s == nil || len(nodes) == 0 {
+		return nodes
+	}
+	// Fast path: not enforcing (integration tests / not ready / empty list)
+	if integrationTestEnabled() || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+		return nodes
+	}
+
+	out := nodes[:0]
+	for _, n := range nodes {
+		if n == nil || len(n.ID) == 0 {
+			continue
+		}
+		if s.eligibleForRouting(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (s *DHT) pruneIneligibleRoutingPeers(ctx context.Context) {
+	if s == nil || s.ht == nil {
+		return
+	}
+	if integrationTestEnabled() || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+		return
+	}
+
+	removed := 0
+	for _, n := range s.ht.nodes() {
+		if n == nil || len(n.ID) == 0 {
+			continue
+		}
+		if bytes.Equal(n.ID, s.ht.self.ID) {
+			continue
+		}
+		if !s.eligibleForRouting(n) {
+			s.removeNode(ctx, n)
+			removed++
+		}
+	}
+
+	if removed > 0 {
+		logtrace.Info(ctx, "pruned ineligible routing peers", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"removed":            removed,
+		})
+	}
 }
 
 // Options contains configuration options for the queries node
@@ -507,7 +631,7 @@ func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Mes
 	// If fallback produced an invalid address (e.g., 0.0.0.0), choose a safe sender IP
 	if ip := net.ParseIP(hostIP); ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() {
 		// Prefer valid self IP; in integration tests, allow loopback and private
-		isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+		isIntegrationTest := integrationTestEnabled()
 		if sip := net.ParseIP(s.ht.self.IP); sip != nil {
 			if !sip.IsUnspecified() && (isIntegrationTest || (!sip.IsLoopback() && !sip.IsPrivate())) {
 				hostIP = s.ht.self.IP
@@ -1616,7 +1740,7 @@ func (s *DHT) iterate(ctx context.Context, iterativeType int, target []byte, dat
 					v, ok := response.Data.(*FindNodeResponse)
 					if ok && v.Status.Result == ResultOk {
 						if len(v.Closest) > 0 {
-							nl.AddNodes(v.Closest)
+							nl.AddNodes(s.filterEligibleNodes(v.Closest))
 						}
 					}
 
@@ -1694,7 +1818,7 @@ func (s *DHT) handleResponses(ctx context.Context, responses <-chan *Message, nl
 		case FindNode, StoreData:
 			v, ok := response.Data.(*FindNodeResponse)
 			if ok && v.Status.Result == ResultOk && len(v.Closest) > 0 {
-				nl.AddNodes(v.Closest)
+				nl.AddNodes(s.filterEligibleNodes(v.Closest))
 			}
 		case FindValue:
 			v, ok := response.Data.(*FindValueResponse)
@@ -1705,7 +1829,7 @@ func (s *DHT) handleResponses(ctx context.Context, responses <-chan *Message, nl
 					})
 					return nl, v.Value
 				} else if len(v.Closest) > 0 {
-					nl.AddNodes(v.Closest)
+					nl.AddNodes(s.filterEligibleNodes(v.Closest))
 				}
 			}
 		}
@@ -1846,27 +1970,29 @@ func (s *DHT) sendStoreData(ctx context.Context, n *Node, request *StoreDataRequ
 
 // add a node into the appropriate k bucket, return the removed node if it's full
 func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
-	// Minimum-version gating: reject nodes below configured minimum.
-	peerVer := ""
-	if node != nil {
-		peerVer = node.Version
+	if node == nil {
+		return nil
 	}
+	// Minimum-version gating: reject nodes below configured minimum.
+	peerVer := node.Version
 	if minRequired, tooOld := versionTooOld(peerVer); tooOld {
 		fields := logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"min_required":       minRequired,
 			"peer_version":       strings.TrimSpace(peerVer),
 		}
-		if node != nil {
-			fields["peer"] = node.String()
-		}
+		fields["peer"] = node.String()
 		logtrace.Debug(ctx, "Rejecting node: peer below minimum version", fields)
 		return nil
 	}
+
+	if len(node.ID) == 0 {
+		return nil
+	}
 	// Allow localhost for integration testing
-	isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+	isIntegrationTest := integrationTestEnabled()
 	if node.IP == "" || node.IP == "0.0.0.0" || (!isIntegrationTest && node.IP == "127.0.0.1") {
-		logtrace.Info(ctx, "Rejecting node: invalid IP", logtrace.Fields{
+		logtrace.Debug(ctx, "Rejecting node: invalid IP", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
 			"ip":                 node.IP,
 			"node":               node.String(),
@@ -1882,6 +2008,16 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 		return nil
 	}
 	node.SetHashedID()
+
+	// Chain-state gating: only allow Active supernodes into the routing table.
+	// This prevents postponed/disabled/stopped nodes from being admitted via inbound traffic.
+	if !s.eligibleForRouting(node) {
+		logtrace.Debug(ctx, "Rejecting node: not eligible for routing", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"node":               node.String(),
+		})
+		return nil
+	}
 
 	idx := s.ht.bucketIndex(s.ht.self.HashedID, node.HashedID)
 
@@ -2089,13 +2225,16 @@ func (s *DHT) removeNode(ctx context.Context, node *Node) {
 
 func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[string]*Node) {
 	for _, node := range nodes {
+		if node == nil || len(node.ID) == 0 {
+			continue
+		}
 		if _, ok := knownNodes[string(node.ID)]; ok {
 			continue
 		}
 
 		// Reject bind/local/link-local/private/bogus addresses early
 		// Allow loopback/private addresses during integration testing
-		isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+		isIntegrationTest := integrationTestEnabled()
 		if ip := net.ParseIP(node.IP); ip != nil {
 			// Always reject unspecified. For integration tests, allow loopback/link-local.
 			if ip.IsUnspecified() || (!isIntegrationTest && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())) {
@@ -2118,6 +2257,9 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 		}
 
 		node.SetHashedID()
+		if !s.eligibleForRouting(node) {
+			continue
+		}
 		knownNodes[string(node.ID)] = node
 
 		s.addNode(ctx, node)

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -241,21 +242,92 @@ func (s *Store) StoreBatchRepKeys(values []string, id string, ip string, port ui
 // GetKeysForReplication should return the keys of all data to be
 // replicated across the network. Typically all data should be
 // replicated every tReplicate seconds.
-func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to time.Time) domain.KeysWithTimestamp {
+func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to time.Time, maxKeys int) domain.KeysWithTimestamp {
 	// Important: return a non-nil empty slice on success so callers can safely treat nil as "DB error".
 	results := make([]domain.KeyWithTimestamp, 0)
-	query := `SELECT key, createdAt FROM data WHERE createdAt > ? AND createdAt < ? ORDER BY createdAt ASC`
+	// Ordering by (createdAt, key) gives us a stable cursor when we need to include all keys for the
+	// final createdAt value under a LIMIT.
+	baseQuery := `SELECT key, createdAt FROM data WHERE createdAt > ? AND createdAt < ? ORDER BY createdAt ASC, key ASC`
 
 	logtrace.Debug(ctx, "fetching keys for replication", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
 		"from_time":          from,
 		"to_time":            to,
+		"max_keys":           maxKeys,
 	})
 
-	if err := s.db.Select(&results, query, from, to); err != nil {
-		logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+	// Use context-aware DB calls so cancellation/deadlines can interrupt long scans.
+	if err := ctx.Err(); err != nil {
+		logtrace.Debug(ctx, "get keys for replication canceled", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
-			logtrace.FieldError:  err.Error()})
+			logtrace.FieldError:  err.Error(),
+		})
+		return nil
+	}
+
+	if maxKeys > 0 {
+		limitedQuery := baseQuery + " LIMIT ?"
+		if err := s.db.SelectContext(ctx, &results, limitedQuery, from, to, maxKeys); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				logtrace.Debug(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			} else {
+				logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			}
+			return nil
+		}
+
+		// If we hit the limit, include ALL keys that share the same createdAt as the last row so callers
+		// can safely advance cursors by createdAt without skipping same-timestamp keys.
+		if len(results) == maxKeys {
+			boundAt := results[len(results)-1].CreatedAt
+			boundKey := results[len(results)-1].Key
+
+			var extra []domain.KeyWithTimestamp
+			extraQuery := `SELECT key, createdAt FROM data WHERE createdAt = ? AND key > ? ORDER BY key ASC`
+			if err := s.db.SelectContext(ctx, &extra, extraQuery, boundAt, boundKey); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					logtrace.Debug(ctx, "failed to get records for replication (limit extension)", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				} else {
+					logtrace.Error(ctx, "failed to get records for replication (limit extension)", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				}
+				return nil
+			}
+			if len(extra) > 0 {
+				results = append(results, extra...)
+			}
+		}
+	} else {
+		if err := s.db.SelectContext(ctx, &results, baseQuery, from, to); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				logtrace.Debug(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			} else {
+				logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			}
+			return nil
+		}
+	}
+
+	// If the context is canceled after the DB call completes, treat it as a failure
+	// so callers don't advance replication cursors on partial/aborted work.
+	if ctx.Err() != nil {
 		return nil
 	}
 

@@ -24,7 +24,8 @@ type Store interface {
 	Delete(ctx context.Context, key []byte)
 
 	// KeysForReplication returns the keys of all data to be replicated across the network
-	GetKeysForReplication(ctx context.Context, from time.Time, to time.Time) domain.KeysWithTimestamp
+	// maxKeys <= 0 means "no limit".
+	GetKeysForReplication(ctx context.Context, from time.Time, to time.Time, maxKeys int) domain.KeysWithTimestamp
 
 	// Stats returns stats of store
 	Stats(ctx context.Context) (DatabaseStats, error)

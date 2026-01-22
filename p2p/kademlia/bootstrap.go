@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	ltc "github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 const (
@@ -22,8 +22,7 @@ const (
 
 // seed a couple of obviously bad addrs (unless in integration tests)
 func (s *DHT) skipBadBootstrapAddrs() {
-	isTest := os.Getenv("INTEGRATION_TEST") == "true"
-	if isTest {
+	if integrationTestEnabled() {
 		return
 	}
 	s.cache.Set(fmt.Sprintf("%s:%d", "127.0.0.1", s.options.Port), []byte("true"))
@@ -65,7 +64,7 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 	}
 
 	// Hygiene: reject non-routables unless in integration tests
-	isTest := os.Getenv("INTEGRATION_TEST") == "true"
+	isTest := integrationTestEnabled()
 	if parsed := net.ParseIP(ip); parsed != nil {
 		if parsed.IsUnspecified() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() {
 			return nil, errors.New("non-routable address")
@@ -111,12 +110,13 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 
 // loadBootstrapCandidatesFromChain returns active supernodes (by latest state)
 // mapped by "ip:port". No pings here.
-func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress string) (map[string]*Node, error) {
+func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress string) (map[string]*Node, map[[32]byte]struct{}, error) {
 	resp, err := s.options.LumeraClient.SuperNode().ListSuperNodes(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list supernodes: %w", err)
+		return nil, nil, fmt.Errorf("failed to list supernodes: %w", err)
 	}
 
+	activeIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
 	mapNodes := make(map[string]*Node, len(resp.Supernodes))
 	for _, sn := range resp.Supernodes {
 		if len(sn.States) == 0 {
@@ -132,6 +132,23 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 		}
 		if latestState != 1 { // SuperNodeStateActive = 1
 			continue
+		}
+
+		id := strings.TrimSpace(sn.SupernodeAccount)
+		if id == "" {
+			continue
+		}
+		h, err := utils.Blake3Hash([]byte(id))
+		if err != nil {
+			logtrace.Debug(ctx, "failed to compute Blake3 hash for supernode ID", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"supernode":          sn.SupernodeAccount,
+			})
+		} else if len(h) == 32 {
+			var key [32]byte
+			copy(key[:], h)
+			activeIDs[key] = struct{}{}
 		}
 
 		// latest IP by height
@@ -170,10 +187,10 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 			})
 			continue
 		}
-		node.ID = []byte(sn.SupernodeAccount)
+		node.ID = []byte(id)
 		mapNodes[full] = node
 	}
-	return mapNodes, nil
+	return mapNodes, activeIDs, nil
 }
 
 // upsertBootstrapNode inserts/updates replication_info for the discovered node (Active=false).
@@ -248,10 +265,15 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 	}
 	selfAddress := fmt.Sprintf("%s:%d", parseSupernodeAddress(supernodeAddr), s.options.Port)
 
-	cands, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
+	cands, activeIDs, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
 	if err != nil {
 		return err
 	}
+
+	// Update eligibility gate from chain Active state and prune any peers that slipped in via
+	// inbound traffic before the last bootstrap refresh.
+	s.setRoutingAllowlist(ctx, activeIDs)
+	s.pruneIneligibleRoutingPeers(ctx)
 
 	// Upsert candidates to replication_info
 	seen := make(map[string]struct{}, len(cands))
