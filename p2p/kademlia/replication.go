@@ -61,6 +61,39 @@ func splitReplicateKeys(keys []string) [][]string {
 	return out
 }
 
+type closestIDsProvider func(decodedKey []byte) [][]byte
+
+func assignReplicationKeysToPeers(ctx context.Context, replicationKeys domain.KeysWithTimestamp, peerStart map[string]time.Time, closestIDs closestIDsProvider) map[string][]string {
+	assignedKeys := make(map[string][]string, len(peerStart))
+	if len(replicationKeys) == 0 || len(peerStart) == 0 || closestIDs == nil {
+		return assignedKeys
+	}
+
+	for i := 0; i < len(replicationKeys); i++ {
+		decKey, err := hex.DecodeString(replicationKeys[i].Key)
+		if err != nil {
+			logtrace.Debug(ctx, "skip invalid replication key (hex decode failed)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"key":                replicationKeys[i].Key,
+			})
+			continue
+		}
+
+		for _, id := range closestIDs(decKey) {
+			idStr := string(id)
+			start, ok := peerStart[idStr]
+			if !ok {
+				continue
+			}
+			if replicationKeys[i].CreatedAt.After(start) {
+				assignedKeys[idStr] = append(assignedKeys[idStr], replicationKeys[i].Key)
+			}
+		}
+	}
+	return assignedKeys
+}
+
 // StartReplicationWorker starts replication
 func (s *DHT) StartReplicationWorker(ctx context.Context) error {
 	logtrace.Debug(ctx, "replication worker started", logtrace.Fields{logtrace.FieldModule: "p2p"})
@@ -264,21 +297,9 @@ func (s *DHT) Replicate(ctx context.Context) {
 		peerStart[string(info.ID)] = start
 	}
 
-	assignedKeys := make(map[string][]string, len(peerStart))
-	for i := 0; i < len(replicationKeys); i++ {
-		decKey, _ := hex.DecodeString(replicationKeys[i].Key)
-		closestIDs := s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self).NodeIDs()
-		for _, id := range closestIDs {
-			idStr := string(id)
-			start, ok := peerStart[idStr]
-			if !ok {
-				continue
-			}
-			if replicationKeys[i].CreatedAt.After(start) {
-				assignedKeys[idStr] = append(assignedKeys[idStr], replicationKeys[i].Key)
-			}
-		}
-	}
+	assignedKeys := assignReplicationKeysToPeers(ctx, replicationKeys, peerStart, func(decKey []byte) [][]byte {
+		return s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self).NodeIDs()
+	})
 
 	for _, info := range repInfo {
 		if !info.Active {
@@ -414,7 +435,15 @@ func (s *DHT) adjustNodeKeys(ctx context.Context, from time.Time, info domain.No
 		offNode.SetHashedID()
 
 		// get closest contacts to the key
-		key, _ := hex.DecodeString(replicationKeys[i].Key)
+		key, err := hex.DecodeString(replicationKeys[i].Key)
+		if err != nil {
+			logtrace.Debug(ctx, "skip invalid replication key (hex decode failed)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"key":                replicationKeys[i].Key,
+			})
+			continue
+		}
 		nodeList := s.ht.closestContactsWithIncludingNode(Alpha+1, key, updatedIgnored, offNode) // +1 because we want to include the node we are adjusting
 		// check if the node that is gone was supposed to hold the key
 		if !nodeList.Exists(offNode) {

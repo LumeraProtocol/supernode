@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,8 +22,7 @@ const (
 
 // seed a couple of obviously bad addrs (unless in integration tests)
 func (s *DHT) skipBadBootstrapAddrs() {
-	isTest := os.Getenv("INTEGRATION_TEST") == "true"
-	if isTest {
+	if integrationTestEnabled() {
 		return
 	}
 	s.cache.Set(fmt.Sprintf("%s:%d", "127.0.0.1", s.options.Port), []byte("true"))
@@ -66,7 +64,7 @@ func (s *DHT) parseNode(extP2P string, selfAddr string) (*Node, error) {
 	}
 
 	// Hygiene: reject non-routables unless in integration tests
-	isTest := os.Getenv("INTEGRATION_TEST") == "true"
+	isTest := integrationTestEnabled()
 	if parsed := net.ParseIP(ip); parsed != nil {
 		if parsed.IsUnspecified() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() {
 			return nil, errors.New("non-routable address")
@@ -140,7 +138,14 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 		if id == "" {
 			continue
 		}
-		if h, err := utils.Blake3Hash([]byte(id)); err == nil && len(h) == 32 {
+		h, err := utils.Blake3Hash([]byte(id))
+		if err != nil {
+			logtrace.Debug(ctx, "failed to compute Blake3 hash for supernode ID", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"supernode":          sn.SupernodeAccount,
+			})
+		} else if len(h) == 32 {
 			var key [32]byte
 			copy(key[:], h)
 			activeIDs[key] = struct{}{}

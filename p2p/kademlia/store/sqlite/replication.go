@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -255,12 +256,29 @@ func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to ti
 		"max_keys":           maxKeys,
 	})
 
+	// Use context-aware DB calls so cancellation/deadlines can interrupt long scans.
+	if err := ctx.Err(); err != nil {
+		logtrace.Debug(ctx, "get keys for replication canceled", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
+		return nil
+	}
+
 	if maxKeys > 0 {
 		limitedQuery := baseQuery + " LIMIT ?"
-		if err := s.db.Select(&results, limitedQuery, from, to, maxKeys); err != nil {
-			logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
-				logtrace.FieldModule: "p2p",
-				logtrace.FieldError:  err.Error()})
+		if err := s.db.SelectContext(ctx, &results, limitedQuery, from, to, maxKeys); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				logtrace.Debug(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			} else {
+				logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			}
 			return nil
 		}
 
@@ -272,11 +290,18 @@ func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to ti
 
 			var extra []domain.KeyWithTimestamp
 			extraQuery := `SELECT key, createdAt FROM data WHERE createdAt = ? AND key > ? ORDER BY key ASC`
-			if err := s.db.Select(&extra, extraQuery, boundAt, boundKey); err != nil {
-				logtrace.Error(ctx, "failed to get records for replication (limit extension)", logtrace.Fields{
-					logtrace.FieldModule: "p2p",
-					logtrace.FieldError:  err.Error(),
-				})
+			if err := s.db.SelectContext(ctx, &extra, extraQuery, boundAt, boundKey); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					logtrace.Debug(ctx, "failed to get records for replication (limit extension)", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				} else {
+					logtrace.Error(ctx, "failed to get records for replication (limit extension)", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				}
 				return nil
 			}
 			if len(extra) > 0 {
@@ -284,19 +309,25 @@ func (s *Store) GetKeysForReplication(ctx context.Context, from time.Time, to ti
 			}
 		}
 	} else {
-		if err := s.db.Select(&results, baseQuery, from, to); err != nil {
-			logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
-				logtrace.FieldModule: "p2p",
-				logtrace.FieldError:  err.Error()})
+		if err := s.db.SelectContext(ctx, &results, baseQuery, from, to); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				logtrace.Debug(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			} else {
+				logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					logtrace.FieldError:  err.Error(),
+				})
+			}
 			return nil
 		}
 	}
 
-	if err := ctx.Err(); err != nil {
-		logtrace.Error(ctx, "failed to get records for replication", logtrace.Fields{
-			logtrace.FieldModule: "p2p",
-			logtrace.FieldError:  err.Error(),
-		})
+	// If the context is canceled after the DB call completes, treat it as a failure
+	// so callers don't advance replication cursors on partial/aborted work.
+	if ctx.Err() != nil {
 		return nil
 	}
 

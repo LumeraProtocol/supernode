@@ -53,6 +53,8 @@ func (s *DHT) checkNodeActivity(ctx context.Context) {
 
 					// Chain-state gating: do not spend cycles pinging or promoting peers that
 					// are not eligible to participate in routing (e.g., postponed).
+					// Note: eligibility changes asynchronously on the bootstrap refresh cadence;
+					// replication_info.Active is therefore eventually consistent with chain state.
 					if !s.eligibleForRouting(node) {
 						if info.Active {
 							s.removeNode(ctx, node)

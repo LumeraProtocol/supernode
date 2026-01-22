@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -139,14 +138,20 @@ func (s *DHT) setRoutingAllowlist(ctx context.Context, allow map[[32]byte]struct
 		return
 	}
 	// Integration tests may use synthetic bootstrap sets; do not enforce chain-state gating.
-	if os.Getenv("INTEGRATION_TEST") == "true" {
+	if integrationTestEnabled() {
 		return
 	}
 	// Avoid accidentally locking ourselves out due to transient chain issues.
 	if len(allow) == 0 {
-		logtrace.Warn(ctx, "routing allowlist update skipped (empty)", logtrace.Fields{
-			logtrace.FieldModule: "p2p",
-		})
+		if !s.routingAllowReady.Load() {
+			logtrace.Debug(ctx, "routing allowlist from chain is empty; leaving gating disabled (bootstrap)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		} else {
+			logtrace.Warn(ctx, "routing allowlist update skipped: chain returned zero active supernodes; retaining previous allowlist", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		}
 		return
 	}
 
@@ -168,7 +173,7 @@ func (s *DHT) eligibleForRouting(n *Node) bool {
 		return false
 	}
 	// In integration tests allow everything; chain state gating is not stable/available there.
-	if os.Getenv("INTEGRATION_TEST") == "true" {
+	if integrationTestEnabled() {
 		return true
 	}
 	// If allowlist isn't ready (or was never populated), do not gate to avoid blocking bootstrap.
@@ -197,7 +202,7 @@ func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
 		return nodes
 	}
 	// Fast path: not enforcing (integration tests / not ready / empty list)
-	if os.Getenv("INTEGRATION_TEST") == "true" || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+	if integrationTestEnabled() || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
 		return nodes
 	}
 
@@ -217,7 +222,7 @@ func (s *DHT) pruneIneligibleRoutingPeers(ctx context.Context) {
 	if s == nil || s.ht == nil {
 		return
 	}
-	if os.Getenv("INTEGRATION_TEST") == "true" || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+	if integrationTestEnabled() || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
 		return
 	}
 
@@ -626,7 +631,7 @@ func (s *DHT) newMessage(messageType int, receiver *Node, data interface{}) *Mes
 	// If fallback produced an invalid address (e.g., 0.0.0.0), choose a safe sender IP
 	if ip := net.ParseIP(hostIP); ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() {
 		// Prefer valid self IP; in integration tests, allow loopback and private
-		isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+		isIntegrationTest := integrationTestEnabled()
 		if sip := net.ParseIP(s.ht.self.IP); sip != nil {
 			if !sip.IsUnspecified() && (isIntegrationTest || (!sip.IsLoopback() && !sip.IsPrivate())) {
 				hostIP = s.ht.self.IP
@@ -1985,7 +1990,7 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 		return nil
 	}
 	// Allow localhost for integration testing
-	isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+	isIntegrationTest := integrationTestEnabled()
 	if node.IP == "" || node.IP == "0.0.0.0" || (!isIntegrationTest && node.IP == "127.0.0.1") {
 		logtrace.Debug(ctx, "Rejecting node: invalid IP", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
@@ -2229,7 +2234,7 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 
 		// Reject bind/local/link-local/private/bogus addresses early
 		// Allow loopback/private addresses during integration testing
-		isIntegrationTest := os.Getenv("INTEGRATION_TEST") == "true"
+		isIntegrationTest := integrationTestEnabled()
 		if ip := net.ParseIP(node.IP); ip != nil {
 			// Always reject unspecified. For integration tests, allow loopback/link-local.
 			if ip.IsUnspecified() || (!isIntegrationTest && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())) {

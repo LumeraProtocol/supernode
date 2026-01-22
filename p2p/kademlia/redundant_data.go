@@ -79,7 +79,15 @@ func (s *DHT) cleanupRedundantDataWorker(ctx context.Context) {
 	closestContactsMap := make(map[string][][]byte)
 
 	for i := 0; i < len(replicationKeys); i++ {
-		decKey, _ := hex.DecodeString(replicationKeys[i].Key)
+		decKey, err := hex.DecodeString(replicationKeys[i].Key)
+		if err != nil {
+			logtrace.Debug(ctx, "skip invalid replication key (hex decode failed)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  err.Error(),
+				"key":                replicationKeys[i].Key,
+			})
+			continue
+		}
 		nodes := s.ht.closestContactsWithIncludingNode(Alpha, decKey, ignores, self)
 		closestContactsMap[replicationKeys[i].Key] = nodes.NodeIDs()
 	}
