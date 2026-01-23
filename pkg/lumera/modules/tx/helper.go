@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -18,6 +19,8 @@ type TxHelper struct {
 	authmod auth.Module
 	txmod   Module
 	config  *TxConfig
+
+	mu sync.Mutex
 
 	accountNumber uint64
 	nextSequence  uint64
@@ -77,6 +80,9 @@ func (h *TxHelper) ExecuteTransaction(
 	msgCreator func(creator string) (types.Msg, error),
 ) (*sdktx.BroadcastTxResponse, error) {
 
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	// --- Step 1: Resolve creator address ---
 	key, err := h.config.Keyring.Key(h.config.KeyName)
 	if err != nil {
@@ -94,6 +100,9 @@ func (h *TxHelper) ExecuteTransaction(
 		accInfoRes, err := h.authmod.AccountInfoByAddress(ctx, creator)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch initial account info: %w", err)
+		}
+		if accInfoRes == nil || accInfoRes.Info == nil {
+			return nil, fmt.Errorf("empty account info response for creator %s", creator)
 		}
 
 		h.accountNumber = accInfoRes.Info.AccountNumber
@@ -129,18 +138,27 @@ func (h *TxHelper) ExecuteTransaction(
 
 		// Check if this is a sequence mismatch error
 		if !isSequenceMismatch(err) {
-			return nil, err // unrelated error → bail out
+			return resp, err // unrelated error → bail out (preserve response for debugging)
 		}
 
 		// If retry unavailable, bubble error
 		if attempt == maxAttempts {
-			return nil, fmt.Errorf("sequence mismatch after retry: %w", err)
+			return resp, fmt.Errorf("sequence mismatch after retry: %w", err)
 		}
 
-		// --- Retry logic: resync from chain ---
+		// --- Retry logic: prefer expected sequence from the error ---
+		if expectedSeq, ok := parseExpectedSequence(err); ok {
+			h.nextSequence = expectedSeq
+			continue
+		}
+
+		// Fallback: resync from chain state.
 		accInfoRes, err2 := h.authmod.AccountInfoByAddress(ctx, creator)
 		if err2 != nil {
-			return nil, fmt.Errorf("failed to resync account info after mismatch: %w", err2)
+			return resp, fmt.Errorf("failed to resync account info after mismatch: %w", err2)
+		}
+		if accInfoRes == nil || accInfoRes.Info == nil {
+			return resp, fmt.Errorf("empty account info response for creator %s after mismatch", creator)
 		}
 
 		h.accountNumber = accInfoRes.Info.AccountNumber
@@ -155,12 +173,30 @@ func isSequenceMismatch(err error) bool {
 		return false
 	}
 
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 
 	return strings.Contains(msg, "incorrect account sequence") ||
 		strings.Contains(msg, "account sequence mismatch") ||
-		(strings.Contains(msg, "expected") && strings.Contains(msg, "got"))
+		strings.Contains(msg, "wrong sequence")
+}
 
+func parseExpectedSequence(err error) (uint64, bool) {
+	if err == nil {
+		return 0, false
+	}
+
+	msg := strings.ToLower(err.Error())
+	idx := strings.Index(msg, "expected ")
+	if idx == -1 {
+		return 0, false
+	}
+
+	var expected, got uint64
+	if _, scanErr := fmt.Sscanf(msg[idx:], "expected %d, got %d", &expected, &got); scanErr == nil {
+		return expected, true
+	}
+
+	return 0, false
 }
 
 // ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info
@@ -199,6 +235,9 @@ func (h *TxHelper) GetAccountInfo(ctx context.Context) (*authtypes.BaseAccount, 
 }
 
 func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.config == nil {
 		h.config = &TxConfig{}
 	}
