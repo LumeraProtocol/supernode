@@ -48,7 +48,7 @@ type Client interface {
 	// and returns CascadeMetadata (with signatures) along with price and expiration time.
 	// Internally derives ic (random in [1..100]), max (from chain params), price (GetActionFee),
 	// and expiration (params duration + 1h buffer). signerAddr overrides the bech32 signer
-	// used in ADR-36 sign bytes; pass empty string to use the keyring address.
+	// used for key selection (e.g. ICA owner key); pass empty string to use the client signer.
 	BuildCascadeMetadataFromFile(ctx context.Context, filePath string, public bool, signerAddr string) (actiontypes.CascadeMetadata, string, string, error)
 	// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key; returns base64 signature.
 	GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error)
@@ -292,7 +292,7 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	rnd, _ := crand.Int(crand.Reader, big.NewInt(100))
 	ic := uint32(rnd.Int64() + 1) // 1..100
 
-	// Create signatures from the layout struct using ADR-36 scheme (JS compatible).
+	// Create signatures from the layout struct using raw signing.
 	if signerAddr == "" {
 		signerAddr = c.signerAddr
 	}
@@ -309,11 +309,10 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 			event.KeyMessage:       "metadata signed with ICA signer address",
 		}))
 	}
-	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyringADR36WithSigner(
+	indexSignatureFormat, _, err := cascadekit.CreateSignaturesWithKeyring(
 		layout,
 		c.keyring,
 		keyName,
-		signerAddr,
 		ic,
 		max,
 	)
@@ -370,15 +369,14 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFileDeprecated(ctx context
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
-// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs it with the configured key
-// using the ADR-36 scheme, matching Keplr's signArbitrary(dataHash) behavior.
-// Returns base64-encoded signature suitable for StartCascade.
+// GenerateStartCascadeSignatureFromFile computes blake3(file) and signs the base64 hash string
+// using raw signing (pure Go internal format). Returns base64-encoded signature suitable for StartCascade.
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFile(ctx context.Context, filePath string) (string, error) {
 	return c.GenerateStartCascadeSignatureFromFileWithSigner(ctx, filePath, "")
 }
 
 // GenerateStartCascadeSignatureFromFileWithSigner computes blake3(file) and signs it with the configured key,
-// using the provided bech32 signer address for ADR-36 sign bytes.
+// using signerAddr for key selection (e.g. ICA owner key).
 func (c *ClientImpl) GenerateStartCascadeSignatureFromFileWithSigner(ctx context.Context, filePath string, signerAddr string) (string, error) {
 	// Compute blake3(file), encode as base64 string
 	h, err := utils.Blake3HashFile(filePath)
@@ -387,7 +385,6 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFileWithSigner(ctx context
 	}
 	dataHashB64 := base64.StdEncoding.EncodeToString(h)
 
-	// Sign the dataHashB64 string using ADR-36 (same as JS / Keplr).
 	if signerAddr == "" {
 		signerAddr = c.signerAddr
 	}
@@ -400,17 +397,12 @@ func (c *ClientImpl) GenerateStartCascadeSignatureFromFileWithSigner(ctx context
 		logtrace.Info(ctx, "auth: ICA start signature", logFields)
 		c.logger.Info(ctx, "Signing cascade start with ICA signer", "signer", signerAddr, "key_name", keyName)
 	}
-	sigB64, err := cascadekit.SignADR36String(
-		c.keyring,
-		keyName,
-		signerAddr, // bech32 address for ADR-36 sign bytes
-		dataHashB64,
-	)
+	sig, err := snkeyring.SignBytes(c.keyring, keyName, []byte(dataHashB64))
 	if err != nil {
-		return "", fmt.Errorf("sign adr36 hash string: %w", err)
+		return "", fmt.Errorf("sign hash string: %w", err)
 	}
 
-	return sigB64, nil
+	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
 func (c *ClientImpl) resolveSigningKeyName(signerAddr string) (string, bool) {
