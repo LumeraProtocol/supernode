@@ -9,7 +9,8 @@ const (
 )
 
 const (
-	CurrentWindowPollInterval = 2 * time.Second
+	// Polling too frequently can overload chain gRPC; the audit window cadence is much slower.
+	CurrentWindowPollInterval = 5 * time.Minute
 
 	ProbeTimeout          = 5 * time.Second
 	MaxConcurrentProbes   = 10

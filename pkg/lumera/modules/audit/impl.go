@@ -40,6 +40,7 @@ func (m *module) AssignedTargets(ctx context.Context, supernodeAccount string, w
 	resp, err := m.client.AssignedTargets(ctx, &types.QueryAssignedTargetsRequest{
 		SupernodeAccount: supernodeAccount,
 		WindowId:         windowID,
+		FilterByWindowId: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query assigned targets: %w", err)

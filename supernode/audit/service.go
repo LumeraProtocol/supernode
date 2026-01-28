@@ -133,7 +133,7 @@ func (s *Service) tick(ctx context.Context) {
 	}
 
 	height, heightOK := latestBlockHeight(ctx, s.lumeraClient)
-	if heightOK && height > window.GetGraceEndHeight() {
+	if heightOK && height > window.GetWindowEndHeight() {
 		if found {
 			_ = s.store.UpsertSubmission(SubmissionRecord{
 				WindowID:         windowID,
@@ -142,7 +142,7 @@ func (s *Service) tick(ctx context.Context) {
 				TxHash:           sub.TxHash,
 				Status:           SubmissionStatusFailed,
 				AttemptCount:     sub.AttemptCount,
-				LastError:        "window grace period elapsed",
+				LastError:        "window ended",
 				UpdatedAtUnix:    time.Now().Unix(),
 			})
 		}
@@ -152,9 +152,9 @@ func (s *Service) tick(ctx context.Context) {
 	assigned, err := s.lumeraClient.Audit().AssignedTargets(ctx, s.selfIdentity, windowID)
 	if err != nil || assigned == nil {
 		logtrace.Debug(ctx, "Audit: failed to query assigned targets", logtrace.Fields{
-			"window_id":          windowID,
-			"supernode_account":  s.selfIdentity,
-			logtrace.FieldError:  errString(err),
+			"window_id":         windowID,
+			"supernode_account": s.selfIdentity,
+			logtrace.FieldError: errString(err),
 		})
 		return
 	}
@@ -162,7 +162,7 @@ func (s *Service) tick(ctx context.Context) {
 	_ = s.store.UpsertWindow(WindowRecord{
 		WindowID:             windowID,
 		WindowStartHeight:    assigned.GetWindowStartHeight(),
-		KWindow:              assigned.GetKWindow(),
+		KWindow:              uint32(len(assigned.GetTargetSupernodeAccounts())),
 		RequiredOpenPorts:    assigned.GetRequiredOpenPorts(),
 		TargetSupernodeAccts: assigned.GetTargetSupernodeAccounts(),
 		FetchedAtUnix:        time.Now().Unix(),
@@ -172,9 +172,9 @@ func (s *Service) tick(ctx context.Context) {
 	peerObs := s.buildPeerObservations(ctx, assigned.GetTargetSupernodeAccounts(), assigned.GetRequiredOpenPorts())
 
 	reportJSON, _ := json.Marshal(struct {
-		SupernodeAccount string                         `json:"supernode_account"`
-		WindowID         uint64                         `json:"window_id"`
-		SelfReport       audittypes.AuditSelfReport     `json:"self_report"`
+		SupernodeAccount string                             `json:"supernode_account"`
+		WindowID         uint64                             `json:"window_id"`
+		SelfReport       audittypes.AuditSelfReport         `json:"self_report"`
 		PeerObservations []*audittypes.AuditPeerObservation `json:"peer_observations"`
 	}{
 		SupernodeAccount: s.selfIdentity,
@@ -322,12 +322,13 @@ func (s *Service) buildPeerObservations(ctx context.Context, targetAccounts []st
 		}()
 	}
 
+collectResults:
 	for remaining := spawned; remaining > 0; remaining-- {
 		select {
 		case r := <-results:
 			out[r.i] = r.obs
 		case <-ctx.Done():
-			break
+			break collectResults
 		}
 	}
 

@@ -24,7 +24,7 @@ import (
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
-	supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
+	// supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
@@ -156,17 +156,17 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-		metricsCollector := supernodeMetrics.NewCollector(
-			statusSvc,
-			lumeraClient,
-			appConfig.SupernodeConfig.Identity,
-			Version,
-			kr,
-			appConfig.SupernodeConfig.Port,
-			appConfig.P2PConfig.Port,
-			appConfig.SupernodeConfig.GatewayPort,
-		)
-		logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
+		// metricsCollector := supernodeMetrics.NewCollector(
+		// 	statusSvc,
+		// 	lumeraClient,
+		// 	appConfig.SupernodeConfig.Identity,
+		// 	Version,
+		// 	kr,
+		// 	appConfig.SupernodeConfig.Port,
+		// 	appConfig.P2PConfig.Port,
+		// 	appConfig.SupernodeConfig.GatewayPort,
+		// )
+		// logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
 
 		var auditSvc service
 		if svc, err := auditService.NewService(
@@ -215,7 +215,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() {
-			services := []service{grpcServer, cService, p2pService, gatewayServer, metricsCollector}
+			services := []service{grpcServer, cService, p2pService, gatewayServer}
 			if auditSvc != nil {
 				services = append(services, auditSvc)
 			}
