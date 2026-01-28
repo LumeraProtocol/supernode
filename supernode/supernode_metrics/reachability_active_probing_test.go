@@ -15,6 +15,8 @@ import (
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
+	auditmsg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
@@ -405,6 +407,8 @@ type fakeLumeraClient struct {
 func (c *fakeLumeraClient) Auth() auth.Module                  { return nil }
 func (c *fakeLumeraClient) Action() action.Module              { return nil }
 func (c *fakeLumeraClient) ActionMsg() action_msg.Module       { return nil }
+func (c *fakeLumeraClient) Audit() auditmod.Module             { return nil }
+func (c *fakeLumeraClient) AuditMsg() auditmsg.Module          { return nil }
 func (c *fakeLumeraClient) SuperNode() supernode.Module        { return c.snModule }
 func (c *fakeLumeraClient) SuperNodeMsg() supernode_msg.Module { return nil }
 func (c *fakeLumeraClient) Bank() bank.Module                  { return nil }

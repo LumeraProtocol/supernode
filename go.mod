@@ -7,9 +7,7 @@ replace (
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	github.com/lyft/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v1.3.0
 	nhooyr.io/websocket => github.com/coder/websocket v1.8.7
-// Local development - uncomment these for local testing
-// Comment these lines before releasing
-//github.com/LumeraProtocol/lumera => ../lumera
+	// github.com/LumeraProtocol/lumera => ../lumera
 )
 
 require (
