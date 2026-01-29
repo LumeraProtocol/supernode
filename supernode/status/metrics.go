@@ -74,7 +74,7 @@ type StorageInfo struct {
 // CollectStorageMetrics gathers storage usage information for specified paths
 func (m *MetricsCollector) CollectStorageMetrics(ctx context.Context, paths []string) []StorageInfo {
 	if len(paths) == 0 {
-		paths = []string{"/"}
+		return nil
 	}
 	// Note: callers may request multiple paths, but higher-level services report
 	// only the first volume to keep node metrics stable and comparable across

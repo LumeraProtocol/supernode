@@ -31,7 +31,23 @@ type SupernodeStatusService struct {
 
 // NewSupernodeStatusService creates a new supernode status service instance
 func NewSupernodeStatusService(p2pService p2p.Client, lumeraClient lumera.Client, cfg *config.Config, tracker task.Tracker) *SupernodeStatusService {
-	return &SupernodeStatusService{metrics: NewMetricsCollector(), storagePaths: []string{"/"}, startTime: time.Now(), p2pService: p2pService, lumeraClient: lumeraClient, config: cfg, tracker: tracker}
+	storagePaths := []string{}
+	if cfg != nil && cfg.BaseDir != "" {
+		// disk.Usage reports filesystem totals for the underlying mount. Using the
+		// base directory ensures we measure the volume where the supernode stores
+		// its data (e.g. /opt when --basedir is /opt/lumera/.supernode).
+		storagePaths = []string{cfg.BaseDir}
+	}
+
+	return &SupernodeStatusService{
+		metrics:      NewMetricsCollector(),
+		storagePaths: storagePaths,
+		startTime:    time.Now(),
+		p2pService:   p2pService,
+		lumeraClient: lumeraClient,
+		config:       cfg,
+		tracker:      tracker,
+	}
 }
 
 // GetChainID returns the chain ID from the configuration
@@ -87,8 +103,9 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 	if storageInfos := s.metrics.CollectStorageMetrics(ctx, s.storagePaths); len(storageInfos) > 0 {
 		// Rationale: report only the first volume everywhere (status + on-chain
 		// metrics) to avoid ambiguity across environments where multiple mounts
-		// exist (e.g. container overlay + host filesystem). The configured default
-		// is "/" so this remains stable.
+		// exist (e.g. container overlay + host filesystem). The *selection* of that
+		// first volume is based on the configured base directory so eligibility
+		// checks reflect where supernode data actually lives.
 		si := storageInfos[0]
 		resp.Resources.StorageVolumes = append(resp.Resources.StorageVolumes, &pb.StatusResponse_Resources_Storage{
 			Path:           si.Path,

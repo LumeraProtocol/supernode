@@ -54,6 +54,8 @@ message StatusResponse {
     CPU cpu = 1;
     Memory memory = 2;
     repeated Storage storage_volumes = 3;
+    // Note: currently only the first entry is populated; it reports the filesystem
+    // that contains the configured base directory (--basedir).
     string hardware_summary = 4;  // Formatted hardware summary (e.g., "8 cores / 32GB RAM")
   }
   
