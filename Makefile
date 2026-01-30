@@ -72,8 +72,8 @@ release/sncli: $(SNCLI_SRC) cmd/sncli/go.sum
 	${GO} build \
 		-trimpath \
 		-ldflags="-s -w $(LDFLAGS)" \
-		-o $(RELEASE_DIR)/sncli && \
-	chmod +x $(RELEASE_DIR)/sncli && \
+		-o ../../$(RELEASE_DIR)/sncli && \
+	chmod +x ../../$(RELEASE_DIR)/sncli && \
 	echo "sncli built successfully at $(RELEASE_DIR)/sncli"
 
 build-sn-manager:
@@ -204,6 +204,5 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && ${GO} test -tags=system_test -v -run '^TestSNManager' .
-
 
 
