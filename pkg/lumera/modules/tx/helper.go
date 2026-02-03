@@ -5,13 +5,32 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
+
+const (
+	sequenceMismatchMaxAttempts = 3
+	sequenceMismatchRetryStep   = 500 * time.Millisecond
+)
+
+func sleepSequenceMismatchBackoff(ctx context.Context, attempt int) {
+	timer := time.NewTimer(time.Duration(attempt) * sequenceMismatchRetryStep)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		return
+	}
+}
 
 // TxHelper provides a simplified interface for modules to handle transactions
 // This helper encapsulates common transaction patterns and reduces boilerplate
@@ -83,7 +102,6 @@ func (h *TxHelper) ExecuteTransaction(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// --- Step 1: Resolve creator address ---
 	key, err := h.config.Keyring.Key(h.config.KeyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key from keyring: %w", err)
@@ -95,11 +113,15 @@ func (h *TxHelper) ExecuteTransaction(
 	}
 	creator := addr.String()
 
-	// --- Step 2: Local sequence initialization (run once) ---
+	msg, err := msgCreator(creator)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create message: %w", err)
+	}
+
 	if !h.seqInit {
 		accInfoRes, err := h.authmod.AccountInfoByAddress(ctx, creator)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch initial account info: %w", err)
+			return nil, fmt.Errorf("failed to fetch account info: %w", err)
 		}
 		if accInfoRes == nil || accInfoRes.Info == nil {
 			return nil, fmt.Errorf("empty account info response for creator %s", creator)
@@ -110,28 +132,18 @@ func (h *TxHelper) ExecuteTransaction(
 		h.seqInit = true
 	}
 
-	// --- Step 3: Create message ---
-	msg, err := msgCreator(creator)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create message: %w", err)
-	}
+	for attempt := 1; attempt <= sequenceMismatchMaxAttempts; attempt++ {
+		usedSequence := h.nextSequence
 
-	// --- Step 4: Attempt tx (with 1 retry on sequence mismatch) ---
-	const maxAttempts = 2
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-
-		// Build a local accountInfo using in-memory sequence
-		localAcc := &authtypes.BaseAccount{
+		accountInfo := &authtypes.BaseAccount{
 			AccountNumber: h.accountNumber,
-			Sequence:      h.nextSequence,
+			Sequence:      usedSequence,
 			Address:       creator,
 		}
 
 		// Run full tx flow
-		resp, err := h.ExecuteTransactionWithMsgs(ctx, []types.Msg{msg}, localAcc)
+		resp, err := h.ExecuteTransactionWithMsgs(ctx, []types.Msg{msg}, accountInfo)
 		if err == nil {
-			// SUCCESS → bump local sequence and return
 			h.nextSequence++
 			return resp, nil
 		}
@@ -141,28 +153,35 @@ func (h *TxHelper) ExecuteTransaction(
 			return resp, err // unrelated error → bail out (preserve response for debugging)
 		}
 
-		// If retry unavailable, bubble error
-		if attempt == maxAttempts {
-			return resp, fmt.Errorf("sequence mismatch after retry: %w", err)
-		}
-
-		// --- Retry logic: prefer expected sequence from the error ---
-		if expectedSeq, ok := parseExpectedSequence(err); ok {
+		expectedSeq, ok := parseExpectedSequence(err)
+		if ok && expectedSeq > h.nextSequence {
 			h.nextSequence = expectedSeq
-			continue
+		} else if !ok {
+			// Best-effort resync if the error format didn't contain expected/got.
+			// Never decrement local state.
+			accInfoRes, err2 := h.authmod.AccountInfoByAddress(ctx, creator)
+			if err2 == nil && accInfoRes != nil && accInfoRes.Info != nil {
+				h.accountNumber = accInfoRes.Info.AccountNumber
+				h.nextSequence = max(h.nextSequence, accInfoRes.Info.Sequence)
+			}
 		}
 
-		// Fallback: resync from chain state.
-		accInfoRes, err2 := h.authmod.AccountInfoByAddress(ctx, creator)
-		if err2 != nil {
-			return resp, fmt.Errorf("failed to resync account info after mismatch: %w", err2)
-		}
-		if accInfoRes == nil || accInfoRes.Info == nil {
-			return resp, fmt.Errorf("empty account info response for creator %s after mismatch", creator)
+		// If retry unavailable, bubble error
+		if attempt == sequenceMismatchMaxAttempts {
+			fields := logtrace.Fields{
+				"attempt":       attempt,
+				"used_sequence": usedSequence,
+				"error":         err.Error(),
+			}
+			if ok {
+				fields["expected_sequence"] = expectedSeq
+			}
+			logtrace.Warn(ctx, "transaction sequence mismatch", fields)
+
+			return resp, fmt.Errorf("sequence mismatch after retry (%d attempts): %w", sequenceMismatchMaxAttempts, err)
 		}
 
-		h.accountNumber = accInfoRes.Info.AccountNumber
-		h.nextSequence = accInfoRes.Info.Sequence
+		sleepSequenceMismatchBackoff(ctx, attempt)
 	}
 
 	return nil, fmt.Errorf("unreachable state in ExecuteTransaction")
@@ -242,19 +261,14 @@ func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
 		h.config = &TxConfig{}
 	}
 
-	keyChanged := false
-
-	if config.Keyring != nil && config.Keyring != h.config.Keyring {
-		h.config.Keyring = config.Keyring
-		keyChanged = true
-	}
-	if config.KeyName != "" && config.KeyName != h.config.KeyName {
-		h.config.KeyName = config.KeyName
-		keyChanged = true
-	}
-
 	if config.ChainID != "" {
 		h.config.ChainID = config.ChainID
+	}
+	if config.Keyring != nil {
+		h.config.Keyring = config.Keyring
+	}
+	if config.KeyName != "" {
+		h.config.KeyName = config.KeyName
 	}
 	if config.GasLimit != 0 {
 		h.config.GasLimit = config.GasLimit
@@ -270,13 +284,6 @@ func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
 	}
 	if config.GasPrice != "" {
 		h.config.GasPrice = config.GasPrice
-	}
-
-	// If key has changed, reset sequence tracking so we re-init on next tx
-	if keyChanged {
-		h.seqInit = false
-		h.accountNumber = 0
-		h.nextSequence = 0
 	}
 }
 
