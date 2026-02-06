@@ -4,10 +4,13 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/lumera/x/action/v1/types"
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	bankmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
@@ -29,6 +32,8 @@ type MockLumeraClient struct {
 	authMod         *MockAuthModule
 	actionMod       *MockActionModule
 	actionMsgMod    *MockActionMsgModule
+	auditMod        *MockAuditModule
+	auditMsgMod     *MockAuditMsgModule
 	bankMod         *MockBankModule
 	supernodeMod    *MockSupernodeModule
 	supernodeMsgMod supernode_msg.Module
@@ -42,6 +47,8 @@ type MockLumeraClient struct {
 func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client, error) {
 	actionMod := &MockActionModule{}
 	actionMsgMod := &MockActionMsgModule{}
+	auditMod := &MockAuditModule{}
+	auditMsgMod := &MockAuditMsgModule{}
 	bankMod := &MockBankModule{}
 	supernodeMod := &MockSupernodeModule{addresses: addresses}
 	supernodeMsgMod := &MockSupernodeMsgModule{}
@@ -52,6 +59,8 @@ func NewMockLumeraClient(kr keyring.Keyring, addresses []string) (lumera.Client,
 		authMod:         &MockAuthModule{},
 		actionMod:       actionMod,
 		actionMsgMod:    actionMsgMod,
+		auditMod:        auditMod,
+		auditMsgMod:     auditMsgMod,
 		bankMod:         bankMod,
 		supernodeMod:    supernodeMod,
 		supernodeMsgMod: supernodeMsgMod,
@@ -75,6 +84,14 @@ func (c *MockLumeraClient) Action() action.Module {
 // ActionMsg returns the ActionMsg module client
 func (c *MockLumeraClient) ActionMsg() action_msg.Module {
 	return c.actionMsgMod
+}
+
+func (c *MockLumeraClient) Audit() audit.Module {
+	return c.auditMod
+}
+
+func (c *MockLumeraClient) AuditMsg() audit_msg.Module {
+	return c.auditMsgMod
 }
 
 // Bank returns the Bank module client
@@ -172,6 +189,42 @@ func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionI
 func (m *MockActionMsgModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.SimulateResponse, error) {
 	// Mock implementation returns empty simulation response
 	return &sdktx.SimulateResponse{}, nil
+}
+
+type MockAuditModule struct{}
+
+func (m *MockAuditModule) GetParams(ctx context.Context) (*audittypes.QueryParamsResponse, error) {
+	return &audittypes.QueryParamsResponse{}, nil
+}
+
+func (m *MockAuditModule) GetEpochAnchor(ctx context.Context, epochID uint64) (*audittypes.QueryEpochAnchorResponse, error) {
+	return &audittypes.QueryEpochAnchorResponse{}, nil
+}
+
+func (m *MockAuditModule) GetCurrentEpochAnchor(ctx context.Context) (*audittypes.QueryCurrentEpochAnchorResponse, error) {
+	return &audittypes.QueryCurrentEpochAnchorResponse{}, nil
+}
+
+func (m *MockAuditModule) GetCurrentEpoch(ctx context.Context) (*audittypes.QueryCurrentEpochResponse, error) {
+	return &audittypes.QueryCurrentEpochResponse{}, nil
+}
+
+func (m *MockAuditModule) GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*audittypes.QueryAssignedTargetsResponse, error) {
+	return &audittypes.QueryAssignedTargetsResponse{}, nil
+}
+
+func (m *MockAuditModule) GetAuditReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryAuditReportResponse, error) {
+	return &audittypes.QueryAuditReportResponse{}, nil
+}
+
+type MockAuditMsgModule struct{}
+
+func (m *MockAuditMsgModule) SubmitEvidence(ctx context.Context, subjectAddress string, evidenceType audittypes.EvidenceType, actionID string, metadataJSON string) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+func (m *MockAuditMsgModule) SubmitAuditReport(ctx context.Context, epochID uint64, peerObservations []*audittypes.AuditPeerObservation) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // MockSupernodeModule implements the supernode.Module interface for testing

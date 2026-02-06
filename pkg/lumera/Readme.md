@@ -5,6 +5,7 @@ A minimal guide to the Lumera client
 What it is
 
 - Lightweight client over gRPC with small modules: `Auth`, `Action`, `ActionMsg`, `SuperNode`, `Tx`, `Node`.
+- Also includes `Audit` (queries) and `AuditMsg` (tx submission) for `x/audit`.
 - Shared tx pipeline for building, simulating, signing, and broadcasting messages.
 
 Create a client
@@ -24,6 +25,8 @@ Using modules
 
 - `cli.Action()` – query actions (GetAction, GetActionFee, GetParams)
 - `cli.ActionMsg()` – send action messages (see below)
+- `cli.Audit()` – query `x/audit` (params/epochs/anchors/assignments/reports)
+- `cli.AuditMsg()` – submit `x/audit` txs (`MsgSubmitAuditReport`, `MsgSubmitEvidence`)
 - `cli.Auth()` – accounts/verify
 - `cli.SuperNode()` – supernode queries
 - `cli.Tx()` – tx internals (shared by helpers)

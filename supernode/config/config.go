@@ -47,12 +47,19 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 }
 
+type StorageChallengeConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	PollIntervalMs uint64 `yaml:"poll_interval_ms,omitempty"`
+	SubmitEvidence bool   `yaml:"submit_evidence,omitempty"`
+}
+
 type Config struct {
-	SupernodeConfig    `yaml:"supernode"`
-	KeyringConfig      `yaml:"keyring"`
-	P2PConfig          `yaml:"p2p"`
-	LumeraClientConfig `yaml:"lumera"`
-	RaptorQConfig      `yaml:"raptorq"`
+	SupernodeConfig        `yaml:"supernode"`
+	KeyringConfig          `yaml:"keyring"`
+	P2PConfig              `yaml:"p2p"`
+	LumeraClientConfig     `yaml:"lumera"`
+	RaptorQConfig          `yaml:"raptorq"`
+	StorageChallengeConfig `yaml:"storage_challenge"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`
@@ -141,6 +148,11 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 
 	// Set the base directory
 	config.BaseDir = baseDir
+
+	// Apply storage challenge defaults.
+	if config.StorageChallengeConfig.PollIntervalMs == 0 {
+		config.StorageChallengeConfig.PollIntervalMs = DefaultStorageChallengePollIntervalMs
+	}
 
 	// Create directories
 	if err := config.EnsureDirs(); err != nil {

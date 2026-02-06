@@ -18,15 +18,21 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	grpcserver "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/server"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
+	auditReporterService "github.com/LumeraProtocol/supernode/v2/supernode/audit_reporter"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
-	supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
+	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
+	// Legacy supernode metrics reporter (MsgReportSupernodeMetrics) has been superseded by
+	// epoch-scoped audit reporting in `x/audit`.
+	// supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
+	storageChallengeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/storage_challenge"
 	"github.com/LumeraProtocol/supernode/v2/supernode/verifier"
 
 	cKeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -81,8 +87,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		// Reachability evidence store (used for open_ports inference).
 		reachability.SetDefaultStore(reachability.NewStore())
-		// Epoch tracker (Option A): mark per-service inbound evidence per chain epoch.
-		// The current epoch ID is set periodically by the metrics collector.
+		// Epoch tracker: mark per-service inbound evidence per chain epoch (best-effort).
+		// If no component sets the current epoch ID, reachability evidence is still recorded
+		// but is not bucketed by epoch.
 		reachability.SetDefaultEpochTracker(reachability.NewEpochTracker(8)) // W+2 with W=6 default
 
 		// Verify config matches chain registration before starting services
@@ -155,17 +162,56 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-		metricsCollector := supernodeMetrics.NewCollector(
-			statusSvc,
-			lumeraClient,
+		auditReporter, err := auditReporterService.NewService(
 			appConfig.SupernodeConfig.Identity,
-			Version,
+			lumeraClient,
 			kr,
-			appConfig.SupernodeConfig.Port,
-			appConfig.P2PConfig.Port,
-			appConfig.SupernodeConfig.GatewayPort,
+			appConfig.SupernodeConfig.KeyName,
 		)
-		logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize audit reporter", logtrace.Fields{"error": err.Error()})
+		}
+
+		// Legacy on-chain supernode metrics reporting has been superseded by `x/audit`.
+		// metricsCollector := supernodeMetrics.NewCollector(
+		// 	statusSvc,
+		// 	lumeraClient,
+		// 	appConfig.SupernodeConfig.Identity,
+		// 	Version,
+		// 	kr,
+		// 	appConfig.SupernodeConfig.Port,
+		// 	appConfig.P2PConfig.Port,
+		// 	appConfig.SupernodeConfig.GatewayPort,
+		// )
+		// logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
+
+		// Storage challenge history DB (shared by the gRPC handler and runner).
+		historyStore, err := queries.OpenHistoryDB()
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to open history DB", logtrace.Fields{"error": err.Error()})
+		}
+
+		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore)
+		var storageChallengeRunner *storageChallengeService.Service
+		if appConfig.StorageChallengeConfig.Enabled {
+			storageChallengeRunner, err = storageChallengeService.NewService(
+				appConfig.SupernodeConfig.Identity,
+				appConfig.SupernodeConfig.Port,
+				lumeraClient,
+				p2pService,
+				kr,
+				historyStore,
+				storageChallengeService.Config{
+					Enabled:        true,
+					PollInterval:   time.Duration(appConfig.StorageChallengeConfig.PollIntervalMs) * time.Millisecond,
+					SubmitEvidence: appConfig.StorageChallengeConfig.SubmitEvidence,
+					KeyName:        appConfig.SupernodeConfig.KeyName,
+				},
+			)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to initialize storage challenge runner", logtrace.Fields{"error": err.Error()})
+			}
+		}
 
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)
@@ -180,6 +226,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			lumeraClient,
 			grpcserver.ServiceDesc{Desc: &pbcascade.CascadeService_ServiceDesc, Service: cascadeActionServer},
 			grpcserver.ServiceDesc{Desc: &pbsupernode.SupernodeService_ServiceDesc, Service: supernodeServer},
+			grpcserver.ServiceDesc{Desc: &pbsupernode.StorageChallengeService_ServiceDesc, Service: storageChallengeServer},
 		)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
@@ -200,7 +247,10 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() {
-			services := []service{grpcServer, cService, p2pService, gatewayServer, metricsCollector}
+			services := []service{grpcServer, cService, p2pService, gatewayServer, auditReporter}
+			if storageChallengeRunner != nil {
+				services = append(services, storageChallengeRunner)
+			}
 			servicesErr <- RunServices(ctx, services...)
 		}()
 
@@ -237,6 +287,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			}
 		}()
 		grpcServer.Close()
+		historyStore.CloseHistoryDB(context.Background())
 
 		// Close Lumera client without blocking shutdown
 		logtrace.Debug(ctx, "Closing Lumera client", logtrace.Fields{})

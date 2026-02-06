@@ -14,6 +14,8 @@ import (
 
 	action "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
 	action_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action_msg"
+	audit "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
+	audit_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit_msg"
 	auth "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	bank "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/bank"
 	node "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
@@ -73,6 +75,34 @@ func (m *MockClient) ActionMsg() action_msg.Module {
 func (mr *MockClientMockRecorder) ActionMsg() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActionMsg", reflect.TypeOf((*MockClient)(nil).ActionMsg))
+}
+
+// Audit mocks base method.
+func (m *MockClient) Audit() audit.Module {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Audit")
+	ret0, _ := ret[0].(audit.Module)
+	return ret0
+}
+
+// Audit indicates an expected call of Audit.
+func (mr *MockClientMockRecorder) Audit() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Audit", reflect.TypeOf((*MockClient)(nil).Audit))
+}
+
+// AuditMsg mocks base method.
+func (m *MockClient) AuditMsg() audit_msg.Module {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuditMsg")
+	ret0, _ := ret[0].(audit_msg.Module)
+	return ret0
+}
+
+// AuditMsg indicates an expected call of AuditMsg.
+func (mr *MockClientMockRecorder) AuditMsg() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuditMsg", reflect.TypeOf((*MockClient)(nil).AuditMsg))
 }
 
 // Auth mocks base method.
