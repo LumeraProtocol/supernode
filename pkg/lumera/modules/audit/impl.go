@@ -63,13 +63,13 @@ func (m *module) GetAssignedTargets(ctx context.Context, supernodeAccount string
 	return resp, nil
 }
 
-func (m *module) GetAuditReport(ctx context.Context, epochID uint64, supernodeAccount string) (*types.QueryAuditReportResponse, error) {
-	resp, err := m.client.AuditReport(ctx, &types.QueryAuditReportRequest{
+func (m *module) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*types.QueryEpochReportResponse, error) {
+	resp, err := m.client.EpochReport(ctx, &types.QueryEpochReportRequest{
 		EpochId:          epochID,
 		SupernodeAccount: supernodeAccount,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get audit report: %w", err)
+		return nil, fmt.Errorf("failed to get epoch report: %w", err)
 	}
 	return resp, nil
 }

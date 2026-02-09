@@ -57,17 +57,17 @@ func (mr *MockModuleMockRecorder) SubmitEvidence(ctx, subjectAddress, evidenceTy
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEvidence", reflect.TypeOf((*MockModule)(nil).SubmitEvidence), ctx, subjectAddress, evidenceType, actionID, metadataJSON)
 }
 
-// SubmitAuditReport mocks base method.
-func (m *MockModule) SubmitAuditReport(ctx context.Context, epochID uint64, peerObservations []*types.AuditPeerObservation) (*tx.BroadcastTxResponse, error) {
+// SubmitEpochReport mocks base method.
+func (m *MockModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport types.HostReport, storageChallengeObservations []*types.StorageChallengeObservation) (*tx.BroadcastTxResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SubmitAuditReport", ctx, epochID, peerObservations)
+	ret := m.ctrl.Call(m, "SubmitEpochReport", ctx, epochID, hostReport, storageChallengeObservations)
 	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// SubmitAuditReport indicates an expected call of SubmitAuditReport.
-func (mr *MockModuleMockRecorder) SubmitAuditReport(ctx, epochID, peerObservations any) *gomock.Call {
+// SubmitEpochReport indicates an expected call of SubmitEpochReport.
+func (mr *MockModuleMockRecorder) SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitAuditReport", reflect.TypeOf((*MockModule)(nil).SubmitAuditReport), ctx, epochID, peerObservations)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEpochReport", reflect.TypeOf((*MockModule)(nil).SubmitEpochReport), ctx, epochID, hostReport, storageChallengeObservations)
 }

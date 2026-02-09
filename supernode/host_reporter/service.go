@@ -1,4 +1,4 @@
-package audit_reporter
+package host_reporter
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
+	statussvc "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,7 +25,7 @@ const (
 	maxConcurrentTargets = 8
 )
 
-// Service submits one MsgSubmitAuditReport per epoch for the local supernode.
+// Service submits one MsgSubmitEpochReport per epoch for the local supernode.
 // All runtime behavior is driven by on-chain params/queries; there are no local config knobs.
 type Service struct {
 	identity string
@@ -35,9 +36,12 @@ type Service struct {
 
 	pollInterval time.Duration
 	dialTimeout  time.Duration
+
+	metrics      *statussvc.MetricsCollector
+	storagePaths []string
 }
 
-func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring, keyName string) (*Service, error) {
+func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring, keyName string, baseDir string) (*Service, error) {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return nil, fmt.Errorf("identity is empty")
@@ -66,6 +70,12 @@ func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring,
 		return nil, fmt.Errorf("identity mismatch: config.identity=%s key(%s)=%s", identity, keyName, got)
 	}
 
+	storagePaths := []string{}
+	if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
+		// Match legacy disk reporting behavior: measure the volume where the supernode stores its data.
+		storagePaths = []string{baseDir}
+	}
+
 	return &Service{
 		identity:     identity,
 		lumera:       lumeraClient,
@@ -73,6 +83,8 @@ func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring,
 		keyName:      keyName,
 		pollInterval: defaultPollInterval,
 		dialTimeout:  defaultDialTimeout,
+		metrics:      statussvc.NewMetricsCollector(),
+		storagePaths: storagePaths,
 	}, nil
 }
 
@@ -105,7 +117,7 @@ func (s *Service) tick(ctx context.Context) {
 	}
 
 	// Idempotency: if a report exists for this epoch, do nothing.
-	if _, err := s.lumera.Audit().GetAuditReport(ctx, epochID, s.identity); err == nil {
+	if _, err := s.lumera.Audit().GetEpochReport(ctx, epochID, s.identity); err == nil {
 		return
 	} else if status.Code(err) != codes.NotFound {
 		return
@@ -116,28 +128,49 @@ func (s *Service) tick(ctx context.Context) {
 		return
 	}
 
-	peerObservations := s.buildPeerObservations(ctx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
+	storageChallengeObservations := s.buildStorageChallengeObservations(ctx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
 
-	if _, err := s.lumera.AuditMsg().SubmitAuditReport(ctx, epochID, peerObservations); err != nil {
-		logtrace.Warn(ctx, "audit report submit failed", logtrace.Fields{
+	hostReport := audittypes.HostReport{
+		// Intentionally submit 0% usage for CPU/memory so the chain treats these as "unknown".
+		// Disk usage is reported accurately (legacy-aligned) so disk-based enforcement can work.
+		CpuUsagePercent: 0,
+		MemUsagePercent: 0,
+	}
+	if diskUsagePercent, ok := s.diskUsagePercent(ctx); ok {
+		hostReport.DiskUsagePercent = diskUsagePercent
+	}
+
+	if _, err := s.lumera.AuditMsg().SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations); err != nil {
+		logtrace.Warn(ctx, "epoch report submit failed", logtrace.Fields{
 			"epoch_id": epochID,
 			"error":    err.Error(),
 		})
 		return
 	}
 
-	logtrace.Info(ctx, "audit report submitted", logtrace.Fields{
-		"epoch_id":                epochID,
-		"peer_observations_count": len(peerObservations),
+	logtrace.Info(ctx, "epoch report submitted", logtrace.Fields{
+		"epoch_id":                             epochID,
+		"storage_challenge_observations_count": len(storageChallengeObservations),
 	})
 }
 
-func (s *Service) buildPeerObservations(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, targets []string) []*audittypes.AuditPeerObservation {
+func (s *Service) diskUsagePercent(ctx context.Context) (float64, bool) {
+	if s.metrics == nil || len(s.storagePaths) == 0 {
+		return 0, false
+	}
+	infos := s.metrics.CollectStorageMetrics(ctx, s.storagePaths)
+	if len(infos) == 0 {
+		return 0, false
+	}
+	return infos[0].UsagePercent, true
+}
+
+func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, targets []string) []*audittypes.StorageChallengeObservation {
 	if len(targets) == 0 {
 		return nil
 	}
 
-	out := make([]*audittypes.AuditPeerObservation, len(targets))
+	out := make([]*audittypes.StorageChallengeObservation, len(targets))
 
 	type workItem struct {
 		index  int
@@ -171,8 +204,8 @@ func (s *Service) buildPeerObservations(ctx context.Context, epochID uint64, req
 		<-done
 	}
 
-	// ensure no nil elements (MsgSubmitAuditReport rejects nil observations)
-	final := make([]*audittypes.AuditPeerObservation, 0, len(out))
+	// ensure no nil elements (MsgSubmitEpochReport rejects nil observations)
+	final := make([]*audittypes.StorageChallengeObservation, 0, len(out))
 	for i := range out {
 		if out[i] != nil {
 			final = append(final, out[i])
@@ -181,7 +214,7 @@ func (s *Service) buildPeerObservations(ctx context.Context, epochID uint64, req
 	return final
 }
 
-func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, target string) *audittypes.AuditPeerObservation {
+func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, target string) *audittypes.StorageChallengeObservation {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return nil
@@ -189,7 +222,7 @@ func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpe
 
 	host, err := s.targetHost(ctx, target)
 	if err != nil {
-		logtrace.Warn(ctx, "audit observe target: resolve host failed", logtrace.Fields{
+		logtrace.Warn(ctx, "storage challenge observe target: resolve host failed", logtrace.Fields{
 			"epoch_id": epochID,
 			"target":   target,
 			"error":    err.Error(),
@@ -202,7 +235,7 @@ func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpe
 		portStates = append(portStates, probeTCP(ctx, host, p, s.dialTimeout))
 	}
 
-	return &audittypes.AuditPeerObservation{
+	return &audittypes.StorageChallengeObservation{
 		TargetSupernodeAccount: target,
 		PortStates:             portStates,
 	}

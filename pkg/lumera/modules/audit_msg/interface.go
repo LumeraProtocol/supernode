@@ -15,7 +15,7 @@ import (
 // Module defines the interface for audit-related transactions.
 type Module interface {
 	SubmitEvidence(ctx context.Context, subjectAddress string, evidenceType audittypes.EvidenceType, actionID string, metadataJSON string) (*sdktx.BroadcastTxResponse, error)
-	SubmitAuditReport(ctx context.Context, epochID uint64, peerObservations []*audittypes.AuditPeerObservation) (*sdktx.BroadcastTxResponse, error)
+	SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error)
 }
 
 // NewModule creates a new audit_msg module instance.

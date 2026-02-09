@@ -26,7 +26,7 @@ Using modules
 - `cli.Action()` – query actions (GetAction, GetActionFee, GetParams)
 - `cli.ActionMsg()` – send action messages (see below)
 - `cli.Audit()` – query `x/audit` (params/epochs/anchors/assignments/reports)
-- `cli.AuditMsg()` – submit `x/audit` txs (`MsgSubmitAuditReport`, `MsgSubmitEvidence`)
+- `cli.AuditMsg()` – submit `x/audit` txs (`MsgSubmitEpochReport`, `MsgSubmitEvidence`)
 - `cli.Auth()` – accounts/verify
 - `cli.SuperNode()` – supernode queries
 - `cli.Tx()` – tx internals (shared by helpers)

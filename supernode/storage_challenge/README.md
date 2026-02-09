@@ -34,7 +34,6 @@ For each selected `file_key`:
 
 On failure conditions (recipient error/unreachable, invalid proof, observer quorum failure), and only when enabled:
 - Build `StorageChallengeFailureEvidenceMetadata` JSON.
-- Enforce `sc_evidence_max_bytes` locally before submission.
 - Submit `MsgSubmitEvidence` to `x/audit` using the Supernode’s Cosmos key.
 
 Evidence is chain-verifiable at the policy/assignment level (epoch anchor + deterministic rules), while full transcripts remain
@@ -48,4 +47,3 @@ off-chain (supernode logs and local stores).
   service retries on the next tick.
 - Candidate key lookback: lookback is computed as `lookback_epochs * estimated_epoch_duration`, where epoch duration is
   estimated from recent blocks. If estimation fails, it falls back to `24h * lookback_epochs`.
-

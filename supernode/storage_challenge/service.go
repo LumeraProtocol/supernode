@@ -25,6 +25,36 @@ import (
 	"lukechampine.com/blake3"
 )
 
+// Storage challenge (SC) execution knobs are intentionally owned by the supernode binary,
+// not by on-chain params. The chain only needs:
+// - sc_enabled: feature gate for evidence acceptance/validation
+// - sc_challengers_per_epoch: deterministic challenger selection size
+// - epoch cadence: epoch_zero_height + epoch_length_blocks
+const (
+	// scStartJitterMs is a deterministic delay applied before running the epoch, to spread load.
+	scStartJitterMs = uint64(60_000) // 60s
+
+	// scFilesPerChallenger is how many local file keys each challenger attempts per epoch.
+	scFilesPerChallenger = uint32(2)
+
+	// scReplicaCount is the size of the replica set considered for recipient/observer selection.
+	scReplicaCount = uint32(5)
+
+	// scObserverThreshold is the quorum of observer affirmations required for a successful proof.
+	scObserverThreshold = uint32(2)
+
+	// scMinSliceBytes/scMaxSliceBytes bound the requested proof slice range.
+	scMinSliceBytes = uint64(1024)
+	scMaxSliceBytes = uint64(65_536)
+
+	// scResponseTimeout/scAffirmationTimeout are the gRPC timeouts for recipient proof and observer verification.
+	scResponseTimeout    = 30 * time.Second
+	scAffirmationTimeout = 30 * time.Second
+
+	// scCandidateKeysLookbackEpochs is how many epochs back we look for candidate local keys.
+	scCandidateKeysLookbackEpochs = uint32(1)
+)
+
 type Service struct {
 	cfg      Config
 	identity string
@@ -149,7 +179,7 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 
-			jitterMs := deterministic.DeterministicJitterMs(anchor.Seed, epochID, s.identity, params.ScStartJitterMs)
+			jitterMs := deterministic.DeterministicJitterMs(anchor.Seed, epochID, s.identity, scStartJitterMs)
 			if jitterMs > 0 {
 				timer := time.NewTimer(time.Duration(jitterMs) * time.Millisecond)
 				select {
@@ -234,7 +264,7 @@ func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, p
 	}
 	sort.Strings(keys)
 
-	fileKeys := deterministic.SelectFileKeys(keys, anchor.Seed, epochID, s.identity, params.ScFilesPerChallenger)
+	fileKeys := deterministic.SelectFileKeys(keys, anchor.Seed, epochID, s.identity, scFilesPerChallenger)
 	if len(fileKeys) == 0 {
 		return nil
 	}
@@ -255,12 +285,12 @@ func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, p
 func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, fileKey string) error {
 	epochID := anchor.EpochId
 
-	replicas, err := deterministic.SelectReplicaSet(anchor.ActiveSupernodeAccounts, fileKey, params.ScReplicaCount)
+	replicas, err := deterministic.SelectReplicaSet(anchor.ActiveSupernodeAccounts, fileKey, scReplicaCount)
 	if err != nil {
 		return err
 	}
 
-	recipient, observers := pickRecipientAndObservers(replicas, s.identity, int(params.ScObserverThreshold))
+	recipient, observers := pickRecipientAndObservers(replicas, s.identity, int(scObserverThreshold))
 	if recipient == "" {
 		return nil
 	}
@@ -283,9 +313,12 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 	}
 
 	requestedStart := uint64(0)
-	requestedEnd := params.ScMinSliceBytes
+	requestedEnd := scMinSliceBytes
 	if requestedEnd == 0 {
 		requestedEnd = 1024
+	}
+	if scMaxSliceBytes > 0 && requestedEnd > scMaxSliceBytes {
+		requestedEnd = scMaxSliceBytes
 	}
 
 	challengeID := deriveChallengeID(anchor.Seed, epochID, fileKey, s.identity, recipient)
@@ -302,7 +335,7 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 		ObserverIds:    append([]string(nil), observers...),
 	}
 
-	resp, err := s.callGetSliceProof(ctx, recipientAddr, req, time.Duration(params.ScResponseTimeoutMs)*time.Millisecond)
+	resp, err := s.callGetSliceProof(ctx, recipientAddr, req, scResponseTimeout)
 	if err != nil || resp == nil || !resp.Ok {
 		failure := "RECIPIENT_ERROR"
 		if err != nil {
@@ -317,7 +350,7 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 	}
 
 	okCount := 0
-	required := int(params.ScObserverThreshold)
+	required := int(scObserverThreshold)
 	if required <= 0 {
 		required = 0
 	}
@@ -336,10 +369,7 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 			RecipientId:  recipient,
 		}
 
-		timeout := time.Duration(params.ScAffirmationTimeoutMs) * time.Millisecond
-		if timeout <= 0 {
-			timeout = 30 * time.Second
-		}
+		timeout := scAffirmationTimeout
 
 		for _, peer := range observerPeers {
 			vr, verr := s.callVerifySliceProof(ctx, peer.addr, verifyReq, timeout)
@@ -424,9 +454,6 @@ func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Par
 	if err != nil {
 		return err
 	}
-	if params.ScEvidenceMaxBytes > 0 && uint64(len(bz)) > params.ScEvidenceMaxBytes {
-		return fmt.Errorf("evidence metadata too large: %d > %d", len(bz), params.ScEvidenceMaxBytes)
-	}
 
 	_, err = s.lumera.AuditMsg().SubmitEvidence(ctx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
 	if err != nil {
@@ -500,7 +527,7 @@ func containsString(list []string, v string) bool {
 }
 
 func (s *Service) candidateKeysLookbackDuration(ctx context.Context, params audittypes.Params) time.Duration {
-	epochs := params.ScCandidateKeysLookbackEpochs
+	epochs := scCandidateKeysLookbackEpochs
 	if epochs == 0 {
 		epochs = 1
 	}

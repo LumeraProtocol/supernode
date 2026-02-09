@@ -78,24 +78,23 @@ func (m *module) SubmitEvidence(ctx context.Context, subjectAddress string, evid
 	})
 }
 
-func (m *module) SubmitAuditReport(ctx context.Context, epochID uint64, peerObservations []*audittypes.AuditPeerObservation) (*sdktx.BroadcastTxResponse, error) {
+func (m *module) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Intentionally submit 0% usage for CPU/memory/disk so the chain treats these as "unknown"
+	// Intentionally submit 0% usage for CPU/memory so the chain treats these as "unknown"
 	// (see x/audit enforcement semantics).
-	selfReport := audittypes.AuditSelfReport{
-		CpuUsagePercent:  0,
-		MemUsagePercent:  0,
-		DiskUsagePercent: 0,
-	}
+	//
+	// Disk usage is expected to be reported accurately (legacy-aligned); callers provide it.
+	hostReport.CpuUsagePercent = 0
+	hostReport.MemUsagePercent = 0
 
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (sdktypes.Msg, error) {
-		return &audittypes.MsgSubmitAuditReport{
-			SupernodeAccount: creator,
-			EpochId:          epochID,
-			SelfReport:       selfReport,
-			PeerObservations: peerObservations,
+		return &audittypes.MsgSubmitEpochReport{
+			Creator:                      creator,
+			EpochId:                      epochID,
+			HostReport:                   hostReport,
+			StorageChallengeObservations: storageChallengeObservations,
 		}, nil
 	})
 }

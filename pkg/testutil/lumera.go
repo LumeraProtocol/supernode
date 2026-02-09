@@ -213,8 +213,8 @@ func (m *MockAuditModule) GetAssignedTargets(ctx context.Context, supernodeAccou
 	return &audittypes.QueryAssignedTargetsResponse{}, nil
 }
 
-func (m *MockAuditModule) GetAuditReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryAuditReportResponse, error) {
-	return &audittypes.QueryAuditReportResponse{}, nil
+func (m *MockAuditModule) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
+	return &audittypes.QueryEpochReportResponse{}, nil
 }
 
 type MockAuditMsgModule struct{}
@@ -223,7 +223,7 @@ func (m *MockAuditMsgModule) SubmitEvidence(ctx context.Context, subjectAddress 
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
-func (m *MockAuditMsgModule) SubmitAuditReport(ctx context.Context, epochID uint64, peerObservations []*audittypes.AuditPeerObservation) (*sdktx.BroadcastTxResponse, error) {
+func (m *MockAuditMsgModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error) {
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 

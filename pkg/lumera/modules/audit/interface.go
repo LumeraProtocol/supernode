@@ -14,7 +14,7 @@ type Module interface {
 	GetCurrentEpochAnchor(ctx context.Context) (*types.QueryCurrentEpochAnchorResponse, error)
 	GetCurrentEpoch(ctx context.Context) (*types.QueryCurrentEpochResponse, error)
 	GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*types.QueryAssignedTargetsResponse, error)
-	GetAuditReport(ctx context.Context, epochID uint64, supernodeAccount string) (*types.QueryAuditReportResponse, error)
+	GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*types.QueryEpochReportResponse, error)
 }
 
 // NewModule creates a new Audit module client.

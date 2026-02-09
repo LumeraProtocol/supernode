@@ -21,9 +21,9 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/rqstore"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
-	auditReporterService "github.com/LumeraProtocol/supernode/v2/supernode/audit_reporter"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
+	hostReporterService "github.com/LumeraProtocol/supernode/v2/supernode/host_reporter"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
 	// Legacy supernode metrics reporter (MsgReportSupernodeMetrics) has been superseded by
@@ -162,14 +162,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-		auditReporter, err := auditReporterService.NewService(
+		hostReporter, err := hostReporterService.NewService(
 			appConfig.SupernodeConfig.Identity,
 			lumeraClient,
 			kr,
 			appConfig.SupernodeConfig.KeyName,
+			appConfig.BaseDir,
 		)
 		if err != nil {
-			logtrace.Fatal(ctx, "Failed to initialize audit reporter", logtrace.Fields{"error": err.Error()})
+			logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Legacy on-chain supernode metrics reporting has been superseded by `x/audit`.
@@ -247,7 +248,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() {
-			services := []service{grpcServer, cService, p2pService, gatewayServer, auditReporter}
+			services := []service{grpcServer, cService, p2pService, gatewayServer, hostReporter}
 			if storageChallengeRunner != nil {
 				services = append(services, storageChallengeRunner)
 			}
