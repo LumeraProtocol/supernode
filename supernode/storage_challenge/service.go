@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -229,10 +230,10 @@ func (s *Service) initClients(ctx context.Context) error {
 
 func (s *Service) latestHeight(ctx context.Context) (int64, bool) {
 	resp, err := s.lumera.Node().GetLatestBlock(ctx)
-	if err != nil || resp == nil || resp.Block == nil {
+	if err != nil || resp == nil || resp.SdkBlock == nil {
 		return 0, false
 	}
-	return resp.Block.Header.Height, true
+	return resp.SdkBlock.Header.Height, true
 }
 
 func (s *Service) auditParams(ctx context.Context) (audittypes.Params, bool) {
@@ -401,11 +402,49 @@ func (s *Service) supernodeGRPCAddr(ctx context.Context, supernodeAccount string
 	if err != nil || info == nil {
 		return "", fmt.Errorf("resolve supernode address: %w", err)
 	}
-	host := strings.TrimSpace(info.LatestAddress)
-	if host == "" {
+	raw := strings.TrimSpace(info.LatestAddress)
+	if raw == "" {
 		return "", fmt.Errorf("no ip address for supernode %s", supernodeAccount)
 	}
-	return net.JoinHostPort(host, fmt.Sprintf("%d", s.grpcPort)), nil
+
+	// The chain stores the supernode's reachable endpoint. Historically this has often been
+	// registered as "host:port" (e.g. "<public-ip>:4444"). Storage challenge must tolerate
+	// both forms:
+	// - "host" -> use our configured default gRPC port
+	// - "host:port" -> use the stored port as the dial target
+	host, port, ok := parseHostAndPort(raw, int(s.grpcPort))
+	if !ok || strings.TrimSpace(host) == "" {
+		return "", fmt.Errorf("invalid supernode address for %s: %q", supernodeAccount, raw)
+	}
+	return net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(port)), nil
+}
+
+// parseHostAndPort parses a "host" or "host:port" string and returns a host and port.
+// If a port is not present, defaultPort is returned. If a port is present but invalid,
+func parseHostAndPort(address string, defaultPort int) (host string, port int, ok bool) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "", 0, false
+	}
+
+	// If it looks like a URL, parse and use the host[:port] portion.
+	if u, err := url.Parse(address); err == nil && u.Host != "" {
+		address = u.Host
+	}
+
+	if h, p, err := net.SplitHostPort(address); err == nil {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			return "", 0, false
+		}
+		if n, err := strconv.Atoi(p); err == nil && n > 0 && n <= 65535 {
+			return h, n, true
+		}
+		return h, defaultPort, true
+	}
+
+	// No port present; return default.
+	return address, defaultPort, true
 }
 
 func (s *Service) callGetSliceProof(ctx context.Context, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {
@@ -546,11 +585,20 @@ func (s *Service) estimateEpochDuration(ctx context.Context, params audittypes.P
 	}
 
 	latest, err := s.lumera.Node().GetLatestBlock(ctx)
-	if err != nil || latest == nil || latest.Block == nil {
+	if err != nil || latest == nil {
 		return 0, false
 	}
-	latestHeight := latest.Block.Header.Height
-	latestTime := latest.Block.Header.Time
+	var latestHeight int64
+	var latestTime time.Time
+	if sdkBlk := latest.GetSdkBlock(); sdkBlk != nil {
+		latestHeight = sdkBlk.Header.Height
+		latestTime = sdkBlk.Header.Time
+	} else if blk := latest.GetBlock(); blk != nil {
+		latestHeight = blk.Header.Height
+		latestTime = blk.Header.Time
+	} else {
+		return 0, false
+	}
 	if latestHeight <= 1 {
 		return 0, false
 	}
@@ -564,10 +612,17 @@ func (s *Service) estimateEpochDuration(ctx context.Context, params audittypes.P
 	olderHeight := latestHeight - n
 
 	older, err := s.lumera.Node().GetBlockByHeight(ctx, olderHeight)
-	if err != nil || older == nil || older.Block == nil {
+	if err != nil || older == nil {
 		return 0, false
 	}
-	olderTime := older.Block.Header.Time
+	var olderTime time.Time
+	if sdkBlk := older.GetSdkBlock(); sdkBlk != nil {
+		olderTime = sdkBlk.Header.Time
+	} else if blk := older.GetBlock(); blk != nil {
+		olderTime = blk.Header.Time
+	} else {
+		return 0, false
+	}
 
 	dt := latestTime.Sub(olderTime)
 	if dt <= 0 {
