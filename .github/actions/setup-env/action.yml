@@ -37,10 +37,10 @@ runs:
       if: ${{ inputs.bust_lumera_retag == 'true' }}
       shell: bash
       run: |
-        echo "Busting go.sum entries for github.com/LumeraProtocol/lumera v1.8.0 (one-time)"
+        echo "Busting go.sum entries for github.com/LumeraProtocol/lumera v1.11.0-rc (one-time)"
         # Remove stale checksums in all local modules
         find . -name 'go.sum' -maxdepth 3 -print0 | xargs -0 -I{} sed -i \
-          '/github.com\/LumeraProtocol\/lumera v1.8.0/d' {}
+          '/github.com\/LumeraProtocol\/lumera v1.11.0-rc/d' {}
         # Clear module/build caches to avoid cached zips
         go clean -modcache || true
         rm -rf "$(go env GOCACHE)" || true

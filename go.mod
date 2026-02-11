@@ -3,18 +3,18 @@ module github.com/LumeraProtocol/supernode/v2
 go 1.25.5
 
 replace (
+	// Local development (monorepo): use local Lumera module.
+	github.com/LumeraProtocol/lumera => ../lumera
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	github.com/lyft/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v1.3.0
 	nhooyr.io/websocket => github.com/coder/websocket v1.8.7
-	// Local development (monorepo): use local Lumera module.
-	github.com/LumeraProtocol/lumera => ../lumera
 )
 
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.10.0
+	github.com/LumeraProtocol/lumera v1.11.0-rc
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
