@@ -131,6 +131,13 @@ func (t *CascadeDownloadTask) downloadFromSupernodes(ctx context.Context, supern
 				event.KeyIteration:        iteration,
 				event.KeyError:            err.Error(),
 			})
+			t.submitCascadeClientFailureEvidence(ctx, sn.CosmosAddress, []string{sn.CosmosAddress}, map[string]string{
+				"operation":          "download",
+				"iteration":          fmt.Sprintf("%d", iteration),
+				"supernode_endpoint": sn.GrpcEndpoint,
+				"supernode_account":  sn.CosmosAddress,
+				"error":              err.Error(),
+			})
 			lastErr = err
 			continue
 		}

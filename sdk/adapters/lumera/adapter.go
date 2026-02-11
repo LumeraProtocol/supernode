@@ -2,11 +2,13 @@ package lumera
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -379,6 +381,48 @@ func (a *Adapter) GetBalance(ctx context.Context, address string, denom string) 
 	}
 	a.logger.Debug(ctx, "Successfully fetched bank balance", "amount", resp.Balance.Amount.String(), "denom", resp.Balance.Denom)
 	return resp, nil
+}
+
+// SubmitCascadeClientFailureEvidence submits client-observed cascade failure evidence to x/audit.
+func (a *Adapter) SubmitCascadeClientFailureEvidence(
+	ctx context.Context,
+	subjectAddress string,
+	actionID string,
+	targetSupernodeAccounts []string,
+	details map[string]string,
+) error {
+	if a.client == nil {
+		return fmt.Errorf("lumera client is nil")
+	}
+	subjectAddress = strings.TrimSpace(subjectAddress)
+	if subjectAddress == "" {
+		return fmt.Errorf("subject address cannot be empty")
+	}
+	if details == nil {
+		details = map[string]string{}
+	}
+
+	meta := audittypes.CascadeClientFailureEvidenceMetadata{
+		ReporterComponent:       audittypes.CascadeClientFailureReporterComponent_CASCADE_CLIENT_FAILURE_REPORTER_COMPONENT_SDK_GO,
+		TargetSupernodeAccounts: append([]string(nil), targetSupernodeAccounts...),
+		Details:                 details,
+	}
+	bz, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal cascade client failure evidence metadata: %w", err)
+	}
+
+	_, err = a.client.AuditMsg().SubmitEvidence(
+		ctx,
+		subjectAddress,
+		audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
+		actionID,
+		string(bz),
+	)
+	if err != nil {
+		return fmt.Errorf("submit cascade client failure evidence: %w", err)
+	}
+	return nil
 }
 
 // DecodeCascadeMetadata decodes the raw metadata bytes into CascadeMetadata

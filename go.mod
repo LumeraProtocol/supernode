@@ -3,8 +3,6 @@ module github.com/LumeraProtocol/supernode/v2
 go 1.25.5
 
 replace (
-	// Local development (monorepo): use local Lumera module.
-	github.com/LumeraProtocol/lumera => ../lumera
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	github.com/lyft/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v1.3.0
 	nhooyr.io/websocket => github.com/coder/websocket v1.8.7
