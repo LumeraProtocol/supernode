@@ -211,9 +211,6 @@ func (h *hsInterceptor) cleanup() {
 }
 
 func TestHandshakerConcurrentHandshakes(t *testing.T) {
-	clientKr := CreateTestKeyring()
-	serverKr := CreateTestKeyring()
-
 	testCases := []struct {
 		name          string
 		numHandshakes int
@@ -307,11 +304,14 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			// Create handshake pairs
-			for i := range tc.numHandshakes {
-				accountClient := fmt.Sprintf("client-%d", i)
-				accountServer := fmt.Sprintf("server-%d", i)
-				testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})
+				// Create handshake pairs
+				for i := range tc.numHandshakes {
+					clientKr := CreateTestKeyring()
+					serverKr := CreateTestKeyring()
+
+					accountClient := fmt.Sprintf("client-%d", i)
+					accountServer := fmt.Sprintf("server-%d", i)
+					testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})
 				clientAddr := testAccounts[0].Address
 
 				testAccounts = SetupTestAccounts(t, serverKr, []string{accountServer})

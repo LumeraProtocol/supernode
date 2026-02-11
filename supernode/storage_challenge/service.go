@@ -230,10 +230,16 @@ func (s *Service) initClients(ctx context.Context) error {
 
 func (s *Service) latestHeight(ctx context.Context) (int64, bool) {
 	resp, err := s.lumera.Node().GetLatestBlock(ctx)
-	if err != nil || resp == nil || resp.SdkBlock == nil {
+	if err != nil || resp == nil {
 		return 0, false
 	}
-	return resp.SdkBlock.Header.Height, true
+	if sdkBlk := resp.GetSdkBlock(); sdkBlk != nil {
+		return sdkBlk.Header.Height, true
+	}
+	if blk := resp.GetBlock(); blk != nil {
+		return blk.Header.Height, true
+	}
+	return 0, false
 }
 
 func (s *Service) auditParams(ctx context.Context) (audittypes.Params, bool) {

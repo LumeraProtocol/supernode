@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
@@ -93,7 +94,7 @@ func (s *Server) VerifySliceProof(ctx context.Context, req *supernode.VerifySlic
 	sum := blake3.Sum256(req.Slice)
 	want := req.ProofHashHex
 	got := hex.EncodeToString(sum[:])
-	ok := got == want
+	ok := strings.EqualFold(got, want)
 	errStr := ""
 	if !ok {
 		errStr = fmt.Sprintf("proof mismatch: want=%s got=%s", want, got)
