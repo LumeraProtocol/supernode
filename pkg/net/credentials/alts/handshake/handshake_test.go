@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
@@ -304,14 +304,14 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-				// Create handshake pairs
-				for i := range tc.numHandshakes {
-					clientKr := CreateTestKeyring()
-					serverKr := CreateTestKeyring()
+			// Create handshake pairs
+			for i := range tc.numHandshakes {
+				clientKr := CreateTestKeyring()
+				serverKr := CreateTestKeyring()
 
-					accountClient := fmt.Sprintf("client-%d", i)
-					accountServer := fmt.Sprintf("server-%d", i)
-					testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})
+				accountClient := fmt.Sprintf("client-%d", i)
+				accountServer := fmt.Sprintf("server-%d", i)
+				testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})
 				clientAddr := testAccounts[0].Address
 
 				testAccounts = SetupTestAccounts(t, serverKr, []string{accountServer})
