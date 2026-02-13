@@ -128,15 +128,35 @@ func (s *Service) Run(ctx context.Context) error {
 		return nil
 	}
 
-	if err := s.initClients(ctx); err != nil {
+	if err := s.initClients(); err != nil {
 		return err
 	}
+
+	// Effective knobs (production defaults). Jitter is bounded by the epoch length
+	// to avoid sleeping past the epoch window on short epochs.
+	lookbackEpochs := scCandidateKeysLookbackEpochs
+	respTimeout := scResponseTimeout
+	affirmTimeout := scAffirmationTimeout
+	logtrace.Debug(ctx, "storage challenge runtime knobs", logtrace.Fields{
+		"start_jitter_ms":         scStartJitterMs,
+		"response_timeout_ms":     respTimeout.Milliseconds(),
+		"affirmation_timeout_ms":  affirmTimeout.Milliseconds(),
+		"submit_evidence_config":  s.cfg.SubmitEvidence,
+		"poll_interval_ms":        s.cfg.PollInterval.Milliseconds(),
+		"sc_files_per_challenger": scFilesPerChallenger,
+		"sc_replica_count":        scReplicaCount,
+		"sc_observer_threshold":   scObserverThreshold,
+		"sc_keys_lookback_epochs": lookbackEpochs,
+	})
 
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
 
 	var lastRunEpoch uint64
 	var lastRunOK bool
+	var loggedAlreadyRanEpoch uint64
+	var loggedNotSelectedEpoch uint64
+	var loggedDisabledEpoch uint64
 
 	for {
 		select {
@@ -158,11 +178,19 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if !params.ScEnabled {
+				if loggedDisabledEpoch != epochID {
+					logtrace.Debug(ctx, "storage challenge disabled by on-chain params", logtrace.Fields{"epoch_id": epochID})
+					loggedDisabledEpoch = epochID
+				}
 				lastRunEpoch = epochID
 				lastRunOK = true
 				continue
 			}
 			if lastRunOK && lastRunEpoch == epochID {
+				if loggedAlreadyRanEpoch != epochID {
+					logtrace.Debug(ctx, "storage challenge already ran this epoch; skipping", logtrace.Fields{"epoch_id": epochID})
+					loggedAlreadyRanEpoch = epochID
+				}
 				continue
 			}
 
@@ -175,13 +203,36 @@ func (s *Service) Run(ctx context.Context) error {
 
 			challengers := deterministic.SelectChallengers(anchor.ActiveSupernodeAccounts, anchor.Seed, epochID, params.ScChallengersPerEpoch)
 			if !containsString(challengers, s.identity) {
+				if loggedNotSelectedEpoch != epochID {
+					logtrace.Debug(ctx, "storage challenge: not selected challenger; skipping", logtrace.Fields{
+						"epoch_id": epochID,
+						"identity": s.identity,
+						"selected": len(challengers),
+						"sc_param": params.ScChallengersPerEpoch,
+					})
+					loggedNotSelectedEpoch = epochID
+				}
 				lastRunEpoch = epochID
 				lastRunOK = true
 				continue
 			}
 
-			jitterMs := deterministic.DeterministicJitterMs(anchor.Seed, epochID, s.identity, scStartJitterMs)
+			// Bound jitter by a conservative estimate of epoch duration (assume ~1s blocks).
+			// This is intentionally simple and is primarily to avoid sleeping past the epoch window.
+			jitterMaxMs := scStartJitterMs
+			epochBudgetMs := uint64(params.EpochLengthBlocks) * 1000
+			if epochBudgetMs > 0 && epochBudgetMs/2 < jitterMaxMs {
+				jitterMaxMs = epochBudgetMs / 2
+			}
+
+			jitterMs := deterministic.DeterministicJitterMs(anchor.Seed, epochID, s.identity, jitterMaxMs)
 			if jitterMs > 0 {
+				logtrace.Debug(ctx, "storage challenge jitter sleep", logtrace.Fields{
+					"epoch_id":      epochID,
+					"jitter_ms":     jitterMs,
+					"jitter_max_ms": jitterMaxMs,
+					"challenger_id": s.identity,
+				})
 				timer := time.NewTimer(time.Duration(jitterMs) * time.Millisecond)
 				select {
 				case <-ctx.Done():
@@ -191,7 +242,7 @@ func (s *Service) Run(ctx context.Context) error {
 				}
 			}
 
-			if err := s.runEpoch(ctx, anchor, params); err != nil {
+			if err := s.runEpoch(ctx, anchor, params, lookbackEpochs, respTimeout, affirmTimeout); err != nil {
 				logtrace.Warn(ctx, "storage challenge epoch run error", logtrace.Fields{
 					"epoch_id": epochID,
 					"error":    err.Error(),
@@ -207,7 +258,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 }
 
-func (s *Service) initClients(ctx context.Context) error {
+func (s *Service) initClients() error {
 	validator := lumera.NewSecureKeyExchangeValidator(s.lumera)
 
 	grpcCreds, err := credentials.NewClientCreds(&credentials.ClientOptions{
@@ -254,10 +305,10 @@ func (s *Service) auditParams(ctx context.Context) (audittypes.Params, bool) {
 	return p, true
 }
 
-func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params) error {
+func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, lookbackEpochs uint32, respTimeout time.Duration, affirmTimeout time.Duration) error {
 	epochID := anchor.EpochId
 
-	lookback := s.candidateKeysLookbackDuration(ctx, params)
+	lookback := s.candidateKeysLookbackDuration(ctx, params, lookbackEpochs)
 	to := time.Now().UTC()
 	from := to.Add(-lookback)
 
@@ -275,9 +326,15 @@ func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, p
 	if len(fileKeys) == 0 {
 		return nil
 	}
+	logtrace.Debug(ctx, "storage challenge selected file keys", logtrace.Fields{
+		"epoch_id":      epochID,
+		"challenger_id": s.identity,
+		"keys_total":    len(keys),
+		"file_keys":     strings.Join(fileKeys, ","),
+	})
 
 	for _, fileKey := range fileKeys {
-		if err := s.runChallengeForFile(ctx, anchor, params, fileKey); err != nil {
+		if err := s.runChallengeForFile(ctx, anchor, params, fileKey, respTimeout, affirmTimeout); err != nil {
 			logtrace.Warn(ctx, "storage challenge file run error", logtrace.Fields{
 				"epoch_id": epochID,
 				"file_key": fileKey,
@@ -289,7 +346,7 @@ func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, p
 	return nil
 }
 
-func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, fileKey string) error {
+func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, fileKey string, respTimeout time.Duration, affirmTimeout time.Duration) error {
 	epochID := anchor.EpochId
 
 	replicas, err := deterministic.SelectReplicaSet(anchor.ActiveSupernodeAccounts, fileKey, scReplicaCount)
@@ -301,6 +358,13 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 	if recipient == "" {
 		return nil
 	}
+	logtrace.Debug(ctx, "storage challenge selected recipient/observers", logtrace.Fields{
+		"epoch_id":      epochID,
+		"file_key":      fileKey,
+		"challenger_id": s.identity,
+		"recipient_id":  recipient,
+		"observers":     strings.Join(observers, ","),
+	})
 
 	recipientAddr, err := s.supernodeGRPCAddr(ctx, recipient)
 	if err != nil {
@@ -342,7 +406,7 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 		ObserverIds:    append([]string(nil), observers...),
 	}
 
-	resp, err := s.callGetSliceProof(ctx, recipientAddr, req, scResponseTimeout)
+	resp, err := s.callGetSliceProof(ctx, recipient, recipientAddr, req, respTimeout)
 	if err != nil || resp == nil || !resp.Ok {
 		failure := "RECIPIENT_ERROR"
 		if err != nil {
@@ -377,9 +441,12 @@ func (s *Service) runChallengeForFile(ctx context.Context, anchor audittypes.Epo
 		}
 
 		timeout := scAffirmationTimeout
+		if affirmTimeout > 0 {
+			timeout = affirmTimeout
+		}
 
 		for _, peer := range observerPeers {
-			vr, verr := s.callVerifySliceProof(ctx, peer.addr, verifyReq, timeout)
+			vr, verr := s.callVerifySliceProof(ctx, peer.id, peer.addr, verifyReq, timeout)
 			if verr == nil && vr != nil && vr.Ok {
 				okCount++
 			}
@@ -453,11 +520,13 @@ func parseHostAndPort(address string, defaultPort int) (host string, port int, o
 	return address, defaultPort, true
 }
 
-func (s *Service) callGetSliceProof(ctx context.Context, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {
+func (s *Service) callGetSliceProof(ctx context.Context, remoteIdentity string, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	conn, err := s.grpcClient.Connect(cctx, address, s.grpcOpts)
+	// secure gRPC requires the peer identity in the dial target
+	// (format: "<remoteIdentity>@<host:port>") so the handshake can authenticate the peer.
+	conn, err := s.grpcClient.Connect(cctx, fmt.Sprintf("%s@%s", strings.TrimSpace(remoteIdentity), address), s.grpcOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -467,11 +536,12 @@ func (s *Service) callGetSliceProof(ctx context.Context, address string, req *su
 	return client.GetSliceProof(cctx, req)
 }
 
-func (s *Service) callVerifySliceProof(ctx context.Context, address string, req *supernode.VerifySliceProofRequest, timeout time.Duration) (*supernode.VerifySliceProofResponse, error) {
+func (s *Service) callVerifySliceProof(ctx context.Context, remoteIdentity string, address string, req *supernode.VerifySliceProofRequest, timeout time.Duration) (*supernode.VerifySliceProofResponse, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	conn, err := s.grpcClient.Connect(cctx, address, s.grpcOpts)
+	// Production behavior: secure gRPC requires "<remoteIdentity>@<host:port>" (see callGetSliceProof).
+	conn, err := s.grpcClient.Connect(cctx, fmt.Sprintf("%s@%s", strings.TrimSpace(remoteIdentity), address), s.grpcOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -483,6 +553,14 @@ func (s *Service) callVerifySliceProof(ctx context.Context, address string, req 
 
 func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Params, epochID uint64, challengeID, fileKey, recipient, failureType, transcriptHashHex string) error {
 	if !s.cfg.SubmitEvidence || !params.ScEnabled {
+		logtrace.Debug(ctx, "storage challenge: evidence submission skipped", logtrace.Fields{
+			"epoch_id":               epochID,
+			"challenge_id":           challengeID,
+			"recipient_id":           recipient,
+			"failure_type":           failureType,
+			"submit_evidence_config": s.cfg.SubmitEvidence,
+			"sc_enabled_param":       params.ScEnabled,
+		})
 		return nil
 	}
 
@@ -571,8 +649,7 @@ func containsString(list []string, v string) bool {
 	return false
 }
 
-func (s *Service) candidateKeysLookbackDuration(ctx context.Context, params audittypes.Params) time.Duration {
-	epochs := scCandidateKeysLookbackEpochs
+func (s *Service) candidateKeysLookbackDuration(ctx context.Context, params audittypes.Params, epochs uint32) time.Duration {
 	if epochs == 0 {
 		epochs = 1
 	}
