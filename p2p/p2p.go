@@ -139,6 +139,16 @@ func (s *p2p) Retrieve(ctx context.Context, key string, localOnly ...bool) ([]by
 	return s.dht.Retrieve(ctx, key, localOnly...)
 }
 
+// PeersCount returns the current number of peers in the routing table.
+// This is intentionally not part of the public Client interface; it is used by
+// internal guardrails (e.g., registration) to avoid local-only stores.
+func (s *p2p) PeersCount() int {
+	if s == nil || s.dht == nil {
+		return 0
+	}
+	return s.dht.PeersCount()
+}
+
 // BatchRetrieve retrive the data from the kademlia network
 func (s *p2p) BatchRetrieve(ctx context.Context, keys []string, reqCount int, txID string, localOnly ...bool) (map[string][]byte, error) {
 

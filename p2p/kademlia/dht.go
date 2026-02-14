@@ -2312,15 +2312,21 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	logtrace.Debug(ctx, "Iterate batch store: dispatching to nodes", logtrace.Fields{"task_id": id, "nodes": len(knownNodes)})
 
 	// If there are no candidate nodes, there's nothing to fan out to. The caller
-	// already persisted the batch locally (see StoreBatch), so treat this as a
-	// no-op success rather than an error.
+	// already persisted the batch locally (see StoreBatch), but local-only
+	// persistence is not sufficient for network durability. Treat this as an
+	// error so callers do not finalize actions or delete source data under the
+	// assumption that replication occurred.
 	if len(knownNodes) == 0 {
-		logtrace.Info(ctx, "dht: batch store skipped (no candidate nodes)", logtrace.Fields{
-			logtrace.FieldModule: "dht",
-			"task_id":            id,
-			"keys":               len(values),
+		logtrace.Error(ctx, "dht: batch store skipped (no candidate nodes)", logtrace.Fields{
+			logtrace.FieldModule:  "dht",
+			"task_id":             id,
+			"keys":                len(values),
+			"len_nodes":           len(s.ht.nodes()),
+			"banned_nodes":        len(ignoreList),
+			"routing_allow_ready": s.routingAllowReady.Load(),
+			"routing_allow_count": s.routingAllowCount.Load(),
 		})
-		return nil
+		return fmt.Errorf("no candidate nodes for batch store")
 	}
 	storeResponses := s.batchStoreNetwork(ctx, values, knownNodes, storageMap, typ)
 	for response := range storeResponses {
