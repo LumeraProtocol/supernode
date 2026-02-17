@@ -19,7 +19,8 @@ LDFLAGS = -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=$(VERS
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=$(BUILD_TIME) \
           -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.MinVer=$(MIN_VER) \
           -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=$(DD_API_KEY) \
-          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE)
+          -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=$(DD_SITE) \
+          -X github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway.RecoveryAdminToken=$(RECOVERY_ADMIN_TOKEN)
 
 # Linker flags for sn-manager
 SN_MANAGER_LDFLAGS = -X main.Version=$(VERSION) \

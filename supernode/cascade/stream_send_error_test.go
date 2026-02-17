@@ -23,6 +23,10 @@ func (s *stubLumeraClient) GetTopSupernodes(context.Context, uint64) (*sntypes.Q
 	panic("unexpected call")
 }
 
+func (s *stubLumeraClient) ListSupernodes(context.Context) (*sntypes.QueryListSuperNodesResponse, error) {
+	panic("unexpected call")
+}
+
 func (s *stubLumeraClient) Verify(context.Context, string, []byte, []byte) error {
 	panic("unexpected call")
 }
