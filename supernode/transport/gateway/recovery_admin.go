@@ -23,6 +23,7 @@ const (
 	recoveryBasePath    = "/api/v1/recovery"
 	recoveryHeaderToken = "X-Lumera-Recovery-Token"
 	recoveryInternal    = "/api/v1/recovery/internal/probe"
+	recoveryWriteWindow = 5 * time.Minute
 )
 
 // RecoveryAdminToken authorizes recovery endpoints.
@@ -162,6 +163,8 @@ func (ra *recoveryAdmin) handleActionRoutes(w http.ResponseWriter, r *http.Reque
 }
 
 func (ra *recoveryAdmin) handleReseed(w http.ResponseWriter, r *http.Request) {
+	ra.extendWriteDeadline(w, recoveryWriteWindow)
+
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
 		return
@@ -338,6 +341,8 @@ func (ra *recoveryAdmin) handleReseed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, actionID string) {
+	ra.extendWriteDeadline(w, recoveryWriteWindow)
+
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method not allowed"})
 		return
@@ -776,4 +781,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (ra *recoveryAdmin) extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Now().Add(d))
 }
