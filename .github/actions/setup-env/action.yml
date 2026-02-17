@@ -27,11 +27,11 @@ runs:
         go-version: ${{ steps.get-go-version.outputs.version }}
         cache: true
 
-    - name: Install libwebp-dev
+    - name: Install system build deps
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y libwebp-dev make 
+        sudo apt-get install -y build-essential libwebp-dev make
 
     - name: One-time reset retagged lumera checksums
       if: ${{ inputs.bust_lumera_retag == 'true' }}

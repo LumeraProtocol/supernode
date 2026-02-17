@@ -23,7 +23,7 @@ jobs:
         run: go mod tidy
 
       - name: Run unit tests
-        run: go test $(go list ./... | grep -v '/tests') -v
+        run: CGO_ENABLED=1 go test $(go list ./... | grep -v '/tests') -v
 
   integration-tests:
     name: integration-tests
@@ -42,7 +42,7 @@ jobs:
         run: go mod tidy
       
       - name: Run integration tests
-        run: go test -v ./tests/integration/...
+        run: CGO_ENABLED=1 go test -v ./tests/integration/...
 
   cascade-e2e-tests:
     name: cascade-e2e-tests
