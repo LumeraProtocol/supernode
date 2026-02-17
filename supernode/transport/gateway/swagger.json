@@ -7,6 +7,9 @@
   "tags": [
     {
       "name": "SupernodeService"
+    },
+    {
+      "name": "Recovery"
     }
   ],
   "consumes": [
@@ -421,9 +424,163 @@
           "SupernodeService"
         ]
       }
+    },
+    "/api/v1/recovery/health": {
+      "get": {
+        "summary": "Recovery API health",
+        "operationId": "Recovery_GetHealth",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/gatewayRecoveryHealthResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Lumera-Recovery-Token",
+            "description": "Recovery admin token",
+            "in": "header",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "Recovery"
+        ]
+      }
+    },
+    "/api/v1/recovery/reseed": {
+      "post": {
+        "summary": "Validate and re-seed action artifacts",
+        "operationId": "Recovery_ReseedAction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/gatewayRecoveryReseedResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Lumera-Recovery-Token",
+            "description": "Recovery admin token",
+            "in": "header",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "description": "Action reseed request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/gatewayRecoveryReseedRequest"
+            }
+          }
+        ],
+        "tags": [
+          "Recovery"
+        ]
+      }
+    },
+    "/api/v1/recovery/actions/{action_id}/status": {
+      "get": {
+        "summary": "Probe action availability and artifact distribution",
+        "operationId": "Recovery_GetActionStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/gatewayRecoveryStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "action_id",
+            "description": "Action ID",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "X-Lumera-Recovery-Token",
+            "description": "Recovery admin token",
+            "in": "header",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "Recovery"
+        ]
+      }
     }
   },
   "definitions": {
+    "gatewayRecoveryHealthResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "self_supernode": {
+          "type": "string"
+        },
+        "gateway_port": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "gatewayRecoveryReseedRequest": {
+      "type": "object",
+      "required": [
+        "action_id"
+      ],
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "max_symbols": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Optional cap for reseeding symbols. 0 means all."
+        }
+      }
+    },
+    "gatewayRecoveryReseedResponse": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "gatewayRecoveryStatusResponse": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "DhtMetricsBatchRetrievePoint": {
       "type": "object",
       "properties": {

@@ -93,6 +93,7 @@ jobs:
         env:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
           DD_SITE: ${{ secrets.DD_SITE }}
+          RECOVERY_ADMIN_TOKEN: ${{ secrets.RECOVERY_ADMIN_TOKEN }}
         run: |
           # Ensure module metadata is up to date
           go mod tidy
@@ -110,7 +111,8 @@ jobs:
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.BuildTime=${{ steps.vars.outputs.build_time }} \
                     -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.MinVer=${{ vars.MIN_VER }} \
                     -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDAPIKey=${DD_API_KEY} \
-                    -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=${DD_SITE}" \
+                    -X github.com/LumeraProtocol/supernode/v2/pkg/logtrace.DDSite=${DD_SITE} \
+                    -X github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway.RecoveryAdminToken=${RECOVERY_ADMIN_TOKEN}" \
           -o release/supernode \
           ./supernode
           
