@@ -364,9 +364,31 @@ func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, ac
 	ctx := logtrace.CtxWithCorrelationID(r.Context(), actionID)
 	ctx = logtrace.CtxWithOrigin(ctx, "recovery_status")
 
+	// "downloadable" semantics: action can be decoded now via normal download flow (network+local).
+	downloadable, downloadErr, downloadEvents, downloadLastEvent, downloadedFilePath, downloadedDir, err := ra.checkDownloadable(ctx, actionID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "action_id": actionID, "error": err.Error()})
+		return
+	}
+
 	bundle, err := ra.resolveArtefactBundle(ctx, actionID)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "action_id": actionID, "error": err.Error()})
+		resp := map[string]any{
+			"ok":                   false,
+			"action_id":            actionID,
+			"downloadable":         downloadable,
+			"checked_supernode":    ra.selfSupernode,
+			"download_events":      downloadEvents,
+			"download_last_event":  downloadLastEvent,
+			"downloaded_file_path": downloadedFilePath,
+			"downloaded_dir":       downloadedDir,
+			"duration_ms":          time.Since(start).Milliseconds(),
+			"error":                err.Error(),
+		}
+		if downloadErr != "" {
+			resp["download_error"] = downloadErr
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
@@ -387,9 +409,9 @@ func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, ac
 	layoutMax := len(bundle.LayoutIDs)
 	symbolMax := len(bundle.SymbolKeys)
 	reachable := 0
-	downloadable := false
-	downloadableFrom := ""
-	downloadableFromAll := make([]string, 0, 4)
+	fullCopyAvailable := false
+	fullCopyFrom := ""
+	fullCopyFromAll := make([]string, 0, 4)
 	dist := make([]map[string]any, 0, len(results))
 	for _, pr := range results {
 		if pr.OK {
@@ -400,11 +422,11 @@ func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, ac
 			pr.LayoutFilesPresent == layoutMax &&
 			pr.SymbolsPresent == symbolMax
 		if complete {
-			if !downloadable {
-				downloadableFrom = pr.Target.SupernodeAddress
+			if !fullCopyAvailable {
+				fullCopyFrom = pr.Target.SupernodeAddress
 			}
-			downloadable = true
-			downloadableFromAll = append(downloadableFromAll, pr.Target.SupernodeAddress)
+			fullCopyAvailable = true
+			fullCopyFromAll = append(fullCopyFromAll, pr.Target.SupernodeAddress)
 		}
 		dist = append(dist, map[string]any{
 			"supernode_address":    pr.Target.SupernodeAddress,
@@ -420,12 +442,35 @@ func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, ac
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                           true,
-		"action_id":                    actionID,
-		"duration_ms":                  time.Since(start).Milliseconds(),
-		"downloadable":                 downloadable,
-		"downloadable_from_supernode":  downloadableFrom,
-		"downloadable_from_supernodes": downloadableFromAll,
+		"ok":           true,
+		"action_id":    actionID,
+		"duration_ms":  time.Since(start).Milliseconds(),
+		"downloadable": downloadable,
+		"downloadable_from_supernode": func() string {
+			if downloadable {
+				return ra.selfSupernode
+			}
+			return ""
+		}(),
+		"downloadable_from_supernodes": func() []string {
+			if downloadable {
+				return []string{ra.selfSupernode}
+			}
+			return []string{}
+		}(),
+		"download_events":      downloadEvents,
+		"download_last_event":  downloadLastEvent,
+		"download_error":       downloadErr,
+		"downloaded_file_path": downloadedFilePath,
+		"downloaded_dir":       downloadedDir,
+		"full_copy_available":  fullCopyAvailable,
+		"full_copy_from_supernode": func() string {
+			if fullCopyAvailable {
+				return fullCopyFrom
+			}
+			return ""
+		}(),
+		"full_copy_from_supernodes": fullCopyFromAll,
 		"totals": map[string]any{
 			"index_files_total":  indexMax,
 			"layout_files_total": layoutMax,
@@ -438,6 +483,31 @@ func (ra *recoveryAdmin) handleStatus(w http.ResponseWriter, r *http.Request, ac
 		},
 		"distribution": dist,
 	})
+}
+
+func (ra *recoveryAdmin) checkDownloadable(ctx context.Context, actionID string) (ok bool, downloadErr string, events int, lastEvent string, downloadedFilePath string, downloadedDir string, err error) {
+	task := ra.cascadeFactory.NewCascadeRegistrationTask()
+	crt, castOK := task.(*cascadeService.CascadeRegistrationTask)
+	if !castOK {
+		return false, "", 0, "", "", "", fmt.Errorf("unexpected task type")
+	}
+
+	dlErr := crt.Download(ctx, &cascadeService.DownloadRequest{
+		ActionID:               actionID,
+		BypassPrivateSignature: true,
+	}, func(resp *cascadeService.DownloadResponse) error {
+		events++
+		lastEvent = fmt.Sprintf("%d:%s", resp.EventType, resp.Message)
+		if resp.EventType == cascadeService.SupernodeEventTypeDecodeCompleted {
+			downloadedDir = resp.DownloadedDir
+			downloadedFilePath = resp.FilePath
+		}
+		return nil
+	})
+	if dlErr != nil {
+		return false, dlErr.Error(), events, lastEvent, downloadedFilePath, downloadedDir, nil
+	}
+	return true, "", events, lastEvent, downloadedFilePath, downloadedDir, nil
 }
 
 func (ra *recoveryAdmin) handleInternalProbe(w http.ResponseWriter, r *http.Request) {
@@ -562,13 +632,13 @@ func (ra *recoveryAdmin) resolveArtefactBundle(ctx context.Context, actionID str
 			return artefactBundle{}, fmt.Errorf("parse layout_id %s: %v", lid, perr)
 		}
 		for _, blk := range layout.Blocks {
-			prefix := fmt.Sprintf("block_%d", blk.BlockID)
 			for _, sid := range blk.Symbols {
 				sid = strings.TrimSpace(sid)
 				if sid == "" {
 					continue
 				}
-				symbolSet[prefix+"/"+sid] = struct{}{}
+				// DHT symbol keys are raw symbol IDs (base58), not path-like block prefixes.
+				symbolSet[sid] = struct{}{}
 			}
 		}
 	}
