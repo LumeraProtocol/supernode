@@ -127,14 +127,24 @@ func (s *Server) persistRecipientProof(ctx context.Context, req *supernode.GetSl
 			Timestamp:  time.Now().UTC(),
 		},
 	}
-	challengeBz, _ := json.Marshal(challenge)
-	_ = s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
+	challengeBz, err := json.Marshal(challenge)
+	if err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to marshal challenge message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	} else if err := s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
 		MessageType:     int(types.ChallengeMessageType),
 		ChallengeID:     req.ChallengeId,
 		Data:            challengeBz,
 		Sender:          s.identity,
 		SenderSignature: []byte{},
-	})
+	}); err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to persist challenge message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	}
 
 	response := types.MessageData{
 		ChallengerID: req.ChallengerId,
@@ -145,14 +155,24 @@ func (s *Server) persistRecipientProof(ctx context.Context, req *supernode.GetSl
 			Timestamp: time.Now().UTC(),
 		},
 	}
-	responseBz, _ := json.Marshal(response)
-	_ = s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
+	responseBz, err := json.Marshal(response)
+	if err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to marshal response message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	} else if err := s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
 		MessageType:     int(types.ResponseMessageType),
 		ChallengeID:     req.ChallengeId,
 		Data:            responseBz,
 		Sender:          s.identity,
 		SenderSignature: []byte{},
-	})
+	}); err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to persist response message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	}
 
 	logtrace.Debug(ctx, "storage challenge proof served", logtrace.Fields{
 		"challenge_id": req.ChallengeId,
@@ -178,14 +198,24 @@ func (s *Server) persistObserverVerification(ctx context.Context, req *supernode
 			Timestamp:            time.Now().UTC(),
 		},
 	}
-	bz, _ := json.Marshal(eval)
-	_ = s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
+	bz, err := json.Marshal(eval)
+	if err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to marshal affirmation message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	} else if err := s.store.InsertStorageChallengeMessage(types.StorageChallengeLogMessage{
 		MessageType:     int(types.AffirmationMessageType),
 		ChallengeID:     req.ChallengeId,
 		Data:            bz,
 		Sender:          s.identity,
 		SenderSignature: []byte{},
-	})
+	}); err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to persist affirmation message", logtrace.Fields{
+			"challenge_id": req.ChallengeId,
+			"error":        err,
+		})
+	}
 
 	logtrace.Debug(ctx, "storage challenge proof verified", logtrace.Fields{
 		"challenge_id": req.ChallengeId,

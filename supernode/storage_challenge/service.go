@@ -516,8 +516,38 @@ func parseHostAndPort(address string, defaultPort int) (host string, port int, o
 		return h, defaultPort, true
 	}
 
-	// No port present; return default.
-	return address, defaultPort, true
+	// No port present. Treat it as a raw host if it is plausibly valid; otherwise fail.
+	host = strings.TrimSpace(address)
+	if host == "" {
+		return "", 0, false
+	}
+
+	// Accept bracketed IPv6 literal without a port (e.g. "[2001:db8::1]") by stripping brackets.
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && strings.Count(host, "]") == 1 {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+		host = strings.TrimSpace(host)
+		if host == "" {
+			return "", 0, false
+		}
+	}
+
+	// Reject obviously malformed inputs (paths, fragments, userinfo, whitespace, or stray brackets).
+	if strings.ContainsAny(host, " \t\r\n/\\?#@[]") {
+		return "", 0, false
+	}
+
+	// If it contains ':' it must be a valid IPv6 literal (optionally with a zone, e.g. "fe80::1%eth0").
+	if strings.Contains(host, ":") {
+		ipPart := host
+		if i := strings.IndexByte(ipPart, '%'); i >= 0 {
+			ipPart = ipPart[:i]
+		}
+		if net.ParseIP(ipPart) == nil {
+			return "", 0, false
+		}
+	}
+
+	return host, defaultPort, true
 }
 
 func (s *Service) callGetSliceProof(ctx context.Context, remoteIdentity string, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {
