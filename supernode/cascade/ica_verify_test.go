@@ -28,6 +28,10 @@ func (f *fakeCascadeLumeraClient) GetTopSupernodes(ctx context.Context, blockHei
 	return nil, nil
 }
 
+func (f *fakeCascadeLumeraClient) ListSupernodes(ctx context.Context) (*sntypes.QueryListSuperNodesResponse, error) {
+	return nil, nil
+}
+
 func (f *fakeCascadeLumeraClient) Verify(ctx context.Context, address string, msg []byte, sig []byte) error {
 	if f.verifyFn == nil {
 		return nil

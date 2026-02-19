@@ -15,8 +15,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
+	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
+	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 )
 
 // DefaultGatewayPort is an uncommon port for internal gateway use
@@ -30,6 +32,7 @@ type Server struct {
 	supernodeServer pb.SupernodeServiceServer
 	chainID         string
 	pprofEnabled    bool
+	recoveryAdmin   *recoveryAdmin
 }
 
 // NewServer creates a new HTTP gateway server that directly calls the service
@@ -53,6 +56,18 @@ func NewServer(ipAddress string, port int, supernodeServer pb.SupernodeServiceSe
 
 // NewServerWithConfig creates a new HTTP gateway server with additional configuration
 func NewServerWithConfig(ipAddress string, port int, supernodeServer pb.SupernodeServiceServer, chainID string) (*Server, error) {
+	return NewServerWithConfigAndRecovery(ipAddress, port, supernodeServer, chainID, nil)
+}
+
+// RecoveryDeps are optional dependencies for recovery APIs.
+type RecoveryDeps struct {
+	CascadeFactory       cascadeService.CascadeServiceFactory
+	P2PClient            p2p.Client
+	SelfSupernodeAddress string
+}
+
+// NewServerWithConfigAndRecovery creates gateway server with optional recovery APIs.
+func NewServerWithConfigAndRecovery(ipAddress string, port int, supernodeServer pb.SupernodeServiceServer, chainID string, deps *RecoveryDeps) (*Server, error) {
 	if supernodeServer == nil {
 		return nil, fmt.Errorf("supernode server is required")
 	}
@@ -65,13 +80,19 @@ func NewServerWithConfig(ipAddress string, port int, supernodeServer pb.Supernod
 	// Determine if pprof should be enabled
 	pprofEnabled := strings.Contains(strings.ToLower(chainID), "testnet") || os.Getenv("ENABLE_PPROF") == "true"
 
-	return &Server{
+	s := &Server{
 		ipAddress:       ipAddress,
 		port:            port,
 		supernodeServer: supernodeServer,
 		chainID:         chainID,
 		pprofEnabled:    pprofEnabled,
-	}, nil
+	}
+	if deps != nil {
+		if ra := newRecoveryAdminFromEnv(deps, port); ra != nil {
+			s.recoveryAdmin = ra
+		}
+	}
+	return s, nil
 }
 
 // Run starts the HTTP gateway server (implements service interface)
@@ -110,6 +131,14 @@ func (s *Server) Run(ctx context.Context) error {
 		httpMux.HandleFunc("/api/v1/debug/raw/pprof/cmdline", s.rawPprofHandler)
 		httpMux.HandleFunc("/api/v1/debug/raw/pprof/symbol", s.rawPprofHandler)
 		httpMux.HandleFunc("/api/v1/debug/raw/pprof/trace", s.rawPprofHandler)
+	}
+
+	// Register recovery endpoints before /api gateway routes.
+	if s.recoveryAdmin != nil {
+		s.recoveryAdmin.register(httpMux)
+		logtrace.Info(ctx, "Recovery endpoints enabled on gateway", logtrace.Fields{
+			"port": s.port,
+		})
 	}
 
 	// Register gRPC-Gateway endpoints
@@ -186,7 +215,7 @@ func (s *Server) corsMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization, X-Lumera-Recovery-Token")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)

@@ -12,6 +12,7 @@ import (
 type LumeraClient interface {
 	GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error)
 	GetTopSupernodes(ctx context.Context, blockHeight uint64) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error)
+	ListSupernodes(ctx context.Context) (*sntypes.QueryListSuperNodesResponse, error)
 	Verify(ctx context.Context, address string, msg []byte, sig []byte) error
 	GetActionFee(ctx context.Context, dataSizeKB string) (*actiontypes.QueryGetActionFeeResponse, error)
 	SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error)
@@ -30,6 +31,10 @@ func (l *lumeraImpl) GetTopSupernodes(ctx context.Context, blockHeight uint64) (
 	return l.c.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
 	})
+}
+
+func (l *lumeraImpl) ListSupernodes(ctx context.Context) (*sntypes.QueryListSuperNodesResponse, error) {
+	return l.c.SuperNode().ListSuperNodes(ctx)
 }
 
 func (l *lumeraImpl) Verify(ctx context.Context, address string, msg []byte, sig []byte) error {
