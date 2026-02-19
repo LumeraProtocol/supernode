@@ -185,13 +185,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
 		}
 
-		// Create HTTP gateway server that directly calls the supernode server
-		// Pass chain ID for pprof configuration
-		gatewayServer, err := gateway.NewServerWithConfig(
+		// Create HTTP gateway server that directly calls the supernode server.
+		// Recovery endpoints are always registered; access is token-gated at handler level.
+		gatewayServer, err := gateway.NewServerWithConfigAndRecovery(
 			appConfig.SupernodeConfig.Host,
 			int(appConfig.SupernodeConfig.GatewayPort),
 			supernodeServer,
 			appConfig.LumeraClientConfig.ChainID,
+			&gateway.RecoveryDeps{
+				CascadeFactory:       cService,
+				P2PClient:            p2pService,
+				SelfSupernodeAddress: appConfig.SupernodeConfig.Identity,
+			},
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create gateway server: %w", err)
