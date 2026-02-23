@@ -69,7 +69,8 @@ type DHT struct {
 	metrics        DHTMetrics
 
 	// routingAllowlist is a fast in-memory gate of which peers are eligible to
-	// participate in the routing table (based on chain state: Active only).
+	// participate in routing/read lookup paths (based on chain state).
+	// Current policy: Active + Postponed are routing-eligible.
 	//
 	// Hot paths do only an atomic check + map lookup; updates happen on the
 	// bootstrap refresh cadence.
@@ -77,6 +78,14 @@ type DHT struct {
 	routingAllow      map[[32]byte]struct{} // blake3(peerID) -> exists
 	routingAllowReady atomic.Bool
 	routingAllowCount atomic.Int64
+
+	// storeAllowlist is a fast in-memory gate of which peers are eligible for
+	// write/replication targets.
+	// Current policy: Active only.
+	storeAllowMu    sync.RWMutex
+	storeAllow      map[[32]byte]struct{} // blake3(peerID) -> exists
+	storeAllowReady atomic.Bool
+	storeAllowCount atomic.Int64
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -144,11 +153,11 @@ func (s *DHT) setRoutingAllowlist(ctx context.Context, allow map[[32]byte]struct
 	// Avoid accidentally locking ourselves out due to transient chain issues.
 	if len(allow) == 0 {
 		if !s.routingAllowReady.Load() {
-			logtrace.Debug(ctx, "routing allowlist from chain is empty; leaving gating disabled (bootstrap)", logtrace.Fields{
+			logtrace.Debug(ctx, "routing allowlist from chain is empty; leaving routing gating disabled (bootstrap)", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 			})
 		} else {
-			logtrace.Warn(ctx, "routing allowlist update skipped: chain returned zero active supernodes; retaining previous allowlist", logtrace.Fields{
+			logtrace.Warn(ctx, "routing allowlist update skipped: chain returned zero routing-eligible supernodes; retaining previous allowlist", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 			})
 		}
@@ -164,7 +173,29 @@ func (s *DHT) setRoutingAllowlist(ctx context.Context, allow map[[32]byte]struct
 
 	logtrace.Debug(ctx, "routing allowlist updated", logtrace.Fields{
 		logtrace.FieldModule: "p2p",
-		"active_peers":       len(allow),
+		"routing_peers":      len(allow),
+	})
+}
+
+func (s *DHT) setStoreAllowlist(ctx context.Context, allow map[[32]byte]struct{}) {
+	if s == nil {
+		return
+	}
+	// Integration tests may use synthetic bootstrap sets; do not enforce chain-state gating.
+	if integrationTestEnabled() {
+		return
+	}
+
+	s.storeAllowMu.Lock()
+	s.storeAllow = allow
+	s.storeAllowMu.Unlock()
+
+	s.storeAllowCount.Store(int64(len(allow)))
+	s.storeAllowReady.Store(true)
+
+	logtrace.Debug(ctx, "store allowlist updated", logtrace.Fields{
+		logtrace.FieldModule: "p2p",
+		"store_peers":        len(allow),
 	})
 }
 
@@ -176,9 +207,9 @@ func (s *DHT) eligibleForRouting(n *Node) bool {
 	if integrationTestEnabled() {
 		return true
 	}
-	// If allowlist isn't ready (or was never populated), do not gate to avoid blocking bootstrap.
+	// Strict gating: only explicitly allowlisted peers can participate in read/routing.
 	if !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
-		return true
+		return false
 	}
 	if n == nil || len(n.ID) == 0 {
 		return false
@@ -197,13 +228,50 @@ func (s *DHT) eligibleForRouting(n *Node) bool {
 	return ok
 }
 
+func (s *DHT) eligibleForStore(n *Node) bool {
+	if s == nil {
+		return false
+	}
+	// In integration tests allow everything; chain state gating is not stable/available there.
+	if integrationTestEnabled() {
+		return true
+	}
+	// If the store allowlist isn't ready yet, avoid blocking writes during bootstrap.
+	if !s.storeAllowReady.Load() {
+		return true
+	}
+	// Once initialized, an empty active set means no write-eligible peers.
+	if s.storeAllowCount.Load() == 0 {
+		return false
+	}
+	if n == nil || len(n.ID) == 0 {
+		return false
+	}
+
+	n.SetHashedID()
+	if len(n.HashedID) != 32 {
+		return false
+	}
+	var key [32]byte
+	copy(key[:], n.HashedID)
+
+	s.storeAllowMu.RLock()
+	_, ok := s.storeAllow[key]
+	s.storeAllowMu.RUnlock()
+	return ok
+}
+
 func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
 	if s == nil || len(nodes) == 0 {
 		return nodes
 	}
-	// Fast path: not enforcing (integration tests / not ready / empty list)
-	if integrationTestEnabled() || !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+	// Fast path for integration tests only.
+	if integrationTestEnabled() {
 		return nodes
+	}
+	// Strict gating: without a routing allowlist there are no eligible routing peers.
+	if !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+		return nil
 	}
 
 	out := nodes[:0]
@@ -2105,6 +2173,9 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 	launched := 0
 	for i := 0; i < Alpha && i < nl.Len(); i++ {
 		n := nl.Nodes[i]
+		if !s.eligibleForStore(n) {
+			continue
+		}
 		if s.ignorelist.Banned(n) {
 			continue
 		}
@@ -2146,6 +2217,9 @@ func (s *DHT) storeToAlphaNodes(ctx context.Context, nl *NodeList, data []byte, 
 	finalStoreCount := atomic.LoadInt32(&storeCount)
 	for i := Alpha; i < nl.Len() && finalStoreCount < int32(Alpha); i++ {
 		n := nl.Nodes[i]
+		if !s.eligibleForStore(n) {
+			continue
+		}
 		if s.ignorelist.Banned(n) {
 			logtrace.Debug(ctx, "Ignore banned node during sequential store", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
@@ -2282,11 +2356,17 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
+	routingNodeCount := len(s.ht.nodes())
+	candidateLimit := routingNodeCount
+	if candidateLimit < Alpha {
+		candidateLimit = Alpha
+	}
 	ignoreList := s.ignorelist.ToNodeList()
 	ignoredSet := hashedIDSetFromNodes(ignoreList)
+	keysWithoutCandidates := 0
 
 	{
-		f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": len(s.ht.nodes()), logtrace.FieldRole: "client"}
+		f := logtrace.Fields{logtrace.FieldModule: "dht", "task_id": id, "keys": len(values), "len_nodes": routingNodeCount, logtrace.FieldRole: "client"}
 		if o := logtrace.OriginFromContext(ctx); o != "" {
 			f[logtrace.FieldOrigin] = o
 		}
@@ -2295,11 +2375,39 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 	for i := 0; i < len(values); i++ {
 		target, _ := utils.Blake3Hash(values[i])
 		hashes[i] = target
-		top6 := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, target, ignoredSet, nil)
+		candidates := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(candidateLimit, target, ignoredSet, nil)
 
-		globalClosestContacts[base58.Encode(target)] = top6
-		// log.WithContext(ctx).WithField("top 6", top6).Info("iterate batch store begin")
-		s.addKnownNodes(ctx, top6.Nodes, knownNodes)
+		writeEligible := make([]*Node, 0, Alpha)
+		for _, n := range candidates.Nodes {
+			if s.eligibleForStore(n) {
+				writeEligible = append(writeEligible, n)
+				if len(writeEligible) >= Alpha {
+					break
+				}
+			}
+		}
+		if len(writeEligible) == 0 {
+			keysWithoutCandidates++
+		}
+		globalClosestContacts[base58.Encode(target)] = &NodeList{Nodes: writeEligible}
+		// log.WithContext(ctx).WithField("top 6", candidates).Info("iterate batch store begin")
+		s.addKnownNodes(ctx, writeEligible, knownNodes)
+	}
+
+	if keysWithoutCandidates > 0 {
+		logtrace.Error(ctx, "dht: batch store skipped (keys without eligible store nodes)", logtrace.Fields{
+			logtrace.FieldModule:  "dht",
+			"task_id":             id,
+			"keys":                len(values),
+			"keys_without_nodes":  keysWithoutCandidates,
+			"len_nodes":           routingNodeCount,
+			"banned_nodes":        len(ignoreList),
+			"routing_allow_ready": s.routingAllowReady.Load(),
+			"routing_allow_count": s.routingAllowCount.Load(),
+			"store_allow_ready":   s.storeAllowReady.Load(),
+			"store_allow_count":   s.storeAllowCount.Load(),
+		})
+		return fmt.Errorf("no eligible store peers for %d/%d keys", keysWithoutCandidates, len(values))
 	}
 
 	storageMap := make(map[string][]int) // This will store the index of the data in the values array that needs to be stored to the node
@@ -2325,10 +2433,12 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 			logtrace.FieldModule:  "dht",
 			"task_id":             id,
 			"keys":                len(values),
-			"len_nodes":           len(s.ht.nodes()),
+			"len_nodes":           routingNodeCount,
 			"banned_nodes":        len(ignoreList),
 			"routing_allow_ready": s.routingAllowReady.Load(),
 			"routing_allow_count": s.routingAllowCount.Load(),
+			"store_allow_ready":   s.storeAllowReady.Load(),
+			"store_allow_count":   s.storeAllowCount.Load(),
 		})
 		return fmt.Errorf("no candidate nodes for batch store")
 	}
@@ -2414,6 +2524,9 @@ func (s *DHT) batchStoreNetwork(ctx context.Context, values [][]byte, nodes map[
 
 	for key, node := range nodes {
 		logtrace.Debug(ctx, "Preparing batch store to node", logtrace.Fields{logtrace.FieldModule: "dht", "node": node.String()})
+		if !s.eligibleForStore(node) {
+			continue
+		}
 		if s.ignorelist.Banned(node) {
 			logtrace.Debug(ctx, "Ignoring banned node in batch store network call", logtrace.Fields{
 				logtrace.FieldModule: "dht",
