@@ -3,6 +3,7 @@ package mem
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -134,7 +135,7 @@ func (s *Store) GetOwnCreatedAt(_ context.Context) (t time.Time, err error) {
 }
 
 // StoreBatchRepKeys ...
-func (s *Store) StoreBatchRepKeys(_ []string, _ string, _ string, _ int) error {
+func (s *Store) StoreBatchRepKeys(_ []string, _ string, _ string, _ uint16) error {
 	return nil
 }
 
@@ -161,6 +162,46 @@ func (s *Store) RetrieveBatchNotExist(_ context.Context, _ []string, _ int) ([]s
 // RetrieveBatchValues retrieves a batch of values
 func (s *Store) RetrieveBatchValues(_ context.Context, _ []string, _ bool) ([][]byte, int, error) {
 	return nil, 0, nil
+}
+
+func (s *Store) RetrieveBatchLocalStatus(_ context.Context, keys []string) (map[string]kademlia.LocalKeyStatus, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	out := make(map[string]kademlia.LocalKeyStatus, len(keys))
+	for _, key := range keys {
+		v, ok := s.data[key]
+		if !ok {
+			out[key] = kademlia.LocalKeyStatus{}
+			continue
+		}
+		out[key] = kademlia.LocalKeyStatus{
+			Exists:       true,
+			HasLocalBlob: len(v) > 0,
+			DataLen:      len(v),
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) ListLocalKeysPage(_ context.Context, afterKey string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
+		if k > afterKey {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	return keys, nil
 }
 
 // BatchDeleteRepKeys deletes a batch of keys from the replication table

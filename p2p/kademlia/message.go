@@ -30,6 +30,8 @@ const (
 	BatchFindNode
 	// BatchGetValues finds values in kademlia network
 	BatchGetValues
+	// BatchProbeKeys checks local key presence/status without side effects
+	BatchProbeKeys
 )
 
 func init() {
@@ -49,6 +51,8 @@ func init() {
 	gob.Register(&BatchFindNodeResponse{})
 	gob.Register(&BatchGetValuesRequest{})
 	gob.Register(&BatchGetValuesResponse{})
+	gob.Register(&BatchProbeKeysRequest{})
+	gob.Register(&BatchProbeKeysResponse{})
 }
 
 type MessageWithError struct {
@@ -164,6 +168,17 @@ type BatchGetValuesResponse struct {
 	Data map[string]KeyValWithClosest // keys are hex encoded
 	//Data   []byte
 	Status ResponseStatus
+}
+
+// BatchProbeKeysRequest defines the request data for side-effect-free local key probes.
+type BatchProbeKeysRequest struct {
+	Keys []string // hex-encoded keys
+}
+
+// BatchProbeKeysResponse defines the response data for local key probes.
+type BatchProbeKeysResponse struct {
+	Status ResponseStatus
+	Data   map[string]LocalKeyStatus // key -> local status
 }
 
 // encode the message

@@ -47,6 +47,7 @@ func init() {
 		FindValue:       5 * time.Second,
 		BatchFindValues: 60 * time.Second, // responder compresses
 		BatchGetValues:  75 * time.Second, // large, sometimes cloud fetch then send back
+		BatchProbeKeys:  10 * time.Second,
 		StoreData:       10 * time.Second,
 		BatchStoreData:  75 * time.Second, // large uncompressed payloads
 		Replicate:       90 * time.Second,
@@ -232,6 +233,37 @@ func (s *Network) handleFindValue(ctx context.Context, message *Message) (res []
 
 	// new a response message
 	resMsg := s.dht.newMessage(FindValue, message.Sender, response)
+	return s.encodeMesage(resMsg)
+}
+
+func (s *Network) handleBatchProbeKeys(ctx context.Context, message *Message) (res []byte, err error) {
+	defer func() {
+		if response, err := s.handlePanic(ctx, message.Sender, BatchProbeKeys); response != nil || err != nil {
+			res = response
+		}
+	}()
+
+	request, ok := message.Data.(*BatchProbeKeysRequest)
+	if !ok {
+		err := errors.New("invalid BatchProbeKeysRequest")
+		return s.generateResponseMessage(ctx, BatchProbeKeys, message.Sender, ResultFailed, err.Error())
+	}
+
+	// Keep routing table fresh while handling probe traffic.
+	s.dht.addNode(ctx, message.Sender)
+
+	statuses, err := s.dht.store.RetrieveBatchLocalStatus(ctx, request.Keys)
+	if err != nil {
+		err = errors.Errorf("batch probe keys: %w", err)
+		return s.generateResponseMessage(ctx, BatchProbeKeys, message.Sender, ResultFailed, err.Error())
+	}
+
+	response := &BatchProbeKeysResponse{
+		Status: ResponseStatus{Result: ResultOk},
+		Data:   statuses,
+	}
+
+	resMsg := s.dht.newMessage(BatchProbeKeys, message.Sender, response)
 	return s.encodeMesage(resMsg)
 }
 
@@ -479,6 +511,10 @@ func (s *Network) handleConn(ctx context.Context, rawConn net.Conn) {
 		case BatchGetValues:
 			response, hErr = s.withMetrics(BatchGetValues, func() ([]byte, error) {
 				return s.handleGetValuesRequest(ctx, request, reqID)
+			})
+		case BatchProbeKeys:
+			response, hErr = s.withMetrics(BatchProbeKeys, func() ([]byte, error) {
+				return s.handleBatchProbeKeys(ctx, request)
 			})
 		default:
 			// count unknown types as failure and return
@@ -1321,6 +1357,8 @@ func (s *Network) generateResponseMessage(ctx context.Context, messageType int, 
 		response = &ReplicateDataResponse{Status: responseStatus}
 	case BatchGetValues:
 		response = &BatchGetValuesResponse{Status: responseStatus}
+	case BatchProbeKeys:
+		response = &BatchProbeKeysResponse{Status: responseStatus}
 	default:
 		return nil, fmt.Errorf("unsupported message type %d", messageType)
 	}
@@ -1461,6 +1499,8 @@ func msgName(t int) string {
 		return "BatchStoreData"
 	case Replicate:
 		return "Replicate"
+	case BatchProbeKeys:
+		return "BatchProbeKeys"
 	default:
 		return fmt.Sprintf("Type_%d", t)
 	}
@@ -1501,7 +1541,7 @@ func (s *Network) HandleMetricsSnapshot() map[string]HandleCounters {
 func readDeadlineFor(msgType int, overall time.Duration) time.Duration {
 	small := 10 * time.Second
 	switch msgType {
-	case Ping, FindNode, BatchFindNode, FindValue, StoreData, BatchStoreData:
+	case Ping, FindNode, BatchFindNode, FindValue, StoreData, BatchStoreData, BatchProbeKeys:
 		if overall > small+1*time.Second {
 			return small
 		}

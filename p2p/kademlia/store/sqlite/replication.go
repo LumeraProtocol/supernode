@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia/domain"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/cenkalti/backoff/v4"
@@ -483,6 +484,79 @@ func (s *Store) RetrieveBatchNotExist(ctx context.Context, keys []string, batchS
 
 func (s Store) RetrieveBatchValues(ctx context.Context, keys []string, getFromCloud bool) ([][]byte, int, error) {
 	return retrieveBatchValues(ctx, s.db, keys, getFromCloud, s)
+}
+
+// RetrieveBatchLocalStatus returns local key status without cloud fetches or writes.
+func (s *Store) RetrieveBatchLocalStatus(ctx context.Context, keys []string) (map[string]kademlia.LocalKeyStatus, error) {
+	out := make(map[string]kademlia.LocalKeyStatus, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	for _, k := range keys {
+		out[k] = kademlia.LocalKeyStatus{}
+	}
+
+	for _, batchKeys := range chunkStrings(keys, sqliteMaxVars) {
+		placeholders := make([]string, len(batchKeys))
+		args := make([]interface{}, len(batchKeys))
+		for i, key := range batchKeys {
+			placeholders[i] = "?"
+			args[i] = key
+		}
+
+		query := fmt.Sprintf(`SELECT key, length(data) AS data_len, datatype, is_original, is_on_cloud FROM data WHERE key IN (%s)`, strings.Join(placeholders, ","))
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("retrieve local key status: %w", err)
+		}
+
+		for rows.Next() {
+			var key string
+			var dataLen sql.NullInt64
+			var datatype sql.NullInt64
+			var isOriginal bool
+			var isOnCloud bool
+			if err := rows.Scan(&key, &dataLen, &datatype, &isOriginal, &isOnCloud); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan local key status: %w", err)
+			}
+			dl := 0
+			if dataLen.Valid {
+				dl = int(dataLen.Int64)
+			}
+			dt := 0
+			if datatype.Valid {
+				dt = int(datatype.Int64)
+			}
+			out[key] = kademlia.LocalKeyStatus{
+				Exists:       true,
+				HasLocalBlob: dl > 0,
+				DataLen:      dl,
+				Datatype:     dt,
+				IsOriginal:   isOriginal,
+				IsOnCloud:    isOnCloud,
+			}
+		}
+
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("rows local key status: %w", err)
+		}
+		_ = rows.Close()
+	}
+
+	return out, nil
+}
+
+func (s *Store) ListLocalKeysPage(ctx context.Context, afterKey string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	keys := make([]string, 0, limit)
+	if err := s.db.SelectContext(ctx, &keys, `SELECT key FROM data WHERE key > ? ORDER BY key ASC LIMIT ?`, afterKey, limit); err != nil {
+		return nil, fmt.Errorf("list local keys page: %w", err)
+	}
+	return keys, nil
 }
 
 // RetrieveBatchValues returns a list of values for the given keys (hex-encoded).

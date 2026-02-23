@@ -210,12 +210,12 @@ func (s *DHT) eligibleForRouting(n *Node) bool {
 	if integrationTestEnabled() {
 		return true
 	}
-	// Bootstrap-safe behavior: until first non-empty chain allowlist arrives,
-	// keep routing/read gating disabled to avoid accidental lockout.
+	// Bootstrap fail-open: until the first successful allowlist sync, do not block routing.
+	// This avoids startup isolation during transient chain/API failures.
 	if !s.routingAllowReady.Load() {
 		return true
 	}
-	// Once initialized, an empty active set means no routing-eligible peers.
+	// Once initialized, an empty routing set means no routing-eligible peers.
 	if s.routingAllowCount.Load() == 0 {
 		return false
 	}
@@ -274,8 +274,8 @@ func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
 	if integrationTestEnabled() {
 		return nodes
 	}
-	// If the routing allowlist has not been initialized yet, keep gating disabled
-	// but still sanitize malformed node entries.
+	// Bootstrap fail-open: before first allowlist sync, keep routing candidates
+	// but sanitize malformed node entries.
 	if !s.routingAllowReady.Load() {
 		out := nodes[:0]
 		for _, n := range nodes {
@@ -286,7 +286,7 @@ func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
 		}
 		return out
 	}
-	// Once initialized, empty means no routing-eligible peers.
+	// Once initialized, an empty allowlist means no routing-eligible peers.
 	if s.routingAllowCount.Load() == 0 {
 		return nil
 	}
@@ -514,6 +514,7 @@ func (s *DHT) Start(ctx context.Context) error {
 	}
 
 	go s.StartReplicationWorker(ctx)
+	go s.startRebalanceWorker(ctx)
 	go s.startDisabledKeysCleanupWorker(ctx)
 	// TEMPORARY: disabled to pause redundant-key classification into del_keys.
 	// Re-enable once deletion-safety behavior is finalized.
@@ -2099,7 +2100,7 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 	node.SetHashedID()
 
 	// Chain-state routing gate (enabled after allowlist initialization):
-	// only chain-allowlisted peers may enter the routing table.
+	// only routing-eligible supernodes (Active + Postponed) can be admitted.
 	if !s.eligibleForRouting(node) {
 		logtrace.Debug(ctx, "Rejecting node: not eligible for routing", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
