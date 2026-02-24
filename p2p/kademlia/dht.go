@@ -203,15 +203,20 @@ func (s *DHT) eligibleForRouting(n *Node) bool {
 	if s == nil {
 		return false
 	}
+	if n == nil || len(n.ID) == 0 {
+		return false
+	}
 	// In integration tests allow everything; chain state gating is not stable/available there.
 	if integrationTestEnabled() {
 		return true
 	}
-	// Strict gating: only explicitly allowlisted peers can participate in read/routing.
-	if !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
-		return false
+	// Bootstrap-safe behavior: until first non-empty chain allowlist arrives,
+	// keep routing/read gating disabled to avoid accidental lockout.
+	if !s.routingAllowReady.Load() {
+		return true
 	}
-	if n == nil || len(n.ID) == 0 {
+	// Once initialized, an empty active set means no routing-eligible peers.
+	if s.routingAllowCount.Load() == 0 {
 		return false
 	}
 
@@ -269,8 +274,20 @@ func (s *DHT) filterEligibleNodes(nodes []*Node) []*Node {
 	if integrationTestEnabled() {
 		return nodes
 	}
-	// Strict gating: without a routing allowlist there are no eligible routing peers.
-	if !s.routingAllowReady.Load() || s.routingAllowCount.Load() == 0 {
+	// If the routing allowlist has not been initialized yet, keep gating disabled
+	// but still sanitize malformed node entries.
+	if !s.routingAllowReady.Load() {
+		out := nodes[:0]
+		for _, n := range nodes {
+			if n == nil || len(n.ID) == 0 {
+				continue
+			}
+			out = append(out, n)
+		}
+		return out
+	}
+	// Once initialized, empty means no routing-eligible peers.
+	if s.routingAllowCount.Load() == 0 {
 		return nil
 	}
 
@@ -2081,8 +2098,8 @@ func (s *DHT) addNode(ctx context.Context, node *Node) *Node {
 	}
 	node.SetHashedID()
 
-	// Chain-state gating: only allow Active supernodes into the routing table.
-	// This prevents postponed/disabled/stopped nodes from being admitted via inbound traffic.
+	// Chain-state routing gate (enabled after allowlist initialization):
+	// only chain-allowlisted peers may enter the routing table.
 	if !s.eligibleForRouting(node) {
 		logtrace.Debug(ctx, "Rejecting node: not eligible for routing", logtrace.Fields{
 			logtrace.FieldModule: "p2p",
