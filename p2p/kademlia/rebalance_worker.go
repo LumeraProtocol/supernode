@@ -92,6 +92,13 @@ func (s *DHT) rebalanceOnce(ctx context.Context, startCursor string, deleteConfi
 	healed := 0
 	deleted := 0
 	decodeErrors := 0
+	ignoredSet := hashedIDSetFromNodes(s.ignorelist.ToNodeList())
+	self := &Node{ID: s.ht.self.ID, IP: s.ht.self.IP, Port: s.ht.self.Port}
+	self.SetHashedID()
+	candidateLimit := s.ht.peersCount() + 1
+	if candidateLimit < rebalanceProbeFanout {
+		candidateLimit = rebalanceProbeFanout
+	}
 
 	for processed < rebalanceMaxKeysPerCycle {
 		keys, err := s.store.ListLocalKeysPage(ctx, cursor, rebalanceScanPageSize)
@@ -122,17 +129,13 @@ func (s *DHT) rebalanceOnce(ctx context.Context, startCursor string, deleteConfi
 				continue
 			}
 
-			candidates := s.storeEligibleCandidatesForKey(keyBytes, rebalanceProbeFanout)
+			candidates := s.storeEligibleCandidatesForKeyWithSnapshot(keyBytes, rebalanceProbeFanout, candidateLimit, ignoredSet, self)
 			if len(candidates) == 0 {
 				delete(deleteConfirm, keyHex)
 				continue
 			}
 
-			ownerN := Alpha
-			if ownerN > len(candidates) {
-				ownerN = len(candidates)
-			}
-			owners := candidates[:ownerN]
+			owners := rebalanceOwners(candidates)
 			isOwner := containsNodeID(owners, s.ht.self.ID)
 
 			probeStatuses, holders := s.probeKeyAcrossCandidates(ctx, keyHex, candidates)
@@ -160,7 +163,7 @@ func (s *DHT) rebalanceOnce(ctx context.Context, startCursor string, deleteConfi
 				underReplicated++
 				delete(deleteConfirm, keyHex)
 
-				if isOwner && healed < rebalanceMaxHealsPerCycle {
+				if rebalanceShouldHeal(isOwner, holders, healed) {
 					before := holders
 					holders = s.healKeyToMinimumReplicas(ctx, keyHex, keyBytes, candidates, probeStatuses, holders, selfStatus.Datatype)
 					if holders > before {
@@ -170,9 +173,9 @@ func (s *DHT) rebalanceOnce(ctx context.Context, startCursor string, deleteConfi
 				continue
 			}
 
-			if !isOwner && holders >= Alpha {
+			if rebalanceShouldTrackDeleteConfirm(isOwner, holders) {
 				deleteConfirm[keyHex]++
-				if deleteConfirm[keyHex] >= rebalanceDeleteConfirmCycles && deleted < rebalanceMaxDeletesPerCycle {
+				if rebalanceShouldDelete(deleteConfirm[keyHex], deleted) {
 					if err := s.store.BatchDeleteRecords([]string{keyHex}); err != nil {
 						logtrace.Error(ctx, "rebalance: local delete failed", logtrace.Fields{
 							logtrace.FieldModule: "p2p",
@@ -215,13 +218,23 @@ func (s *DHT) storeEligibleCandidatesForKey(target []byte, want int) []*Node {
 		return nil
 	}
 
-	candidateLimit := len(s.ht.nodes()) + 1
+	candidateLimit := s.ht.peersCount() + 1
 	if candidateLimit < want {
 		candidateLimit = want
 	}
 	ignoredSet := hashedIDSetFromNodes(s.ignorelist.ToNodeList())
 	self := &Node{ID: s.ht.self.ID, IP: s.ht.self.IP, Port: s.ht.self.Port}
 	self.SetHashedID()
+	return s.storeEligibleCandidatesForKeyWithSnapshot(target, want, candidateLimit, ignoredSet, self)
+}
+
+func (s *DHT) storeEligibleCandidatesForKeyWithSnapshot(target []byte, want int, candidateLimit int, ignoredSet hashedIDSet, self *Node) []*Node {
+	if s == nil || s.ht == nil || len(target) == 0 {
+		return nil
+	}
+	if candidateLimit < want {
+		candidateLimit = want
+	}
 	nl := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(candidateLimit, target, ignoredSet, self)
 
 	out := make([]*Node, 0, want)
@@ -240,6 +253,26 @@ func (s *DHT) storeEligibleCandidatesForKey(target []byte, want int) []*Node {
 		}
 	}
 	return out
+}
+
+func rebalanceOwners(candidates []*Node) []*Node {
+	ownerN := Alpha
+	if ownerN > len(candidates) {
+		ownerN = len(candidates)
+	}
+	return candidates[:ownerN]
+}
+
+func rebalanceShouldHeal(isOwner bool, holders int, healed int) bool {
+	return isOwner && holders < Alpha && healed < rebalanceMaxHealsPerCycle
+}
+
+func rebalanceShouldTrackDeleteConfirm(isOwner bool, holders int) bool {
+	return !isOwner && holders >= Alpha
+}
+
+func rebalanceShouldDelete(confirmCount int, deleted int) bool {
+	return confirmCount >= rebalanceDeleteConfirmCycles && deleted < rebalanceMaxDeletesPerCycle
 }
 
 func (s *DHT) probeKeyAcrossCandidates(ctx context.Context, keyHex string, candidates []*Node) (map[string]LocalKeyStatus, int) {

@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -33,6 +34,8 @@ const (
 	errorBusy                          = "Busy"
 	maxConcurrentFindBatchValsRequests = 25
 	defaultExecTimeout                 = 15 * time.Second
+	maxBatchProbeKeysPerRequest        = 2000
+	batchProbeKeyHexLen                = 64
 )
 
 // Global map for message type timeouts
@@ -252,6 +255,10 @@ func (s *Network) handleBatchProbeKeys(ctx context.Context, message *Message) (r
 	// Keep routing table fresh while handling probe traffic.
 	s.dht.addNode(ctx, message.Sender)
 
+	if err := validateBatchProbeKeysRequest(request.Keys); err != nil {
+		return s.generateResponseMessage(ctx, BatchProbeKeys, message.Sender, ResultFailed, err.Error())
+	}
+
 	statuses, err := s.dht.store.RetrieveBatchLocalStatus(ctx, request.Keys)
 	if err != nil {
 		err = errors.Errorf("batch probe keys: %w", err)
@@ -265,6 +272,21 @@ func (s *Network) handleBatchProbeKeys(ctx context.Context, message *Message) (r
 
 	resMsg := s.dht.newMessage(BatchProbeKeys, message.Sender, response)
 	return s.encodeMesage(resMsg)
+}
+
+func validateBatchProbeKeysRequest(keys []string) error {
+	if len(keys) > maxBatchProbeKeysPerRequest {
+		return errors.Errorf("too many keys in probe request: %d > %d", len(keys), maxBatchProbeKeysPerRequest)
+	}
+	for i, key := range keys {
+		if len(key) != batchProbeKeyHexLen {
+			return errors.Errorf("invalid key length at index %d", i)
+		}
+		if _, err := hex.DecodeString(key); err != nil {
+			return errors.Errorf("invalid key encoding at index %d", i)
+		}
+	}
+	return nil
 }
 
 func (s *Network) handleStoreData(ctx context.Context, message *Message) (res []byte, err error) {

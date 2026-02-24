@@ -2,6 +2,7 @@ package mem
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"sort"
 	"sync"
@@ -172,6 +173,12 @@ func (s *Store) RetrieveBatchLocalStatus(_ context.Context, keys []string) (map[
 	for _, key := range keys {
 		v, ok := s.data[key]
 		if !ok {
+			decoded, err := hex.DecodeString(key)
+			if err == nil {
+				v, ok = s.data[string(decoded)]
+			}
+		}
+		if !ok {
 			out[key] = kademlia.LocalKeyStatus{}
 			continue
 		}
@@ -192,16 +199,31 @@ func (s *Store) ListLocalKeysPage(_ context.Context, afterKey string, limit int)
 	defer s.mutex.RUnlock()
 
 	keys := make([]string, 0, len(s.data))
-	for k := range s.data {
-		if k > afterKey {
-			keys = append(keys, k)
+	seen := make(map[string]struct{}, len(s.data))
+	for rawKey := range s.data {
+		keyHex := toHexStorageKey(rawKey)
+		if keyHex <= afterKey {
+			continue
 		}
+		if _, exists := seen[keyHex]; exists {
+			continue
+		}
+		seen[keyHex] = struct{}{}
+		keys = append(keys, keyHex)
 	}
 	sort.Strings(keys)
 	if len(keys) > limit {
 		keys = keys[:limit]
 	}
 	return keys, nil
+}
+
+func toHexStorageKey(rawKey string) string {
+	// Keep already-hex keys stable while normalizing any raw-byte map keys used by tests.
+	if decoded, err := hex.DecodeString(rawKey); err == nil {
+		return hex.EncodeToString(decoded)
+	}
+	return hex.EncodeToString([]byte(rawKey))
 }
 
 // BatchDeleteRepKeys deletes a batch of keys from the replication table
