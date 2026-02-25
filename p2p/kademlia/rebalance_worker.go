@@ -173,10 +173,17 @@ func (s *DHT) rebalanceOnce(ctx context.Context, startCursor string, deleteConfi
 				continue
 			}
 
-			if rebalanceShouldTrackDeleteConfirm(isOwner, holders) {
-				deleteConfirm[keyHex]++
-				if rebalanceShouldDelete(deleteConfirm[keyHex], deleted) {
-					if err := s.store.BatchDeleteRecords([]string{keyHex}); err != nil {
+				// Preserve uploader/original copies even when this node is not in the
+				// current owner set and replica count is healthy.
+				if selfStatus.IsOriginal {
+					delete(deleteConfirm, keyHex)
+					continue
+				}
+
+				if rebalanceShouldTrackDeleteConfirm(isOwner, holders) {
+					deleteConfirm[keyHex]++
+					if rebalanceShouldDelete(deleteConfirm[keyHex], deleted) {
+						if err := s.store.BatchDeleteRecords([]string{keyHex}); err != nil {
 						logtrace.Error(ctx, "rebalance: local delete failed", logtrace.Fields{
 							logtrace.FieldModule: "p2p",
 							logtrace.FieldError:  err.Error(),
