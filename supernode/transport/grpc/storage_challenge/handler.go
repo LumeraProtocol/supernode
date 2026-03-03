@@ -16,6 +16,8 @@ import (
 	"lukechampine.com/blake3"
 )
 
+const maxServedSliceBytes = uint64(65_536)
+
 type Server struct {
 	supernode.UnimplementedStorageChallengeServiceServer
 
@@ -48,17 +50,31 @@ func (s *Server) GetSliceProof(ctx context.Context, req *supernode.GetSliceProof
 	start := req.RequestedStart
 	end := req.RequestedEnd
 	if end <= start {
-		start = 0
-		end = uint64(len(data))
+		return &supernode.GetSliceProofResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			FileKey:     req.FileKey,
+			RecipientId: s.identity,
+			Ok:          false,
+			Error:       "invalid requested range: requested_end must be greater than requested_start",
+		}, nil
 	}
-	if start >= uint64(len(data)) {
-		start = 0
+	dataLen := uint64(len(data))
+	if start >= dataLen {
+		return &supernode.GetSliceProofResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			FileKey:     req.FileKey,
+			RecipientId: s.identity,
+			Ok:          false,
+			Error:       "invalid requested range: requested_start is out of bounds",
+		}, nil
 	}
-	if end > uint64(len(data)) {
-		end = uint64(len(data))
+	if end > dataLen {
+		end = dataLen
 	}
-	if end < start {
-		end = start
+	if end-start > maxServedSliceBytes {
+		end = start + maxServedSliceBytes
 	}
 
 	slice := make([]byte, int(end-start))
@@ -118,12 +134,12 @@ func (s *Server) persistRecipientProof(ctx context.Context, req *supernode.GetSl
 
 	challenge := types.MessageData{
 		ChallengerID: req.ChallengerId,
-		RecipientID:  req.RecipientId,
+		RecipientID:  s.identity,
 		Observers:    append([]string(nil), req.ObserverIds...),
 		Challenge: types.ChallengeData{
 			FileHash:   req.FileKey,
-			StartIndex: int(req.RequestedStart),
-			EndIndex:   int(req.RequestedEnd),
+			StartIndex: int(resp.Start),
+			EndIndex:   int(resp.End),
 			Timestamp:  time.Now().UTC(),
 		},
 	}
@@ -148,7 +164,7 @@ func (s *Server) persistRecipientProof(ctx context.Context, req *supernode.GetSl
 
 	response := types.MessageData{
 		ChallengerID: req.ChallengerId,
-		RecipientID:  req.RecipientId,
+		RecipientID:  s.identity,
 		Observers:    append([]string(nil), req.ObserverIds...),
 		Response: types.ResponseData{
 			Hash:      resp.ProofHashHex,

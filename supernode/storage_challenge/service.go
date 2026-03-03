@@ -49,8 +49,9 @@ const (
 	scMaxSliceBytes = uint64(65_536)
 
 	// scResponseTimeout/scAffirmationTimeout are the gRPC timeouts for recipient proof and observer verification.
-	scResponseTimeout    = 30 * time.Second
-	scAffirmationTimeout = 30 * time.Second
+	scResponseTimeout       = 30 * time.Second
+	scAffirmationTimeout    = 30 * time.Second
+	scEvidenceSubmitTimeout = 20 * time.Second
 
 	// scCandidateKeysLookbackEpochs is how many epochs back we look for candidate local keys.
 	scCandidateKeysLookbackEpochs = uint32(1)
@@ -608,7 +609,10 @@ func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Par
 		return err
 	}
 
-	_, err = s.lumera.AuditMsg().SubmitEvidence(ctx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
+	submitCtx, cancel := context.WithTimeout(ctx, scEvidenceSubmitTimeout)
+	defer cancel()
+
+	_, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
 	if err != nil {
 		return err
 	}
