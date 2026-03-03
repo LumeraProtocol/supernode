@@ -21,6 +21,7 @@ import (
 const (
 	defaultPollInterval = 5 * time.Second
 	defaultDialTimeout  = 2 * time.Second
+	defaultTickTimeout  = 30 * time.Second
 
 	maxConcurrentTargets = 8
 )
@@ -103,32 +104,36 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) tick(ctx context.Context) {
-	epochResp, err := s.lumera.Audit().GetCurrentEpoch(ctx)
+	// Bound each reporting cycle so a slow/hung chain RPC cannot block future ticks indefinitely.
+	tickCtx, cancel := context.WithTimeout(ctx, defaultTickTimeout)
+	defer cancel()
+
+	epochResp, err := s.lumera.Audit().GetCurrentEpoch(tickCtx)
 	if err != nil || epochResp == nil {
 		return
 	}
 	epochID := epochResp.EpochId
 	reachability.SetCurrentEpochID(epochID)
 
-	anchorResp, err := s.lumera.Audit().GetEpochAnchor(ctx, epochID)
+	anchorResp, err := s.lumera.Audit().GetEpochAnchor(tickCtx, epochID)
 	if err != nil || anchorResp == nil || anchorResp.Anchor.EpochId != epochID {
 		// Anchor may not be committed yet at the epoch boundary; retry on next tick.
 		return
 	}
 
 	// Idempotency: if a report exists for this epoch, do nothing.
-	if _, err := s.lumera.Audit().GetEpochReport(ctx, epochID, s.identity); err == nil {
+	if _, err := s.lumera.Audit().GetEpochReport(tickCtx, epochID, s.identity); err == nil {
 		return
 	} else if status.Code(err) != codes.NotFound {
 		return
 	}
 
-	assignResp, err := s.lumera.Audit().GetAssignedTargets(ctx, s.identity, epochID)
+	assignResp, err := s.lumera.Audit().GetAssignedTargets(tickCtx, s.identity, epochID)
 	if err != nil || assignResp == nil {
 		return
 	}
 
-	storageChallengeObservations := s.buildStorageChallengeObservations(ctx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
+	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
 
 	hostReport := audittypes.HostReport{
 		// Intentionally submit 0% usage for CPU/memory so the chain treats these as "unknown".
@@ -136,19 +141,19 @@ func (s *Service) tick(ctx context.Context) {
 		CpuUsagePercent: 0,
 		MemUsagePercent: 0,
 	}
-	if diskUsagePercent, ok := s.diskUsagePercent(ctx); ok {
+	if diskUsagePercent, ok := s.diskUsagePercent(tickCtx); ok {
 		hostReport.DiskUsagePercent = diskUsagePercent
 	}
 
-	if _, err := s.lumera.AuditMsg().SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations); err != nil {
-		logtrace.Warn(ctx, "epoch report submit failed", logtrace.Fields{
+	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations); err != nil {
+		logtrace.Warn(tickCtx, "epoch report submit failed", logtrace.Fields{
 			"epoch_id": epochID,
 			"error":    err.Error(),
 		})
 		return
 	}
 
-	logtrace.Info(ctx, "epoch report submitted", logtrace.Fields{
+	logtrace.Info(tickCtx, "epoch report submitted", logtrace.Fields{
 		"epoch_id":                             epochID,
 		"storage_challenge_observations_count": len(storageChallengeObservations),
 	})
@@ -250,12 +255,23 @@ func (s *Service) targetHost(ctx context.Context, supernodeAccount string) (stri
 	if raw == "" {
 		return "", fmt.Errorf("empty latest address for %s", supernodeAccount)
 	}
+	return normalizeProbeHost(raw), nil
+}
 
+func normalizeProbeHost(raw string) string {
 	// LatestAddress is expected to be an IP/host, but tolerate host:port.
 	if host, _, splitErr := net.SplitHostPort(raw); splitErr == nil && host != "" {
-		return host, nil
+		return host
 	}
-	return raw, nil
+
+	// Handle bracketed IPv6 literals without a port, e.g. "[2001:db8::1]".
+	if strings.HasPrefix(raw, "[") && strings.HasSuffix(raw, "]") {
+		if unbracketed := strings.TrimPrefix(strings.TrimSuffix(raw, "]"), "["); unbracketed != "" {
+			return unbracketed
+		}
+	}
+
+	return raw
 }
 
 func probeTCP(ctx context.Context, host string, port uint32, timeout time.Duration) audittypes.PortState {
