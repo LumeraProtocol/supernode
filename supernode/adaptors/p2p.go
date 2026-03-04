@@ -45,6 +45,18 @@ type StoreArtefactsRequest struct {
 }
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
+	// Registration must never proceed when the node is not connected to any peers.
+	// Otherwise, StoreBatch can devolve into local-only persistence and actions may
+	// be finalized without durable replication.
+	type peersCounter interface {
+		PeersCount() int
+	}
+	if pc, ok := p.p2p.(peersCounter); ok {
+		if peers := pc.PeersCount(); peers <= 0 {
+			return fmt.Errorf("p2p has zero peers; refusing to store artefacts (would be non-durable)")
+		}
+	}
+
 	idFilesBytes := totalBytes(req.IDFiles)
 	logtrace.Info(ctx, "store: p2p start", logtrace.Fields{
 		"taskID":          req.TaskID,

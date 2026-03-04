@@ -115,7 +115,7 @@ func (task *CascadeRegistrationTask) validateIndexAndLayout(ctx context.Context,
 	return indexFile, layoutB64, nil
 }
 
-func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, layoutSigB64 string, layoutB64 []byte, f logtrace.Fields) ([]string, [][]byte, error) {
+func (task *CascadeRegistrationTask) generateRQIDFilesDetailed(ctx context.Context, meta actiontypes.CascadeMetadata, layoutSigB64 string, layoutB64 []byte, f logtrace.Fields) ([]string, []string, [][]byte, error) {
 	if f == nil {
 		f = logtrace.Fields{}
 	}
@@ -125,16 +125,24 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 
 	layoutIDs, layoutFiles, err := cascadekit.GenerateLayoutFilesFromB64(layoutB64, layoutSigB64, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 	if err != nil {
-		return nil, nil, task.wrapErr(ctx, "failed to generate layout files", err, f)
+		return nil, nil, nil, task.wrapErr(ctx, "failed to generate layout files", err, f)
 	}
 	logtrace.Info(ctx, "register: layout files generated", logtrace.Fields{"count": len(layoutFiles), "layout_ids": len(layoutIDs)})
 	indexIDs, indexFiles, err := cascadekit.GenerateIndexFiles(meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 	if err != nil {
-		return nil, nil, task.wrapErr(ctx, "failed to generate index files", err, f)
+		return nil, nil, nil, task.wrapErr(ctx, "failed to generate index files", err, f)
 	}
 	allFiles := append(layoutFiles, indexFiles...)
 	logtrace.Info(ctx, "register: index files generated", logtrace.Fields{"count": len(indexFiles), "rqids": len(indexIDs)})
 	logtrace.Info(ctx, "register: rqid files generation ok", logtrace.Fields{"total_files": len(allFiles)})
+	return indexIDs, layoutIDs, allFiles, nil
+}
+
+func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta actiontypes.CascadeMetadata, layoutSigB64 string, layoutB64 []byte, f logtrace.Fields) ([]string, [][]byte, error) {
+	indexIDs, _, allFiles, err := task.generateRQIDFilesDetailed(ctx, meta, layoutSigB64, layoutB64, f)
+	if err != nil {
+		return nil, nil, err
+	}
 	return indexIDs, allFiles, nil
 }
 

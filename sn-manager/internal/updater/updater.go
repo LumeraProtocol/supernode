@@ -16,12 +16,14 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
-	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Global updater timing constants
 const (
+	// defaultGatewayPort is the local SuperNode gateway HTTP port.
+	// Keep this local to avoid importing gateway runtime package in CGO-disabled builds.
+	defaultGatewayPort = 8002
 	// gatewayTimeout bounds the local gateway status probe
 	gatewayTimeout = 15 * time.Second
 	// updateCheckInterval is how often the periodic updater runs
@@ -50,8 +52,7 @@ type AutoUpdater struct {
 // Use protobuf JSON decoding for gateway responses (int64s encoded as strings)
 
 func New(homeDir string, cfg *config.Config, managerVersion string, onManagerUpdate func()) *AutoUpdater {
-	// Use the correct gateway endpoint with imported constants
-	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", gateway.DefaultGatewayPort)
+	gatewayURL := fmt.Sprintf("http://localhost:%d/api/v1/status", defaultGatewayPort)
 
 	return &AutoUpdater{
 		config:          cfg,

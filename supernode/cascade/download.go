@@ -40,8 +40,9 @@ const (
 )
 
 type DownloadRequest struct {
-	ActionID  string
-	Signature string
+	ActionID               string
+	Signature              string
+	BypassPrivateSignature bool // recovery/admin path only; caller must enforce auth externally
 }
 
 type DownloadResponse struct {
@@ -91,8 +92,8 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 		return err
 	}
 
-	// Step 4: Verify download signature for private cascades.
-	if !metadata.Public {
+	// Step 4: Verify download signature for private cascades unless explicitly bypassed by admin recovery.
+	if !metadata.Public && !(req != nil && req.BypassPrivateSignature) {
 		if req.Signature == "" {
 			fields[logtrace.FieldError] = "missing signature for private download"
 			return task.wrapErr(ctx, "private cascade requires a download signature", nil, fields)
@@ -102,6 +103,8 @@ func (task *CascadeRegistrationTask) Download(ctx context.Context, req *Download
 			return task.wrapErr(ctx, "failed to verify download signature", err, fields)
 		}
 		logtrace.Info(ctx, "download: signature verified", fields)
+	} else if !metadata.Public {
+		logtrace.Warn(ctx, "download: private cascade signature bypassed (recovery/admin)", fields)
 	} else {
 		logtrace.Info(ctx, "download: public cascade (no signature)", fields)
 	}
