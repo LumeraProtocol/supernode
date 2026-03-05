@@ -57,5 +57,10 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 		P2PConfig:          P2PConfig{Port: DefaultP2PPort, DataDir: "data/p2p"},
 		LumeraClientConfig: LumeraClientConfig{GRPCAddr: DefaultLumeraGRPC, ChainID: chainID},
 		RaptorQConfig:      RaptorQConfig{FilesDir: DefaultRaptorQFilesDir},
+		StorageChallengeConfig: StorageChallengeConfig{
+			Enabled:        true,
+			PollIntervalMs: DefaultStorageChallengePollIntervalMs,
+			SubmitEvidence: true,
+		},
 	}
 }

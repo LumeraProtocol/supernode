@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 	"github.com/DataDog/zstd"
+	"github.com/LumeraProtocol/supernode/v2/pkg/codec"
 )
 
 func TestExtractIndexAndCreatorSig_Strict(t *testing.T) {

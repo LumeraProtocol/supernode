@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	lumeraidmocks "github.com/LumeraProtocol/lumera/x/lumeraid/mocks"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
@@ -211,9 +211,6 @@ func (h *hsInterceptor) cleanup() {
 }
 
 func TestHandshakerConcurrentHandshakes(t *testing.T) {
-	clientKr := CreateTestKeyring()
-	serverKr := CreateTestKeyring()
-
 	testCases := []struct {
 		name          string
 		numHandshakes int
@@ -309,6 +306,9 @@ func TestHandshakerConcurrentHandshakes(t *testing.T) {
 
 			// Create handshake pairs
 			for i := range tc.numHandshakes {
+				clientKr := CreateTestKeyring()
+				serverKr := CreateTestKeyring()
+
 				accountClient := fmt.Sprintf("client-%d", i)
 				accountServer := fmt.Sprintf("server-%d", i)
 				testAccounts := SetupTestAccounts(t, clientKr, []string{accountClient})

@@ -1,0 +1,60 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
+
+// StorageChallengeService exposes minimal RPCs required to run epoch-anchored storage challenges off-chain.
+service StorageChallengeService {
+  rpc GetSliceProof(GetSliceProofRequest) returns (GetSliceProofResponse) {}
+  rpc VerifySliceProof(VerifySliceProofRequest) returns (VerifySliceProofResponse) {}
+}
+
+message GetSliceProofRequest {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+  bytes seed = 3;
+
+  string file_key = 4;
+  uint64 requested_start = 5;
+  uint64 requested_end = 6;
+
+  string challenger_id = 7;
+  string recipient_id = 8;
+  repeated string observer_ids = 9;
+}
+
+message GetSliceProofResponse {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+
+  string file_key = 3;
+  uint64 start = 4;
+  uint64 end = 5;
+
+  string recipient_id = 6;
+  bytes slice = 7;
+  string proof_hash_hex = 8;
+
+  bool ok = 9;
+  string error = 10;
+}
+
+message VerifySliceProofRequest {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+  string file_key = 3;
+  uint64 start = 4;
+  uint64 end = 5;
+  bytes slice = 6;
+  string proof_hash_hex = 7;
+  string challenger_id = 8;
+  string recipient_id = 9;
+}
+
+message VerifySliceProofResponse {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+  string observer_id = 3;
+  bool ok = 4;
+  string error = 5;
+}
+

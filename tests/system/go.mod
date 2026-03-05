@@ -11,7 +11,7 @@ replace (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.10.0
+	github.com/LumeraProtocol/lumera v1.11.0-rc
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.20
 	github.com/cosmos/ibc-go/v10 v10.5.0

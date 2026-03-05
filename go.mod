@@ -6,16 +6,13 @@ replace (
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	github.com/lyft/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v1.3.0
 	nhooyr.io/websocket => github.com/coder/websocket v1.8.7
-// Local development - uncomment these for local testing
-// Comment these lines before releasing
-//github.com/LumeraProtocol/lumera => ../lumera
 )
 
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.10.0
+	github.com/LumeraProtocol/lumera v1.11.0-rc
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0

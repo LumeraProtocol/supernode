@@ -25,4 +25,3 @@ func TestGatewayStatusURL_IPv6BracketedHost(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
-

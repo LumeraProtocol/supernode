@@ -26,3 +26,9 @@ lumera:
 # RaptorQ Configuration
 raptorq:
   files_dir: "raptorq_files"
+
+# Storage Challenge Configuration
+storage_challenge:
+  enabled: true
+  poll_interval_ms: 5000
+  submit_evidence: true

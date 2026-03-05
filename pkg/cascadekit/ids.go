@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"strconv"
 
+	"github.com/DataDog/zstd"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 	"github.com/cosmos/btcutil/base58"
-	"github.com/DataDog/zstd"
 )
 
 // GenerateLayoutIDs computes IDs for redundant layout files (not the final index IDs).

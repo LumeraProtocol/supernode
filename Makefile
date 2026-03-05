@@ -152,7 +152,7 @@ gen-supernode:
 		--grpc-gateway_out=gen \
 		--grpc-gateway_opt=paths=source_relative \
 		--openapiv2_out=gen \
-		proto/supernode/service.proto proto/supernode/status.proto
+		proto/supernode/service.proto proto/supernode/status.proto proto/supernode/storage_challenge.proto
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
@@ -205,5 +205,4 @@ test-cascade:
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && ${GO} test -tags=system_test -v -run '^TestSNManager' .
-
 
