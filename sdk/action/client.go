@@ -330,8 +330,28 @@ func (c *ClientImpl) BuildCascadeMetadataFromFile(ctx context.Context, filePath 
 	// Derive file name from path
 	fileName := filepath.Base(filePath)
 
+	// LEP-5: Build availability commitment (Merkle root + challenge indices)
+	challengeCount := uint32(paramsResp.Params.SvcChallengeCount)
+	if challengeCount == 0 {
+		challengeCount = 8 // default
+	}
+	minChunks := uint32(paramsResp.Params.SvcMinChunksForChallenge)
+	if minChunks == 0 {
+		minChunks = 4 // default
+	}
+	// LEP-5: Build availability commitment. Files below MinTotalSize (4 bytes)
+	// are too small for meaningful storage verification — skip commitment for them.
+	var commitment *actiontypes.AvailabilityCommitment
+	if fi.Size() >= cascadekit.MinTotalSize {
+		var err2 error
+		commitment, _, err2 = cascadekit.BuildCommitmentFromFile(filePath, challengeCount, minChunks)
+		if err2 != nil {
+			return actiontypes.CascadeMetadata{}, "", "", fmt.Errorf("build availability commitment: %w", err2)
+		}
+	}
+
 	// Build metadata proto
-	meta := cascadekit.NewCascadeMetadata(dataHashB64, fileName, uint64(ic), indexSignatureFormat, public)
+	meta := cascadekit.NewCascadeMetadata(dataHashB64, fileName, uint64(ic), indexSignatureFormat, public, commitment)
 
 	// Fetch params (already fetched) to get denom and expiration duration
 	denom := paramsResp.Params.BaseActionFee.Denom
