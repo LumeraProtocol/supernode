@@ -74,9 +74,10 @@ func createRequestActionMessage(creator, actionType, metadata, price, expiration
 	}
 }
 
-func createFinalizeActionMessage(creator, actionId string, rqIdsIds []string) (*actiontypes.MsgFinalizeAction, error) {
+func createFinalizeActionMessage(creator, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*actiontypes.MsgFinalizeAction, error) {
 	cascadeMeta := actiontypes.CascadeMetadata{
-		RqIdsIds: rqIdsIds,
+		RqIdsIds:    rqIdsIds,
+		ChunkProofs: chunkProofs,
 	}
 
 	metadataBytes, err := json.Marshal(&cascadeMeta)
