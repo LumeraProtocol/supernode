@@ -12,6 +12,16 @@ type DatabaseStats struct {
 	P2PDbRecordsCount int64
 }
 
+// LocalKeyStatus is a side-effect-free local presence/status view for a key.
+type LocalKeyStatus struct {
+	Exists       bool
+	HasLocalBlob bool
+	DataLen      int
+	Datatype     int
+	IsOriginal   bool
+	IsOnCloud    bool
+}
+
 // Store is the interface for implementing the storage mechanism for the DHT
 type Store interface {
 	// Store a key/value pair for the queries node with the replication
@@ -71,6 +81,12 @@ type Store interface {
 	RetrieveBatchNotExist(ctx context.Context, keys []string, batchSize int) ([]string, error)
 
 	RetrieveBatchValues(ctx context.Context, keys []string, getFromCloud bool) ([][]byte, int, error)
+
+	// RetrieveBatchLocalStatus returns local key status without cloud fetches or writes.
+	RetrieveBatchLocalStatus(ctx context.Context, keys []string) (map[string]LocalKeyStatus, error)
+
+	// ListLocalKeysPage returns keys strictly greater than afterKey, ordered ascending, bounded by limit.
+	ListLocalKeysPage(ctx context.Context, afterKey string, limit int) ([]string, error)
 
 	BatchDeleteRepKeys(keys []string) error
 

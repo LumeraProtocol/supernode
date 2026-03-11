@@ -28,7 +28,7 @@ func TestIterateBatchStore_NoCandidateNodes_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "no candidate nodes") {
+	if !strings.Contains(err.Error(), "no eligible store peers") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

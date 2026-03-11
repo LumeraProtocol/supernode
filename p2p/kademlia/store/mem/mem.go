@@ -2,7 +2,9 @@ package mem
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -134,7 +136,7 @@ func (s *Store) GetOwnCreatedAt(_ context.Context) (t time.Time, err error) {
 }
 
 // StoreBatchRepKeys ...
-func (s *Store) StoreBatchRepKeys(_ []string, _ string, _ string, _ int) error {
+func (s *Store) StoreBatchRepKeys(_ []string, _ string, _ string, _ uint16) error {
 	return nil
 }
 
@@ -161,6 +163,67 @@ func (s *Store) RetrieveBatchNotExist(_ context.Context, _ []string, _ int) ([]s
 // RetrieveBatchValues retrieves a batch of values
 func (s *Store) RetrieveBatchValues(_ context.Context, _ []string, _ bool) ([][]byte, int, error) {
 	return nil, 0, nil
+}
+
+func (s *Store) RetrieveBatchLocalStatus(_ context.Context, keys []string) (map[string]kademlia.LocalKeyStatus, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	out := make(map[string]kademlia.LocalKeyStatus, len(keys))
+	for _, key := range keys {
+		v, ok := s.data[key]
+		if !ok {
+			decoded, err := hex.DecodeString(key)
+			if err == nil {
+				v, ok = s.data[string(decoded)]
+			}
+		}
+		if !ok {
+			out[key] = kademlia.LocalKeyStatus{}
+			continue
+		}
+		out[key] = kademlia.LocalKeyStatus{
+			Exists:       true,
+			HasLocalBlob: len(v) > 0,
+			DataLen:      len(v),
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) ListLocalKeysPage(_ context.Context, afterKey string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	keys := make([]string, 0, len(s.data))
+	seen := make(map[string]struct{}, len(s.data))
+	for rawKey := range s.data {
+		keyHex := toHexStorageKey(rawKey)
+		if keyHex <= afterKey {
+			continue
+		}
+		if _, exists := seen[keyHex]; exists {
+			continue
+		}
+		seen[keyHex] = struct{}{}
+		keys = append(keys, keyHex)
+	}
+	sort.Strings(keys)
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	return keys, nil
+}
+
+func toHexStorageKey(rawKey string) string {
+	// Keep already-hex keys stable while normalizing any raw-byte map keys used by tests.
+	if decoded, err := hex.DecodeString(rawKey); err == nil {
+		return hex.EncodeToString(decoded)
+	}
+	return hex.EncodeToString([]byte(rawKey))
 }
 
 // BatchDeleteRepKeys deletes a batch of keys from the replication table

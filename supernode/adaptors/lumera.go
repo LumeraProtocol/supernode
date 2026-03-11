@@ -9,6 +9,8 @@ import (
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
 
+const topSupernodesState = "SUPERNODE_STATE_ACTIVE"
+
 type LumeraClient interface {
 	GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error)
 	GetTopSupernodes(ctx context.Context, blockHeight uint64) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error)
@@ -30,6 +32,8 @@ func (l *lumeraImpl) GetAction(ctx context.Context, actionID string) (*actiontyp
 func (l *lumeraImpl) GetTopSupernodes(ctx context.Context, blockHeight uint64) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error) {
 	return l.c.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
 		BlockHeight: int32(blockHeight),
+		// Top-set selection is used for write/finalization eligibility, so keep it Active-only.
+		State: topSupernodesState,
 	})
 }
 
