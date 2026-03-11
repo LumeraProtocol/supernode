@@ -26,7 +26,9 @@ import (
 	hostReporterService "github.com/LumeraProtocol/supernode/v2/supernode/host_reporter"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
-	supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
+	// Legacy supernode metrics reporter (MsgReportSupernodeMetrics) has been superseded by
+	// epoch-scoped audit reporting in `x/audit`.
+	// supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
@@ -171,22 +173,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
 		}
 
-		// Legacy on-chain supernode metrics reporting (MsgReportSupernodeMetrics)
-		// runs alongside the audit epoch reporter. It is needed to recover
-		// POSTPONED supernodes via the supernode module's instant-recovery
-		// path so they appear ACTIVE in the next epoch anchor — which
-		// bootstraps the audit peer-observation cycle.
-		metricsCollector := supernodeMetrics.NewCollector(
-			statusSvc,
-			lumeraClient,
-			appConfig.SupernodeConfig.Identity,
-			Version,
-			kr,
-			appConfig.SupernodeConfig.Port,
-			appConfig.P2PConfig.Port,
-			appConfig.SupernodeConfig.GatewayPort,
-		)
-		logtrace.Info(ctx, "Legacy metrics collection enabled (audit bootstrap)", logtrace.Fields{})
+		// Legacy on-chain supernode metrics reporting has been superseded by `x/audit`.
+		// metricsCollector := supernodeMetrics.NewCollector(
+		// 	statusSvc,
+		// 	lumeraClient,
+		// 	appConfig.SupernodeConfig.Identity,
+		// 	Version,
+		// 	kr,
+		// 	appConfig.SupernodeConfig.Port,
+		// 	appConfig.P2PConfig.Port,
+		// 	appConfig.SupernodeConfig.GatewayPort,
+		// )
+		// logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
 
 		// Storage challenge history DB (shared by the gRPC handler and runner).
 		historyStore, err := queries.OpenHistoryDB()
@@ -255,7 +253,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() {
-			services := []service{grpcServer, cService, p2pService, gatewayServer, hostReporter, metricsCollector}
+			services := []service{grpcServer, cService, p2pService, gatewayServer, hostReporter}
 			if storageChallengeRunner != nil {
 				services = append(services, storageChallengeRunner)
 			}
