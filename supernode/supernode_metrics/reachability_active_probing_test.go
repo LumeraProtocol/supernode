@@ -24,6 +24,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
+	"google.golang.org/grpc"
 )
 
 func TestBuildProbeCandidatesFilters(t *testing.T) {
@@ -414,6 +415,7 @@ func (c *fakeLumeraClient) SuperNodeMsg() supernode_msg.Module { return nil }
 func (c *fakeLumeraClient) Bank() bank.Module                  { return nil }
 func (c *fakeLumeraClient) Tx() tx.Module                      { return nil }
 func (c *fakeLumeraClient) Node() node.Module                  { return c.nodeModule }
+func (c *fakeLumeraClient) Conn() *grpc.ClientConn              { return nil }
 func (c *fakeLumeraClient) Close() error                       { return nil }
 
 type fakeNodeModule struct {

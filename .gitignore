@@ -25,6 +25,7 @@ tests/system/testnet
 tests/system/**/supernode-data*
 tests/system/data
 tests/system/1
+supernode/__debug*
 # env file
 .env
 /data

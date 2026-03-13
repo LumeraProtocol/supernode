@@ -55,3 +55,18 @@ func (mr *MockModuleMockRecorder) Balance(ctx, address, denom any) *gomock.Call 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Balance", reflect.TypeOf((*MockModule)(nil).Balance), ctx, address, denom)
 }
+
+// SpendableBalanceByDenom mocks base method.
+func (m *MockModule) SpendableBalanceByDenom(ctx context.Context, address, denom string) (*types.QuerySpendableBalanceByDenomResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SpendableBalanceByDenom", ctx, address, denom)
+	ret0, _ := ret[0].(*types.QuerySpendableBalanceByDenomResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SpendableBalanceByDenom indicates an expected call of SpendableBalanceByDenom.
+func (mr *MockModuleMockRecorder) SpendableBalanceByDenom(ctx, address, denom any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpendableBalanceByDenom", reflect.TypeOf((*MockModule)(nil).SpendableBalanceByDenom), ctx, address, denom)
+}

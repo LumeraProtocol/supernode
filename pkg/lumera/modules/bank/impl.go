@@ -28,3 +28,16 @@ func (m *module) Balance(ctx context.Context, address string, denom string) (*ba
 	}
 	return m.client.Balance(ctx, &banktypes.QueryBalanceRequest{Address: address, Denom: denom})
 }
+
+func (m *module) SpendableBalanceByDenom(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error) {
+	if address == "" {
+		return nil, fmt.Errorf("address cannot be empty")
+	}
+	if denom == "" {
+		return nil, fmt.Errorf("denom cannot be empty")
+	}
+	return m.client.SpendableBalanceByDenom(ctx, &banktypes.QuerySpendableBalanceByDenomRequest{
+		Address: address,
+		Denom:   denom,
+	})
+}

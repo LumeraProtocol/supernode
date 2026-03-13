@@ -14,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
+	"google.golang.org/grpc"
 )
 
 type lumeraClient struct {
@@ -186,6 +187,10 @@ func (c *lumeraClient) Tx() tx.Module {
 
 func (c *lumeraClient) Node() node.Module {
 	return c.nodeMod
+}
+
+func (c *lumeraClient) Conn() *grpc.ClientConn {
+	return c.conn.GetConn()
 }
 
 func (c *lumeraClient) Close() error {
