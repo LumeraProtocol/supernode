@@ -85,6 +85,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to connect Lumera, please check your configuration", logtrace.Fields{"error": err.Error()})
 		}
 
+		// Verify the chain has EVM support — this binary is incompatible with pre-EVM chains.
+		if err := requireEVMChain(ctx, lumeraClient.Conn()); err != nil {
+			logtrace.Fatal(ctx, "EVM chain check failed", logtrace.Fields{"error": err.Error()})
+		}
+
+		// Fail fast with migration instructions if key_name still points to a
+		// legacy secp256k1 key without a valid evm_key_name, otherwise perform
+		// the automatic on-chain migration to the new EVM-compatible address.
+		if err := ensureLegacyAccountMigrated(ctx, kr, appConfig, &grpcMigrationClient{conn: lumeraClient.Conn()}, lumeraClient.SuperNode()); err != nil {
+			logtrace.Fatal(ctx, "Legacy account migration failed", logtrace.Fields{"error": err.Error()})
+		}
+
 		// Reachability evidence store (used for open_ports inference).
 		reachability.SetDefaultStore(reachability.NewStore())
 		// Epoch tracker: mark per-service inbound evidence per chain epoch (best-effort).

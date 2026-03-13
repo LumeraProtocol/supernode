@@ -72,6 +72,17 @@ jobs:
             echo "GHOEOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check deploy intent
+        id: deploy_check
+        run: |
+          TAG_MSG="${{ steps.tag_info.outputs.tag_message }}"
+          if echo "$TAG_MSG" | grep -qi '\[no-deploy\]'; then
+            echo "draft=true" >> $GITHUB_OUTPUT
+            echo "⚠️  [no-deploy] detected — release will be created as DRAFT"
+          else
+            echo "draft=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Go and dependencies
         uses: ./.github/actions/setup-env
         # with:
@@ -205,6 +216,7 @@ jobs:
         if: success() && steps.rel_check.outputs.exists != 'true'
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}
+          draft: ${{ steps.deploy_check.outputs.draft == 'true' }}
           files: |
             release/${{ steps.vars.outputs.binary_name }}.tar.gz
             release/${{ steps.vars.outputs.binary_name }}
@@ -216,6 +228,7 @@ jobs:
         if: success() && steps.rel_check.outputs.exists == 'true'
         with:
           tag_name: ${{ steps.tag_info.outputs.tag_name }}
+          draft: ${{ steps.deploy_check.outputs.draft == 'true' }}
           files: |
             release/${{ steps.vars.outputs.binary_name }}.tar.gz
             release/${{ steps.vars.outputs.binary_name }}

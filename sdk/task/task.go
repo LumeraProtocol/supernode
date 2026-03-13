@@ -103,12 +103,27 @@ func (t *BaseTask) orderByXORDistance(sns lumera.Supernodes) lumera.Supernodes {
 	return orderSupernodesByDeterministicDistance(seed, sns)
 }
 
+func hasMinimumSpendableBalance(ctx context.Context, client lumera.Client, address string, denom string, min sdkmath.Int) (bool, string) {
+	bal, err := client.GetSpendableBalance(ctx, address, denom)
+	if err != nil {
+		return false, fmt.Sprintf("spendable balance check failed: %v", err)
+	}
+	if bal == nil || bal.Balance == nil {
+		return false, "spendable balance info unavailable"
+	}
+	if bal.Balance.Amount.LT(min) {
+		actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
+		return false, fmt.Sprintf("insufficient spendable balance: %s LUME (need >= 1 LUME)", actualLUME.String())
+	}
+	return true, ""
+}
+
 // filterEligibleSupernodesParallel
 // Fast, bounded-concurrency discovery that keeps only nodes that pass:
 //
 //	(1) gRPC Health SERVING
 //	(2) Peers > 1 (via Status API; single-line gate for basic network liveness)
-//	(3) On-chain balance >= 1 LUME (in ulume)
+//	(3) On-chain spendable balance >= 1 LUME (in ulume)
 //
 // Strategy:
 //   - Spawn at most prefilterParallelism goroutines (bounded fan-out).
@@ -214,26 +229,17 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 				res.client = client
 			}()
 
-			// Step 1.2.2 — Balance probe (chain) — independent of gRPC dial
+			// Step 1.2.2 — Spendable-balance probe (chain) — independent of gRPC dial
 			go func() {
 				res := balanceResult{ok: false}
 				defer func() { balanceCh <- res }()
 
-				bal, err := t.client.GetBalance(probeCtx, sn.CosmosAddress, denom)
-				if err == nil && bal != nil && bal.Balance != nil && !bal.Balance.Amount.LT(min) {
+				ok, reason := hasMinimumSpendableBalance(probeCtx, t.client, sn.CosmosAddress, denom, min)
+				if ok {
 					res.ok = true
 					return
 				}
-
-				// Insufficient or error → ineligible; cancel sibling
-				if err != nil {
-					res.reason = fmt.Sprintf("balance check failed: %v", err)
-				} else if bal == nil || bal.Balance == nil {
-					res.reason = "balance info unavailable"
-				} else {
-					actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
-					res.reason = fmt.Sprintf("insufficient balance: %s LUME (need >= 1 LUME)", actualLUME.String())
-				}
+				res.reason = reason
 				cancel()
 			}()
 

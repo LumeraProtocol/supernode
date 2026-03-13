@@ -23,6 +23,7 @@ import (
 	supernode_msg "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	tx "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	gomock "go.uber.org/mock/gomock"
+	grpc "google.golang.org/grpc"
 )
 
 // MockClient is a mock of Client interface.
@@ -131,6 +132,20 @@ func (m *MockClient) Bank() bank.Module {
 func (mr *MockClientMockRecorder) Bank() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bank", reflect.TypeOf((*MockClient)(nil).Bank))
+}
+
+// Conn mocks base method.
+func (m *MockClient) Conn() *grpc.ClientConn {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Conn")
+	ret0, _ := ret[0].(*grpc.ClientConn)
+	return ret0
+}
+
+// Conn indicates an expected call of Conn.
+func (mr *MockClientMockRecorder) Conn() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Conn", reflect.TypeOf((*MockClient)(nil).Conn))
 }
 
 // Close mocks base method.

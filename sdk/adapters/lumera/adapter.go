@@ -49,6 +49,8 @@ type Client interface {
 	QueryTxsByEvents(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error)
 	// GetBalance returns the bank balance for the given address and denom.
 	GetBalance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
+	// GetSpendableBalance returns the spendable bank balance for the given address and denom.
+	GetSpendableBalance(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error)
 	// GetActionParams returns the action module parameters.
 	GetActionParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error)
 	// GetActionFee returns the fee amount for a given data size (in KB) for RequestAction.
@@ -380,6 +382,21 @@ func (a *Adapter) GetBalance(ctx context.Context, address string, denom string) 
 		return nil, fmt.Errorf("nil balance response for %s %s", address, denom)
 	}
 	a.logger.Debug(ctx, "Successfully fetched bank balance", "amount", resp.Balance.Amount.String(), "denom", resp.Balance.Denom)
+	return resp, nil
+}
+
+func (a *Adapter) GetSpendableBalance(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error) {
+	a.logger.Debug(ctx, "Querying spendable bank balance", "address", address, "denom", denom)
+	resp, err := a.client.Bank().SpendableBalanceByDenom(ctx, address, denom)
+	if err != nil {
+		a.logger.Error(ctx, "Failed to query spendable bank balance", "address", address, "denom", denom, "error", err)
+		return nil, fmt.Errorf("failed to query spendable bank balance: %w", err)
+	}
+	if resp == nil || resp.Balance == nil {
+		a.logger.Error(ctx, "Nil spendable balance response", "address", address, "denom", denom)
+		return nil, fmt.Errorf("nil spendable balance response for %s %s", address, denom)
+	}
+	a.logger.Debug(ctx, "Successfully fetched spendable bank balance", "amount", resp.Balance.Amount.String(), "denom", resp.Balance.Denom)
 	return resp, nil
 }
 

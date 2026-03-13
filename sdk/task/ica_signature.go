@@ -126,6 +126,18 @@ func (m *ManagerImpl) getICAOwnerAndAppPubkeyFromChain(ctx context.Context, acti
 	return icaAccount.AccountOwner, appPubkey, nil
 }
 
+func (m *ManagerImpl) actionCreatorIsICA(ctx context.Context, creator string) (bool, error) {
+	if creator == "" {
+		return false, nil
+	}
+	account, err := m.lumeraClient.AccountByAddress(ctx, creator)
+	if err != nil {
+		return false, fmt.Errorf("query account: %w", err)
+	}
+	_, ok := account.(*icatypes.InterchainAccount)
+	return ok, nil
+}
+
 func findRequestActionAppPubkey(ctx context.Context, client lumera.Client, actionID string, creator string) ([]byte, error) {
 	if actionID == "" {
 		return nil, fmt.Errorf("action id is empty")

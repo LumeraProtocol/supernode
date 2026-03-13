@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"testing"
+	"time"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
@@ -18,6 +19,7 @@ import (
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	vestingtypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
 	"github.com/stretchr/testify/require"
@@ -28,6 +30,7 @@ type fakeLumeraClient struct {
 	queryTxsByEvents      func(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error)
 	decodeCascadeMetadata func(ctx context.Context, action lumera.Action) (actiontypes.CascadeMetadata, error)
 	verifySignature       func(ctx context.Context, accountAddr string, data []byte, signature []byte) error
+	getSpendableBalance   func(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error)
 }
 
 func (f *fakeLumeraClient) AccountInfoByAddress(context.Context, string) (*authtypes.QueryAccountInfoResponse, error) {
@@ -80,6 +83,56 @@ func (f *fakeLumeraClient) QueryTxsByEvents(ctx context.Context, query string, p
 
 func (f *fakeLumeraClient) GetBalance(context.Context, string, string) (*banktypes.QueryBalanceResponse, error) {
 	return nil, nil
+}
+
+func (f *fakeLumeraClient) GetSpendableBalance(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error) {
+	if f.getSpendableBalance == nil {
+		return nil, nil
+	}
+	return f.getSpendableBalance(ctx, address, denom)
+}
+
+func newDelayedVestingAccount(t *testing.T, addr string) sdk.AccountI {
+	t.Helper()
+	base := authtypes.NewBaseAccountWithAddress(sdk.MustAccAddressFromBech32(addr))
+	bva, err := vestingtypes.NewBaseVestingAccount(base, sdk.NewCoins(sdk.NewInt64Coin("ulume", 1)), time.Now().Unix())
+	require.NoError(t, err)
+	return vestingtypes.NewDelayedVestingAccountRaw(bva)
+}
+
+func TestValidateSignature_AllowsDelayedVestingCreator(t *testing.T) {
+	creator := sdk.AccAddress([]byte("delayed-vesting-creator")).String()
+	icaQueried := false
+	key := secp256k1.GenPrivKey()
+	sig, err := key.Sign([]byte("payload-b64"))
+	require.NoError(t, err)
+
+	fake := &fakeLumeraClient{
+		accountByAddress: func(ctx context.Context, addr string) (sdk.AccountI, error) {
+			return newDelayedVestingAccount(t, addr), nil
+		},
+		queryTxsByEvents: func(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error) {
+			icaQueried = true
+			return nil, fmt.Errorf("unexpected ICA query")
+		},
+		decodeCascadeMetadata: func(ctx context.Context, action lumera.Action) (actiontypes.CascadeMetadata, error) {
+			return actiontypes.CascadeMetadata{DataHash: "payload-b64"}, nil
+		},
+		verifySignature: func(ctx context.Context, accountAddr string, data []byte, signature []byte) error {
+			return nil
+		},
+	}
+
+	cfg := config.NewConfig(config.AccountConfig{}, config.LumeraConfig{})
+	m := &ManagerImpl{
+		lumeraClient: fake,
+		config:       cfg,
+		logger:       log.NewNoopLogger(),
+	}
+
+	err = m.validateSignature(context.Background(), lumera.Action{Creator: creator, ID: "action-vesting"}, base64.StdEncoding.EncodeToString(sig))
+	require.NoError(t, err)
+	require.False(t, icaQueried)
 }
 
 func (f *fakeLumeraClient) GetActionParams(context.Context) (*actiontypes.QueryParamsResponse, error) {
@@ -232,4 +285,40 @@ func TestValidateSignatureFallsBackToICA(t *testing.T) {
 
 	err = m.validateSignature(context.Background(), lumera.Action{Creator: creator, ID: "action-1"}, sigB64)
 	require.NoError(t, err)
+}
+
+func TestValidateSignatureDoesNotTryICAForNonICAAccount(t *testing.T) {
+	creator := sdk.AccAddress([]byte("base-account-creator")).String()
+	dataHash := "payload-b64"
+	key := secp256k1.GenPrivKey()
+	sig, err := key.Sign([]byte(dataHash))
+	require.NoError(t, err)
+
+	icaQueried := false
+	fake := &fakeLumeraClient{
+		accountByAddress: func(ctx context.Context, addr string) (sdk.AccountI, error) {
+			return authtypes.NewBaseAccountWithAddress(sdk.MustAccAddressFromBech32(addr)), nil
+		},
+		queryTxsByEvents: func(ctx context.Context, query string, page, limit uint64) (*sdktx.GetTxsEventResponse, error) {
+			icaQueried = true
+			return nil, fmt.Errorf("unexpected ICA query")
+		},
+		decodeCascadeMetadata: func(ctx context.Context, action lumera.Action) (actiontypes.CascadeMetadata, error) {
+			return actiontypes.CascadeMetadata{DataHash: dataHash}, nil
+		},
+		verifySignature: func(ctx context.Context, accountAddr string, data []byte, signature []byte) error {
+			return fmt.Errorf("invalid signature")
+		},
+	}
+
+	cfg := config.NewConfig(config.AccountConfig{}, config.LumeraConfig{})
+	m := &ManagerImpl{
+		lumeraClient: fake,
+		config:       cfg,
+		logger:       log.NewNoopLogger(),
+	}
+
+	err = m.validateSignature(context.Background(), lumera.Action{Creator: creator, ID: "action-1"}, base64.StdEncoding.EncodeToString(sig))
+	require.Error(t, err)
+	require.False(t, icaQueried)
 }

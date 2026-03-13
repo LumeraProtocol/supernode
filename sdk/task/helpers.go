@@ -96,8 +96,17 @@ func (m *ManagerImpl) validateSignature(ctx context.Context, action lumera.Actio
 		return nil
 	}
 
-	// If ICA validation wasn't attempted earlier, try it as a fallback.
-	if icaErr == nil {
+	// Only try ICA fallback for explicit ICA config or when the creator account is actually an ICA.
+	shouldTryICA := strings.TrimSpace(m.config.Account.ICAOwnerHRP) != "" || strings.TrimSpace(m.config.Account.ICAOwnerKeyName) != ""
+	if !shouldTryICA {
+		var err error
+		shouldTryICA, err = m.actionCreatorIsICA(ctx, action.Creator)
+		if err != nil {
+			m.logger.Debug(ctx, "ICA fallback eligibility check failed", "actionID", action.ID, "error", err)
+		}
+	}
+
+	if icaErr == nil && shouldTryICA {
 		icaErr = m.validateICASignature(ctx, action, dataHashB64, signature)
 		if icaErr == nil {
 			return nil

@@ -19,6 +19,10 @@ type SupernodeConfig struct {
 	IPAddress   string `yaml:"ip_address,omitempty"`
 	Port        uint16 `yaml:"port"`
 	GatewayPort uint16 `yaml:"gateway_port,omitempty"`
+	// EVMKeyName is the name of the new eth_secp256k1 key in the keyring,
+	// used during one-time legacy account migration. After migration, this
+	// key replaces the old key_name and this field can be removed from config.
+	EVMKeyName string `yaml:"evm_key_name,omitempty"`
 }
 
 type KeyringConfig struct {
