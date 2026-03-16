@@ -62,5 +62,9 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			PollIntervalMs: DefaultStorageChallengePollIntervalMs,
 			SubmitEvidence: true,
 		},
+		SelfHealingConfig: SelfHealingConfig{
+			Enabled:        false,
+			PollIntervalMs: DefaultSelfHealingPollIntervalMs,
+		},
 	}
 }

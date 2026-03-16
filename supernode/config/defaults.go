@@ -13,4 +13,5 @@ const (
 	DefaultChainID                        = "testing"
 	DefaultRaptorQFilesDir                = "raptorq_files"
 	DefaultStorageChallengePollIntervalMs = 5000
+	DefaultSelfHealingPollIntervalMs      = 10000
 )
