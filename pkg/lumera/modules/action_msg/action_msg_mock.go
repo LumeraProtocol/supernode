@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	tx "github.com/cosmos/cosmos-sdk/types/tx"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -42,18 +43,18 @@ func (m *MockModule) EXPECT() *MockModuleMockRecorder {
 }
 
 // FinalizeCascadeAction mocks base method.
-func (m *MockModule) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*tx.BroadcastTxResponse, error) {
+func (m *MockModule) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*tx.BroadcastTxResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FinalizeCascadeAction", ctx, actionId, rqIdsIds)
+	ret := m.ctrl.Call(m, "FinalizeCascadeAction", ctx, actionId, rqIdsIds, chunkProofs)
 	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FinalizeCascadeAction indicates an expected call of FinalizeCascadeAction.
-func (mr *MockModuleMockRecorder) FinalizeCascadeAction(ctx, actionId, rqIdsIds any) *gomock.Call {
+func (mr *MockModuleMockRecorder) FinalizeCascadeAction(ctx, actionId, rqIdsIds, chunkProofs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizeCascadeAction", reflect.TypeOf((*MockModule)(nil).FinalizeCascadeAction), ctx, actionId, rqIdsIds)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizeCascadeAction", reflect.TypeOf((*MockModule)(nil).FinalizeCascadeAction), ctx, actionId, rqIdsIds, chunkProofs)
 }
 
 // RequestAction mocks base method.
@@ -72,16 +73,16 @@ func (mr *MockModuleMockRecorder) RequestAction(ctx, actionType, metadata, price
 }
 
 // SimulateFinalizeCascadeAction mocks base method.
-func (m *MockModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*tx.SimulateResponse, error) {
+func (m *MockModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*tx.SimulateResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SimulateFinalizeCascadeAction", ctx, actionId, rqIdsIds)
+	ret := m.ctrl.Call(m, "SimulateFinalizeCascadeAction", ctx, actionId, rqIdsIds, chunkProofs)
 	ret0, _ := ret[0].(*tx.SimulateResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SimulateFinalizeCascadeAction indicates an expected call of SimulateFinalizeCascadeAction.
-func (mr *MockModuleMockRecorder) SimulateFinalizeCascadeAction(ctx, actionId, rqIdsIds any) *gomock.Call {
+func (mr *MockModuleMockRecorder) SimulateFinalizeCascadeAction(ctx, actionId, rqIdsIds, chunkProofs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateFinalizeCascadeAction", reflect.TypeOf((*MockModule)(nil).SimulateFinalizeCascadeAction), ctx, actionId, rqIdsIds)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SimulateFinalizeCascadeAction", reflect.TypeOf((*MockModule)(nil).SimulateFinalizeCascadeAction), ctx, actionId, rqIdsIds, chunkProofs)
 }

@@ -43,11 +43,11 @@ func (f *fakeCascadeLumeraClient) GetActionFee(ctx context.Context, dataSizeKB s
 	return nil, nil
 }
 
-func (f *fakeCascadeLumeraClient) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error) {
+func (f *fakeCascadeLumeraClient) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
 	return nil, nil
 }
 
-func (f *fakeCascadeLumeraClient) FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error) {
+func (f *fakeCascadeLumeraClient) FinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
 	return nil, nil
 }
 

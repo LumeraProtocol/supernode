@@ -3,7 +3,7 @@ package testutil
 import (
 	"context"
 
-	"github.com/LumeraProtocol/lumera/x/action/v1/types"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
@@ -158,16 +158,16 @@ func (m *MockAuthModule) Verify(ctx context.Context, accAddress string, data, si
 // MockActionModule implements the action.Module interface for testing
 type MockActionModule struct{}
 
-func (m *MockActionModule) GetAction(ctx context.Context, actionID string) (*types.QueryGetActionResponse, error) {
-	return &types.QueryGetActionResponse{}, nil
+func (m *MockActionModule) GetAction(ctx context.Context, actionID string) (*actiontypes.QueryGetActionResponse, error) {
+	return &actiontypes.QueryGetActionResponse{}, nil
 }
 
-func (m *MockActionModule) GetActionFee(ctx context.Context, dataSize string) (*types.QueryGetActionFeeResponse, error) {
-	return &types.QueryGetActionFeeResponse{}, nil
+func (m *MockActionModule) GetActionFee(ctx context.Context, dataSize string) (*actiontypes.QueryGetActionFeeResponse, error) {
+	return &actiontypes.QueryGetActionFeeResponse{}, nil
 }
 
-func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsResponse, error) {
-	return &types.QueryParamsResponse{}, nil
+func (m *MockActionModule) GetParams(ctx context.Context) (*actiontypes.QueryParamsResponse, error) {
+	return &actiontypes.QueryParamsResponse{}, nil
 }
 
 // MockActionMsgModule implements the action_msg.Module interface for testing
@@ -180,13 +180,13 @@ func (m *MockActionMsgModule) RequestAction(ctx context.Context, actionType, met
 }
 
 // FinalizeCascadeAction implements the required method from action_msg.Module interface
-func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.BroadcastTxResponse, error) {
+func (m *MockActionMsgModule) FinalizeCascadeAction(ctx context.Context, actionId string, signatures []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
 	// Mock implementation returns success with empty result
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
 // SimulateFinalizeCascadeAction mocks simulation of finalize action.
-func (m *MockActionMsgModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, signatures []string) (*sdktx.SimulateResponse, error) {
+func (m *MockActionMsgModule) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, signatures []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
 	// Mock implementation returns empty simulation response
 	return &sdktx.SimulateResponse{}, nil
 }
