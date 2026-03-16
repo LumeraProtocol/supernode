@@ -24,6 +24,7 @@ import (
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	hostReporterService "github.com/LumeraProtocol/supernode/v2/supernode/host_reporter"
+	selfHealingService "github.com/LumeraProtocol/supernode/v2/supernode/self_healing"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
 	// Legacy supernode metrics reporter (MsgReportSupernodeMetrics) has been superseded by
@@ -214,6 +215,22 @@ The supernode will connect to the Lumera network and begin participating in the 
 			}
 		}
 
+		var selfHealingRunner *selfHealingService.Service
+		if appConfig.SelfHealingConfig.Enabled {
+			selfHealingRunner, err = selfHealingService.NewService(
+				appConfig.SupernodeConfig.Identity,
+				lumeraClient,
+				p2pService,
+				selfHealingService.Config{
+					Enabled:      true,
+					PollInterval: time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond,
+				},
+			)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to initialize self-healing runner", logtrace.Fields{"error": err.Error()})
+			}
+		}
+
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)
 
@@ -256,6 +273,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 			services := []service{grpcServer, cService, p2pService, gatewayServer, hostReporter}
 			if storageChallengeRunner != nil {
 				services = append(services, storageChallengeRunner)
+			}
+			if selfHealingRunner != nil {
+				services = append(services, selfHealingRunner)
 			}
 			servicesErr <- RunServices(ctx, services...)
 		}()

@@ -1,0 +1,49 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
+
+// SelfHealingService exposes the minimal control-plane RPCs for deterministic
+// expected-owner healing challenges.
+service SelfHealingService {
+  rpc RequestSelfHealing(RequestSelfHealingRequest) returns (RequestSelfHealingResponse) {}
+  rpc VerifySelfHealing(VerifySelfHealingRequest) returns (VerifySelfHealingResponse) {}
+}
+
+message RequestSelfHealingRequest {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+
+  string file_key = 3;
+  string challenger_id = 4;
+  string recipient_id = 5;
+  repeated string observer_ids = 6;
+}
+
+message RequestSelfHealingResponse {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+
+  string recipient_id = 3;
+  bool accepted = 4;
+  bool reconstruction_required = 5;
+  string reconstructed_hash_hex = 6;
+  string error = 7;
+}
+
+message VerifySelfHealingRequest {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+
+  string file_key = 3;
+  string recipient_id = 4;
+  string reconstructed_hash_hex = 5;
+  string observer_id = 6;
+}
+
+message VerifySelfHealingResponse {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+  string observer_id = 3;
+  bool ok = 4;
+  string error = 5;
+}
