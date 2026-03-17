@@ -32,6 +32,7 @@ import (
 	// supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
+	selfHealingRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/self_healing"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
 	storageChallengeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/storage_challenge"
 	"github.com/LumeraProtocol/supernode/v2/supernode/verifier"
@@ -194,6 +195,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore)
+		selfHealingServer := selfHealingRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, lumeraClient, historyStore)
 		var storageChallengeRunner *storageChallengeService.Service
 		if appConfig.StorageChallengeConfig.Enabled {
 			storageChallengeRunner, err = storageChallengeService.NewService(
@@ -219,11 +221,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if appConfig.SelfHealingConfig.Enabled {
 			selfHealingRunner, err = selfHealingService.NewService(
 				appConfig.SupernodeConfig.Identity,
+				appConfig.SupernodeConfig.Port,
 				lumeraClient,
 				p2pService,
+				kr,
+				historyStore,
 				selfHealingService.Config{
 					Enabled:      true,
 					PollInterval: time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond,
+					KeyName:      appConfig.SupernodeConfig.KeyName,
 				},
 			)
 			if err != nil {
@@ -245,6 +251,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			grpcserver.ServiceDesc{Desc: &pbcascade.CascadeService_ServiceDesc, Service: cascadeActionServer},
 			grpcserver.ServiceDesc{Desc: &pbsupernode.SupernodeService_ServiceDesc, Service: supernodeServer},
 			grpcserver.ServiceDesc{Desc: &pbsupernode.StorageChallengeService_ServiceDesc, Service: storageChallengeServer},
+			grpcserver.ServiceDesc{Desc: &pbsupernode.SelfHealingService_ServiceDesc, Service: selfHealingServer},
 		)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
