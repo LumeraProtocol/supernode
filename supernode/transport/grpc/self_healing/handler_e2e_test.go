@@ -2,12 +2,19 @@ package self_healing
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/p2p"
+	lumeraclient "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	actionmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
+	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
+	"github.com/golang/protobuf/proto"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -67,7 +74,7 @@ func (f *fakeP2P) Store(ctx context.Context, data []byte, typ int) (string, erro
 func (f *fakeP2P) StoreBatch(ctx context.Context, values [][]byte, typ int, taskID string) error {
 	return nil
 }
-func (f *fakeP2P) Delete(ctx context.Context, key string) error { return nil }
+func (f *fakeP2P) Delete(ctx context.Context, key string) error          { return nil }
 func (f *fakeP2P) Stats(ctx context.Context) (*p2p.StatsSnapshot, error) { return nil, nil }
 func (f *fakeP2P) NClosestNodes(ctx context.Context, n int, key string, ignores ...string) []string {
 	return nil
@@ -89,11 +96,78 @@ func (f *fakeP2P) GetLocalKeys(ctx context.Context, from *time.Time, to time.Tim
 	return out, nil
 }
 
-func startSelfHealingTestServer(t *testing.T, identity string, p2p *fakeP2P) (*grpc.ClientConn, func()) {
+type fakeCascadeTask struct {
+	recoveryFn func(ctx context.Context, req *cascadeService.RecoveryReseedRequest) (*cascadeService.RecoveryReseedResult, error)
+}
+
+func (f *fakeCascadeTask) Register(ctx context.Context, req *cascadeService.RegisterRequest, send func(resp *cascadeService.RegisterResponse) error) error {
+	return nil
+}
+
+func (f *fakeCascadeTask) Download(ctx context.Context, req *cascadeService.DownloadRequest, send func(resp *cascadeService.DownloadResponse) error) error {
+	return nil
+}
+
+func (f *fakeCascadeTask) CleanupDownload(ctx context.Context, tmpDir string) error {
+	return nil
+}
+
+func (f *fakeCascadeTask) RecoveryReseed(ctx context.Context, req *cascadeService.RecoveryReseedRequest) (*cascadeService.RecoveryReseedResult, error) {
+	if f.recoveryFn != nil {
+		return f.recoveryFn(ctx, req)
+	}
+	return &cascadeService.RecoveryReseedResult{ActionID: req.ActionID}, nil
+}
+
+type fakeCascadeFactory struct {
+	task *fakeCascadeTask
+}
+
+func (f *fakeCascadeFactory) NewCascadeRegistrationTask() cascadeService.CascadeTask {
+	return f.task
+}
+
+func mockLumeraActionLookup(t *testing.T, fileKey, actionID string) (lumeraclient.Client, func()) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	lumeraClient := lumeraclient.NewMockClient(ctrl)
+	actionModule := actionmod.NewMockModule(ctrl)
+
+	meta, err := proto.Marshal(&actiontypes.CascadeMetadata{
+		RqIdsIds: []string{fileKey},
+	})
+	if err != nil {
+		t.Fatalf("marshal cascade metadata: %v", err)
+	}
+
+	lumeraClient.EXPECT().Action().AnyTimes().Return(actionModule)
+	lumeraClient.EXPECT().Node().AnyTimes().Return(nil)
+	lumeraClient.EXPECT().Audit().AnyTimes().Return(nil)
+	actionModule.EXPECT().ListActions(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+		func(ctx context.Context, req *actiontypes.QueryListActionsRequest) (*actiontypes.QueryListActionsResponse, error) {
+			if req == nil {
+				return nil, fmt.Errorf("nil request")
+			}
+			return &actiontypes.QueryListActionsResponse{
+				Actions: []*actiontypes.Action{
+					{
+						ActionID: actionID,
+						Metadata: meta,
+						State:    actiontypes.ActionStateDone,
+					},
+				},
+			}, nil
+		},
+	)
+
+	return lumeraClient, ctrl.Finish
+}
+
+func startSelfHealingTestServer(t *testing.T, identity string, p2p *fakeP2P, lumeraClient lumeraclient.Client, cascadeFactory cascadeService.CascadeServiceFactory) (*grpc.ClientConn, func()) {
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	supernode.RegisterSelfHealingServiceServer(s, NewServer(identity, p2p, nil, nil))
+	supernode.RegisterSelfHealingServiceServer(s, NewServer(identity, p2p, lumeraClient, nil, cascadeFactory))
 	go func() { _ = s.Serve(lis) }()
 
 	dialer := func(context.Context, string) (net.Conn, error) { return lis.Dial() }
@@ -111,17 +185,32 @@ func startSelfHealingTestServer(t *testing.T, identity string, p2p *fakeP2P) (*g
 
 func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 	const fileKey = "key-1"
+	const actionID = "action-1"
 	payload := []byte("hello-self-healing")
 
 	recipientP2P := newFakeP2P()
-	recipientP2P.network[fileKey] = payload // recipient missing local, recoverable from network
+	recipientP2P.network[fileKey] = payload
 
 	observerP2P := newFakeP2P()
 	observerP2P.local[fileKey] = payload // observer has local authoritative copy
 
-	recConn, recCleanup := startSelfHealingTestServer(t, "recipient-1", recipientP2P)
+	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID)
+	defer lumeraCleanup()
+	factory := &fakeCascadeFactory{
+		task: &fakeCascadeTask{
+			recoveryFn: func(ctx context.Context, req *cascadeService.RecoveryReseedRequest) (*cascadeService.RecoveryReseedResult, error) {
+				if req == nil || req.ActionID != actionID {
+					return nil, fmt.Errorf("unexpected recovery action_id")
+				}
+				recipientP2P.local[fileKey] = append([]byte(nil), payload...)
+				return &cascadeService.RecoveryReseedResult{ActionID: actionID}, nil
+			},
+		},
+	}
+
+	recConn, recCleanup := startSelfHealingTestServer(t, "recipient-1", recipientP2P, lumeraClient, factory)
 	defer recCleanup()
-	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P)
+	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, nil, nil)
 	defer obsCleanup()
 
 	recClient := supernode.NewSelfHealingServiceClient(recConn)
@@ -164,5 +253,119 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 	}
 	if !ver.Ok {
 		t.Fatalf("expected verify ok=true, got false err=%s", ver.Error)
+	}
+}
+
+func TestSelfHealingE2E_RequestFileNotRetrievable(t *testing.T) {
+	const fileKey = "missing-key"
+
+	recipientP2P := newFakeP2P() // file is absent both locally and on network
+	recConn, recCleanup := startSelfHealingTestServer(t, "recipient-1", recipientP2P, nil, nil)
+	defer recCleanup()
+
+	recClient := supernode.NewSelfHealingServiceClient(recConn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := recClient.RequestSelfHealing(ctx, &supernode.RequestSelfHealingRequest{
+		ChallengeId:  "ch-missing",
+		EpochId:      12,
+		FileKey:      fileKey,
+		ChallengerId: "challenger-1",
+		RecipientId:  "recipient-1",
+		ObserverIds:  []string{"observer-1"},
+	})
+	if err != nil {
+		t.Fatalf("request self-healing: %v", err)
+	}
+	if resp.Accepted {
+		t.Fatalf("expected accepted=false for non-retrievable file")
+	}
+}
+
+func TestSelfHealingE2E_RequestRecipientMismatch(t *testing.T) {
+	recipientP2P := newFakeP2P()
+	recConn, recCleanup := startSelfHealingTestServer(t, "recipient-1", recipientP2P, nil, nil)
+	defer recCleanup()
+
+	recClient := supernode.NewSelfHealingServiceClient(recConn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := recClient.RequestSelfHealing(ctx, &supernode.RequestSelfHealingRequest{
+		ChallengeId:  "ch-recipient-mismatch",
+		EpochId:      12,
+		FileKey:      "key-1",
+		ChallengerId: "challenger-1",
+		RecipientId:  "recipient-2",
+		ObserverIds:  []string{"observer-1"},
+	})
+	if err != nil {
+		t.Fatalf("request self-healing: %v", err)
+	}
+	if resp.Accepted {
+		t.Fatalf("expected accepted=false for recipient mismatch")
+	}
+}
+
+func TestSelfHealingE2E_VerifyHashMismatch(t *testing.T) {
+	const fileKey = "key-verify-mismatch"
+	payload := []byte("hello-self-healing")
+
+	observerP2P := newFakeP2P()
+	observerP2P.local[fileKey] = payload
+
+	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, nil, nil)
+	defer obsCleanup()
+
+	obsClient := supernode.NewSelfHealingServiceClient(obsConn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ver, err := obsClient.VerifySelfHealing(ctx, &supernode.VerifySelfHealingRequest{
+		ChallengeId:          "ch-mismatch",
+		EpochId:              12,
+		FileKey:              fileKey,
+		RecipientId:          "recipient-1",
+		ReconstructedHashHex: "deadbeef",
+		ObserverId:           "observer-1",
+	})
+	if err != nil {
+		t.Fatalf("verify self-healing: %v", err)
+	}
+	if ver.Ok {
+		t.Fatalf("expected verify ok=false on hash mismatch")
+	}
+}
+
+func TestSelfHealingE2E_VerifyObserverMismatch(t *testing.T) {
+	const fileKey = "key-verify-observer-mismatch"
+	payload := []byte("hello-self-healing")
+
+	observerP2P := newFakeP2P()
+	observerP2P.local[fileKey] = payload
+
+	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, nil, nil)
+	defer obsCleanup()
+
+	obsClient := supernode.NewSelfHealingServiceClient(obsConn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ver, err := obsClient.VerifySelfHealing(ctx, &supernode.VerifySelfHealingRequest{
+		ChallengeId:          "ch-observer-mismatch",
+		EpochId:              12,
+		FileKey:              fileKey,
+		RecipientId:          "recipient-1",
+		ReconstructedHashHex: "deadbeef",
+		ObserverId:           "observer-2",
+	})
+	if err != nil {
+		t.Fatalf("verify self-healing: %v", err)
+	}
+	if ver.Ok {
+		t.Fatalf("expected verify ok=false for observer mismatch")
 	}
 }

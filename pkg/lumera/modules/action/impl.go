@@ -57,3 +57,15 @@ func (m *module) GetParams(ctx context.Context) (*types.QueryParamsResponse, err
 
 	return resp, nil
 }
+
+// ListActions fetches actions with optional filters/pagination.
+func (m *module) ListActions(ctx context.Context, req *types.QueryListActionsRequest) (*types.QueryListActionsResponse, error) {
+	if req == nil {
+		req = &types.QueryListActionsRequest{}
+	}
+	resp, err := m.client.ListActions(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list actions: %w", err)
+	}
+	return resp, nil
+}

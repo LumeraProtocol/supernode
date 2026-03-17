@@ -54,8 +54,18 @@ type StorageChallengeConfig struct {
 }
 
 type SelfHealingConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	PollIntervalMs uint64 `yaml:"poll_interval_ms,omitempty"`
+	Enabled                 bool   `yaml:"enabled"`
+	PollIntervalMs          uint64 `yaml:"poll_interval_ms,omitempty"`
+	ActionPageLimit         uint64 `yaml:"action_page_limit,omitempty"`
+	ActionTargetsTTLSeconds uint64 `yaml:"action_targets_ttl_seconds,omitempty"`
+	MaxChallenges           uint64 `yaml:"max_challenges,omitempty"`
+	MaxEventsPerTick        uint64 `yaml:"max_events_per_tick,omitempty"`
+	EventWorkers            uint64 `yaml:"event_workers,omitempty"`
+	EventLeaseDurationMs    uint64 `yaml:"event_lease_duration_ms,omitempty"`
+	EventRetryBaseMs        uint64 `yaml:"event_retry_base_ms,omitempty"`
+	EventRetryMaxMs         uint64 `yaml:"event_retry_max_ms,omitempty"`
+	MaxEventAttempts        uint64 `yaml:"max_event_attempts,omitempty"`
+	MaxWindowAgeMs          uint64 `yaml:"max_window_age_ms,omitempty"`
 }
 
 type Config struct {

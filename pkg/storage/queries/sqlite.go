@@ -124,6 +124,12 @@ const createSelfHealingChallengeTickets string = `
   data BLOB NOT NULL,
   sender_id TEXT NOT NULL,
   is_processed BOOLEAN NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  lease_owner TEXT,
+  lease_expires_at DATETIME NULL,
+  next_retry_at DATETIME NULL,
+  last_error TEXT,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL
 );
@@ -134,7 +140,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS self_healing_challenge_events_unique ON self_h
 `
 
 const createSelfHealingExecutionMetricsUniqueIndex string = `
-CREATE UNIQUE INDEX IF NOT EXISTS self_healing_execution_metrics_unique ON self_healing_execution_metrics(trigger_id, challenge_id, message_type);
+CREATE UNIQUE INDEX IF NOT EXISTS self_healing_execution_metrics_unique ON self_healing_execution_metrics(trigger_id, challenge_id, message_type, sender_id);
+`
+
+const createSelfHealingChallengeEventsStatusIndex string = `
+CREATE INDEX IF NOT EXISTS self_healing_challenge_events_status_next_retry_idx ON self_healing_challenge_events(status, next_retry_at);
+`
+
+const createSelfHealingChallengeEventsLeaseIndex string = `
+CREATE INDEX IF NOT EXISTS self_healing_challenge_events_lease_expires_idx ON self_healing_challenge_events(lease_expires_at);
+`
+
+const dropSelfHealingExecutionMetricsUniqueIndex string = `
+DROP INDEX IF EXISTS self_healing_execution_metrics_unique;
 `
 
 const alterTablePingHistory = `ALTER TABLE ping_history
@@ -201,6 +219,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS healthcheck_challenge_metrics_unique ON health
 `
 const alterTablePingHistoryHealthCheckColumn = `ALTER TABLE ping_history
 ADD COLUMN health_check_metrics_last_broadcast_at DATETIME NULL;`
+
+const alterSelfHealingChallengeEventsStatus = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';`
+
+const alterSelfHealingChallengeEventsAttemptCount = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;`
+
+const alterSelfHealingChallengeEventsLeaseOwner = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN lease_owner TEXT;`
+
+const alterSelfHealingChallengeEventsLeaseExpiresAt = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN lease_expires_at DATETIME NULL;`
+
+const alterSelfHealingChallengeEventsNextRetryAt = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN next_retry_at DATETIME NULL;`
+
+const alterSelfHealingChallengeEventsLastError = `ALTER TABLE self_healing_challenge_events
+ADD COLUMN last_error TEXT;`
 
 const createPingHistoryWithoutUniqueIPAddress string = `
 BEGIN TRANSACTION;
@@ -352,6 +388,10 @@ func OpenHistoryDB() (LocalStoreInterface, error) {
 		return nil, fmt.Errorf("cannot create table(s): %w", err)
 	}
 
+	if _, err := db.Exec(dropSelfHealingExecutionMetricsUniqueIndex); err != nil {
+		return nil, fmt.Errorf("cannot execute migration: %w", err)
+	}
+
 	if _, err := db.Exec(createSelfHealingExecutionMetricsUniqueIndex); err != nil {
 		return nil, fmt.Errorf("cannot create table(s): %w", err)
 	}
@@ -397,6 +437,20 @@ func OpenHistoryDB() (LocalStoreInterface, error) {
 	_, _ = db.Exec(alterTablePingHistoryExecutionMetrics)
 
 	_, _ = db.Exec(alterTablePingHistoryHealthCheckColumn)
+
+	_, _ = db.Exec(alterSelfHealingChallengeEventsStatus)
+	_, _ = db.Exec(alterSelfHealingChallengeEventsAttemptCount)
+	_, _ = db.Exec(alterSelfHealingChallengeEventsLeaseOwner)
+	_, _ = db.Exec(alterSelfHealingChallengeEventsLeaseExpiresAt)
+	_, _ = db.Exec(alterSelfHealingChallengeEventsNextRetryAt)
+	_, _ = db.Exec(alterSelfHealingChallengeEventsLastError)
+
+	if _, err := db.Exec(createSelfHealingChallengeEventsStatusIndex); err != nil {
+		return nil, fmt.Errorf("cannot create self-healing challenge events status index: %w", err)
+	}
+	if _, err := db.Exec(createSelfHealingChallengeEventsLeaseIndex); err != nil {
+		return nil, fmt.Errorf("cannot create self-healing challenge events lease index: %w", err)
+	}
 
 	_, err = db.Exec(createPingHistoryWithoutUniqueIPAddress)
 	if err != nil {

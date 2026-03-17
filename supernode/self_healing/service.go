@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -12,12 +13,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/lumera/x/lumeraid/securekeyx"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/p2p"
+	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
@@ -26,6 +31,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	query "github.com/cosmos/cosmos-sdk/types/query"
 	"lukechampine.com/blake3"
 )
 
@@ -44,6 +50,15 @@ const (
 	defaultReplicaCount       = 5
 	defaultObserverCount      = 2
 	defaultObserverThreshold  = 2
+	defaultActionPageLimit    = 200
+	defaultActionTargetsCache = 15 * time.Minute
+	defaultMaxChallenges      = 2048
+	defaultEventLeaseDuration = 2 * time.Minute
+	defaultEventMaxAttempts   = 3
+	defaultEventRetryBase     = 30 * time.Second
+	defaultEventRetryMax      = 15 * time.Minute
+	defaultMaxEventsPerTick   = 64
+	defaultEventWorkers       = 8
 
 	requestTimeout     = 20 * time.Second
 	verificationTimout = 20 * time.Second
@@ -65,6 +80,18 @@ type Config struct {
 	ClosestNodes       int
 	ObserverCount      int
 	ObserverThreshold  int
+	ActionPageLimit    int
+	ActionTargetsTTL   time.Duration
+	MaxChallenges      int
+	EventLeaseDuration time.Duration
+	EventRetryBase     time.Duration
+	EventRetryMax      time.Duration
+	MaxEventAttempts   int
+	MaxEventsPerTick   int
+	EventWorkers       int
+
+	// Max age for a generation window before we mark event stale/terminal.
+	MaxWindowAge time.Duration
 }
 
 type Service struct {
@@ -80,6 +107,13 @@ type Service struct {
 	grpcClient *grpcclient.Client
 	grpcOpts   *grpcclient.ClientOptions
 
+	requestSelfHealingFn func(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error)
+	verifySelfHealingFn  func(ctx context.Context, remoteIdentity string, address string, req *supernode.VerifySelfHealingRequest, timeout time.Duration) (*supernode.VerifySelfHealingResponse, error)
+
+	targetsCacheMu sync.RWMutex
+	targetsCache   []actionHealingTarget
+	targetsCached  time.Time
+
 	lastPingAt       time.Time
 	lastWatchlistAt  time.Time
 	lastGenerateAt   time.Time
@@ -87,7 +121,9 @@ type Service struct {
 }
 
 type challengeEventPayload struct {
+	EpochID    uint64   `json:"epoch_id,omitempty"`
 	WindowID   int64    `json:"window_id"`
+	ActionID   string   `json:"action_id,omitempty"`
 	FileKey    string   `json:"file_key"`
 	Recipient  string   `json:"recipient"`
 	Observers  []string `json:"observers"`
@@ -95,12 +131,35 @@ type challengeEventPayload struct {
 	ActiveHash string   `json:"active_hash"`
 }
 
+type eventProcessError struct {
+	Reason    string
+	Retryable bool
+	Err       error
+}
+
+func (e *eventProcessError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Reason, e.Err)
+	}
+	return e.Reason
+}
+
+func (e *eventProcessError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 func NewService(identity string, grpcPort uint16, lumeraClient lumera.Client, p2pClient p2p.Client, kr keyring.Keyring, store queries.LocalStoreInterface, cfg Config) (*Service, error) {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return nil, fmt.Errorf("identity is empty")
 	}
-	if lumeraClient == nil || lumeraClient.SuperNode() == nil {
+	if lumeraClient == nil || lumeraClient.SuperNode() == nil || lumeraClient.Audit() == nil || lumeraClient.Action() == nil {
 		return nil, fmt.Errorf("lumera client is missing required modules")
 	}
 	if p2pClient == nil {
@@ -159,6 +218,36 @@ func NewService(identity string, grpcPort uint16, lumeraClient lumera.Client, p2
 	}
 	if cfg.ObserverThreshold <= 0 {
 		cfg.ObserverThreshold = defaultObserverThreshold
+	}
+	if cfg.ActionPageLimit <= 0 {
+		cfg.ActionPageLimit = defaultActionPageLimit
+	}
+	if cfg.ActionTargetsTTL <= 0 {
+		cfg.ActionTargetsTTL = defaultActionTargetsCache
+	}
+	if cfg.MaxChallenges <= 0 {
+		cfg.MaxChallenges = defaultMaxChallenges
+	}
+	if cfg.EventLeaseDuration <= 0 {
+		cfg.EventLeaseDuration = defaultEventLeaseDuration
+	}
+	if cfg.EventRetryBase <= 0 {
+		cfg.EventRetryBase = defaultEventRetryBase
+	}
+	if cfg.EventRetryMax <= 0 {
+		cfg.EventRetryMax = defaultEventRetryMax
+	}
+	if cfg.MaxEventAttempts <= 0 {
+		cfg.MaxEventAttempts = defaultEventMaxAttempts
+	}
+	if cfg.MaxEventsPerTick <= 0 {
+		cfg.MaxEventsPerTick = defaultMaxEventsPerTick
+	}
+	if cfg.EventWorkers <= 0 {
+		cfg.EventWorkers = defaultEventWorkers
+	}
+	if cfg.MaxWindowAge <= 0 {
+		cfg.MaxWindowAge = 2 * cfg.GenerationInterval
 	}
 
 	return &Service{cfg: cfg, identity: identity, grpcPort: grpcPort, lumera: lumeraClient, p2p: p2pClient, kr: kr, store: store}, nil
@@ -305,39 +394,35 @@ func (s *Service) updateWatchlist(ctx context.Context) {
 }
 
 func (s *Service) generateChallenges(ctx context.Context, now time.Time) {
-	watchInfos, err := s.store.GetWatchlistPingInfo()
-	if err != nil {
-		return
-	}
-	freshCut := now.Add(-s.cfg.WatchlistFreshFor)
-	watch := make([]string, 0)
-	for _, p := range watchInfos {
-		if p.LastSeen.Valid && p.LastSeen.Time.After(freshCut) {
-			watch = append(watch, p.SupernodeID)
-		}
-	}
-	sort.Strings(watch)
-	if len(watch) < s.cfg.WatchlistThreshold {
-		return
-	}
-
 	active, online, _, err := s.networkSnapshot(ctx)
 	if err != nil || len(active) == 0 {
 		return
 	}
+
+	watch, err := s.auditWeightedWatchlist(ctx, active)
+	if err != nil {
+		logtrace.Warn(ctx, "self-healing weighted watchlist unavailable", logtrace.Fields{"error": err.Error()})
+		return
+	}
+	if len(watch) < s.cfg.WatchlistThreshold {
+		logtrace.Debug(ctx, "self-healing trigger skipped: watchlist below threshold", logtrace.Fields{"watchlist_count": len(watch), "threshold": s.cfg.WatchlistThreshold})
+		return
+	}
+
 	windowID := now.Truncate(s.cfg.GenerationInterval).Unix()
 	leader := electLeader(active, windowID, hashList(watch))
 	if leader != s.identity {
 		return
 	}
 
-	to := now
-	from := to.Add(-24 * time.Hour)
-	keys, err := s.p2p.GetLocalKeys(ctx, &from, to)
-	if err != nil || len(keys) == 0 {
+	targets, err := s.listCascadeHealingTargets(ctx)
+	if err != nil {
+		logtrace.Warn(ctx, "self-healing action target listing failed", logtrace.Fields{"error": err.Error()})
 		return
 	}
-	sort.Strings(keys)
+	if len(targets) == 0 {
+		return
+	}
 
 	watchSet := toSet(watch)
 	eligibleRecipients := filterEligibleRecipients(online, watchSet, s.identity)
@@ -346,28 +431,55 @@ func (s *Service) generateChallenges(ctx context.Context, now time.Time) {
 	}
 
 	triggerID := fmt.Sprintf("window:%d", windowID)
-	events := make([]types.SelfHealingChallengeEvent, 0)
-	for _, k := range keys {
-		holders, err := deterministic.SelectReplicaSet(active, k, uint32(maxInt(1, s.cfg.ClosestNodes)))
+	epochID := uint64(0)
+	if s.lumera != nil && s.lumera.Audit() != nil {
+		if ep, err := s.lumera.Audit().GetCurrentEpoch(ctx); err == nil && ep != nil {
+			epochID = ep.EpochId
+		}
+	}
+
+	selectedTargets := selectWindowTargets(targets, windowID, s.cfg.MaxChallenges)
+	if len(selectedTargets) < len(targets) {
+		logtrace.Info(ctx, "self-healing target set capped for window", logtrace.Fields{
+			"window_id":          windowID,
+			"total_targets":      len(targets),
+			"selected_targets":   len(selectedTargets),
+			"max_challenges":     s.cfg.MaxChallenges,
+			"selection_strategy": "window_offset",
+		})
+	}
+
+	events := make([]types.SelfHealingChallengeEvent, 0, len(selectedTargets))
+	for _, target := range selectedTargets {
+		holders, err := deterministic.SelectReplicaSet(active, target.FileKey, uint32(maxInt(1, s.cfg.ClosestNodes)))
 		if err != nil || len(holders) == 0 {
 			continue
 		}
 		if !allInSet(holders, watchSet) {
 			continue
 		}
-		recipient := pickDeterministicNode(eligibleRecipients, k)
+		recipient := pickDeterministicNode(eligibleRecipients, target.FileKey)
 		if recipient == "" {
 			continue
 		}
 		obsPool := removeOne(eligibleRecipients, recipient)
-		observers := pickTopNDeterministic(obsPool, k+":obs", s.cfg.ObserverCount)
-		challengeID := deriveWindowChallengeID(windowID, k, recipient)
+		observers := pickTopNDeterministic(obsPool, target.FileKey+":obs", s.cfg.ObserverCount)
+		challengeID := deriveWindowChallengeID(windowID, target.ActionID)
 
-		payload := challengeEventPayload{WindowID: windowID, FileKey: k, Recipient: recipient, Observers: observers, WatchHash: hashList(watch), ActiveHash: hashList(active)}
+		payload := challengeEventPayload{
+			EpochID:    epochID,
+			WindowID:   windowID,
+			ActionID:   target.ActionID,
+			FileKey:    target.FileKey,
+			Recipient:  recipient,
+			Observers:  observers,
+			WatchHash:  hashList(watch),
+			ActiveHash: hashList(active),
+		}
 		bz, _ := json.Marshal(payload)
 		events = append(events, types.SelfHealingChallengeEvent{
 			TriggerID:   triggerID,
-			TicketID:    k,
+			TicketID:    target.ActionID,
 			ChallengeID: challengeID,
 			Data:        bz,
 			SenderID:    s.identity,
@@ -392,32 +504,100 @@ func (s *Service) generateChallenges(ctx context.Context, now time.Time) {
 }
 
 func (s *Service) processEvents(ctx context.Context) {
-	events, err := s.store.GetSelfHealingChallengeEvents()
+	owner := s.identity
+	events, err := s.store.ClaimPendingSelfHealingChallengeEvents(ctx, owner, s.cfg.EventLeaseDuration, s.cfg.MaxEventsPerTick)
 	if err != nil || len(events) == 0 {
 		return
 	}
-	for _, event := range events {
-		if err := s.processEvent(ctx, event); err != nil {
-			logtrace.Warn(ctx, "self-healing event process failed", logtrace.Fields{"challenge_id": event.ChallengeID, "error": err.Error()})
-			continue
+	workers := s.cfg.EventWorkers
+	if workers <= 1 || len(events) == 1 {
+		for _, event := range events {
+			s.handleClaimedEvent(ctx, owner, event)
 		}
-		_ = s.store.UpdateSHChallengeEventProcessed(event.ChallengeID, true)
+		return
+	}
+	if workers > len(events) {
+		workers = len(events)
+	}
+
+	jobs := make(chan types.SelfHealingChallengeEvent, len(events))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for event := range jobs {
+				s.handleClaimedEvent(ctx, owner, event)
+			}
+		}()
+	}
+enqueue:
+	for _, event := range events {
+		select {
+		case <-ctx.Done():
+			break enqueue
+		case jobs <- event:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+}
+
+func (s *Service) handleClaimedEvent(ctx context.Context, owner string, event types.SelfHealingChallengeEvent) {
+	if err := s.processEvent(ctx, event); err != nil {
+		reason := err.Error()
+		retryable := true
+		var processErr *eventProcessError
+		if errors.As(err, &processErr) {
+			reason = processErr.Reason
+			retryable = processErr.Retryable
+		}
+
+		attempted := event.AttemptCount
+		maxed := attempted >= s.cfg.MaxEventAttempts
+		if !retryable || maxed {
+			if terr := s.store.MarkSelfHealingChallengeEventTerminal(event.ChallengeID, owner, reason); terr != nil {
+				logtrace.Warn(ctx, "self-healing event terminal update failed", logtrace.Fields{"challenge_id": event.ChallengeID, "error": terr.Error()})
+			}
+			logtrace.Warn(ctx, "self-healing event terminal failure", logtrace.Fields{"challenge_id": event.ChallengeID, "reason": reason, "attempt_count": attempted})
+			return
+		}
+
+		delay := s.retryDelayForAttempt(attempted)
+		if rerr := s.store.MarkSelfHealingChallengeEventRetry(event.ChallengeID, owner, reason, delay); rerr != nil {
+			logtrace.Warn(ctx, "self-healing event retry update failed", logtrace.Fields{"challenge_id": event.ChallengeID, "error": rerr.Error()})
+		}
+		logtrace.Warn(ctx, "self-healing event process failed", logtrace.Fields{"challenge_id": event.ChallengeID, "reason": reason, "attempt_count": attempted, "retry_after_ms": delay.Milliseconds()})
+		return
+	}
+	if err := s.store.MarkSelfHealingChallengeEventCompleted(event.ChallengeID, owner); err != nil {
+		logtrace.Warn(ctx, "self-healing event complete update failed", logtrace.Fields{"challenge_id": event.ChallengeID, "error": err.Error()})
 	}
 }
 
 func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChallengeEvent) error {
 	var pl challengeEventPayload
 	if err := json.Unmarshal(event.Data, &pl); err != nil {
-		return err
+		return &eventProcessError{Reason: "invalid_payload", Retryable: false, Err: err}
+	}
+	if strings.TrimSpace(pl.FileKey) == "" || strings.TrimSpace(pl.Recipient) == "" {
+		return &eventProcessError{Reason: "invalid_payload_fields", Retryable: false}
+	}
+	if pl.WindowID > 0 {
+		windowStart := time.Unix(pl.WindowID, 0).UTC()
+		if time.Now().UTC().After(windowStart.Add(s.cfg.MaxWindowAge)) {
+			s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": "stale_window"})
+			return &eventProcessError{Reason: "stale_window", Retryable: false}
+		}
 	}
 	recipientAddr, err := s.supernodeGRPCAddr(ctx, pl.Recipient)
 	if err != nil {
 		s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": "recipient_resolve_failed"})
-		return err
+		return &eventProcessError{Reason: "recipient_resolve_failed", Retryable: true, Err: err}
 	}
 
-	req := &supernode.RequestSelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: 0, FileKey: pl.FileKey, ChallengerId: s.identity, RecipientId: pl.Recipient, ObserverIds: pl.Observers}
-	resp, err := s.callRequestSelfHealing(ctx, pl.Recipient, recipientAddr, req, requestTimeout)
+	req := &supernode.RequestSelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: pl.EpochID, FileKey: pl.FileKey, ChallengerId: s.identity, RecipientId: pl.Recipient, ObserverIds: pl.Observers}
+	resp, err := s.requestSelfHealing(ctx, pl.Recipient, recipientAddr, req, requestTimeout)
 	if err != nil || resp == nil || !resp.Accepted {
 		reason := "request_failed"
 		if resp != nil && strings.TrimSpace(resp.Error) != "" {
@@ -425,9 +605,13 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 		}
 		s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": reason})
 		if err != nil {
-			return err
+			return &eventProcessError{Reason: "request_rpc_error", Retryable: true, Err: err}
 		}
-		return fmt.Errorf("%s", reason)
+		lowerReason := strings.ToLower(strings.TrimSpace(reason))
+		if strings.Contains(lowerReason, "stale") {
+			return &eventProcessError{Reason: lowerReason, Retryable: false}
+		}
+		return &eventProcessError{Reason: lowerReason, Retryable: true}
 	}
 	s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingResponseMessage), map[string]any{"event": "response", "reconstruction_required": resp.ReconstructionRequired, "reconstructed_hash_hex": resp.ReconstructedHashHex})
 
@@ -441,7 +625,7 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 		if err != nil {
 			continue
 		}
-		vr, verr := s.callVerifySelfHealing(ctx, ob, addr, &supernode.VerifySelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: 0, FileKey: pl.FileKey, RecipientId: pl.Recipient, ReconstructedHashHex: resp.ReconstructedHashHex, ObserverId: ob}, verificationTimout)
+		vr, verr := s.verifySelfHealing(ctx, ob, addr, &supernode.VerifySelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: pl.EpochID, FileKey: pl.FileKey, RecipientId: pl.Recipient, ReconstructedHashHex: resp.ReconstructedHashHex, ObserverId: ob}, verificationTimout)
 		ok := verr == nil && vr != nil && vr.Ok
 		if ok {
 			okCount++
@@ -450,7 +634,7 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 	}
 	if okCount < s.cfg.ObserverThreshold {
 		s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": "observer_quorum_failed", "ok_count": okCount})
-		return fmt.Errorf("observer quorum failed")
+		return &eventProcessError{Reason: "observer_quorum_failed", Retryable: true}
 	}
 	s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "completed", "result": "healed", "ok_count": okCount})
 	return nil
@@ -483,6 +667,276 @@ func (s *Service) networkSnapshot(ctx context.Context) (active []string, online 
 	sort.Strings(active)
 	sort.Strings(online)
 	return active, online, addrMap, nil
+}
+
+func (s *Service) auditWeightedWatchlist(ctx context.Context, active []string) ([]string, error) {
+	if s.lumera == nil || s.lumera.Audit() == nil {
+		return nil, fmt.Errorf("audit module unavailable")
+	}
+
+	paramsResp, err := s.lumera.Audit().GetParams(ctx)
+	if err != nil || paramsResp == nil {
+		return nil, fmt.Errorf("get audit params: %w", err)
+	}
+	params := paramsResp.Params.WithDefaults()
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid audit params: %w", err)
+	}
+
+	epochResp, err := s.lumera.Audit().GetCurrentEpoch(ctx)
+	if err != nil || epochResp == nil {
+		return nil, fmt.Errorf("get current epoch: %w", err)
+	}
+	epochID := epochResp.EpochId
+
+	requiredPorts := len(params.RequiredOpenPorts)
+	if requiredPorts == 0 {
+		return nil, nil
+	}
+
+	minReporters := int(params.PeerQuorumReports)
+	if minReporters <= 0 {
+		minReporters = 1
+	}
+	thresholdPercent := int(params.PeerPortPostponeThresholdPercent)
+	if thresholdPercent <= 0 {
+		thresholdPercent = 100
+	}
+
+	watch := make([]string, 0)
+	for _, target := range active {
+		if target == s.identity {
+			continue
+		}
+
+		reportsResp, err := s.lumera.Audit().GetStorageChallengeReports(ctx, target, epochID)
+		if err != nil || reportsResp == nil {
+			continue
+		}
+
+		total, closed := countWeightedClosedVotes(reportsResp.Reports, requiredPorts)
+		if total < minReporters {
+			continue
+		}
+		if closed*100 >= thresholdPercent*total {
+			watch = append(watch, target)
+		}
+	}
+
+	sort.Strings(watch)
+	logtrace.Debug(ctx, "self-healing weighted watchlist computed", logtrace.Fields{
+		"epoch_id":        epochID,
+		"watchlist_count": len(watch),
+		"active_count":    len(active),
+		"min_reporters":   minReporters,
+		"threshold_pct":   thresholdPercent,
+	})
+	return watch, nil
+}
+
+func countWeightedClosedVotes(reports []audittypes.StorageChallengeReport, requiredPortsLen int) (total int, closed int) {
+	if requiredPortsLen <= 0 {
+		return 0, 0
+	}
+	reporterVotes := make(map[string]bool, len(reports))
+	for _, report := range reports {
+		reporter := strings.TrimSpace(report.ReporterSupernodeAccount)
+		if reporter == "" {
+			continue
+		}
+		if _, exists := reporterVotes[reporter]; exists {
+			continue
+		}
+		known, isClosed := classifyReporterObservation(report.PortStates, requiredPortsLen)
+		if !known {
+			continue
+		}
+		reporterVotes[reporter] = isClosed
+	}
+
+	for _, isClosed := range reporterVotes {
+		total++
+		if isClosed {
+			closed++
+		}
+	}
+	return total, closed
+}
+
+func classifyReporterObservation(states []audittypes.PortState, requiredPortsLen int) (known bool, isClosed bool) {
+	if len(states) != requiredPortsLen {
+		return false, false
+	}
+	allOpen := true
+	hasClosed := false
+	for _, st := range states {
+		switch st {
+		case audittypes.PortState_PORT_STATE_OPEN:
+			continue
+		case audittypes.PortState_PORT_STATE_CLOSED:
+			hasClosed = true
+			allOpen = false
+		default:
+			// Unknown observations are intentionally excluded from weighting.
+			allOpen = false
+		}
+	}
+	if hasClosed {
+		return true, true
+	}
+	if allOpen {
+		return true, false
+	}
+	return false, false
+}
+
+type actionHealingTarget struct {
+	ActionID string
+	FileKey  string
+}
+
+func (s *Service) listCascadeHealingTargets(ctx context.Context) ([]actionHealingTarget, error) {
+	if cached, ok := s.cachedTargets(); ok {
+		return cached, nil
+	}
+
+	s.targetsCacheMu.Lock()
+	defer s.targetsCacheMu.Unlock()
+	// Re-check under write lock in case another caller refreshed already.
+	if cached, ok := s.cachedTargetsLocked(); ok {
+		return cached, nil
+	}
+
+	if s.lumera == nil || s.lumera.Action() == nil {
+		return nil, fmt.Errorf("action module unavailable")
+	}
+
+	states := []actiontypes.ActionState{
+		actiontypes.ActionStateDone,
+		actiontypes.ActionStateApproved,
+	}
+
+	targets := make([]actionHealingTarget, 0)
+	seenByAction := make(map[string]struct{})
+	for _, state := range states {
+		var nextKey []byte
+		for {
+			resp, err := s.lumera.Action().ListActions(ctx, &actiontypes.QueryListActionsRequest{
+				ActionType:  actiontypes.ActionTypeCascade,
+				ActionState: state,
+				Pagination: &query.PageRequest{
+					Key:   nextKey,
+					Limit: uint64(s.cfg.ActionPageLimit),
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list cascade actions (state=%s): %w", state.String(), err)
+			}
+			if resp == nil {
+				break
+			}
+
+			for _, act := range resp.Actions {
+				if act == nil {
+					continue
+				}
+				actionID := strings.TrimSpace(act.ActionID)
+				if actionID == "" {
+					continue
+				}
+				if _, seen := seenByAction[actionID]; seen {
+					continue
+				}
+				metadata := act.Metadata
+				if len(metadata) == 0 {
+					continue
+				}
+				cascadeMeta, err := cascadekit.UnmarshalCascadeMetadata(metadata)
+				if err != nil {
+					continue
+				}
+				fileKey := pickActionAnchorKey(cascadeMeta.RqIdsIds)
+				if fileKey == "" {
+					continue
+				}
+				seenByAction[actionID] = struct{}{}
+				targets = append(targets, actionHealingTarget{
+					ActionID: actionID,
+					FileKey:  fileKey,
+				})
+			}
+
+			if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+				break
+			}
+			nextKey = append(nextKey[:0], resp.Pagination.NextKey...)
+		}
+	}
+
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].ActionID == targets[j].ActionID {
+			return targets[i].FileKey < targets[j].FileKey
+		}
+		return targets[i].ActionID < targets[j].ActionID
+	})
+	logtrace.Debug(ctx, "self-healing on-chain action targets listed", logtrace.Fields{
+		"targets_count": len(targets),
+	})
+	s.targetsCache = append(s.targetsCache[:0], targets...)
+	s.targetsCached = time.Now().UTC()
+	return targets, nil
+}
+
+func (s *Service) cachedTargets() ([]actionHealingTarget, bool) {
+	s.targetsCacheMu.RLock()
+	defer s.targetsCacheMu.RUnlock()
+	return s.cachedTargetsLocked()
+}
+
+func (s *Service) cachedTargetsLocked() ([]actionHealingTarget, bool) {
+	if len(s.targetsCache) == 0 {
+		return nil, false
+	}
+	if s.cfg.ActionTargetsTTL > 0 && time.Since(s.targetsCached) > s.cfg.ActionTargetsTTL {
+		return nil, false
+	}
+	out := make([]actionHealingTarget, len(s.targetsCache))
+	copy(out, s.targetsCache)
+	return out, true
+}
+
+func pickActionAnchorKey(keys []string) string {
+	anchor := ""
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		if anchor == "" || key < anchor {
+			anchor = key
+		}
+	}
+	return anchor
+}
+
+func selectWindowTargets(targets []actionHealingTarget, windowID int64, limit int) []actionHealingTarget {
+	n := len(targets)
+	if n == 0 || limit <= 0 || n <= limit {
+		out := make([]actionHealingTarget, n)
+		copy(out, targets)
+		return out
+	}
+
+	start := int(windowID % int64(n))
+	if start < 0 {
+		start += n
+	}
+	out := make([]actionHealingTarget, 0, limit)
+	for i := 0; i < limit; i++ {
+		idx := (start + i) % n
+		out = append(out, targets[idx])
+	}
+	return out
 }
 
 func isActiveSN(sn *sntypes.SuperNode) bool {
@@ -523,6 +977,37 @@ func (s *Service) supernodeGRPCAddr(ctx context.Context, supernodeAccount string
 		return "", fmt.Errorf("invalid supernode address for %s: %q", supernodeAccount, raw)
 	}
 	return net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(port)), nil
+}
+
+func (s *Service) retryDelayForAttempt(attempt int) time.Duration {
+	if attempt <= 0 {
+		return s.cfg.EventRetryBase
+	}
+	delay := s.cfg.EventRetryBase
+	for i := 1; i < attempt; i++ {
+		delay *= 2
+		if delay >= s.cfg.EventRetryMax {
+			return s.cfg.EventRetryMax
+		}
+	}
+	if delay > s.cfg.EventRetryMax {
+		return s.cfg.EventRetryMax
+	}
+	return delay
+}
+
+func (s *Service) requestSelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error) {
+	if s.requestSelfHealingFn != nil {
+		return s.requestSelfHealingFn(ctx, remoteIdentity, address, req, timeout)
+	}
+	return s.callRequestSelfHealing(ctx, remoteIdentity, address, req, timeout)
+}
+
+func (s *Service) verifySelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.VerifySelfHealingRequest, timeout time.Duration) (*supernode.VerifySelfHealingResponse, error) {
+	if s.verifySelfHealingFn != nil {
+		return s.verifySelfHealingFn(ctx, remoteIdentity, address, req, timeout)
+	}
+	return s.callVerifySelfHealing(ctx, remoteIdentity, address, req, timeout)
 }
 
 func (s *Service) callRequestSelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error) {
@@ -577,8 +1062,8 @@ func parseHostAndPort(address string, defaultPort int) (host string, port int, o
 	return host, defaultPort, true
 }
 
-func deriveWindowChallengeID(windowID int64, fileKey, recipient string) string {
-	msg := []byte(fmt.Sprintf("sh:v1:%d:%s:%s", windowID, fileKey, recipient))
+func deriveWindowChallengeID(windowID int64, fileKey string) string {
+	msg := []byte(fmt.Sprintf("sh:v1:%d:%s", windowID, fileKey))
 	sum := blake3.Sum256(msg)
 	return hex.EncodeToString(sum[:])
 }

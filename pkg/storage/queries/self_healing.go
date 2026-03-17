@@ -2,12 +2,15 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/utils/metrics"
+	"github.com/jmoiron/sqlx"
 	json "github.com/json-iterator/go"
 )
 
@@ -15,6 +18,11 @@ type SelfHealingQueries interface {
 	BatchInsertSelfHealingChallengeEvents(ctx context.Context, event []types.SelfHealingChallengeEvent) error
 	UpdateSHChallengeEventProcessed(challengeID string, isProcessed bool) error
 	GetSelfHealingChallengeEvents() ([]types.SelfHealingChallengeEvent, error)
+	GetSelfHealingChallengeEvent(challengeID string) (*types.SelfHealingChallengeEvent, error)
+	ClaimPendingSelfHealingChallengeEvents(ctx context.Context, owner string, leaseFor time.Duration, limit int) ([]types.SelfHealingChallengeEvent, error)
+	MarkSelfHealingChallengeEventCompleted(challengeID string, owner string) error
+	MarkSelfHealingChallengeEventRetry(challengeID string, owner string, reason string, retryAfter time.Duration) error
+	MarkSelfHealingChallengeEventTerminal(challengeID string, owner string, reason string) error
 	CleanupSelfHealingChallenges() (err error)
 	QuerySelfHealingChallenges() (challenges []types.SelfHealingChallenge, err error)
 
@@ -561,8 +569,8 @@ func (s *SQLiteStore) BatchInsertSelfHealingChallengeEvents(ctx context.Context,
 
 	stmt, err := tx.Prepare(`
         INSERT OR IGNORE INTO self_healing_challenge_events
-        (trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, status, attempt_count, next_retry_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		tx.Rollback()
@@ -583,7 +591,7 @@ func (s *SQLiteStore) BatchInsertSelfHealingChallengeEvents(ctx context.Context,
 	for _, event := range eventsBatch {
 		now := time.Now().UTC()
 
-		_, err = stmt.Exec(event.TriggerID, event.TicketID, event.ChallengeID, event.Data, event.SenderID, false, now, now)
+		_, err = stmt.Exec(event.TriggerID, event.TicketID, event.ChallengeID, event.Data, event.SenderID, false, "pending", 0, now, now, now)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -602,7 +610,7 @@ func (s *SQLiteStore) BatchInsertSelfHealingChallengeEvents(ctx context.Context,
 // GetSelfHealingChallengeEvents retrieves the challenge events from DB
 func (s *SQLiteStore) GetSelfHealingChallengeEvents() ([]types.SelfHealingChallengeEvent, error) {
 	const selectQuery = `
-        SELECT trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, created_at, updated_at
+        SELECT trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, status, attempt_count, lease_owner, lease_expires_at, next_retry_at, last_error, created_at, updated_at
         FROM self_healing_challenge_events
         WHERE is_processed = false
     `
@@ -618,6 +626,7 @@ func (s *SQLiteStore) GetSelfHealingChallengeEvents() ([]types.SelfHealingChalle
 		var event types.SelfHealingChallengeEvent
 		if err := rows.Scan(
 			&event.TriggerID, &event.TicketID, &event.ChallengeID, &event.Data, &event.SenderID, &event.IsProcessed,
+			&event.Status, &event.AttemptCount, &event.LeaseOwner, &event.LeaseExpiresAt, &event.NextRetryAt, &event.LastError,
 			&event.CreatedAt, &event.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -627,6 +636,249 @@ func (s *SQLiteStore) GetSelfHealingChallengeEvents() ([]types.SelfHealingChalle
 	}
 
 	return events, nil
+}
+
+// GetSelfHealingChallengeEvent retrieves a challenge event by challenge id.
+func (s *SQLiteStore) GetSelfHealingChallengeEvent(challengeID string) (*types.SelfHealingChallengeEvent, error) {
+	const selectQuery = `
+        SELECT trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, status, attempt_count, lease_owner, lease_expires_at, next_retry_at, last_error, created_at, updated_at
+        FROM self_healing_challenge_events
+        WHERE challenge_id = ?
+    `
+
+	var event types.SelfHealingChallengeEvent
+	err := s.db.QueryRow(selectQuery, challengeID).Scan(
+		&event.TriggerID, &event.TicketID, &event.ChallengeID, &event.Data, &event.SenderID, &event.IsProcessed,
+		&event.Status, &event.AttemptCount, &event.LeaseOwner, &event.LeaseExpiresAt, &event.NextRetryAt, &event.LastError,
+		&event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+// ClaimPendingSelfHealingChallengeEvents atomically claims pending/retry events for processing.
+func (s *SQLiteStore) ClaimPendingSelfHealingChallengeEvents(ctx context.Context, owner string, leaseFor time.Duration, limit int) ([]types.SelfHealingChallengeEvent, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil, fmt.Errorf("owner is required")
+	}
+	if limit <= 0 {
+		limit = 1
+	}
+	if leaseFor <= 0 {
+		leaseFor = 2 * time.Minute
+	}
+	now := time.Now().UTC()
+	leaseUntil := now.Add(leaseFor)
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	const candidateQuery = `
+        SELECT challenge_id
+        FROM self_healing_challenge_events
+        WHERE is_processed = false
+          AND (status = 'pending' OR status = 'retry' OR (status = 'processing' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))
+          AND (next_retry_at IS NULL OR next_retry_at <= ?)
+        ORDER BY created_at ASC
+        LIMIT ?
+    `
+
+	rows, err := tx.QueryContext(ctx, candidateQuery, now, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	candidateIDs := make([]string, 0, limit)
+	for rows.Next() {
+		var challengeID string
+		if err := rows.Scan(&challengeID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		candidateIDs = append(candidateIDs, challengeID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	claimedIDs := make([]string, 0, len(candidateIDs))
+	for _, challengeID := range candidateIDs {
+		res, err := tx.ExecContext(ctx, `
+            UPDATE self_healing_challenge_events
+            SET status = 'processing',
+                lease_owner = ?,
+                lease_expires_at = ?,
+                attempt_count = attempt_count + 1,
+                updated_at = ?
+            WHERE challenge_id = ?
+              AND is_processed = false
+              AND (status = 'pending' OR status = 'retry' OR (status = 'processing' AND (lease_expires_at IS NULL OR lease_expires_at <= ?)))
+              AND (next_retry_at IS NULL OR next_retry_at <= ?)
+        `, owner, leaseUntil, now, challengeID, now, now)
+		if err != nil {
+			return nil, err
+		}
+
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if affected == 0 {
+			continue
+		}
+		claimedIDs = append(claimedIDs, challengeID)
+	}
+
+	if len(claimedIDs) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		committed = true
+		return []types.SelfHealingChallengeEvent{}, nil
+	}
+
+	queryWithIn, args, err := sqlx.In(`
+        SELECT trigger_id, ticket_id, challenge_id, data, sender_id, is_processed, status, attempt_count, lease_owner, lease_expires_at, next_retry_at, last_error, created_at, updated_at
+        FROM self_healing_challenge_events
+        WHERE challenge_id IN (?)
+        ORDER BY created_at ASC
+    `, claimedIDs)
+	if err != nil {
+		return nil, err
+	}
+	queryWithIn = tx.Rebind(queryWithIn)
+	claimedRows, err := tx.QueryxContext(ctx, queryWithIn, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer claimedRows.Close()
+
+	claimed := make([]types.SelfHealingChallengeEvent, 0, len(claimedIDs))
+	for claimedRows.Next() {
+		var event types.SelfHealingChallengeEvent
+		if err := claimedRows.Scan(
+			&event.TriggerID, &event.TicketID, &event.ChallengeID, &event.Data, &event.SenderID, &event.IsProcessed,
+			&event.Status, &event.AttemptCount, &event.LeaseOwner, &event.LeaseExpiresAt, &event.NextRetryAt, &event.LastError,
+			&event.CreatedAt, &event.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		claimed = append(claimed, event)
+	}
+	if err := claimedRows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	committed = true
+
+	return claimed, nil
+}
+
+// MarkSelfHealingChallengeEventCompleted marks a claimed event as completed.
+func (s *SQLiteStore) MarkSelfHealingChallengeEventCompleted(challengeID string, owner string) error {
+	now := time.Now().UTC()
+	res, err := s.db.Exec(`
+        UPDATE self_healing_challenge_events
+        SET status = 'completed',
+            is_processed = true,
+            lease_owner = NULL,
+            lease_expires_at = NULL,
+            next_retry_at = NULL,
+            last_error = NULL,
+            updated_at = ?
+        WHERE challenge_id = ?
+          AND status = 'processing'
+          AND lease_owner = ?
+    `, now, challengeID, owner)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// MarkSelfHealingChallengeEventRetry releases a claimed event with retry metadata.
+func (s *SQLiteStore) MarkSelfHealingChallengeEventRetry(challengeID string, owner string, reason string, retryAfter time.Duration) error {
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	now := time.Now().UTC()
+	next := now.Add(retryAfter)
+	res, err := s.db.Exec(`
+        UPDATE self_healing_challenge_events
+        SET status = 'retry',
+            is_processed = false,
+            lease_owner = NULL,
+            lease_expires_at = NULL,
+            next_retry_at = ?,
+            last_error = ?,
+            updated_at = ?
+        WHERE challenge_id = ?
+          AND status = 'processing'
+          AND lease_owner = ?
+    `, next, reason, now, challengeID, owner)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// MarkSelfHealingChallengeEventTerminal marks a claimed event as terminal.
+func (s *SQLiteStore) MarkSelfHealingChallengeEventTerminal(challengeID string, owner string, reason string) error {
+	now := time.Now().UTC()
+	res, err := s.db.Exec(`
+        UPDATE self_healing_challenge_events
+        SET status = 'terminal',
+            is_processed = true,
+            lease_owner = NULL,
+            lease_expires_at = NULL,
+            next_retry_at = NULL,
+            last_error = ?,
+            updated_at = ?
+        WHERE challenge_id = ?
+          AND status = 'processing'
+          AND lease_owner = ?
+    `, reason, now, challengeID, owner)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // UpdateSHChallengeEventProcessed updates the is_processed flag of an event
