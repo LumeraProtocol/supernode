@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	bootstrapRefreshInterval     = 10 * time.Minute
-	defaultSuperNodeP2PPort  int = 4445
+	bootstrapRefreshInterval          = 10 * time.Minute
+	bootstrapAcceleratedInterval      = 1 * time.Minute
+	bootstrapAcceleratedCycles        = 5
+	defaultSuperNodeP2PPort       int = 4445
 )
 
 // seed a couple of obviously bad addrs (unless in integration tests)
@@ -301,6 +303,10 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 
 // StartBootstrapRefresher runs SyncBootstrapOnce every 10 minutes (idempotent upserts).
 // This keeps replication_info and routing table current as the validator set changes.
+//
+// When NotifyEVMMigration is called, the refresher immediately runs a sync and
+// temporarily switches to an accelerated 1-minute interval for 5 cycles so that
+// peer address changes from EVM migration are picked up quickly.
 func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string) {
 	go func() {
 		// Initial sync
@@ -310,13 +316,32 @@ func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string
 				logtrace.FieldError:  err.Error(),
 			})
 		}
-		t := time.NewTicker(bootstrapRefreshInterval)
+
+		acceleratedRemaining := 0
+		currentInterval := bootstrapRefreshInterval
+		t := time.NewTicker(currentInterval)
 		defer t.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-s.migrationNotify:
+				// EVM migration detected — immediate sync + accelerated refresh
+				logtrace.Info(ctx, "EVM migration notified — running immediate bootstrap sync and switching to accelerated refresh", logtrace.Fields{
+					logtrace.FieldModule: "p2p",
+					"accelerated_cycles": bootstrapAcceleratedCycles,
+					"accelerated_interval": bootstrapAcceleratedInterval.String(),
+				})
+				if err := s.SyncBootstrapOnce(ctx, bootstrapNodes); err != nil {
+					logtrace.Warn(ctx, "post-migration bootstrap sync failed", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				}
+				acceleratedRemaining = bootstrapAcceleratedCycles
+				currentInterval = bootstrapAcceleratedInterval
+				t.Reset(currentInterval)
 			case <-t.C:
 				if err := s.SyncBootstrapOnce(ctx, bootstrapNodes); err != nil {
 					logtrace.Warn(ctx, "periodic bootstrap sync failed", logtrace.Fields{
@@ -324,9 +349,43 @@ func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string
 						logtrace.FieldError:  err.Error(),
 					})
 				}
+				if acceleratedRemaining > 0 {
+					acceleratedRemaining--
+					if acceleratedRemaining == 0 {
+						logtrace.Info(ctx, "Accelerated bootstrap refresh complete — reverting to normal interval", logtrace.Fields{
+							logtrace.FieldModule: "p2p",
+						})
+						currentInterval = bootstrapRefreshInterval
+						t.Reset(currentInterval)
+					}
+				}
 			}
 		}
 	}()
+}
+
+// NotifyEVMMigration flushes stale P2P state (credential cache and pooled
+// connections) and signals the bootstrap refresher to immediately re-sync the
+// peer list from the chain with temporarily accelerated refresh interval.
+// This must be called after an EVM account migration completes so that the
+// new local identity is used for all subsequent handshakes.
+func (s *DHT) NotifyEVMMigration() {
+	// 1. Clear the global KeyExchanger cache so new handshakes use the
+	//    post-migration local identity in HKDF key derivation.
+	ltc.ClearKeyExchangerCache()
+
+	// 2. Close all pooled connections — they were established with the old
+	//    identity and will fail authentication if reused.
+	if s.network != nil {
+		s.network.connPool.Release()
+	}
+
+	// 3. Signal the bootstrap refresher to re-sync peers immediately.
+	select {
+	case s.migrationNotify <- struct{}{}:
+	default:
+		// already pending — no need to double-signal
+	}
 }
 
 // ConfigureBootstrapNodes wires to the new sync/refresher (no pings here).

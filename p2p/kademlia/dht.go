@@ -77,6 +77,11 @@ type DHT struct {
 	routingAllow      map[[32]byte]struct{} // blake3(peerID) -> exists
 	routingAllowReady atomic.Bool
 	routingAllowCount atomic.Int64
+
+	// migrationNotify is signalled by NotifyEVMMigration to trigger an
+	// immediate bootstrap refresh and temporarily accelerate the refresh
+	// interval (1 min for the first 5 cycles after migration).
+	migrationNotify chan struct{}
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -280,15 +285,16 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	}
 
 	s := &DHT{
-		metaStore:      metaStore,
-		store:          store,
-		options:        options,
-		done:           make(chan struct{}),
-		cache:          memory.NewKeyValue(),
-		bsConnected:    &sync.Map{},
-		ignorelist:     NewBanList(ctx),
-		replicationMtx: sync.RWMutex{},
-		rqstore:        rqstore,
+		metaStore:       metaStore,
+		store:           store,
+		options:         options,
+		done:            make(chan struct{}),
+		cache:           memory.NewKeyValue(),
+		bsConnected:     &sync.Map{},
+		ignorelist:      NewBanList(ctx),
+		replicationMtx:  sync.RWMutex{},
+		rqstore:         rqstore,
+		migrationNotify: make(chan struct{}, 1),
 	}
 
 	// Check that keyring is provided

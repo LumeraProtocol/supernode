@@ -37,6 +37,12 @@ type P2P interface {
 
 	// Run the node of distributed hash table
 	Run(ctx context.Context) error
+
+	// NotifyEVMMigration signals the P2P layer that an EVM account migration
+	// has completed. This triggers an immediate bootstrap refresh from the
+	// chain and temporarily accelerates the refresh interval so that stale
+	// peer addresses are replaced with post-migration addresses promptly.
+	NotifyEVMMigration()
 }
 
 // p2p structure to implements interface
@@ -230,6 +236,13 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 
 	logtrace.Debug(ctx, "closest nodes retrieved", logtrace.Fields{"no_of_closest_nodes": n, "file_hash": key, "closest_nodes": ret})
 	return ret
+}
+
+// NotifyEVMMigration forwards the migration signal to the underlying DHT.
+func (s *p2p) NotifyEVMMigration() {
+	if s.dht != nil {
+		s.dht.NotifyEVMMigration()
+	}
 }
 
 // configure the distributed hash table for p2p service
