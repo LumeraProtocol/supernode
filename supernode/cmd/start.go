@@ -93,8 +93,26 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Fail fast with migration instructions if key_name still points to a
 		// legacy secp256k1 key without a valid evm_key_name, otherwise perform
 		// the automatic on-chain migration to the new EVM-compatible address.
+		preMigrationKeyName := appConfig.SupernodeConfig.KeyName
+		preMigrationIdentity := appConfig.SupernodeConfig.Identity
 		if err := ensureLegacyAccountMigrated(ctx, kr, appConfig, &grpcMigrationClient{conn: lumeraClient.Conn()}, lumeraClient.SuperNode()); err != nil {
 			logtrace.Fatal(ctx, "Legacy account migration failed", logtrace.Fields{"error": err.Error()})
+		}
+		evmMigrationOccurred := appConfig.SupernodeConfig.KeyName != preMigrationKeyName || appConfig.SupernodeConfig.Identity != preMigrationIdentity
+		if evmMigrationOccurred {
+			logtrace.Info(ctx, "Reloading Lumera client after EVM migration", logtrace.Fields{
+				"old_key_name":  preMigrationKeyName,
+				"new_key_name":  appConfig.SupernodeConfig.KeyName,
+				"old_identity":  preMigrationIdentity,
+				"new_identity":  appConfig.SupernodeConfig.Identity,
+			})
+			if err := lumeraClient.Close(); err != nil {
+				logtrace.Warn(ctx, "Failed to close pre-migration Lumera client", logtrace.Fields{"error": err.Error()})
+			}
+			lumeraClient, err = initLumeraClient(ctx, appConfig, kr)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to reconnect Lumera after EVM migration", logtrace.Fields{"error": err.Error()})
+			}
 		}
 
 		// Reachability evidence store (used for open_ports inference).
@@ -151,6 +169,14 @@ The supernode will connect to the Lumera network and begin participating in the 
 		p2pService, err := initP2PService(ctx, appConfig, lumeraClient, kr, rqStore, nil, nil)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize P2P service", logtrace.Fields{"error": err.Error()})
+		}
+
+		// After P2P is up, notify it about the migration so the bootstrap
+		// refresher immediately re-fetches peer addresses from the chain and
+		// temporarily switches to an accelerated 1-minute refresh interval.
+		if evmMigrationOccurred {
+			logtrace.Info(ctx, "Notifying P2P layer of EVM migration for accelerated peer discovery", logtrace.Fields{})
+			p2pService.NotifyEVMMigration()
 		}
 
 		// Supernode wrapper removed; components are managed directly

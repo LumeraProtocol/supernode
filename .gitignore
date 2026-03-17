@@ -32,3 +32,4 @@ supernode/__debug*
 /release
 AGENTS.md
 analysis
+.claude/settings.json
