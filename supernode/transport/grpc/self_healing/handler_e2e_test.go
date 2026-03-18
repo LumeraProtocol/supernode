@@ -2,6 +2,7 @@ package self_healing
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -129,15 +130,23 @@ func (f *fakeCascadeFactory) NewCascadeRegistrationTask() cascadeService.Cascade
 	return f.task
 }
 
-func mockLumeraActionLookup(t *testing.T, fileKey, actionID string) (lumeraclient.Client, func()) {
+func mockLumeraActionLookup(t *testing.T, fileKey, actionID, dataHashHex string) (lumeraclient.Client, func()) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	lumeraClient := lumeraclient.NewMockClient(ctrl)
 	actionModule := actionmod.NewMockModule(ctrl)
 
-	meta, err := proto.Marshal(&actiontypes.CascadeMetadata{
+	metaPayload := &actiontypes.CascadeMetadata{
 		RqIdsIds: []string{fileKey},
-	})
+	}
+	if dataHashHex != "" {
+		raw, derr := hex.DecodeString(dataHashHex)
+		if derr != nil {
+			t.Fatalf("decode data hash hex: %v", derr)
+		}
+		metaPayload.DataHash = base64.StdEncoding.EncodeToString(raw)
+	}
+	meta, err := proto.Marshal(metaPayload)
 	if err != nil {
 		t.Fatalf("marshal cascade metadata: %v", err)
 	}
@@ -145,6 +154,13 @@ func mockLumeraActionLookup(t *testing.T, fileKey, actionID string) (lumeraclien
 	lumeraClient.EXPECT().Action().AnyTimes().Return(actionModule)
 	lumeraClient.EXPECT().Node().AnyTimes().Return(nil)
 	lumeraClient.EXPECT().Audit().AnyTimes().Return(nil)
+	actionModule.EXPECT().GetAction(gomock.Any(), actionID).AnyTimes().Return(&actiontypes.QueryGetActionResponse{
+		Action: &actiontypes.Action{
+			ActionID: actionID,
+			Metadata: meta,
+			State:    actiontypes.ActionStateDone,
+		},
+	}, nil)
 	actionModule.EXPECT().ListActions(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
 		func(ctx context.Context, req *actiontypes.QueryListActionsRequest) (*actiontypes.QueryListActionsResponse, error) {
 			if req == nil {
@@ -197,7 +213,7 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 	observerP2P := newFakeP2P()
 	observerP2P.local[fileKey] = payload // observer has local authoritative copy
 
-	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID)
+	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID, payloadHashHex)
 	defer lumeraCleanup()
 	factory := &fakeCascadeFactory{
 		task: &fakeCascadeTask{
@@ -377,7 +393,7 @@ func TestSelfHealingE2E_VerifyFallbackReconstructWithoutPersist(t *testing.T) {
 	payloadHashHex := blake3Hex(payload)
 
 	observerP2P := newFakeP2P()
-	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID)
+	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID, payloadHashHex)
 	defer lumeraCleanup()
 
 	fallbackReconstructCalled := false

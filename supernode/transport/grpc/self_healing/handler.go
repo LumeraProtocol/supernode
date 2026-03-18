@@ -2,6 +2,7 @@ package self_healing
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -92,29 +93,35 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 		}, nil
 	}
 
+	actionID, expectedHashHex, aerr := s.resolveActionAndExpectedHash(ctx, req.ActionId, req.FileKey)
+	if aerr != nil {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
+			"event":    "response",
+			"accepted": false,
+			"reason":   "action_context_resolution_failed",
+			"error":    aerr.Error(),
+		})
+		return &supernode.RequestSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Accepted:    false,
+			Error:       "action resolution failed",
+		}, nil
+	}
+
 	hashHex := ""
+	reconstructionRequired := true
 	data, err := s.p2p.Retrieve(ctx, req.FileKey, true)
-	reconstructionRequired := false
 	if err == nil && len(data) > 0 {
 		sum := blake3.Sum256(data)
-		hashHex = hex.EncodeToString(sum[:])
-	} else {
-		actionID, rerr := s.resolveActionID(ctx, req.ActionId, req.FileKey)
-		if rerr != nil {
-			s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
-				"event":    "response",
-				"accepted": false,
-				"reason":   "action_resolution_failed",
-				"error":    rerr.Error(),
-			})
-			return &supernode.RequestSelfHealingResponse{
-				ChallengeId: req.ChallengeId,
-				EpochId:     req.EpochId,
-				RecipientId: s.identity,
-				Accepted:    false,
-				Error:       "action resolution failed",
-			}, nil
+		localHashHex := hex.EncodeToString(sum[:])
+		if strings.EqualFold(localHashHex, expectedHashHex) {
+			hashHex = strings.ToLower(localHashHex)
+			reconstructionRequired = false
 		}
+	}
+	if reconstructionRequired {
 		reseedRes, rerr := s.runRecoveryReseed(ctx, actionID, false)
 		if rerr != nil {
 			s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
@@ -151,6 +158,23 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 			}, nil
 		}
 		reconstructionRequired = true
+	}
+	if !strings.EqualFold(hashHex, expectedHashHex) {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
+			"event":              "response",
+			"accepted":           false,
+			"reason":             "reconstructed_hash_mismatch_action",
+			"action_id":          actionID,
+			"expected_hash_hex":  expectedHashHex,
+			"reconstructed_hash": hashHex,
+		})
+		return &supernode.RequestSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Accepted:    false,
+			Error:       "reconstructed hash mismatch action hash",
+		}, nil
 	}
 	s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{"event": "response", "accepted": true, "reconstruction_required": reconstructionRequired, "reconstructed_hash_hex": hashHex})
 
@@ -196,29 +220,53 @@ func (s *Server) VerifySelfHealing(ctx context.Context, req *supernode.VerifySel
 		}, nil
 	}
 
+	actionID, expectedHashHex, aerr := s.resolveActionAndExpectedHash(ctx, req.ActionId, req.FileKey)
+	if aerr != nil {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+			"event":    "verification",
+			"ok":       false,
+			"reason":   "action_context_resolution_failed",
+			"error":    aerr.Error(),
+			"file_key": req.FileKey,
+		})
+		return &supernode.VerifySelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			ObserverId:  s.identity,
+			Ok:          false,
+			Error:       "observer action resolution failed",
+		}, nil
+	}
+	if !strings.EqualFold(req.ReconstructedHashHex, expectedHashHex) {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+			"event":              "verification",
+			"ok":                 false,
+			"reason":             "recipient_hash_mismatch_action",
+			"expected_hash_hex":  expectedHashHex,
+			"recipient_hash_hex": strings.ToLower(strings.TrimSpace(req.ReconstructedHashHex)),
+			"action_id":          actionID,
+		})
+		return &supernode.VerifySelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			ObserverId:  s.identity,
+			Ok:          false,
+			Error:       "reconstructed hash does not match action hash",
+		}, nil
+	}
+
 	got := ""
+	needReconstruct := true
 	data, err := s.p2p.Retrieve(ctx, req.FileKey, true)
 	if err == nil && len(data) > 0 {
 		sum := blake3.Sum256(data)
-		got = hex.EncodeToString(sum[:])
-	} else {
-		actionID, rerr := s.resolveActionID(ctx, req.ActionId, req.FileKey)
-		if rerr != nil {
-			s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
-				"event":    "verification",
-				"ok":       false,
-				"reason":   "action_resolution_failed",
-				"file_key": req.FileKey,
-				"error":    rerr.Error(),
-			})
-			return &supernode.VerifySelfHealingResponse{
-				ChallengeId: req.ChallengeId,
-				EpochId:     req.EpochId,
-				ObserverId:  s.identity,
-				Ok:          false,
-				Error:       "observer action resolution failed",
-			}, nil
+		localHashHex := hex.EncodeToString(sum[:])
+		if strings.EqualFold(localHashHex, expectedHashHex) {
+			got = strings.ToLower(localHashHex)
+			needReconstruct = false
 		}
+	}
+	if needReconstruct {
 		reseedRes, rerr := s.runRecoveryReseed(ctx, actionID, false)
 		if rerr != nil {
 			s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
@@ -256,12 +304,19 @@ func (s *Server) VerifySelfHealing(ctx context.Context, req *supernode.VerifySel
 		}
 	}
 
-	ok := strings.EqualFold(got, req.ReconstructedHashHex)
+	ok := strings.EqualFold(got, req.ReconstructedHashHex) && strings.EqualFold(got, expectedHashHex)
 	errMsg := ""
 	if !ok {
 		errMsg = "reconstructed hash mismatch"
 	}
-	s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{"event": "verification", "ok": ok, "expected": strings.ToLower(req.ReconstructedHashHex), "got": got})
+	s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+		"event":               "verification",
+		"ok":                  ok,
+		"expected":            strings.ToLower(req.ReconstructedHashHex),
+		"expected_action":     expectedHashHex,
+		"got":                 got,
+		"used_reconstruction": needReconstruct,
+	})
 
 	return &supernode.VerifySelfHealingResponse{
 		ChallengeId: req.ChallengeId,
@@ -435,6 +490,51 @@ func (s *Server) resolveActionIDByFileKey(ctx context.Context, fileKey string) (
 	}
 
 	return "", fmt.Errorf("cascade action not found for key")
+}
+
+func (s *Server) resolveActionAndExpectedHash(ctx context.Context, actionID string, fileKey string) (string, string, error) {
+	resolvedActionID, err := s.resolveActionID(ctx, actionID, fileKey)
+	if err != nil {
+		return "", "", err
+	}
+	expectedHashHex, err := s.resolveActionDataHashHex(ctx, resolvedActionID)
+	if err != nil {
+		return "", "", err
+	}
+	return resolvedActionID, expectedHashHex, nil
+}
+
+func (s *Server) resolveActionDataHashHex(ctx context.Context, actionID string) (string, error) {
+	actionID = strings.TrimSpace(actionID)
+	if actionID == "" {
+		return "", fmt.Errorf("missing action_id")
+	}
+	if s.lumera == nil || s.lumera.Action() == nil {
+		return "", fmt.Errorf("action module unavailable")
+	}
+	resp, err := s.lumera.Action().GetAction(ctx, actionID)
+	if err != nil {
+		return "", fmt.Errorf("get action: %w", err)
+	}
+	if resp == nil || resp.Action == nil || len(resp.Action.Metadata) == 0 {
+		return "", fmt.Errorf("cascade action metadata unavailable")
+	}
+	meta, err := cascadekit.UnmarshalCascadeMetadata(resp.Action.Metadata)
+	if err != nil {
+		return "", err
+	}
+	dataHashB64 := strings.TrimSpace(meta.DataHash)
+	if dataHashB64 == "" {
+		return "", fmt.Errorf("action metadata data hash missing")
+	}
+	raw, err := base64.StdEncoding.DecodeString(dataHashB64)
+	if err != nil {
+		return "", fmt.Errorf("decode action data hash: %w", err)
+	}
+	if len(raw) == 0 {
+		return "", fmt.Errorf("action data hash empty")
+	}
+	return strings.ToLower(hex.EncodeToString(raw)), nil
 }
 
 func (s *Server) resolveActionID(ctx context.Context, actionID string, fileKey string) (string, error) {
