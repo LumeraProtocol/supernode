@@ -45,10 +45,8 @@ const (
 )
 
 type selfHealingNode struct {
-	KeyName  string
 	Identity string
 	GRPCAddr string
-	HasLocal bool
 }
 
 type selfHealingRPCClient struct {
@@ -186,36 +184,18 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	nodes := []selfHealingNode{
-		{KeyName: shNode0KeyName, Identity: shNode0Identity},
-		{KeyName: shNode1KeyName, Identity: shNode1Identity},
-		{KeyName: shNode2KeyName, Identity: shNode2Identity},
+		{Identity: shNode0Identity},
+		{Identity: shNode1Identity},
+		{Identity: shNode2Identity},
 	}
 	for i := range nodes {
 		nodes[i].GRPCAddr = mustGetSupernodeLatestAddr(t, userLumera, nodes[i].Identity)
-		nodes[i].HasLocal = nodeHasLocalCopy(t, shClient, nodes[i], fileKey)
 	}
 
-	var recipient selfHealingNode
-	recipientForcedReconstruct := false
-	for _, n := range nodes {
-		if !n.HasLocal {
-			recipient = n
-			recipientForcedReconstruct = true
-			break
-		}
-	}
-	if recipient.Identity == "" {
-		recipient = nodes[1]
-	}
-
-	observer := recipient
-	for _, n := range nodes {
-		if n.Identity != recipient.Identity && n.HasLocal {
-			observer = n
-			break
-		}
-	}
-	t.Logf("self-healing role selection recipient=%s recipient_has_local=%t observer=%s observer_has_local=%t", recipient.Identity, recipient.HasLocal, observer.Identity, observer.HasLocal)
+	// Keep roles deterministic and distinct in system tests.
+	recipient := nodes[1]
+	observer := nodes[2]
+	t.Logf("self-healing role selection recipient=%s observer=%s", recipient.Identity, observer.Identity)
 
 	challengeID := fmt.Sprintf("sh-e2e-happy-%d", time.Now().UnixNano())
 	req := &pb.RequestSelfHealingRequest{
@@ -237,9 +217,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	t.Logf("self-healing request response accepted=%t reconstruction_required=%t reconstructed_hash=%s", reqRespSH.Accepted, reqRespSH.ReconstructionRequired, reqRespSH.ReconstructedHashHex)
 	require.True(t, strings.EqualFold(reqRespSH.ReconstructedHashHex, registeredHashHex), "recipient reconstructed hash mismatch: got=%s want=%s", reqRespSH.ReconstructedHashHex, registeredHashHex)
 	t.Logf("self-healing hash assertion passed reconstructed_hash=%s registered_action_hash=%s", reqRespSH.ReconstructedHashHex, registeredHashHex)
-	if recipientForcedReconstruct {
-		require.True(t, reqRespSH.ReconstructionRequired, "expected reconstruction_required=true when recipient initially lacked local key")
-	}
+	require.True(t, reqRespSH.ReconstructionRequired, "expected reconstruction_required=true for RQ artifact key healing")
 
 	verifyReq := &pb.VerifySelfHealingRequest{
 		ChallengeId:          challengeID,
@@ -343,31 +321,6 @@ func mustGetSupernodeLatestAddr(t *testing.T, client lumera.Client, identity str
 	addr := strings.TrimSpace(info.LatestAddress)
 	require.NotEmpty(t, addr)
 	return addr
-}
-
-func nodeHasLocalCopy(t *testing.T, shClient *selfHealingRPCClient, node selfHealingNode, fileKey string) bool {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	probeReq := &pb.VerifySelfHealingRequest{
-		ChallengeId:          fmt.Sprintf("sh-probe-%s-%d", node.KeyName, time.Now().UnixNano()),
-		EpochId:              0,
-		FileKey:              fileKey,
-		RecipientId:          "",
-		ReconstructedHashHex: strings.Repeat("0", 64),
-		ObserverId:           node.Identity,
-		ActionId:             "probe-local-only-invalid-action",
-	}
-	resp, err := shClient.Verify(ctx, node.Identity, node.GRPCAddr, probeReq)
-	require.NoError(t, err)
-	if resp == nil {
-		return false
-	}
-	errLower := strings.ToLower(strings.TrimSpace(resp.Error))
-	if strings.Contains(errLower, "observer reconstruction failed") || strings.Contains(errLower, "action resolution failed") {
-		return false
-	}
-	return true
 }
 
 func pickAnchorKey(keys []string) string {

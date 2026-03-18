@@ -238,7 +238,7 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 
 	recConn, recCleanup := startSelfHealingTestServer(t, "recipient-1", recipientP2P, lumeraClient, factory)
 	defer recCleanup()
-	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, nil, nil)
+	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, lumeraClient, nil)
 	defer obsCleanup()
 
 	recClient := supernode.NewSelfHealingServiceClient(recConn)
