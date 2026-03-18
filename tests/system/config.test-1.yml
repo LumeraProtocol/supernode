@@ -18,6 +18,7 @@ keyring:
 p2p:
   port: 4445
   data_dir: "data/p2p"  # Relative to base_dir
+  bootstrap_nodes: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c@localhost:4447,lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp@localhost:4449"
 
 # Lumera Chain Configuration
 lumera:

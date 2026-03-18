@@ -30,8 +30,9 @@ type KeyringConfig struct {
 }
 
 type P2PConfig struct {
-	Port    uint16 `yaml:"port"`
-	DataDir string `yaml:"data_dir"`
+	Port           uint16 `yaml:"port"`
+	DataDir        string `yaml:"data_dir"`
+	BootstrapNodes string `yaml:"bootstrap_nodes,omitempty"`
 }
 
 type LumeraClientConfig struct {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,7 +56,9 @@ type selfHealingRPCClient struct {
 
 func TestSelfHealingE2EHappyPath(t *testing.T) {
 	os.Setenv("INTEGRATION_TEST", "true")
+	os.Setenv("INTEGRATION_TEST_ENV", "true")
 	defer os.Unsetenv("INTEGRATION_TEST")
+	defer os.Unsetenv("INTEGRATION_TEST_ENV")
 
 	sut.ModifyGenesisJSON(t, SetStakingBondDenomUlume(t), SetActionParams(t), SetSupernodeMetricsParams(t))
 	sut.StartChain(t)
@@ -62,13 +66,14 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	cli := NewLumeradCLI(t, sut, true)
 	registerSelfHealingSupernodes(t, cli)
 
-	cli.FundAddress(shNode0Identity, "100000ulume")
-	cli.FundAddressWithNode(shNode1Identity, "100000ulume", "node1")
-	cli.FundAddressWithNode(shNode2Identity, "100000ulume", "node2")
+	// Keep supernodes above eligibility floor so CASCADE registration can finalize deterministically.
+	cli.FundAddress(shNode0Identity, "2000000ulume")
+	cli.FundAddressWithNode(shNode1Identity, "2000000ulume", "node1")
+	cli.FundAddressWithNode(shNode2Identity, "2000000ulume", "node2")
 
 	cmds := StartAllSupernodes(t)
 	defer StopAllSupernodes(cmds)
-	time.Sleep(8 * time.Second)
+	require.NoError(t, waitForSupernodeGatewaysReady(30*time.Second), "supernode gateways did not become ready")
 
 	userAddress := cli.AddKeyFromSeed(shUserKeyName, shUserMnemonic)
 	cli.FundAddress(userAddress, "1000000ulume")
@@ -147,7 +152,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 
 	_, err = actionClient.StartCascade(ctx, testFilePath, actionID, startSig)
 	require.NoError(t, err)
-	require.NoError(t, waitForActionStateWithClient(ctx, userLumera, actionID, actiontypes.ActionStateDone))
+	require.NoError(t, waitForActionFinalizedStateWithClient(ctx, userLumera, actionID))
 
 	actionResp, err := userLumera.Action().GetAction(ctx, actionID)
 	require.NoError(t, err)
@@ -267,6 +272,19 @@ func registerSelfHealingSupernodes(t *testing.T, cli *LumeradCli) {
 	}
 }
 
+func waitForActionFinalizedStateWithClient(ctx context.Context, client lumera.Client, actionID string) error {
+	for i := 0; i < actionStateRetries; i++ {
+		resp, err := client.Action().GetAction(ctx, actionID)
+		if err == nil && resp != nil && resp.Action != nil {
+			if resp.Action.State == actiontypes.ActionStateDone || resp.Action.State == actiontypes.ActionStateApproved {
+				return nil
+			}
+		}
+		time.Sleep(actionStateDelay)
+	}
+	return fmt.Errorf("action %s did not reach a finalized state (%s/%s)", actionID, actiontypes.ActionStateDone.String(), actiontypes.ActionStateApproved.String())
+}
+
 func extractActionIDFromTxQuery(txResp string) string {
 	events := gjson.Get(txResp, "events").Array()
 	for _, event := range events {
@@ -330,6 +348,42 @@ func pickAnchorKey(keys []string) string {
 		}
 	}
 	return anchor
+}
+
+func waitForSupernodeGatewaysReady(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	urls := []string{
+		"http://localhost:8002/api/v1/status",
+		"http://localhost:8003/api/v1/status",
+		"http://localhost:8004/api/v1/status",
+	}
+
+	for time.Now().Before(deadline) {
+		allReady := true
+		for _, u := range urls {
+			resp, err := http.Get(u) //nolint:gosec
+			if err != nil {
+				allReady = false
+				break
+			}
+			body, rerr := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if rerr != nil || resp.StatusCode >= 400 || len(body) == 0 {
+				allReady = false
+				break
+			}
+			if !gjson.ValidBytes(body) {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			return nil
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	return fmt.Errorf("timed out waiting for supernode gateways readiness")
 }
 
 func newSelfHealingRPCClient(lumeraClient lumera.Client, kr keyring.Keyring, localIdentity string) (*selfHealingRPCClient, error) {
