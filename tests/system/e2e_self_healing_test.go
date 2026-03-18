@@ -168,6 +168,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	registeredHashHex := hex.EncodeToString(registeredHashRaw)
 	fileKey := pickAnchorKey(cmeta.RqIdsIds)
 	require.NotEmpty(t, fileKey)
+	t.Logf("self-healing fixture prepared action_id=%s file_key=%s registered_action_hash=%s", actionID, fileKey, registeredHashHex)
 
 	node0DiskKR, err := snkeyring.InitKeyring(snconfig.KeyringConfig{
 		Backend: "test",
@@ -214,6 +215,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 			break
 		}
 	}
+	t.Logf("self-healing role selection recipient=%s recipient_has_local=%t observer=%s observer_has_local=%t", recipient.Identity, recipient.HasLocal, observer.Identity, observer.HasLocal)
 
 	challengeID := fmt.Sprintf("sh-e2e-happy-%d", time.Now().UnixNano())
 	req := &pb.RequestSelfHealingRequest{
@@ -227,11 +229,14 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	}
 	reqCtx, cancelReq := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelReq()
+	t.Logf("self-healing request start challenge_id=%s recipient=%s observers=%v", challengeID, recipient.Identity, req.ObserverIds)
 	reqRespSH, err := shClient.Request(reqCtx, recipient.Identity, recipient.GRPCAddr, req)
 	require.NoError(t, err)
 	require.True(t, reqRespSH.Accepted, "self-healing request was rejected: %s", reqRespSH.Error)
 	require.NotEmpty(t, reqRespSH.ReconstructedHashHex)
+	t.Logf("self-healing request response accepted=%t reconstruction_required=%t reconstructed_hash=%s", reqRespSH.Accepted, reqRespSH.ReconstructionRequired, reqRespSH.ReconstructedHashHex)
 	require.True(t, strings.EqualFold(reqRespSH.ReconstructedHashHex, registeredHashHex), "recipient reconstructed hash mismatch: got=%s want=%s", reqRespSH.ReconstructedHashHex, registeredHashHex)
+	t.Logf("self-healing hash assertion passed reconstructed_hash=%s registered_action_hash=%s", reqRespSH.ReconstructedHashHex, registeredHashHex)
 	if recipientForcedReconstruct {
 		require.True(t, reqRespSH.ReconstructionRequired, "expected reconstruction_required=true when recipient initially lacked local key")
 	}
@@ -247,9 +252,11 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	}
 	verifyCtx, cancelVerify := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelVerify()
+	t.Logf("self-healing verify start challenge_id=%s observer=%s recipient=%s", challengeID, observer.Identity, recipient.Identity)
 	verifyResp, err := shClient.Verify(verifyCtx, observer.Identity, observer.GRPCAddr, verifyReq)
 	require.NoError(t, err)
 	require.True(t, verifyResp.Ok, "observer verification failed: %s", verifyResp.Error)
+	t.Logf("self-healing verify response observer=%s ok=%t error=%q", verifyResp.ObserverId, verifyResp.Ok, verifyResp.Error)
 
 	commitReq := &pb.CommitSelfHealingRequest{
 		ChallengeId:  challengeID,
@@ -261,9 +268,11 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	}
 	commitCtx, cancelCommit := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelCommit()
+	t.Logf("self-healing commit start challenge_id=%s recipient=%s", challengeID, recipient.Identity)
 	commitResp, err := shClient.Commit(commitCtx, recipient.Identity, recipient.GRPCAddr, commitReq)
 	require.NoError(t, err)
 	require.True(t, commitResp.Stored, "self-healing commit failed: %s", commitResp.Error)
+	t.Logf("self-healing commit response stored=%t error=%q", commitResp.Stored, commitResp.Error)
 }
 
 func registerSelfHealingSupernodes(t *testing.T, cli *LumeradCli) {

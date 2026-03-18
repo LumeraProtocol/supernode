@@ -95,6 +95,19 @@ jobs:
       - name: Run self-healing e2e tests
         run: make test-self-healing
 
+      - name: Dump self-healing runtime traces
+        if: always()
+        run: |
+          cd tests/system
+          for f in supernode0.out supernode1.out supernode2.out; do
+            echo "==== ${f} (self-healing excerpts) ===="
+            if [ -f "$f" ]; then
+              grep -E "self-healing|sh-e2e-happy|RequestSelfHealing|VerifySelfHealing|CommitSelfHealing|reconstructed_hash_hex|observer" "$f" | tail -n 200 || true
+            else
+              echo "missing ${f}"
+            fi
+          done
+
   # sn-manager-e2e-tests:
   #   name: sn-manager-e2e-tests
   #   runs-on: ubuntu-latest
