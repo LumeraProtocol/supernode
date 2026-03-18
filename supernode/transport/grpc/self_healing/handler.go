@@ -92,10 +92,14 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 		}, nil
 	}
 
+	hashHex := ""
 	data, err := s.p2p.Retrieve(ctx, req.FileKey, true)
 	reconstructionRequired := false
-	if err != nil || len(data) == 0 {
-		actionID, rerr := s.resolveActionIDByFileKey(ctx, req.FileKey)
+	if err == nil && len(data) > 0 {
+		sum := blake3.Sum256(data)
+		hashHex = hex.EncodeToString(sum[:])
+	} else {
+		actionID, rerr := s.resolveActionID(ctx, req.ActionId, req.FileKey)
 		if rerr != nil {
 			s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
 				"event":    "response",
@@ -111,7 +115,8 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 				Error:       "action resolution failed",
 			}, nil
 		}
-		if rerr := s.runRecoveryReseed(ctx, actionID); rerr != nil {
+		reseedRes, rerr := s.runRecoveryReseed(ctx, actionID, false)
+		if rerr != nil {
 			s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
 				"event":     "response",
 				"accepted":  false,
@@ -127,12 +132,14 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 				Error:       "reconstruction failed",
 			}, nil
 		}
-		data, err = s.p2p.Retrieve(ctx, req.FileKey, true)
-		if err != nil || len(data) == 0 {
+		if reseedRes != nil {
+			hashHex = strings.ToLower(strings.TrimSpace(reseedRes.ReconstructedHashHex))
+		}
+		if hashHex == "" {
 			s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{
 				"event":     "response",
 				"accepted":  false,
-				"reason":    "reconstructed_key_missing_local",
+				"reason":    "reconstructed_hash_missing",
 				"action_id": actionID,
 			})
 			return &supernode.RequestSelfHealingResponse{
@@ -140,14 +147,11 @@ func (s *Server) RequestSelfHealing(ctx context.Context, req *supernode.RequestS
 				EpochId:     req.EpochId,
 				RecipientId: s.identity,
 				Accepted:    false,
-				Error:       "reconstructed key missing locally",
+				Error:       "reconstructed hash missing",
 			}, nil
 		}
 		reconstructionRequired = true
 	}
-
-	sum := blake3.Sum256(data)
-	hashHex := hex.EncodeToString(sum[:])
 	s.persistExecution(req.ChallengeId, int(types.SelfHealingResponseMessage), map[string]any{"event": "response", "accepted": true, "reconstruction_required": reconstructionRequired, "reconstructed_hash_hex": hashHex})
 
 	return &supernode.RequestSelfHealingResponse{
@@ -192,20 +196,66 @@ func (s *Server) VerifySelfHealing(ctx context.Context, req *supernode.VerifySel
 		}, nil
 	}
 
+	got := ""
 	data, err := s.p2p.Retrieve(ctx, req.FileKey, true)
-	if err != nil || len(data) == 0 {
-		s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{"event": "verification", "ok": false, "reason": "file_missing_local"})
-		return &supernode.VerifySelfHealingResponse{
-			ChallengeId: req.ChallengeId,
-			EpochId:     req.EpochId,
-			ObserverId:  s.identity,
-			Ok:          false,
-			Error:       "observer missing local file",
-		}, nil
+	if err == nil && len(data) > 0 {
+		sum := blake3.Sum256(data)
+		got = hex.EncodeToString(sum[:])
+	} else {
+		actionID, rerr := s.resolveActionID(ctx, req.ActionId, req.FileKey)
+		if rerr != nil {
+			s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+				"event":    "verification",
+				"ok":       false,
+				"reason":   "action_resolution_failed",
+				"file_key": req.FileKey,
+				"error":    rerr.Error(),
+			})
+			return &supernode.VerifySelfHealingResponse{
+				ChallengeId: req.ChallengeId,
+				EpochId:     req.EpochId,
+				ObserverId:  s.identity,
+				Ok:          false,
+				Error:       "observer action resolution failed",
+			}, nil
+		}
+		reseedRes, rerr := s.runRecoveryReseed(ctx, actionID, false)
+		if rerr != nil {
+			s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+				"event":     "verification",
+				"ok":        false,
+				"reason":    "observer_reconstruction_failed",
+				"action_id": actionID,
+				"error":     rerr.Error(),
+			})
+			return &supernode.VerifySelfHealingResponse{
+				ChallengeId: req.ChallengeId,
+				EpochId:     req.EpochId,
+				ObserverId:  s.identity,
+				Ok:          false,
+				Error:       "observer reconstruction failed",
+			}, nil
+		}
+		if reseedRes != nil {
+			got = strings.ToLower(strings.TrimSpace(reseedRes.ReconstructedHashHex))
+		}
+		if got == "" {
+			s.persistExecution(req.ChallengeId, int(types.SelfHealingVerificationMessage), map[string]any{
+				"event":     "verification",
+				"ok":        false,
+				"reason":    "observer_reconstructed_hash_missing",
+				"action_id": actionID,
+			})
+			return &supernode.VerifySelfHealingResponse{
+				ChallengeId: req.ChallengeId,
+				EpochId:     req.EpochId,
+				ObserverId:  s.identity,
+				Ok:          false,
+				Error:       "observer reconstructed hash missing",
+			}, nil
+		}
 	}
 
-	sum := blake3.Sum256(data)
-	got := hex.EncodeToString(sum[:])
 	ok := strings.EqualFold(got, req.ReconstructedHashHex)
 	errMsg := ""
 	if !ok {
@@ -219,6 +269,84 @@ func (s *Server) VerifySelfHealing(ctx context.Context, req *supernode.VerifySel
 		ObserverId:  s.identity,
 		Ok:          ok,
 		Error:       errMsg,
+	}, nil
+}
+
+func (s *Server) CommitSelfHealing(ctx context.Context, req *supernode.CommitSelfHealingRequest) (*supernode.CommitSelfHealingResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("nil request")
+	}
+	if strings.TrimSpace(req.ChallengeId) == "" || strings.TrimSpace(req.FileKey) == "" {
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Stored:      false,
+			Error:       "challenge_id and file_key are required",
+		}, nil
+	}
+	if rid := strings.TrimSpace(req.RecipientId); rid != "" && rid != s.identity {
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Stored:      false,
+			Error:       "recipient mismatch",
+		}, nil
+	}
+	if req.EpochId > 0 && s.isStaleEpoch(ctx, req.EpochId) {
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Stored:      false,
+			Error:       "stale epoch",
+		}, nil
+	}
+
+	actionID, err := s.resolveActionID(ctx, req.ActionId, req.FileKey)
+	if err != nil {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingCompletionMessage), map[string]any{
+			"event":  "commit",
+			"stored": false,
+			"reason": "action_resolution_failed",
+			"error":  err.Error(),
+		})
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Stored:      false,
+			Error:       "action resolution failed",
+		}, nil
+	}
+	if _, err := s.runRecoveryReseed(ctx, actionID, true); err != nil {
+		s.persistExecution(req.ChallengeId, int(types.SelfHealingCompletionMessage), map[string]any{
+			"event":     "commit",
+			"stored":    false,
+			"reason":    "store_failed",
+			"action_id": actionID,
+			"error":     err.Error(),
+		})
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			EpochId:     req.EpochId,
+			RecipientId: s.identity,
+			Stored:      false,
+			Error:       "artifact store failed",
+		}, nil
+	}
+
+	s.persistExecution(req.ChallengeId, int(types.SelfHealingCompletionMessage), map[string]any{
+		"event":     "commit",
+		"stored":    true,
+		"action_id": actionID,
+	})
+	return &supernode.CommitSelfHealingResponse{
+		ChallengeId: req.ChallengeId,
+		EpochId:     req.EpochId,
+		RecipientId: s.identity,
+		Stored:      true,
 	}, nil
 }
 
@@ -309,6 +437,14 @@ func (s *Server) resolveActionIDByFileKey(ctx context.Context, fileKey string) (
 	return "", fmt.Errorf("cascade action not found for key")
 }
 
+func (s *Server) resolveActionID(ctx context.Context, actionID string, fileKey string) (string, error) {
+	actionID = strings.TrimSpace(actionID)
+	if actionID != "" {
+		return actionID, nil
+	}
+	return s.resolveActionIDByFileKey(ctx, fileKey)
+}
+
 func (s *Server) getActionIDFromIndex(fileKey string) (string, bool) {
 	s.actionIndexMu.RLock()
 	defer s.actionIndexMu.RUnlock()
@@ -387,12 +523,13 @@ func (s *Server) refreshActionIndexIfNeeded(ctx context.Context, force bool) err
 	return nil
 }
 
-func (s *Server) runRecoveryReseed(ctx context.Context, actionID string) error {
+func (s *Server) runRecoveryReseed(ctx context.Context, actionID string, persistArtifacts bool) (*cascadeService.RecoveryReseedResult, error) {
 	actionID = strings.TrimSpace(actionID)
 	if actionID == "" {
-		return fmt.Errorf("missing action_id")
+		return nil, fmt.Errorf("missing action_id")
 	}
-	_, err, _ := s.reseedInFlight.Do(actionID, func() (any, error) {
+	callKey := fmt.Sprintf("%s:%t", actionID, persistArtifacts)
+	result, err, _ := s.reseedInFlight.Do(callKey, func() (any, error) {
 		if s.cascadeFactory == nil {
 			return nil, fmt.Errorf("recovery reseed unavailable")
 		}
@@ -406,13 +543,26 @@ func (s *Server) runRecoveryReseed(ctx context.Context, actionID string) error {
 		if !ok {
 			return nil, fmt.Errorf("cascade task does not support recovery reseed")
 		}
-		_, err := recoveryTask.RecoveryReseed(ctx, &cascadeService.RecoveryReseedRequest{ActionID: actionID})
+		reseedRes, err := recoveryTask.RecoveryReseed(ctx, &cascadeService.RecoveryReseedRequest{
+			ActionID:         actionID,
+			PersistArtifacts: boolPtr(persistArtifacts),
+		})
 		if err != nil {
 			return nil, err
 		}
-		return nil, nil
+		return reseedRes, nil
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+	if typed, ok := result.(*cascadeService.RecoveryReseedResult); ok {
+		return typed, nil
+	}
+	return nil, fmt.Errorf("unexpected recovery result type")
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 func pickActionAnchorKey(keys []string) string {

@@ -2,6 +2,8 @@ package system
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -160,6 +162,10 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	require.NotNil(t, actionResp.Action)
 	cmeta, err := cascadekit.UnmarshalCascadeMetadata(actionResp.Action.Metadata)
 	require.NoError(t, err)
+	registeredHashRaw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(cmeta.DataHash))
+	require.NoError(t, err)
+	require.NotEmpty(t, registeredHashRaw)
+	registeredHashHex := hex.EncodeToString(registeredHashRaw)
 	fileKey := pickAnchorKey(cmeta.RqIdsIds)
 	require.NotEmpty(t, fileKey)
 
@@ -217,6 +223,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 		ChallengerId: shNode0Identity,
 		RecipientId:  recipient.Identity,
 		ObserverIds:  []string{observer.Identity},
+		ActionId:     actionID,
 	}
 	reqCtx, cancelReq := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelReq()
@@ -224,6 +231,7 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reqRespSH.Accepted, "self-healing request was rejected: %s", reqRespSH.Error)
 	require.NotEmpty(t, reqRespSH.ReconstructedHashHex)
+	require.True(t, strings.EqualFold(reqRespSH.ReconstructedHashHex, registeredHashHex), "recipient reconstructed hash mismatch: got=%s want=%s", reqRespSH.ReconstructedHashHex, registeredHashHex)
 	if recipientForcedReconstruct {
 		require.True(t, reqRespSH.ReconstructionRequired, "expected reconstruction_required=true when recipient initially lacked local key")
 	}
@@ -235,12 +243,27 @@ func TestSelfHealingE2EHappyPath(t *testing.T) {
 		RecipientId:          recipient.Identity,
 		ReconstructedHashHex: reqRespSH.ReconstructedHashHex,
 		ObserverId:           observer.Identity,
+		ActionId:             actionID,
 	}
 	verifyCtx, cancelVerify := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelVerify()
 	verifyResp, err := shClient.Verify(verifyCtx, observer.Identity, observer.GRPCAddr, verifyReq)
 	require.NoError(t, err)
 	require.True(t, verifyResp.Ok, "observer verification failed: %s", verifyResp.Error)
+
+	commitReq := &pb.CommitSelfHealingRequest{
+		ChallengeId:  challengeID,
+		EpochId:      0,
+		FileKey:      fileKey,
+		ActionId:     actionID,
+		ChallengerId: shNode0Identity,
+		RecipientId:  recipient.Identity,
+	}
+	commitCtx, cancelCommit := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelCommit()
+	commitResp, err := shClient.Commit(commitCtx, recipient.Identity, recipient.GRPCAddr, commitReq)
+	require.NoError(t, err)
+	require.True(t, commitResp.Stored, "self-healing commit failed: %s", commitResp.Error)
 }
 
 func registerSelfHealingSupernodes(t *testing.T, cli *LumeradCli) {
@@ -324,13 +347,15 @@ func nodeHasLocalCopy(t *testing.T, shClient *selfHealingRPCClient, node selfHea
 		RecipientId:          "",
 		ReconstructedHashHex: strings.Repeat("0", 64),
 		ObserverId:           node.Identity,
+		ActionId:             "probe-local-only-invalid-action",
 	}
 	resp, err := shClient.Verify(ctx, node.Identity, node.GRPCAddr, probeReq)
 	require.NoError(t, err)
 	if resp == nil {
 		return false
 	}
-	if strings.Contains(strings.ToLower(resp.Error), "missing local file") {
+	errLower := strings.ToLower(strings.TrimSpace(resp.Error))
+	if strings.Contains(errLower, "observer reconstruction failed") || strings.Contains(errLower, "action resolution failed") {
 		return false
 	}
 	return true
@@ -423,4 +448,13 @@ func (c *selfHealingRPCClient) Verify(ctx context.Context, remoteIdentity string
 	}
 	defer conn.Close()
 	return pb.NewSelfHealingServiceClient(conn).VerifySelfHealing(ctx, req)
+}
+
+func (c *selfHealingRPCClient) Commit(ctx context.Context, remoteIdentity string, address string, req *pb.CommitSelfHealingRequest) (*pb.CommitSelfHealingResponse, error) {
+	conn, err := c.client.Connect(ctx, fmt.Sprintf("%s@%s", strings.TrimSpace(remoteIdentity), address), c.opts)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return pb.NewSelfHealingServiceClient(conn).CommitSelfHealing(ctx, req)
 }

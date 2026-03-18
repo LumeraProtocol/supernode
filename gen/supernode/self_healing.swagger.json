@@ -45,6 +45,27 @@
         }
       }
     },
+    "supernodeCommitSelfHealingResponse": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string"
+        },
+        "epochId": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "recipientId": {
+          "type": "string"
+        },
+        "stored": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
     "supernodeRequestSelfHealingResponse": {
       "type": "object",
       "properties": {

@@ -7,6 +7,7 @@ option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
 service SelfHealingService {
   rpc RequestSelfHealing(RequestSelfHealingRequest) returns (RequestSelfHealingResponse) {}
   rpc VerifySelfHealing(VerifySelfHealingRequest) returns (VerifySelfHealingResponse) {}
+  rpc CommitSelfHealing(CommitSelfHealingRequest) returns (CommitSelfHealingResponse) {}
 }
 
 message RequestSelfHealingRequest {
@@ -17,6 +18,7 @@ message RequestSelfHealingRequest {
   string challenger_id = 4;
   string recipient_id = 5;
   repeated string observer_ids = 6;
+  string action_id = 7;
 }
 
 message RequestSelfHealingResponse {
@@ -38,6 +40,7 @@ message VerifySelfHealingRequest {
   string recipient_id = 4;
   string reconstructed_hash_hex = 5;
   string observer_id = 6;
+  string action_id = 7;
 }
 
 message VerifySelfHealingResponse {
@@ -45,5 +48,23 @@ message VerifySelfHealingResponse {
   uint64 epoch_id = 2;
   string observer_id = 3;
   bool ok = 4;
+  string error = 5;
+}
+
+message CommitSelfHealingRequest {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+
+  string file_key = 3;
+  string action_id = 4;
+  string challenger_id = 5;
+  string recipient_id = 6;
+}
+
+message CommitSelfHealingResponse {
+  string challenge_id = 1;
+  uint64 epoch_id = 2;
+  string recipient_id = 3;
+  bool stored = 4;
   string error = 5;
 }

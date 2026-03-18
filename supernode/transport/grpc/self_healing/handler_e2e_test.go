@@ -2,6 +2,7 @@ package self_healing
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"lukechampine.com/blake3"
 )
 
 type fakeP2P struct {
@@ -187,6 +189,7 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 	const fileKey = "key-1"
 	const actionID = "action-1"
 	payload := []byte("hello-self-healing")
+	payloadHashHex := blake3Hex(payload)
 
 	recipientP2P := newFakeP2P()
 	recipientP2P.network[fileKey] = payload
@@ -202,8 +205,17 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 				if req == nil || req.ActionID != actionID {
 					return nil, fmt.Errorf("unexpected recovery action_id")
 				}
+				if req.PersistArtifacts != nil && !*req.PersistArtifacts {
+					return &cascadeService.RecoveryReseedResult{
+						ActionID:             actionID,
+						ReconstructedHashHex: payloadHashHex,
+					}, nil
+				}
 				recipientP2P.local[fileKey] = append([]byte(nil), payload...)
-				return &cascadeService.RecoveryReseedResult{ActionID: actionID}, nil
+				return &cascadeService.RecoveryReseedResult{
+					ActionID:             actionID,
+					ReconstructedHashHex: payloadHashHex,
+				}, nil
 			},
 		},
 	}
@@ -226,6 +238,7 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 		ChallengerId: "challenger-1",
 		RecipientId:  "recipient-1",
 		ObserverIds:  []string{"observer-1"},
+		ActionId:     actionID,
 	})
 	if err != nil {
 		t.Fatalf("request self-healing: %v", err)
@@ -236,8 +249,8 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 	if !resp.ReconstructionRequired {
 		t.Fatalf("expected reconstruction_required=true")
 	}
-	if got := recipientP2P.local[fileKey]; string(got) != string(payload) {
-		t.Fatalf("recipient local store not repaired")
+	if got := recipientP2P.local[fileKey]; len(got) > 0 {
+		t.Fatalf("expected no recipient local store before commit")
 	}
 
 	ver, err := obsClient.VerifySelfHealing(ctx, &supernode.VerifySelfHealingRequest{
@@ -247,12 +260,30 @@ func TestSelfHealingE2E_RequestThenVerify(t *testing.T) {
 		RecipientId:          "recipient-1",
 		ReconstructedHashHex: resp.ReconstructedHashHex,
 		ObserverId:           "observer-1",
+		ActionId:             actionID,
 	})
 	if err != nil {
 		t.Fatalf("verify self-healing: %v", err)
 	}
 	if !ver.Ok {
 		t.Fatalf("expected verify ok=true, got false err=%s", ver.Error)
+	}
+	commitResp, err := recClient.CommitSelfHealing(ctx, &supernode.CommitSelfHealingRequest{
+		ChallengeId:  "ch-1",
+		EpochId:      12,
+		FileKey:      fileKey,
+		ActionId:     actionID,
+		ChallengerId: "challenger-1",
+		RecipientId:  "recipient-1",
+	})
+	if err != nil {
+		t.Fatalf("commit self-healing: %v", err)
+	}
+	if !commitResp.Stored {
+		t.Fatalf("expected commit stored=true, got false err=%s", commitResp.Error)
+	}
+	if got := recipientP2P.local[fileKey]; string(got) != string(payload) {
+		t.Fatalf("recipient local store not repaired after commit")
 	}
 }
 
@@ -339,6 +370,65 @@ func TestSelfHealingE2E_VerifyHashMismatch(t *testing.T) {
 	}
 }
 
+func TestSelfHealingE2E_VerifyFallbackReconstructWithoutPersist(t *testing.T) {
+	const fileKey = "key-verify-fallback"
+	const actionID = "action-verify-fallback"
+	payload := []byte("fallback-self-healing")
+	payloadHashHex := blake3Hex(payload)
+
+	observerP2P := newFakeP2P()
+	lumeraClient, lumeraCleanup := mockLumeraActionLookup(t, fileKey, actionID)
+	defer lumeraCleanup()
+
+	fallbackReconstructCalled := false
+	factory := &fakeCascadeFactory{
+		task: &fakeCascadeTask{
+			recoveryFn: func(ctx context.Context, req *cascadeService.RecoveryReseedRequest) (*cascadeService.RecoveryReseedResult, error) {
+				if req == nil || req.ActionID != actionID {
+					return nil, fmt.Errorf("unexpected recovery action_id")
+				}
+				if req.PersistArtifacts == nil || *req.PersistArtifacts {
+					return nil, fmt.Errorf("expected non-persist recovery path")
+				}
+				fallbackReconstructCalled = true
+				return &cascadeService.RecoveryReseedResult{
+					ActionID:             actionID,
+					ReconstructedHashHex: payloadHashHex,
+				}, nil
+			},
+		},
+	}
+
+	obsConn, obsCleanup := startSelfHealingTestServer(t, "observer-1", observerP2P, lumeraClient, factory)
+	defer obsCleanup()
+	obsClient := supernode.NewSelfHealingServiceClient(obsConn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ver, err := obsClient.VerifySelfHealing(ctx, &supernode.VerifySelfHealingRequest{
+		ChallengeId:          "ch-fallback",
+		EpochId:              12,
+		FileKey:              fileKey,
+		RecipientId:          "recipient-1",
+		ReconstructedHashHex: payloadHashHex,
+		ObserverId:           "observer-1",
+		ActionId:             actionID,
+	})
+	if err != nil {
+		t.Fatalf("verify self-healing: %v", err)
+	}
+	if !ver.Ok {
+		t.Fatalf("expected verify ok=true, got false err=%s", ver.Error)
+	}
+	if !fallbackReconstructCalled {
+		t.Fatalf("expected fallback reconstruction to be called")
+	}
+	if got := observerP2P.local[fileKey]; len(got) > 0 {
+		t.Fatalf("fallback verify must not persist local artifacts")
+	}
+}
+
 func TestSelfHealingE2E_VerifyObserverMismatch(t *testing.T) {
 	const fileKey = "key-verify-observer-mismatch"
 	payload := []byte("hello-self-healing")
@@ -368,4 +458,9 @@ func TestSelfHealingE2E_VerifyObserverMismatch(t *testing.T) {
 	if ver.Ok {
 		t.Fatalf("expected verify ok=false for observer mismatch")
 	}
+}
+
+func blake3Hex(data []byte) string {
+	sum := blake3.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

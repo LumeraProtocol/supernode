@@ -62,6 +62,7 @@ const (
 
 	requestTimeout     = 20 * time.Second
 	verificationTimout = 20 * time.Second
+	commitTimeout      = 20 * time.Second
 )
 
 type Config struct {
@@ -109,6 +110,7 @@ type Service struct {
 
 	requestSelfHealingFn func(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error)
 	verifySelfHealingFn  func(ctx context.Context, remoteIdentity string, address string, req *supernode.VerifySelfHealingRequest, timeout time.Duration) (*supernode.VerifySelfHealingResponse, error)
+	commitSelfHealingFn  func(ctx context.Context, remoteIdentity string, address string, req *supernode.CommitSelfHealingRequest, timeout time.Duration) (*supernode.CommitSelfHealingResponse, error)
 
 	targetsCacheMu sync.RWMutex
 	targetsCache   []actionHealingTarget
@@ -596,7 +598,15 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 		return &eventProcessError{Reason: "recipient_resolve_failed", Retryable: true, Err: err}
 	}
 
-	req := &supernode.RequestSelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: pl.EpochID, FileKey: pl.FileKey, ChallengerId: s.identity, RecipientId: pl.Recipient, ObserverIds: pl.Observers}
+	req := &supernode.RequestSelfHealingRequest{
+		ChallengeId:  event.ChallengeID,
+		EpochId:      pl.EpochID,
+		FileKey:      pl.FileKey,
+		ChallengerId: s.identity,
+		RecipientId:  pl.Recipient,
+		ObserverIds:  pl.Observers,
+		ActionId:     pl.ActionID,
+	}
 	resp, err := s.requestSelfHealing(ctx, pl.Recipient, recipientAddr, req, requestTimeout)
 	if err != nil || resp == nil || !resp.Accepted {
 		reason := "request_failed"
@@ -625,7 +635,15 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 		if err != nil {
 			continue
 		}
-		vr, verr := s.verifySelfHealing(ctx, ob, addr, &supernode.VerifySelfHealingRequest{ChallengeId: event.ChallengeID, EpochId: pl.EpochID, FileKey: pl.FileKey, RecipientId: pl.Recipient, ReconstructedHashHex: resp.ReconstructedHashHex, ObserverId: ob}, verificationTimout)
+		vr, verr := s.verifySelfHealing(ctx, ob, addr, &supernode.VerifySelfHealingRequest{
+			ChallengeId:          event.ChallengeID,
+			EpochId:              pl.EpochID,
+			FileKey:              pl.FileKey,
+			RecipientId:          pl.Recipient,
+			ReconstructedHashHex: resp.ReconstructedHashHex,
+			ObserverId:           ob,
+			ActionId:             pl.ActionID,
+		}, verificationTimout)
 		ok := verr == nil && vr != nil && vr.Ok
 		if ok {
 			okCount++
@@ -635,6 +653,30 @@ func (s *Service) processEvent(ctx context.Context, event types.SelfHealingChall
 	if okCount < s.cfg.ObserverThreshold {
 		s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": "observer_quorum_failed", "ok_count": okCount})
 		return &eventProcessError{Reason: "observer_quorum_failed", Retryable: true}
+	}
+	commitReq := &supernode.CommitSelfHealingRequest{
+		ChallengeId:  event.ChallengeID,
+		EpochId:      pl.EpochID,
+		FileKey:      pl.FileKey,
+		ActionId:     pl.ActionID,
+		ChallengerId: s.identity,
+		RecipientId:  pl.Recipient,
+	}
+	commitResp, cerr := s.commitSelfHealing(ctx, pl.Recipient, recipientAddr, commitReq, commitTimeout)
+	if cerr != nil || commitResp == nil || !commitResp.Stored {
+		reason := "commit_failed"
+		if commitResp != nil && strings.TrimSpace(commitResp.Error) != "" {
+			reason = strings.ToLower(strings.TrimSpace(commitResp.Error))
+		}
+		if cerr != nil {
+			s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": reason, "error": cerr.Error()})
+			return &eventProcessError{Reason: "commit_rpc_error", Retryable: true, Err: cerr}
+		}
+		s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "failed", "reason": reason})
+		if strings.Contains(reason, "stale") {
+			return &eventProcessError{Reason: reason, Retryable: false}
+		}
+		return &eventProcessError{Reason: reason, Retryable: true}
 	}
 	s.persistExecution(event.TriggerID, event.ChallengeID, int(types.SelfHealingCompletionMessage), map[string]any{"event": "completed", "result": "healed", "ok_count": okCount})
 	return nil
@@ -1010,6 +1052,13 @@ func (s *Service) verifySelfHealing(ctx context.Context, remoteIdentity string, 
 	return s.callVerifySelfHealing(ctx, remoteIdentity, address, req, timeout)
 }
 
+func (s *Service) commitSelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.CommitSelfHealingRequest, timeout time.Duration) (*supernode.CommitSelfHealingResponse, error) {
+	if s.commitSelfHealingFn != nil {
+		return s.commitSelfHealingFn(ctx, remoteIdentity, address, req, timeout)
+	}
+	return s.callCommitSelfHealing(ctx, remoteIdentity, address, req, timeout)
+}
+
 func (s *Service) callRequestSelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1032,6 +1081,18 @@ func (s *Service) callVerifySelfHealing(ctx context.Context, remoteIdentity stri
 	defer conn.Close()
 	client := supernode.NewSelfHealingServiceClient(conn)
 	return client.VerifySelfHealing(cctx, req)
+}
+
+func (s *Service) callCommitSelfHealing(ctx context.Context, remoteIdentity string, address string, req *supernode.CommitSelfHealingRequest, timeout time.Duration) (*supernode.CommitSelfHealingResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := s.grpcClient.Connect(cctx, fmt.Sprintf("%s@%s", strings.TrimSpace(remoteIdentity), address), s.grpcOpts)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	client := supernode.NewSelfHealingServiceClient(conn)
+	return client.CommitSelfHealing(cctx, req)
 }
 
 func parseHostAndPort(address string, defaultPort int) (host string, port int, ok bool) {

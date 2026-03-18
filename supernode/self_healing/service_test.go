@@ -104,6 +104,71 @@ func TestProcessEventsQuorumFailureTerminalAtMaxAttempts(t *testing.T) {
 	}
 }
 
+func TestProcessEventsCommitAfterObserverQuorum(t *testing.T) {
+	svc, store, cleanup := newServiceForEventTests(t, Config{
+		ObserverThreshold: 2,
+		MaxEventAttempts:  3,
+		MaxWindowAge:      time.Hour,
+	})
+	defer cleanup()
+
+	if err := insertEvent(t, store, "ch-commit-after-quorum", challengeEventPayload{
+		EpochID:   21,
+		WindowID:  time.Now().UTC().Unix(),
+		ActionID:  "action-commit-1",
+		FileKey:   "file-commit-1",
+		Recipient: "recipient-1",
+		Observers: []string{"observer-1", "observer-2"},
+	}); err != nil {
+		t.Fatalf("insert event: %v", err)
+	}
+
+	commitCalled := false
+	svc.requestSelfHealingFn = func(ctx context.Context, remoteIdentity string, address string, req *supernode.RequestSelfHealingRequest, timeout time.Duration) (*supernode.RequestSelfHealingResponse, error) {
+		return &supernode.RequestSelfHealingResponse{
+			ChallengeId:            req.ChallengeId,
+			RecipientId:            req.RecipientId,
+			Accepted:               true,
+			ReconstructionRequired: true,
+			ReconstructedHashHex:   "abcd",
+		}, nil
+	}
+	svc.verifySelfHealingFn = func(ctx context.Context, remoteIdentity string, address string, req *supernode.VerifySelfHealingRequest, timeout time.Duration) (*supernode.VerifySelfHealingResponse, error) {
+		return &supernode.VerifySelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			ObserverId:  remoteIdentity,
+			Ok:          true,
+		}, nil
+	}
+	svc.commitSelfHealingFn = func(ctx context.Context, remoteIdentity string, address string, req *supernode.CommitSelfHealingRequest, timeout time.Duration) (*supernode.CommitSelfHealingResponse, error) {
+		commitCalled = true
+		if req.ActionId != "action-commit-1" {
+			t.Fatalf("unexpected action_id in commit request: %s", req.ActionId)
+		}
+		return &supernode.CommitSelfHealingResponse{
+			ChallengeId: req.ChallengeId,
+			RecipientId: remoteIdentity,
+			Stored:      true,
+		}, nil
+	}
+
+	svc.processEvents(context.Background())
+
+	if !commitCalled {
+		t.Fatalf("expected commit RPC to be called after observer quorum")
+	}
+	ev, err := store.GetSelfHealingChallengeEvent("ch-commit-after-quorum")
+	if err != nil {
+		t.Fatalf("get event: %v", err)
+	}
+	if got, want := ev.Status, "completed"; got != want {
+		t.Fatalf("status=%s want=%s", got, want)
+	}
+	if !ev.IsProcessed {
+		t.Fatalf("expected event marked processed")
+	}
+}
+
 func TestProcessEventsStaleWindowTerminalWithoutRPC(t *testing.T) {
 	svc, store, cleanup := newServiceForEventTests(t, Config{
 		ObserverThreshold: 2,
