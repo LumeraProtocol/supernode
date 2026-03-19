@@ -204,7 +204,7 @@ test-cascade:
 # Run self-healing e2e tests only
 test-self-healing:
 	@echo "Running self-healing e2e tests..."
-	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run '^TestSelfHealingE2EHappyPath$$' .
+	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run '^TestSelfHealingE2E' .
 
 # Run sn-manager e2e tests only
 test-sn-manager:
