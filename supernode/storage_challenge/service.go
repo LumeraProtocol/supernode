@@ -583,44 +583,17 @@ func (s *Service) callVerifySliceProof(ctx context.Context, remoteIdentity strin
 }
 
 func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Params, epochID uint64, challengeID, fileKey, recipient, failureType, transcriptHashHex string) error {
-	if !s.cfg.SubmitEvidence || !params.ScEnabled {
-		logtrace.Debug(ctx, "storage challenge: evidence submission skipped", logtrace.Fields{
-			"epoch_id":               epochID,
-			"challenge_id":           challengeID,
-			"recipient_id":           recipient,
-			"failure_type":           failureType,
-			"submit_evidence_config": s.cfg.SubmitEvidence,
-			"sc_enabled_param":       params.ScEnabled,
-		})
-		return nil
-	}
+	_ = params
+	_ = transcriptHashHex
 
-	meta := audittypes.StorageChallengeFailureEvidenceMetadata{
-		EpochId:                    epochID,
-		ChallengerSupernodeAccount: s.identity,
-		ChallengedSupernodeAccount: recipient,
-		ChallengeId:                challengeID,
-		FileKey:                    fileKey,
-		FailureType:                failureType,
-		TranscriptHash:             transcriptHashHex,
-	}
-	bz, err := json.Marshal(meta)
-	if err != nil {
-		return err
-	}
-
-	submitCtx, cancel := context.WithTimeout(ctx, scEvidenceSubmitTimeout)
-	defer cancel()
-
-	_, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
-	if err != nil {
-		return err
-	}
-	logtrace.Warn(ctx, "storage challenge failure evidence submitted", logtrace.Fields{
+	// TEMPORARY INCIDENT MITIGATION:
+	// Disabled per operational directive to pause storage challenge evidence submissions.
+	logtrace.Warn(ctx, "storage challenge: evidence submission temporarily disabled", logtrace.Fields{
 		"epoch_id":     epochID,
 		"challenge_id": challengeID,
 		"recipient_id": recipient,
 		"failure_type": failureType,
+		"file_key":     fileKey,
 	})
 	return nil
 }
