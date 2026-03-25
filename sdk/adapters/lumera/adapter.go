@@ -2,11 +2,13 @@ package lumera
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/sdk/log"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -389,13 +391,39 @@ func (a *Adapter) SubmitCascadeClientFailureEvidence(
 	targetSupernodeAccounts []string,
 	details map[string]string,
 ) error {
-	// TEMPORARY INCIDENT MITIGATION:
-	// Disabled per operational directive to prevent cascade client complaint evidence submissions.
-	a.logger.Warn(ctx, "Cascade client failure evidence submission is temporarily disabled",
-		"subject_address", strings.TrimSpace(subjectAddress),
-		"action_id", actionID,
-		"targets_count", len(targetSupernodeAccounts),
-	)
+	if a.client == nil {
+		return fmt.Errorf("lumera client is nil")
+	}
+	subjectAddress = strings.TrimSpace(subjectAddress)
+	if subjectAddress == "" {
+		return fmt.Errorf("subject address cannot be empty")
+	}
+	if details == nil {
+		details = map[string]string{}
+	}
+
+	meta := audittypes.CascadeClientFailureEvidenceMetadata{
+		ReporterComponent:       audittypes.CascadeClientFailureReporterComponent_CASCADE_CLIENT_FAILURE_REPORTER_COMPONENT_SDK_GO,
+		TargetSupernodeAccounts: append([]string(nil), targetSupernodeAccounts...),
+		Details:                 details,
+	}
+	bz, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal cascade client failure evidence metadata: %w", err)
+	}
+	_ = bz
+
+	// TEMPORARY INCIDENT MITIGATION: chain submission intentionally disabled.
+	// _, err = a.client.AuditMsg().SubmitEvidence(
+	// 	ctx,
+	// 	subjectAddress,
+	// 	audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
+	// 	actionID,
+	// 	string(bz),
+	// )
+	if err != nil {
+		return fmt.Errorf("submit cascade client failure evidence: %w", err)
+	}
 	return nil
 }
 
