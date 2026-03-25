@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -34,6 +35,10 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 
 	// Start each supernode
 	for i, dataDir := range dataDirs {
+		if err := resetSupernodeRuntimeState(dataDir); err != nil {
+			t.Fatalf("failed to clean runtime state for %s: %v", dataDir, err)
+		}
+
 		binPath := filepath.Join(dataDir, "supernode")
 
 		// Ensure the binary exists
@@ -85,8 +90,49 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 func StopAllSupernodes(cmds []*exec.Cmd) {
 	for _, cmd := range cmds {
 		if cmd != nil && cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			_, _ = cmd.Process.Wait()
+			stopProcessWithTimeout(cmd, 3*time.Second)
 		}
+	}
+}
+
+func resetSupernodeRuntimeState(dataDir string) error {
+	volatileDirs := []string{
+		"data",
+		"raptorq_files",
+		"raptorq_files_test",
+	}
+
+	for _, rel := range volatileDirs {
+		if err := os.RemoveAll(filepath.Join(dataDir, rel)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func stopProcessWithTimeout(cmd *exec.Cmd, timeout time.Duration) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = cmd.Process.Wait()
+		close(done)
+	}()
+
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+
+	select {
+	case <-done:
+		return
+	case <-time.After(timeout):
+	}
+
+	_ = cmd.Process.Kill()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
 	}
 }

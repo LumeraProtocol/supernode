@@ -13,6 +13,7 @@ type Module interface {
 	GetAction(ctx context.Context, actionID string) (*types.QueryGetActionResponse, error)
 	GetActionFee(ctx context.Context, dataSize string) (*types.QueryGetActionFeeResponse, error)
 	GetParams(ctx context.Context) (*types.QueryParamsResponse, error)
+	ListActions(ctx context.Context, req *types.QueryListActionsRequest) (*types.QueryListActionsResponse, error)
 }
 
 // NewModule creates a new Action module client

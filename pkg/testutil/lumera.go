@@ -170,6 +170,10 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*types.QueryParamsRes
 	return &types.QueryParamsResponse{}, nil
 }
 
+func (m *MockActionModule) ListActions(ctx context.Context, req *types.QueryListActionsRequest) (*types.QueryListActionsResponse, error) {
+	return &types.QueryListActionsResponse{}, nil
+}
+
 // MockActionMsgModule implements the action_msg.Module interface for testing
 type MockActionMsgModule struct{}
 
@@ -215,6 +219,10 @@ func (m *MockAuditModule) GetAssignedTargets(ctx context.Context, supernodeAccou
 
 func (m *MockAuditModule) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
 	return &audittypes.QueryEpochReportResponse{}, nil
+}
+
+func (m *MockAuditModule) GetStorageChallengeReports(ctx context.Context, supernodeAccount string, epochID uint64) (*audittypes.QueryStorageChallengeReportsResponse, error) {
+	return &audittypes.QueryStorageChallengeReportsResponse{}, nil
 }
 
 type MockAuditMsgModule struct{}

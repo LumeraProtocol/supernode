@@ -120,7 +120,7 @@ release:
 ###################################################
 ###              Tests and Simulation           ###
 ###################################################
-.PHONY: test-e2e test-unit test-integration test-system test-cascade test-sn-manager
+.PHONY: test-e2e test-unit test-integration test-system test-cascade test-self-healing test-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
 test-unit:
@@ -152,7 +152,7 @@ gen-supernode:
 		--grpc-gateway_out=gen \
 		--grpc-gateway_opt=paths=source_relative \
 		--openapiv2_out=gen \
-		proto/supernode/service.proto proto/supernode/status.proto proto/supernode/storage_challenge.proto
+		proto/supernode/service.proto proto/supernode/status.proto proto/supernode/storage_challenge.proto proto/supernode/self_healing.proto
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
@@ -201,8 +201,12 @@ test-cascade:
 	@echo "Running cascade e2e tests..."
 	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run TestCascadeE2E .
 
+# Run self-healing e2e tests only
+test-self-healing:
+	@echo "Running self-healing e2e tests..."
+	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run '^TestSelfHealingE2E' .
+
 # Run sn-manager e2e tests only
 test-sn-manager:
 	@echo "Running sn-manager e2e tests..."
 	@cd tests/system && ${GO} test -tags=system_test -v -run '^TestSNManager' .
-

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	querytypes "github.com/cosmos/cosmos-sdk/types/query"
 	"google.golang.org/grpc"
 )
 
@@ -72,4 +73,41 @@ func (m *module) GetEpochReport(ctx context.Context, epochID uint64, supernodeAc
 		return nil, fmt.Errorf("failed to get epoch report: %w", err)
 	}
 	return resp, nil
+}
+
+func (m *module) GetStorageChallengeReports(ctx context.Context, supernodeAccount string, epochID uint64) (*types.QueryStorageChallengeReportsResponse, error) {
+	page := &querytypes.PageRequest{Limit: 1000}
+	all := make([]types.StorageChallengeReport, 0)
+	var lastPagination *querytypes.PageResponse
+
+	for {
+		resp, err := m.client.StorageChallengeReports(ctx, &types.QueryStorageChallengeReportsRequest{
+			SupernodeAccount: supernodeAccount,
+			EpochId:          epochID,
+			FilterByEpochId:  true,
+			Pagination:       page,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get storage challenge reports: %w", err)
+		}
+		if resp == nil {
+			break
+		}
+
+		all = append(all, resp.Reports...)
+		lastPagination = resp.Pagination
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			break
+		}
+
+		page = &querytypes.PageRequest{
+			Key:   resp.Pagination.NextKey,
+			Limit: 1000,
+		}
+	}
+
+	return &types.QueryStorageChallengeReportsResponse{
+		Reports:    all,
+		Pagination: lastPagination,
+	}, nil
 }

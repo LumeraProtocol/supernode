@@ -54,6 +54,11 @@ func TestMain(m *testing.M) {
 	if *rebuild {
 		sut.BuildNewBinary()
 	}
+
+	if err := performSystemTestRuntimeCleanup(*nodesCount, verbose); err != nil {
+		panic(fmt.Sprintf("system test preflight cleanup failed: %v", err))
+	}
+
 	// setup chain and keyring
 	sut.SetupChain()
 
@@ -62,6 +67,9 @@ func TestMain(m *testing.M) {
 
 	// postprocess
 	sut.StopChain()
+	if err := performSystemTestRuntimeCleanup(*nodesCount, verbose); err != nil {
+		fmt.Fprintf(os.Stderr, "system test post-run cleanup warning: %v\n", err)
+	}
 	if verbose || exitCode != 0 {
 		sut.PrintBuffer()
 		printResultFlag(exitCode == 0)

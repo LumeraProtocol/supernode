@@ -231,16 +231,22 @@ type SelfHealingMetrics struct {
 
 // SelfHealingChallengeEvent represents the challenge event that needs to be healed.
 type SelfHealingChallengeEvent struct {
-	ID          int64
-	TriggerID   string
-	ChallengeID string
-	TicketID    string
-	Data        []byte
-	SenderID    string
-	IsProcessed bool
-	ExecMetric  SelfHealingExecutionMetric
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             int64
+	TriggerID      string
+	ChallengeID    string
+	TicketID       string
+	Data           []byte
+	SenderID       string
+	IsProcessed    bool
+	Status         string
+	AttemptCount   int
+	LeaseOwner     sql.NullString
+	LeaseExpiresAt sql.NullTime
+	NextRetryAt    sql.NullTime
+	LastError      sql.NullString
+	ExecMetric     SelfHealingExecutionMetric
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Hash returns the hash of the self-healing challenge reports

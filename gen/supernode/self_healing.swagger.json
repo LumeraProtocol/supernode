@@ -1,0 +1,118 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "supernode/self_healing.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "SelfHealingService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {},
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "supernodeCommitSelfHealingResponse": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string"
+        },
+        "epochId": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "recipientId": {
+          "type": "string"
+        },
+        "stored": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "supernodeRequestSelfHealingResponse": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string"
+        },
+        "epochId": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "recipientId": {
+          "type": "string"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "reconstructionRequired": {
+          "type": "boolean"
+        },
+        "reconstructedHashHex": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "supernodeVerifySelfHealingResponse": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string"
+        },
+        "epochId": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "observerId": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
