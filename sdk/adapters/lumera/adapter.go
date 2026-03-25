@@ -411,17 +411,19 @@ func (a *Adapter) SubmitCascadeClientFailureEvidence(
 	if err != nil {
 		return fmt.Errorf("marshal cascade client failure evidence metadata: %w", err)
 	}
+	_ = bz
 
-	_, err = a.client.AuditMsg().SubmitEvidence(
-		ctx,
-		subjectAddress,
-		audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
-		actionID,
-		string(bz),
-	)
-	if err != nil {
-		return fmt.Errorf("submit cascade client failure evidence: %w", err)
-	}
+	// TEMPORARY INCIDENT MITIGATION: chain submission intentionally disabled.
+	// _, err = a.client.AuditMsg().SubmitEvidence(
+	// 	ctx,
+	// 	subjectAddress,
+	// 	audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
+	// 	actionID,
+	// 	string(bz),
+	// )
+	// if err != nil {
+	// 	return fmt.Errorf("submit cascade client failure evidence: %w", err)
+	// }
 	return nil
 }
 

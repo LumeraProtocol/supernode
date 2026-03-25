@@ -611,12 +611,15 @@ func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Par
 
 	submitCtx, cancel := context.WithTimeout(ctx, scEvidenceSubmitTimeout)
 	defer cancel()
+	_ = submitCtx
+	_ = bz
 
-	_, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
-	if err != nil {
-		return err
-	}
-	logtrace.Warn(ctx, "storage challenge failure evidence submitted", logtrace.Fields{
+	// TEMPORARY INCIDENT MITIGATION: chain submission intentionally disabled.
+	// _, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
+	// if err != nil {
+	// 	return err
+	// }
+	logtrace.Warn(ctx, "storage challenge failure evidence submission temporarily disabled", logtrace.Fields{
 		"epoch_id":     epochID,
 		"challenge_id": challengeID,
 		"recipient_id": recipient,
