@@ -421,9 +421,9 @@ func (a *Adapter) SubmitCascadeClientFailureEvidence(
 	// 	actionID,
 	// 	string(bz),
 	// )
-	if err != nil {
-		return fmt.Errorf("submit cascade client failure evidence: %w", err)
-	}
+	// if err != nil {
+	// 	return fmt.Errorf("submit cascade client failure evidence: %w", err)
+	// }
 	return nil
 }
 
