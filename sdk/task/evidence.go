@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 )
 
 // Optional interface so existing test doubles that only implement the base
@@ -14,7 +16,7 @@ type cascadeClientFailureEvidenceSubmitter interface {
 		subjectAddress string,
 		actionID string,
 		targetSupernodeAccounts []string,
-		details map[string]string,
+		details lumera.CascadeClientFailureDetails,
 	) error
 }
 
@@ -24,7 +26,7 @@ func (t *BaseTask) submitCascadeClientFailureEvidence(
 	ctx context.Context,
 	subjectAddress string,
 	targetSupernodeAccounts []string,
-	details map[string]string,
+	details lumera.CascadeClientFailureDetails,
 ) {
 	subjectAddress = strings.TrimSpace(subjectAddress)
 	if subjectAddress == "" {
@@ -37,24 +39,18 @@ func (t *BaseTask) submitCascadeClientFailureEvidence(
 		return
 	}
 
-	if details == nil {
-		details = map[string]string{}
+	if details.TaskID == "" {
+		details.TaskID = t.TaskID
 	}
-	if _, exists := details["task_id"]; !exists {
-		details["task_id"] = t.TaskID
-	}
-	if _, exists := details["action_id"]; !exists {
-		details["action_id"] = t.ActionID
+	if details.ActionID == "" {
+		details.ActionID = t.ActionID
 	}
 
 	targetsCopy := append([]string(nil), targetSupernodeAccounts...)
-	detailsCopy := make(map[string]string, len(details))
-	for k, v := range details {
-		detailsCopy[k] = v
-	}
+	detailsCopy := details
 
 	// Evidence submission should not block retry loops.
-	go func(parent context.Context, subject string, actionID string, targets []string, metadata map[string]string) {
+	go func(parent context.Context, subject string, actionID string, targets []string, metadata lumera.CascadeClientFailureDetails) {
 		submitCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), cascadeEvidenceSubmitTimeout)
 		defer cancel()
 
