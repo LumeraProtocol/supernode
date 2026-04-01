@@ -308,10 +308,7 @@ func setupSelfHealingFixture(t *testing.T) *selfHealingFixture {
 
 	txHash := reqResp.TxResponse.TxHash
 	require.NotEmpty(t, txHash)
-	sut.AwaitNextBlock(t)
-
-	txResp := cli.CustomQuery("q", "tx", txHash)
-	actionID := extractActionIDFromTxQuery(txResp)
+	actionID := waitForActionIDFromTxQuery(t, cli, txHash, 12)
 	require.NotEmpty(t, actionID)
 
 	_, err = actionClient.StartCascade(ctx, testFilePath, actionID, startSig)
@@ -436,6 +433,28 @@ func extractActionIDFromTxQuery(txResp string) string {
 			}
 		}
 	}
+	return ""
+}
+
+func waitForActionIDFromTxQuery(t *testing.T, cli *LumeradCli, txHash string, maxAttempts int) string {
+	t.Helper()
+	require.NotEmpty(t, txHash)
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		txResp := cli.WithRunErrorsIgnored().CustomQuery("q", "tx", txHash)
+		if actionID := extractActionIDFromTxQuery(txResp); actionID != "" {
+			return actionID
+		}
+
+		if attempt < maxAttempts {
+			sut.AwaitNextBlock(t)
+		}
+	}
+
+	require.FailNowf(t, "action id not found from tx query", "tx_hash=%s attempts=%d", txHash, maxAttempts)
 	return ""
 }
 
