@@ -86,7 +86,7 @@ func TestFullMigrationKeyringFlow(t *testing.T) {
 
 	// Step 3: Sign migration payload with both keys (simulating what
 	// ensureLegacyAccountMigrated does).
-	payload := []byte("lumera-evm-migration:claim:" + legacyAddr.String() + ":" + evmAddr.String())
+	payload := []byte("lumera-evm-migration:test-chain-1:76857769:claim:" + legacyAddr.String() + ":" + evmAddr.String())
 
 	// Legacy signing: SHA256(payload) → keyring.Sign (which does another SHA256 internally).
 	hash := sha256.Sum256(payload)
@@ -222,7 +222,7 @@ func TestDualSigningProtocol(t *testing.T) {
 	require.NoError(t, err)
 	evmAddr := sdk.AccAddress(evmPubKey.Address())
 
-	payload := []byte("lumera-evm-migration:claim:" + legacyAddr.String() + ":" + evmAddr.String())
+	payload := []byte("lumera-evm-migration:test-chain-1:76857769:claim:" + legacyAddr.String() + ":" + evmAddr.String())
 
 	// --- Legacy signature protocol ---
 	// The supernode passes SHA256(payload) to kr.Sign.

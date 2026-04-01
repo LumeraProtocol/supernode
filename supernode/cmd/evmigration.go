@@ -9,6 +9,7 @@ import (
 	"time"
 
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	lcfg "github.com/LumeraProtocol/lumera/config"
 	evmigrationtypes "github.com/LumeraProtocol/lumera/x/evmigration/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -293,7 +294,9 @@ func ensureLegacyAccountMigrated(
 		}
 
 		// Build the canonical migration payload.
-		payload := []byte(fmt.Sprintf("lumera-evm-migration:%s:%s:%s", payloadKind, legacyAddr.String(), newAddr.String()))
+		// Format: lumera-evm-migration:<chainID>:<evmChainID>:<kind>:<legacyAddr>:<newAddr>
+		chainID := cfg.LumeraClientConfig.ChainID
+		payload := []byte(fmt.Sprintf("lumera-evm-migration:%s:%d:%s:%s:%s", chainID, lcfg.EVMChainID, payloadKind, legacyAddr.String(), newAddr.String()))
 
 		// Sign with legacy key from keyring.
 		// secp256k1.Sign(msg) internally computes SHA256(msg), and the chain verifier
@@ -321,7 +324,6 @@ func ensureLegacyAccountMigrated(
 				LegacyAddress:   legacyAddr.String(),
 				LegacyPubKey:    legacyPubKey.Bytes(),
 				LegacySignature: legacySig,
-				NewPubKey:       newPubKey.Bytes(),
 				NewSignature:    newSig,
 			}
 			logtrace.Info(ctx, "Validator account detected — using MsgMigrateValidator", logtrace.Fields{
@@ -334,7 +336,6 @@ func ensureLegacyAccountMigrated(
 				LegacyAddress:   legacyAddr.String(),
 				LegacyPubKey:    legacyPubKey.Bytes(),
 				LegacySignature: legacySig,
-				NewPubKey:       newPubKey.Bytes(),
 				NewSignature:    newSig,
 			}
 		}

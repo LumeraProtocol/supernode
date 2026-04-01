@@ -153,7 +153,7 @@ Query MigrationEstimate(legacy_address)
   |-- Query error        --> proceed anyway, default isValidator=false
   |-- WouldSucceed=true  --> capture IsValidator flag
   v
-Build payload: "lumera-evm-migration:{claim|validator}:<legacy>:<new>"
+Build payload: "lumera-evm-migration:<chainID>:<evmChainID>:{claim|validator}:<legacy>:<new>"
   v
 Dual sign:
   - Legacy: kr.Sign(SHA256(payload))  -- secp256k1 internally SHA256s again
