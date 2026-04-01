@@ -28,3 +28,9 @@ lumera:
 # RaptorQ Configuration
 raptorq:
   files_dir: "raptorq_files"  # Relative to base_dir
+
+# Self-healing test-mode security overrides:
+# system tests run gRPC with INTEGRATION_TEST_ENV=true (insecure transport),
+# so peer auth context is not attached.
+self_healing:
+  allow_unauthenticated_caller: true
