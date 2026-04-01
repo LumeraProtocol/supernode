@@ -3,6 +3,7 @@ package self_healing
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -59,6 +60,8 @@ const (
 	defaultEventRetryMax      = 15 * time.Minute
 	defaultMaxEventsPerTick   = 64
 	defaultEventWorkers       = 8
+	defaultDirectProbeTimeout = 3 * time.Second
+	defaultDirectProbeWorkers = 8
 
 	requestTimeout     = 20 * time.Second
 	verificationTimout = 20 * time.Second
@@ -75,21 +78,24 @@ type Config struct {
 	GenerationInterval time.Duration
 	ProcessInterval    time.Duration
 
-	WatchlistThreshold int
-	WatchlistStaleFor  time.Duration
-	WatchlistFreshFor  time.Duration
-	ClosestNodes       int
-	ObserverCount      int
-	ObserverThreshold  int
-	ActionPageLimit    int
-	ActionTargetsTTL   time.Duration
-	MaxChallenges      int
-	EventLeaseDuration time.Duration
-	EventRetryBase     time.Duration
-	EventRetryMax      time.Duration
-	MaxEventAttempts   int
-	MaxEventsPerTick   int
-	EventWorkers       int
+	WatchlistThreshold           int
+	WatchlistStaleFor            time.Duration
+	WatchlistFreshFor            time.Duration
+	ClosestNodes                 int
+	ObserverCount                int
+	ObserverThreshold            int
+	ActionPageLimit              int
+	ActionTargetsTTL             time.Duration
+	MaxChallenges                int
+	EventLeaseDuration           time.Duration
+	EventRetryBase               time.Duration
+	EventRetryMax                time.Duration
+	MaxEventAttempts             int
+	MaxEventsPerTick             int
+	EventWorkers                 int
+	RequireDirectMissingEvidence bool
+	DirectProbeTimeout           time.Duration
+	DirectProbeWorkers           int
 
 	// Max age for a generation window before we mark event stale/terminal.
 	MaxWindowAge time.Duration
@@ -247,6 +253,12 @@ func NewService(identity string, grpcPort uint16, lumeraClient lumera.Client, p2
 	}
 	if cfg.EventWorkers <= 0 {
 		cfg.EventWorkers = defaultEventWorkers
+	}
+	if cfg.DirectProbeTimeout <= 0 {
+		cfg.DirectProbeTimeout = defaultDirectProbeTimeout
+	}
+	if cfg.DirectProbeWorkers <= 0 {
+		cfg.DirectProbeWorkers = defaultDirectProbeWorkers
 	}
 	if cfg.MaxWindowAge <= 0 {
 		cfg.MaxWindowAge = 2 * cfg.GenerationInterval
@@ -449,6 +461,12 @@ func (s *Service) generateChallenges(ctx context.Context, now time.Time) {
 			"max_challenges":     s.cfg.MaxChallenges,
 			"selection_strategy": "window_offset",
 		})
+	}
+	if s.cfg.RequireDirectMissingEvidence {
+		selectedTargets = s.filterTargetsByDirectEvidence(ctx, selectedTargets)
+		if len(selectedTargets) == 0 {
+			return
+		}
 	}
 
 	events := make([]types.SelfHealingChallengeEvent, 0, len(selectedTargets))
@@ -833,8 +851,9 @@ func classifyReporterObservation(states []audittypes.PortState, requiredPortsLen
 }
 
 type actionHealingTarget struct {
-	ActionID string
-	FileKey  string
+	ActionID      string
+	FileKey       string
+	ActionHashHex string
 }
 
 func (s *Service) listCascadeHealingTargets(ctx context.Context) ([]actionHealingTarget, error) {
@@ -901,10 +920,17 @@ func (s *Service) listCascadeHealingTargets(ctx context.Context) ([]actionHealin
 				if fileKey == "" {
 					continue
 				}
+				actionHashHex := ""
+				if dataHash := strings.TrimSpace(cascadeMeta.DataHash); dataHash != "" {
+					if raw, derr := base64.StdEncoding.DecodeString(dataHash); derr == nil && len(raw) > 0 {
+						actionHashHex = strings.ToLower(hex.EncodeToString(raw))
+					}
+				}
 				seenByAction[actionID] = struct{}{}
 				targets = append(targets, actionHealingTarget{
-					ActionID: actionID,
-					FileKey:  fileKey,
+					ActionID:      actionID,
+					FileKey:       fileKey,
+					ActionHashHex: actionHashHex,
 				})
 			}
 
@@ -945,6 +971,109 @@ func (s *Service) cachedTargetsLocked() ([]actionHealingTarget, bool) {
 	out := make([]actionHealingTarget, len(s.targetsCache))
 	copy(out, s.targetsCache)
 	return out, true
+}
+
+func (s *Service) hasDirectMissingEvidence(ctx context.Context, target actionHealingTarget) (bool, error) {
+	if strings.TrimSpace(target.FileKey) == "" {
+		return false, fmt.Errorf("empty file key")
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, s.cfg.DirectProbeTimeout)
+	defer cancel()
+
+	data, err := s.p2p.Retrieve(probeCtx, target.FileKey)
+	if err != nil {
+		return true, nil
+	}
+	if len(data) == 0 {
+		return true, nil
+	}
+	expected := strings.TrimSpace(strings.ToLower(target.ActionHashHex))
+	if expected == "" {
+		return false, nil
+	}
+	sum := blake3.Sum256(data)
+	got := strings.ToLower(hex.EncodeToString(sum[:]))
+	if !strings.EqualFold(got, expected) {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *Service) filterTargetsByDirectEvidence(ctx context.Context, targets []actionHealingTarget) []actionHealingTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	workers := s.cfg.DirectProbeWorkers
+	if workers <= 1 || len(targets) == 1 {
+		out := make([]actionHealingTarget, 0, len(targets))
+		for _, target := range targets {
+			missing, err := s.hasDirectMissingEvidence(ctx, target)
+			if err != nil {
+				logtrace.Warn(ctx, "self-healing direct evidence probe failed", logtrace.Fields{
+					"action_id": target.ActionID,
+					"file_key":  target.FileKey,
+					"error":     err.Error(),
+				})
+				continue
+			}
+			if missing {
+				out = append(out, target)
+			}
+		}
+		return out
+	}
+	if workers > len(targets) {
+		workers = len(targets)
+	}
+
+	type probeResult struct {
+		target  actionHealingTarget
+		missing bool
+	}
+
+	jobs := make(chan actionHealingTarget, len(targets))
+	results := make(chan probeResult, len(targets))
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for target := range jobs {
+				missing, err := s.hasDirectMissingEvidence(ctx, target)
+				if err != nil {
+					logtrace.Warn(ctx, "self-healing direct evidence probe failed", logtrace.Fields{
+						"action_id": target.ActionID,
+						"file_key":  target.FileKey,
+						"error":     err.Error(),
+					})
+					continue
+				}
+				results <- probeResult{target: target, missing: missing}
+			}
+		}()
+	}
+
+	for _, target := range targets {
+		jobs <- target
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	out := make([]actionHealingTarget, 0, len(targets))
+	for res := range results {
+		if res.missing {
+			out = append(out, res.target)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ActionID == out[j].ActionID {
+			return out[i].FileKey < out[j].FileKey
+		}
+		return out[i].ActionID < out[j].ActionID
+	})
+	return out
 }
 
 func pickActionAnchorKey(keys []string) string {

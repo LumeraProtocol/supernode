@@ -67,6 +67,21 @@ type SelfHealingConfig struct {
 	EventRetryMaxMs         uint64 `yaml:"event_retry_max_ms,omitempty"`
 	MaxEventAttempts        uint64 `yaml:"max_event_attempts,omitempty"`
 	MaxWindowAgeMs          uint64 `yaml:"max_window_age_ms,omitempty"`
+
+	EnforceAuthenticatedCaller bool   `yaml:"enforce_authenticated_caller,omitempty"`
+	AllowUnauthenticatedCaller bool   `yaml:"allow_unauthenticated_caller,omitempty"`
+	PerPeerRateLimitPerMin     uint64 `yaml:"per_peer_rate_limit_per_min,omitempty"`
+	PerPeerBurst               uint64 `yaml:"per_peer_burst,omitempty"`
+	PerPeerMaxInFlight         uint64 `yaml:"per_peer_max_in_flight,omitempty"`
+	GlobalMaxInFlight          uint64 `yaml:"global_max_in_flight,omitempty"`
+	RecoveryTimeoutMs          uint64 `yaml:"recovery_timeout_ms,omitempty"`
+	BreakerFailThreshold       uint64 `yaml:"breaker_fail_threshold,omitempty"`
+	BreakerCooldownMs          uint64 `yaml:"breaker_cooldown_ms,omitempty"`
+	BreakerMaxHalfOpen         uint64 `yaml:"breaker_max_half_open,omitempty"`
+
+	RequireDirectMissingEvidence bool   `yaml:"require_direct_missing_evidence,omitempty"`
+	DirectProbeTimeoutMs         uint64 `yaml:"direct_probe_timeout_ms,omitempty"`
+	DirectProbeConcurrency       uint64 `yaml:"direct_probe_concurrency,omitempty"`
 }
 
 type Config struct {

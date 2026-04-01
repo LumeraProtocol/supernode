@@ -185,7 +185,10 @@ func startSelfHealingTestServer(t *testing.T, identity string, p2p *fakeP2P, lum
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	supernode.RegisterSelfHealingServiceServer(s, NewServer(identity, p2p, lumeraClient, nil, cascadeFactory))
+	supernode.RegisterSelfHealingServiceServer(s, NewServer(identity, p2p, lumeraClient, nil, SecurityConfig{
+		EnforceAuthenticatedCaller: false,
+		AllowUnauthenticatedCaller: true,
+	}, cascadeFactory))
 	go func() { _ = s.Serve(lis) }()
 
 	dialer := func(context.Context, string) (net.Conn, error) { return lis.Dial() }

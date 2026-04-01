@@ -195,7 +195,25 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}
 
 		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore)
-		selfHealingServer := selfHealingRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, lumeraClient, historyStore, cService)
+		selfHealingServer := selfHealingRPC.NewServer(
+			appConfig.SupernodeConfig.Identity,
+			p2pService,
+			lumeraClient,
+			historyStore,
+			selfHealingRPC.SecurityConfig{
+				EnforceAuthenticatedCaller: appConfig.SelfHealingConfig.EnforceAuthenticatedCaller,
+				AllowUnauthenticatedCaller: appConfig.SelfHealingConfig.AllowUnauthenticatedCaller,
+				PerPeerRateLimitPerMin:     int(appConfig.SelfHealingConfig.PerPeerRateLimitPerMin),
+				PerPeerBurst:               int(appConfig.SelfHealingConfig.PerPeerBurst),
+				PerPeerMaxInFlight:         int(appConfig.SelfHealingConfig.PerPeerMaxInFlight),
+				GlobalMaxInFlight:          int(appConfig.SelfHealingConfig.GlobalMaxInFlight),
+				RecoveryTimeout:            time.Duration(appConfig.SelfHealingConfig.RecoveryTimeoutMs) * time.Millisecond,
+				BreakerFailThreshold:       int(appConfig.SelfHealingConfig.BreakerFailThreshold),
+				BreakerCooldown:            time.Duration(appConfig.SelfHealingConfig.BreakerCooldownMs) * time.Millisecond,
+				BreakerMaxHalfOpen:         int(appConfig.SelfHealingConfig.BreakerMaxHalfOpen),
+			},
+			cService,
+		)
 		var storageChallengeRunner *storageChallengeService.Service
 		if appConfig.StorageChallengeConfig.Enabled {
 			storageChallengeRunner, err = storageChallengeService.NewService(
@@ -227,19 +245,22 @@ The supernode will connect to the Lumera network and begin participating in the 
 				kr,
 				historyStore,
 				selfHealingService.Config{
-					Enabled:            true,
-					PollInterval:       time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond,
-					KeyName:            appConfig.SupernodeConfig.KeyName,
-					ActionPageLimit:    int(appConfig.SelfHealingConfig.ActionPageLimit),
-					ActionTargetsTTL:   time.Duration(appConfig.SelfHealingConfig.ActionTargetsTTLSeconds) * time.Second,
-					MaxChallenges:      int(appConfig.SelfHealingConfig.MaxChallenges),
-					EventLeaseDuration: time.Duration(appConfig.SelfHealingConfig.EventLeaseDurationMs) * time.Millisecond,
-					EventRetryBase:     time.Duration(appConfig.SelfHealingConfig.EventRetryBaseMs) * time.Millisecond,
-					EventRetryMax:      time.Duration(appConfig.SelfHealingConfig.EventRetryMaxMs) * time.Millisecond,
-					MaxEventAttempts:   int(appConfig.SelfHealingConfig.MaxEventAttempts),
-					MaxEventsPerTick:   int(appConfig.SelfHealingConfig.MaxEventsPerTick),
-					EventWorkers:       int(appConfig.SelfHealingConfig.EventWorkers),
-					MaxWindowAge:       time.Duration(appConfig.SelfHealingConfig.MaxWindowAgeMs) * time.Millisecond,
+					Enabled:                      true,
+					PollInterval:                 time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond,
+					KeyName:                      appConfig.SupernodeConfig.KeyName,
+					ActionPageLimit:              int(appConfig.SelfHealingConfig.ActionPageLimit),
+					ActionTargetsTTL:             time.Duration(appConfig.SelfHealingConfig.ActionTargetsTTLSeconds) * time.Second,
+					MaxChallenges:                int(appConfig.SelfHealingConfig.MaxChallenges),
+					EventLeaseDuration:           time.Duration(appConfig.SelfHealingConfig.EventLeaseDurationMs) * time.Millisecond,
+					EventRetryBase:               time.Duration(appConfig.SelfHealingConfig.EventRetryBaseMs) * time.Millisecond,
+					EventRetryMax:                time.Duration(appConfig.SelfHealingConfig.EventRetryMaxMs) * time.Millisecond,
+					MaxEventAttempts:             int(appConfig.SelfHealingConfig.MaxEventAttempts),
+					MaxEventsPerTick:             int(appConfig.SelfHealingConfig.MaxEventsPerTick),
+					EventWorkers:                 int(appConfig.SelfHealingConfig.EventWorkers),
+					RequireDirectMissingEvidence: appConfig.SelfHealingConfig.RequireDirectMissingEvidence,
+					DirectProbeTimeout:           time.Duration(appConfig.SelfHealingConfig.DirectProbeTimeoutMs) * time.Millisecond,
+					DirectProbeWorkers:           int(appConfig.SelfHealingConfig.DirectProbeConcurrency),
+					MaxWindowAge:                 time.Duration(appConfig.SelfHealingConfig.MaxWindowAgeMs) * time.Millisecond,
 				},
 			)
 			if err != nil {

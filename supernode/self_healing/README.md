@@ -14,7 +14,7 @@ Out of scope for this phase:
 
 Recover missing cascade artifacts deterministically and safely:
 
-1. Trigger only when watchlist conditions are met from weighted multi-reporter audit view.
+1. Trigger only when watchlist conditions are met from weighted multi-reporter audit view and direct missing-artifact evidence is present.
 2. Generate deterministic challenges once per window.
 3. Reconstruct missing file content.
 4. Verify reconstructed hash through observer quorum.
@@ -35,16 +35,24 @@ Recover missing cascade artifacts deterministically and safely:
     - reconstruct + persist (`PersistArtifacts=true`)
 - `pkg/storage/queries/self_healing.go`
   - Event queue persistence, lease claim/reclaim, retry/terminal lifecycle.
+- Handler runtime hardening includes:
+  - authenticated caller-to-role checks
+  - per-peer rate limiting
+  - per-peer/global reseed concurrency limits
+  - reseed timeout + circuit breaker
 
 ## Triggering and Watchlist Decision
 
-Self-healing generation is triggered only when weighted watchlist threshold is met:
+Self-healing generation is triggered only when weighted watchlist threshold is met and direct missing evidence confirms risk:
 
 1. Active supernodes are discovered.
 2. For each active target node, challenger reads `x/audit` storage challenge reports.
 3. Reports are deduplicated by reporter and interpreted against required-open-port policy.
 4. Node enters weighted watchlist when closed-report percentage exceeds threshold and quorum reporters are present.
 5. If `len(watchlist) < WatchlistThreshold`, generation is skipped.
+6. Selected targets are probed directly:
+   - missing key from network, or hash mismatch to on-chain action hash => missing evidence true
+   - key available and hash matches => skip target
 
 This prevents single-node/local-opinion triggering and aligns with multi-reporter policy.
 
@@ -68,7 +76,7 @@ Leader lists cascade actions from chain (`DONE` and `APPROVED` states), extracts
 For each target key:
 
 - determine deterministic closest holder set
-- if **all closest holders are on watchlist**, target is marked for self-healing
+- if **all closest holders are on watchlist** and **direct missing evidence is true**, target is marked for self-healing
 
 ### Recipient and observers
 

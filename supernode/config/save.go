@@ -63,8 +63,10 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			SubmitEvidence: true,
 		},
 		SelfHealingConfig: SelfHealingConfig{
-			Enabled:        false,
-			PollIntervalMs: DefaultSelfHealingPollIntervalMs,
+			Enabled:                      false,
+			PollIntervalMs:               DefaultSelfHealingPollIntervalMs,
+			EnforceAuthenticatedCaller:   true,
+			RequireDirectMissingEvidence: true,
 		},
 	}
 }
