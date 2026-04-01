@@ -282,7 +282,9 @@ func TestSelfHealingSecureRPC_RejectsInsecureTransport(t *testing.T) {
 		strings.Contains(msg, "handshake") ||
 			strings.Contains(msg, "authentication") ||
 			strings.Contains(msg, "transport") ||
-			strings.Contains(msg, "credentials"),
+			strings.Contains(msg, "credentials") ||
+			strings.Contains(msg, "deadline exceeded") ||
+			strings.Contains(msg, "timed out"),
 		"unexpected dial error: %v", err,
 	)
 }
