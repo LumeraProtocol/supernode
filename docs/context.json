@@ -1,0 +1,92 @@
+{
+  "schema_version": "context.v1",
+  "updated": "2026-04-06T00:00:00Z",
+  "project": {
+    "name": "supernode",
+    "note": "Multi-repo project. lumera provides chain types/protos. supernode (this) consumes them for metrics reporting and state handling."
+  },
+  "workspace": {
+    "topology": "single-repo",
+    "control_repo": ".",
+    "repos": []
+  },
+  "feature_status": [
+    {
+      "feature_id": "F01",
+      "name": "STORAGE_FULL State in SDK Adapter",
+      "status": "in-progress",
+      "slice": "SN-1",
+      "notes": "SUPERNODE_STATE_STORAGE_FULL added to types.go and ParseSupernodeState updated. Uncommitted. Test file exists (untracked).",
+      "evidence": ["sdk/adapters/lumera/types_test.go (untracked — TestParseSupernodeStateRecognizesStorageFull)"]
+    },
+    {
+      "feature_id": "F02",
+      "name": "Cascade Kademlia DB Bytes Metric",
+      "status": "in-progress",
+      "slice": "SN-1",
+      "notes": "collectMetrics now reads statusResp.P2PMetrics.Database.P2PDbSizeMb and converts to bytes. Nil-safe check. Uncommitted.",
+      "evidence": []
+    },
+    {
+      "feature_id": "F03",
+      "name": "Verifier STORAGE_FULL Allowance",
+      "status": "in-progress",
+      "slice": "SN-1",
+      "notes": "checkSupernodeState allows STORAGE_FULL with warning (alongside POSTPONED). Uncommitted. Test file exists (untracked).",
+      "evidence": ["supernode/verifier/verifier_test.go (untracked — TestCheckSupernodeStateAllowsStorageFullWithWarning)"]
+    },
+    {
+      "feature_id": "F04",
+      "name": "Lumera Proto Dependency Update",
+      "status": "in-progress",
+      "slice": "SN-1",
+      "notes": "go.mod has local replace directive: github.com/LumeraProtocol/lumera => ../lumera. Needs tagged version before merge.",
+      "evidence": []
+    }
+  ],
+  "handoff": {
+    "stopped_at": "SN-1 Everlight basics — all 4 features have uncommitted changes. Tests written (types_test.go, verifier_test.go) but untracked and not yet run.",
+    "next_immediate": "Run tests (AT01, AT03). Commit all changes. Rebase feature branch onto master (3 hotfix commits behind). Rename branch. Run gate.",
+    "watch_out": [
+      "go.mod has local replace directive for lumera — will break CI. Need tagged lumera version.",
+      "Branch is named feature/S20-everlight-supernode — should be feature/SN-1-everlight-supernode.",
+      "Master is 3 commits ahead (hotfixes: disabled SDK complaint + storage challenge evidence). Rebase needed.",
+      "Untracked files: docs/, .agents/, .claude/, .codex/, .bridgeinclude, types_test.go, verifier_test.go"
+    ]
+  },
+  "next_slice": {
+    "slice_id": "SN-1",
+    "goal": "SuperNode recognizes STORAGE_FULL state, reports cascade_kademlia_db_bytes, allows STORAGE_FULL startup",
+    "features": ["F01", "F02", "F03", "F04"],
+    "acceptance_tests": ["AT01", "AT02", "AT03", "AT04"]
+  },
+  "commands_to_run": {
+    "test": "make test-unit",
+    "lint": "golangci-lint run ./...",
+    "typecheck": "go build ./...",
+    "dev": "make build"
+  },
+  "repo_commands": {
+    "build": "make build",
+    "test_unit": "make test-unit",
+    "test_integration": "make test-integration",
+    "test_system": "make test-system"
+  },
+  "repo_state": [],
+  "recent_decisions": [
+    "2026-04-06: Everlight supernode slice is SN-1 (not S20). Supernode uses its own ID namespace.",
+    "2026-04-06: cascade_kademlia_db_bytes derived from P2P DB size in MB * 1024 * 1024.",
+    "2026-04-06: STORAGE_FULL treated same as POSTPONED in verifier — warning, not error.",
+    "2026-04-06: Local replace directive for lumera dep during active Everlight development."
+  ],
+  "blockers": [],
+  "discrepancies": [
+    {
+      "type": "branch_name",
+      "description": "Branch is feature/S20-everlight-supernode but slice ID is SN-1. Should be feature/SN-1-everlight-supernode.",
+      "proposed_fix": "Rename branch after committing current changes."
+    }
+  ],
+  "gate_history": [],
+  "eval_history": []
+}

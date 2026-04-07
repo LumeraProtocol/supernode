@@ -1,0 +1,183 @@
+{
+  "schema_version": "bridge.v2",
+  "project": {
+    "name": "supernode",
+    "one_liner": "Off-chain SuperNode binary for Lumera — storage, replication, metrics, and Everlight participation",
+    "mission": "Run Cascade storage (RaptorQ encode/decode, Kademlia DHT), report LEP-4 compliance metrics, and participate in Everlight retention compensation",
+    "target_users": ["SuperNode operators", "Lumera chain (metrics consumer)", "sdk-go (client library)"],
+    "success_metrics": [
+      "SuperNode reports cascade_kademlia_db_bytes accurately via LEP-4 metrics",
+      "STORAGE_FULL state recognized — node continues operating for Sense/Agents",
+      "Everlight payouts flow to eligible SuperNodes"
+    ]
+  },
+  "scope": {
+    "in_scope": [
+      "Everlight SN-1: Add SUPERNODE_STATE_STORAGE_FULL to SDK adapter types",
+      "Everlight SN-1: Report cascade_kademlia_db_bytes from P2P database metrics",
+      "Everlight SN-1: Allow STORAGE_FULL nodes to start (verifier check)",
+      "Everlight SN-1: Consume updated lumera proto types with Everlight fields"
+    ],
+    "out_of_scope": [
+      "On-chain Everlight module logic (lives in lumera repo)",
+      "Everlight Phase 2: LEP-5 challenge-response proof generation by SuperNode",
+      "Go SDK updates (separate repo — sdk-go)",
+      "JS SDK updates (separate repo — sdk-js)"
+    ],
+    "non_goals": [
+      "Modifying Cascade storage or replication logic",
+      "Changing RaptorQ encoding/decoding",
+      "Implementing Everlight distribution logic (chain-side)"
+    ],
+    "assumptions": [
+      "lumera repo provides updated proto types with STORAGE_FULL state and Everlight fields",
+      "cascade_kademlia_db_bytes can be derived from P2P database size metrics",
+      "Multi-repo project: lumera provides protos/chain logic, supernode consumes"
+    ]
+  },
+  "constraints": {
+    "languages": ["Go 1.25.5"],
+    "platforms": ["Linux (bare-metal/VPS)"],
+    "must_use": [
+      "github.com/LumeraProtocol/lumera for chain types (via go.mod replace for local dev)",
+      "Existing SDK adapter pattern (sdk/adapters/lumera/)"
+    ],
+    "must_not_use": [],
+    "compliance_security_notes": [
+      "Metrics must be accurate — inflated cascade_kademlia_db_bytes enables gaming of Everlight payouts",
+      "No secrets in code or logs"
+    ]
+  },
+  "domain_model": {
+    "core_entities": [
+      "SuperNode: off-chain process running Cascade storage, P2P networking, metrics reporting",
+      "SUPERNODE_STATE_STORAGE_FULL: new state for nodes whose Kademlia DB exceeds max threshold",
+      "cascade_kademlia_db_bytes: LEP-4 metric — actual Cascade data held by SuperNode",
+      "SupernodeMetrics: collected metrics struct reported to chain via MsgReportSupernodeMetrics",
+      "ConfigVerifier: startup checks for SN state validity"
+    ],
+    "state_machine_notes": [
+      "STORAGE_FULL is determined on-chain by lumera keeper based on reported metrics",
+      "SuperNode verifier allows startup in ACTIVE, POSTPONED, or STORAGE_FULL states",
+      "SuperNode reports metrics; chain decides state transitions"
+    ]
+  },
+  "features": [
+    {
+      "id": "F01",
+      "name": "STORAGE_FULL State in SDK Adapter",
+      "description": "Add SUPERNODE_STATE_STORAGE_FULL constant to sdk/adapters/lumera/types.go and update ParseSupernodeState to recognize it.",
+      "acceptance_tests": ["AT01"],
+      "status": "in-progress"
+    },
+    {
+      "id": "F02",
+      "name": "Cascade Kademlia DB Bytes Metric",
+      "description": "Report cascade_kademlia_db_bytes in SupernodeMetrics by reading P2P database size from statusResp.P2PMetrics.Database.P2PDbSizeMb and converting to bytes.",
+      "acceptance_tests": ["AT02"],
+      "status": "in-progress"
+    },
+    {
+      "id": "F03",
+      "name": "Verifier STORAGE_FULL Allowance",
+      "description": "Update ConfigVerifier.checkSupernodeState to allow STORAGE_FULL nodes to start with a warning (same as POSTPONED treatment).",
+      "acceptance_tests": ["AT03"],
+      "status": "in-progress"
+    },
+    {
+      "id": "F04",
+      "name": "Lumera Proto Dependency Update",
+      "description": "Update go.mod to use lumera version with Everlight proto types (STORAGE_FULL enum, Everlight module types). Currently using local replace directive for development.",
+      "acceptance_tests": ["AT04"],
+      "status": "in-progress"
+    }
+  ],
+  "acceptance_tests": [
+    { "id": "AT01", "feature": "F01", "description": "ParseSupernodeState('SUPERNODE_STATE_STORAGE_FULL') returns SUPERNODE_STATE_STORAGE_FULL (not UNSPECIFIED)" },
+    { "id": "AT02", "feature": "F02", "description": "collectMetrics populates CascadeKademliaDbBytes from P2P database size when available" },
+    { "id": "AT03", "feature": "F03", "description": "Verifier allows startup when SN is in STORAGE_FULL state (warning, not error)" },
+    { "id": "AT04", "feature": "F04", "description": "go build ./... succeeds with updated lumera dependency containing Everlight types" }
+  ],
+  "user_flows": [],
+  "nfr": {
+    "performance_budgets": [],
+    "reliability": ["Metrics collection must not panic if P2PMetrics or Database is nil"],
+    "security": ["cascade_kademlia_db_bytes must reflect actual DB size, not be artificially inflatable"],
+    "observability": ["Log STORAGE_FULL warning on startup"],
+    "scalability": []
+  },
+  "interfaces": {
+    "apis": [],
+    "external_services": [
+      "lumera chain: consumes SupernodeMetrics via MsgReportSupernodeMetrics",
+      "lumera chain: reads SUPERNODE_STATE from chain via queries"
+    ]
+  },
+  "workspace": {
+    "topology": "single-repo",
+    "control_repo": ".",
+    "repos": [],
+    "cross_repo_contracts": [
+      {
+        "name": "SuperNode State Enum",
+        "source": "lumera:proto/lumera/supernode/v1/supernode_state.proto",
+        "consumer": "supernode:sdk/adapters/lumera/types.go",
+        "note": "SUPERNODE_STATE_STORAGE_FULL (=6) must match between chain proto and SDK adapter"
+      },
+      {
+        "name": "SupernodeMetrics.cascade_kademlia_db_bytes",
+        "source": "lumera:proto/lumera/supernode/v1/supernode.proto field 15",
+        "consumer": "supernode:supernode/supernode_metrics/metrics_collection.go",
+        "note": "Field type double, reported in bytes (converted from MB)"
+      }
+    ],
+    "integration_acceptance_tests": []
+  },
+  "quality_gates": {
+    "ci_required": true,
+    "tests": {
+      "unit": true,
+      "integration": true,
+      "e2e": "optional",
+      "coverage_target": "80%"
+    },
+    "linters_typechecks": ["golangci-lint"],
+    "security_checks": [],
+    "performance_budgets": {
+      "bundle_size": "",
+      "api_response": "",
+      "page_load": ""
+    }
+  },
+  "execution": {
+    "recommended_slices": [
+      {
+        "id": "SN-1",
+        "name": "Everlight SuperNode Basics",
+        "features": ["F01", "F02", "F03", "F04"],
+        "acceptance_tests": ["AT01", "AT02", "AT03", "AT04"],
+        "goal": "SuperNode recognizes STORAGE_FULL state, reports cascade_kademlia_db_bytes, and can start in STORAGE_FULL state. Depends on lumera Everlight protos.",
+        "status": "in-progress"
+      }
+    ],
+    "open_questions": [
+      {
+        "id": "OQ01",
+        "question": "Should supernode branch rebase onto master first to pick up 3 hotfix commits before continuing Everlight work?",
+        "impacts": ["SN-1"]
+      },
+      {
+        "id": "OQ02",
+        "question": "When will lumera publish a tagged release with Everlight protos so supernode can drop the local replace directive?",
+        "impacts": ["SN-1", "F04"]
+      }
+    ],
+    "risks": [
+      {
+        "id": "R01",
+        "description": "Local replace directive (../lumera) in go.mod will break CI/CD",
+        "mitigation": "Replace with tagged lumera version before merging to master"
+      }
+    ]
+  }
+}
