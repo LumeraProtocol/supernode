@@ -123,6 +123,9 @@ release:
 .PHONY: test-e2e test-unit test-integration test-system test-cascade test-sn-manager
 .PHONY: install-lumera setup-supernodes system-test-setup install-deps
 .PHONY: gen-cascade gen-supernode
+
+all-tests: test-e2e test-unit test-integration test-system test-cascade test-sn-manager
+
 test-unit:
 	${GO} test -v ./...
 

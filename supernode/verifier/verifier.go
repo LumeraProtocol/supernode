@@ -131,21 +131,37 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 
 func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
 	state := adapterlumera.ParseSupernodeState(supernodeInfo.CurrentState)
-	allowedStates := fmt.Sprintf("%s or %s", adapterlumera.SUPERNODE_STATE_ACTIVE, adapterlumera.SUPERNODE_STATE_POSTPONED)
+	allowedStates := fmt.Sprintf(
+		"%s or %s or %s",
+		adapterlumera.SUPERNODE_STATE_ACTIVE,
+		adapterlumera.SUPERNODE_STATE_POSTPONED,
+		adapterlumera.SUPERNODE_STATE_STORAGE_FULL,
+	)
 
 	if supernodeInfo.CurrentState == "" || state == adapterlumera.SUPERNODE_STATE_ACTIVE {
 		return
 	}
 
-	// Allow POSTPONED nodes to start, but surface this as a warning so that
-	// operators know the node is currently out of compliance and needs to
-	// recover by reporting healthy metrics.
+	// STORAGE_FULL nodes can start — they remain eligible for storage rewards
+	// (Everlight payouts) and compute services, just not new Cascade storage.
+	if state == adapterlumera.SUPERNODE_STATE_STORAGE_FULL {
+		result.Warnings = append(result.Warnings, ConfigError{
+			Field:    "state",
+			Expected: allowedStates,
+			Actual:   string(state),
+			Message:  fmt.Sprintf("Supernode state is %s; node is storage-full but remains eligible for storage rewards and compute services", state),
+		})
+		return
+	}
+
+	// POSTPONED nodes can start but are NOT eligible for storage rewards.
+	// They need to recover by reporting healthy metrics.
 	if state == adapterlumera.SUPERNODE_STATE_POSTPONED {
 		result.Warnings = append(result.Warnings, ConfigError{
 			Field:    "state",
 			Expected: allowedStates,
 			Actual:   string(state),
-			Message:  fmt.Sprintf("Supernode state is %s; node may be out of compliance but can recover by reporting metrics", state),
+			Message:  fmt.Sprintf("Supernode state is %s; node is out of compliance and not eligible for storage rewards — recover by reporting healthy metrics", state),
 		})
 		return
 	}

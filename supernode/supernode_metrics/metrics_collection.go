@@ -74,6 +74,11 @@ func (hm *Collector) collectMetrics(ctx context.Context) (sntypes.SupernodeMetri
 	// 14: open_ports
 	metrics.OpenPorts = hm.openPorts(ctx)
 
+	if statusResp.P2PMetrics != nil && statusResp.P2PMetrics.Database != nil {
+		const bytesPerMB = 1024.0 * 1024.0
+		metrics.CascadeKademliaDbBytes = statusResp.P2PMetrics.Database.P2PDbSizeMb * bytesPerMB
+	}
+
 	return metrics, nil
 }
 
