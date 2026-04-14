@@ -75,8 +75,12 @@ func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring,
 	}
 
 	storagePaths := []string{}
-	if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
-		// Match legacy disk reporting behavior: measure the volume where the supernode stores its data.
+	p2pDataDir = strings.TrimSpace(p2pDataDir)
+	if p2pDataDir != "" {
+		// Everlight requirement: disk usage must reflect the mount/volume where p2p data is stored.
+		storagePaths = []string{p2pDataDir}
+	} else if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
+		// Fallback for legacy setups where p2p data dir isn't configured.
 		storagePaths = []string{baseDir}
 	}
 
