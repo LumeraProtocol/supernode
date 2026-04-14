@@ -168,6 +168,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			kr,
 			appConfig.SupernodeConfig.KeyName,
 			appConfig.BaseDir,
+			appConfig.GetP2PDataDir(),
 		)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})

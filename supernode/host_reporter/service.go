@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -40,9 +42,10 @@ type Service struct {
 
 	metrics      *statussvc.MetricsCollector
 	storagePaths []string
+	p2pDataDir   string
 }
 
-func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring, keyName string, baseDir string) (*Service, error) {
+func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring, keyName string, baseDir string, p2pDataDir string) (*Service, error) {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return nil, fmt.Errorf("identity is empty")
@@ -86,6 +89,7 @@ func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring,
 		dialTimeout:  defaultDialTimeout,
 		metrics:      statussvc.NewMetricsCollector(),
 		storagePaths: storagePaths,
+		p2pDataDir:   strings.TrimSpace(p2pDataDir),
 	}, nil
 }
 
@@ -144,6 +148,9 @@ func (s *Service) tick(ctx context.Context) {
 	if diskUsagePercent, ok := s.diskUsagePercent(tickCtx); ok {
 		hostReport.DiskUsagePercent = diskUsagePercent
 	}
+	if cascadeBytes, ok := s.cascadeKademliaDBBytes(tickCtx); ok {
+		hostReport.CascadeKademliaDbBytes = float64(cascadeBytes)
+	}
 
 	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations); err != nil {
 		logtrace.Warn(tickCtx, "epoch report submit failed", logtrace.Fields{
@@ -168,6 +175,30 @@ func (s *Service) diskUsagePercent(ctx context.Context) (float64, bool) {
 		return 0, false
 	}
 	return infos[0].UsagePercent, true
+}
+
+func (s *Service) cascadeKademliaDBBytes(_ context.Context) (uint64, bool) {
+	dir := strings.TrimSpace(s.p2pDataDir)
+	if dir == "" {
+		return 0, false
+	}
+	// Kademlia SQLite store uses data*.sqlite3 files (+ WAL/SHM sidecars).
+	matches, err := filepath.Glob(filepath.Join(dir, "data*.sqlite3*"))
+	if err != nil || len(matches) == 0 {
+		return 0, false
+	}
+	var total uint64
+	for _, p := range matches {
+		st, err := os.Stat(p)
+		if err != nil || st == nil || st.IsDir() {
+			continue
+		}
+		total += uint64(st.Size())
+	}
+	if total == 0 {
+		return 0, false
+	}
+	return total, true
 }
 
 func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, targets []string) []*audittypes.StorageChallengeObservation {

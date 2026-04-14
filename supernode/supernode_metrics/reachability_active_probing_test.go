@@ -24,6 +24,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
+	"github.com/cosmos/cosmos-sdk/types/query"
 )
 
 func TestBuildProbeCandidatesFilters(t *testing.T) {
@@ -469,4 +470,13 @@ func (m *fakeSupernodeModule) GetParams(context.Context) (*sntypes.QueryParamsRe
 }
 func (m *fakeSupernodeModule) ListSuperNodes(context.Context) (*sntypes.QueryListSuperNodesResponse, error) {
 	return &sntypes.QueryListSuperNodesResponse{Supernodes: m.supernodes}, nil
+}
+func (m *fakeSupernodeModule) GetPoolState(context.Context) (*sntypes.QueryPoolStateResponse, error) {
+	return &sntypes.QueryPoolStateResponse{}, nil
+}
+func (m *fakeSupernodeModule) GetSNEligibility(context.Context, string) (*sntypes.QuerySNEligibilityResponse, error) {
+	return &sntypes.QuerySNEligibilityResponse{Eligible: true, Reason: "mock"}, nil
+}
+func (m *fakeSupernodeModule) GetPayoutHistory(context.Context, string, *query.PageRequest) (*sntypes.QueryPayoutHistoryResponse, error) {
+	return &sntypes.QueryPayoutHistoryResponse{}, nil
 }
