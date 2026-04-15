@@ -430,8 +430,12 @@ func (s *DHT) Start(ctx context.Context) error {
 
 	go s.StartReplicationWorker(ctx)
 	go s.startDisabledKeysCleanupWorker(ctx)
-	go s.startCleanupRedundantDataWorker(ctx)
-	go s.startDeleteDataWorker(ctx)
+	// TEMPORARY: disabled to pause redundant-key classification into del_keys.
+	// Re-enable once deletion-safety behavior is finalized.
+	// go s.startCleanupRedundantDataWorker(ctx)
+	// TEMPORARY: disabled to prevent processing existing del_keys backlog.
+	// Re-enable together with redundant-data classification once safe.
+	// go s.startDeleteDataWorker(ctx)
 	go s.startStoreSymbolsWorker(ctx)
 
 	return nil
