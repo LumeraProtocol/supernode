@@ -198,10 +198,18 @@ func deriveSimpleIndices(root []byte, numChunks, m uint32) []uint32 {
 	used := make(map[uint32]struct{}, m)
 	counter := uint32(0)
 
-	for uint32(len(indices)) < m {
+	// Allocate once and only overwrite the counter bytes per iteration.
+	buf := make([]byte, len(root)+4)
+	copy(buf, root)
+
+	// Guard against pathological runtimes from pure rejection sampling when m ~= numChunks.
+	maxAttempts := numChunks * 32
+	if maxAttempts < m {
+		maxAttempts = m
+	}
+
+	for uint32(len(indices)) < m && counter < maxAttempts {
 		// BLAKE3(root || uint32be(counter))
-		buf := make([]byte, len(root)+4)
-		copy(buf, root)
 		buf[len(root)] = byte(counter >> 24)
 		buf[len(root)+1] = byte(counter >> 16)
 		buf[len(root)+2] = byte(counter >> 8)
@@ -219,5 +227,15 @@ func deriveSimpleIndices(root []byte, numChunks, m uint32) []uint32 {
 		}
 		counter++
 	}
+
+	// Deterministic fallback: fill any missing indices in ascending order.
+	for idx := uint32(0); uint32(len(indices)) < m && idx < numChunks; idx++ {
+		if _, exists := used[idx]; exists {
+			continue
+		}
+		used[idx] = struct{}{}
+		indices = append(indices, idx)
+	}
+
 	return indices
 }
