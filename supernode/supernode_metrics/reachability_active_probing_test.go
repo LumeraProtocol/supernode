@@ -61,6 +61,15 @@ func TestBuildProbeCandidatesFilters(t *testing.T) {
 			},
 		},
 		{
+			SupernodeAccount: "storage_full",
+			States: []*sntypes.SuperNodeStateRecord{
+				{Height: height, State: sntypes.SuperNodeStateStorageFull},
+			},
+			PrevIpAddresses: []*sntypes.IPAddressHistory{
+				{Height: height, Address: "203.0.113.6:4444"},
+			},
+		},
+		{
 			SupernodeAccount: "ipv6",
 			States: []*sntypes.SuperNodeStateRecord{
 				{Height: height, State: sntypes.SuperNodeStateActive},
@@ -90,17 +99,20 @@ func TestBuildProbeCandidatesFilters(t *testing.T) {
 	}
 
 	senders, receivers, peersByID := buildProbeCandidates(active)
-	if len(senders) != 4 {
-		t.Fatalf("expected 4 senders (ACTIVE only), got %d", len(senders))
+	if len(senders) != 5 {
+		t.Fatalf("expected 5 senders (ACTIVE+STORAGE_FULL), got %d", len(senders))
 	}
-	if len(receivers) != 5 {
-		t.Fatalf("expected 5 receivers (ACTIVE+POSTPONED), got %d", len(receivers))
+	if len(receivers) != 6 {
+		t.Fatalf("expected 6 receivers (ACTIVE+STORAGE_FULL+POSTPONED), got %d", len(receivers))
 	}
 	if peersByID["a"].grpcPort != 4444 || peersByID["a"].p2pPort != 5555 || peersByID["a"].metricsHeight != height {
 		t.Fatalf("unexpected peer a: %+v", peersByID["a"])
 	}
 	if peersByID["postponed"].identity == "" {
 		t.Fatalf("expected postponed peer present")
+	}
+	if peersByID["storage_full"].identity == "" {
+		t.Fatalf("expected storage_full peer present")
 	}
 }
 
@@ -479,4 +491,34 @@ func (m *fakeSupernodeModule) GetSNEligibility(context.Context, string) (*sntype
 }
 func (m *fakeSupernodeModule) GetPayoutHistory(context.Context, string, *query.PageRequest) (*sntypes.QueryPayoutHistoryResponse, error) {
 	return &sntypes.QueryPayoutHistoryResponse{}, nil
+}
+
+func TestBuildProbeCandidates_PostponedReceiveOnly_StorageFullCanSend(t *testing.T) {
+	height := int64(100)
+	supernodes := []*sntypes.SuperNode{
+		mkSNState("active", "203.0.113.10", height, height, sntypes.SuperNodeStateActive),
+		mkSNState("storage", "203.0.113.11", height, height, sntypes.SuperNodeStateStorageFull),
+		mkSNState("postponed", "203.0.113.12", height, height, sntypes.SuperNodeStatePostponed),
+	}
+
+	senders, receivers, _ := buildProbeCandidates(supernodes)
+
+	senderSet := map[string]bool{}
+	for _, s := range senders {
+		senderSet[s.identity] = true
+	}
+	receiverSet := map[string]bool{}
+	for _, r := range receivers {
+		receiverSet[r.identity] = true
+	}
+
+	if !senderSet["active"] || !senderSet["storage"] {
+		t.Fatalf("expected ACTIVE and STORAGE_FULL in senders, got=%v", senderSet)
+	}
+	if senderSet["postponed"] {
+		t.Fatalf("expected POSTPONED to be receive-only, got senders=%v", senderSet)
+	}
+	if !receiverSet["active"] || !receiverSet["storage"] || !receiverSet["postponed"] {
+		t.Fatalf("expected ACTIVE/STORAGE_FULL/POSTPONED in receivers, got=%v", receiverSet)
+	}
 }
