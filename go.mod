@@ -12,7 +12,7 @@ require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.11.1-0.20260308102614-4d4f1ce3f65e
+	github.com/LumeraProtocol/lumera v1.11.2-0.20260331140230-4aeb5d0d7a89
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0

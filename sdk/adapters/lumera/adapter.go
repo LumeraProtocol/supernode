@@ -64,6 +64,17 @@ type SuperNodeInfo struct {
 	CurrentState     string `json:"current_state"`
 }
 
+// CascadeClientFailureDetails is the structured payload for audit cascade-client-failure evidence.
+type CascadeClientFailureDetails struct {
+	Operation         string
+	Iteration         string
+	SupernodeEndpoint string
+	SupernodeAccount  string
+	TaskID            string
+	Error             string
+	ActionID          string
+}
+
 // ConfigParams holds configuration parameters from global config
 type ConfigParams struct {
 	GRPCAddr string
@@ -389,7 +400,7 @@ func (a *Adapter) SubmitCascadeClientFailureEvidence(
 	subjectAddress string,
 	actionID string,
 	targetSupernodeAccounts []string,
-	details map[string]string,
+	details CascadeClientFailureDetails,
 ) error {
 	if a.client == nil {
 		return fmt.Errorf("lumera client is nil")
@@ -398,30 +409,36 @@ func (a *Adapter) SubmitCascadeClientFailureEvidence(
 	if subjectAddress == "" {
 		return fmt.Errorf("subject address cannot be empty")
 	}
-	if details == nil {
-		details = map[string]string{}
-	}
-
 	meta := audittypes.CascadeClientFailureEvidenceMetadata{
 		ReporterComponent:       audittypes.CascadeClientFailureReporterComponent_CASCADE_CLIENT_FAILURE_REPORTER_COMPONENT_SDK_GO,
 		TargetSupernodeAccounts: append([]string(nil), targetSupernodeAccounts...),
-		Details:                 details,
+		Details: &audittypes.CascadeClientFailureDetails{
+			Operation:         details.Operation,
+			Iteration:         details.Iteration,
+			SupernodeEndpoint: details.SupernodeEndpoint,
+			SupernodeAccount:  details.SupernodeAccount,
+			TaskId:            details.TaskID,
+			Error:             details.Error,
+			ActionId:          details.ActionID,
+		},
 	}
 	bz, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("marshal cascade client failure evidence metadata: %w", err)
 	}
+	_ = bz
 
-	_, err = a.client.AuditMsg().SubmitEvidence(
-		ctx,
-		subjectAddress,
-		audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
-		actionID,
-		string(bz),
-	)
-	if err != nil {
-		return fmt.Errorf("submit cascade client failure evidence: %w", err)
-	}
+	// TEMPORARY INCIDENT MITIGATION: chain submission intentionally disabled.
+	// _, err = a.client.AuditMsg().SubmitEvidence(
+	// 	ctx,
+	// 	subjectAddress,
+	// 	audittypes.EvidenceType_EVIDENCE_TYPE_CASCADE_CLIENT_FAILURE,
+	// 	actionID,
+	// 	string(bz),
+	// )
+	// if err != nil {
+	// 	return fmt.Errorf("submit cascade client failure evidence: %w", err)
+	// }
 	return nil
 }
 

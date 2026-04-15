@@ -139,12 +139,12 @@ func (t *CascadeTask) registerWithSupernodes(ctx context.Context, supernodes lum
 				event.KeyIteration:        iteration,
 				event.KeyError:            err.Error(),
 			})
-			t.submitCascadeClientFailureEvidence(ctx, sn.CosmosAddress, []string{sn.CosmosAddress}, map[string]string{
-				"operation":          "register",
-				"iteration":          fmt.Sprintf("%d", iteration),
-				"supernode_endpoint": sn.GrpcEndpoint,
-				"supernode_account":  sn.CosmosAddress,
-				"error":              err.Error(),
+			t.submitCascadeClientFailureEvidence(ctx, sn.CosmosAddress, []string{sn.CosmosAddress}, lumera.CascadeClientFailureDetails{
+				Operation:         "register",
+				Iteration:         fmt.Sprintf("%d", iteration),
+				SupernodeEndpoint: sn.GrpcEndpoint,
+				SupernodeAccount:  sn.CosmosAddress,
+				Error:             err.Error(),
 			})
 			lastErr = err
 			continue

@@ -595,15 +595,15 @@ func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Par
 		return nil
 	}
 
-	meta := audittypes.StorageChallengeFailureEvidenceMetadata{
-		EpochId:                    epochID,
-		ChallengerSupernodeAccount: s.identity,
-		ChallengedSupernodeAccount: recipient,
-		ChallengeId:                challengeID,
-		FileKey:                    fileKey,
-		FailureType:                failureType,
-		TranscriptHash:             transcriptHashHex,
-	}
+	meta := buildStorageChallengeFailureEvidenceMetadata(
+		epochID,
+		s.identity,
+		recipient,
+		challengeID,
+		fileKey,
+		failureType,
+		transcriptHashHex,
+	)
 	bz, err := json.Marshal(meta)
 	if err != nil {
 		return err
@@ -611,18 +611,41 @@ func (s *Service) maybeSubmitEvidence(ctx context.Context, params audittypes.Par
 
 	submitCtx, cancel := context.WithTimeout(ctx, scEvidenceSubmitTimeout)
 	defer cancel()
+	_ = submitCtx
+	_ = bz
 
-	_, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
-	if err != nil {
-		return err
-	}
-	logtrace.Warn(ctx, "storage challenge failure evidence submitted", logtrace.Fields{
+	// TEMPORARY INCIDENT MITIGATION: chain submission intentionally disabled.
+	// _, err = s.lumera.AuditMsg().SubmitEvidence(submitCtx, recipient, audittypes.EvidenceType_EVIDENCE_TYPE_STORAGE_CHALLENGE_FAILURE, "", string(bz))
+	// if err != nil {
+	// 	return err
+	// }
+	logtrace.Warn(ctx, "storage challenge failure evidence submission temporarily disabled", logtrace.Fields{
 		"epoch_id":     epochID,
 		"challenge_id": challengeID,
 		"recipient_id": recipient,
 		"failure_type": failureType,
 	})
 	return nil
+}
+
+func buildStorageChallengeFailureEvidenceMetadata(
+	epochID uint64,
+	challengerSupernodeAccount string,
+	challengedSupernodeAccount string,
+	challengeID string,
+	fileKey string,
+	failureType string,
+	transcriptHashHex string,
+) audittypes.StorageChallengeFailureEvidenceMetadata {
+	return audittypes.StorageChallengeFailureEvidenceMetadata{
+		EpochId:                    epochID,
+		ChallengerSupernodeAccount: challengerSupernodeAccount,
+		ChallengedSupernodeAccount: challengedSupernodeAccount,
+		ChallengeId:                challengeID,
+		FileKey:                    fileKey,
+		FailureType:                failureType,
+		TranscriptHash:             transcriptHashHex,
+	}
 }
 
 func deriveChallengeID(seed []byte, epochID uint64, fileKey, challenger, recipient string) string {
