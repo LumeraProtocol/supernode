@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/lumera/x/action/v1/merkle"
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"lukechampine.com/blake3"
 )
 
@@ -155,6 +155,15 @@ func VerifyCommitmentRoot(filePath string, commitment *actiontypes.AvailabilityC
 	if commitment == nil {
 		return nil, nil // pre-LEP-5 action, nothing to verify
 	}
+	if commitment.ChunkSize < MinChunkSize || commitment.ChunkSize > MaxChunkSize {
+		return nil, fmt.Errorf("invalid chunk size in commitment: %d", commitment.ChunkSize)
+	}
+	if commitment.NumChunks == 0 {
+		return nil, fmt.Errorf("invalid num_chunks in commitment: %d", commitment.NumChunks)
+	}
+	if len(commitment.Root) != merkle.HashSize {
+		return nil, fmt.Errorf("invalid root length in commitment: got %d, expected %d", len(commitment.Root), merkle.HashSize)
+	}
 
 	chunks, err := ChunkFile(filePath, commitment.ChunkSize)
 	if err != nil {
@@ -170,7 +179,9 @@ func VerifyCommitmentRoot(filePath string, commitment *actiontypes.AvailabilityC
 		return nil, fmt.Errorf("build merkle tree for verification: %w", err)
 	}
 
-	if tree.Root != [merkle.HashSize]byte(commitment.Root) {
+	var expectedRoot [merkle.HashSize]byte
+	copy(expectedRoot[:], commitment.Root)
+	if tree.Root != expectedRoot {
 		return nil, fmt.Errorf("merkle root mismatch: computed %x, expected %x", tree.Root[:], commitment.Root)
 	}
 
