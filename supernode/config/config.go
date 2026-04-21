@@ -37,6 +37,24 @@ type P2PConfig struct {
 type LumeraClientConfig struct {
 	GRPCAddr string `yaml:"grpc_addr"`
 	ChainID  string `yaml:"chain_id"`
+
+	// Optional tx/gas tuning knobs. Zero values fall back to the SDK
+	// defaults (see pkg/lumera/modules/tx.Default* constants).
+	//
+	// gas_adjustment           multiplier applied to simulated gas
+	//                          (default 1.3)
+	// gas_adjustment_multiplier per-retry multiplier on OOG (default 1.3)
+	// gas_adjustment_max_attempts total attempts on OOG (default 3, cap 10)
+	// gas_padding              extra gas added on top of adjusted gas
+	//                          (default 50000)
+	// gas_price                "0.025" or "0.025ulume" (default "0.025")
+	// fee_denom                coin denom for fees (default "ulume")
+	GasAdjustment            float64 `yaml:"gas_adjustment,omitempty"`
+	GasAdjustmentMultiplier  float64 `yaml:"gas_adjustment_multiplier,omitempty"`
+	GasAdjustmentMaxAttempts int     `yaml:"gas_adjustment_max_attempts,omitempty"`
+	GasPadding               uint64  `yaml:"gas_padding,omitempty"`
+	GasPrice                 string  `yaml:"gas_price,omitempty"`
+	FeeDenom                 string  `yaml:"fee_denom,omitempty"`
 }
 
 type RaptorQConfig struct {

@@ -18,7 +18,8 @@ type Module interface {
 	SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error)
 }
 
-// NewModule creates a new audit_msg module instance.
+// NewModule creates a new audit_msg module instance using default TxHelper
+// settings (see tx.DefaultGas* constants).
 func NewModule(
 	conn *grpc.ClientConn,
 	authmodule auth.Module,
@@ -27,5 +28,21 @@ func NewModule(
 	keyName string,
 	chainID string,
 ) (Module, error) {
-	return newModule(conn, authmodule, txmodule, kr, keyName, chainID)
+	return newModuleWithHelper(conn, authmodule, txmodule, &txmod.TxHelperConfig{
+		ChainID: chainID,
+		Keyring: kr,
+		KeyName: keyName,
+	})
+}
+
+// NewModuleWithTxHelperConfig creates a new audit_msg module instance with an
+// explicit TxHelper configuration. Zero-valued fields in cfg fall back to
+// package defaults.
+func NewModuleWithTxHelperConfig(
+	conn *grpc.ClientConn,
+	authmodule auth.Module,
+	txmodule txmod.Module,
+	cfg *txmod.TxHelperConfig,
+) (Module, error) {
+	return newModuleWithHelper(conn, authmodule, txmodule, cfg)
 }

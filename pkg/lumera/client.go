@@ -92,40 +92,34 @@ func newClient(ctx context.Context, cfg *Config) (Client, error) {
 		}
 	}
 
-	actionMsgModule, err := action_msg.NewModule(
+	actionMsgModule, err := action_msg.NewModuleWithTxHelperConfig(
 		conn.GetConn(),
-		authModule,  // For account info
-		txModule,    // For transaction operations
-		cfg.keyring, // For signing
-		cfg.KeyName, // Key to use
-		cfg.ChainID, // Chain configuration
+		authModule, // For account info
+		txModule,   // For transaction operations
+		cfg.toTxHelperConfig(),
 	)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 
-	supernodeMsgModule, err := supernode_msg.NewModule(
+	supernodeMsgModule, err := supernode_msg.NewModuleWithTxHelperConfig(
 		conn.GetConn(),
 		authModule,
 		txModule,
 		supernodeModule,
-		cfg.keyring,
-		cfg.KeyName,
-		cfg.ChainID,
+		cfg.toTxHelperConfig(),
 	)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 
-	auditMsgModule, err := audit_msg.NewModule(
+	auditMsgModule, err := audit_msg.NewModuleWithTxHelperConfig(
 		conn.GetConn(),
 		authModule,
 		txModule,
-		cfg.keyring,
-		cfg.KeyName,
-		cfg.ChainID,
+		cfg.toTxHelperConfig(),
 	)
 	if err != nil {
 		conn.Close()

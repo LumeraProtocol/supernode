@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
@@ -20,13 +21,24 @@ import (
 
 // Default parameters
 const (
-	DefaultGasLimit      = uint64(200000)
-	DefaultGasAdjustment = float64(1.5)
-	DefaultGasPadding    = uint64(50000)
-	DefaultFeeDenom      = "ulume"
+	DefaultGasLimit uint64 = 200000
+	// DefaultGasAdjustment is the default multiplier applied to simulated gas.
+	// Lowered from 1.5 to 1.3 to reduce supernode fee over-spend. The OOG
+	// retry path in TxHelper.ExecuteTransaction will escalate this value
+	// if a broadcast/simulation actually runs out of gas.
+	DefaultGasAdjustment float64 = 1.3
+	// DefaultGasAdjustmentMultiplier is the factor applied to GasAdjustment
+	// on each OOG retry. Must be > 1.0.
+	DefaultGasAdjustmentMultiplier float64 = 1.3
+	// DefaultGasAdjustmentMaxAttempts is the total number of attempts
+	// (including the initial attempt) made before giving up on OOG.
+	// Range: [1, 10]. Default 3 gives adjustments 1.3 → 1.69 → 2.197.
+	DefaultGasAdjustmentMaxAttempts int    = 3
+	DefaultGasPadding               uint64 = 50000
+	DefaultFeeDenom                 string = "ulume"
 	// DefaultGasPrice is the default min gas price in denom units (e.g., ulume)
 	// Set to 0.025 to match chain defaults where applicable.
-	DefaultGasPrice = "0.025"
+	DefaultGasPrice string = "0.025"
 )
 
 // module implements the Module interface
@@ -307,7 +319,8 @@ func (m *module) ProcessTransaction(ctx context.Context, msgs []types.Msg, accou
 	// Step 3: Calculate fee based on adjusted gas
 	fee := m.CalculateFee(gasToUse, config)
 
-	logtrace.Debug(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d gasToUse=%d fee=%s", simulatedGasUsed, gasToUse, fee), nil)
+	logtrace.Debug(ctx, fmt.Sprintf("using simulated gas and calculated fee | simulatedGas=%d gasToUse=%d fee=%s gas_adjustment=%.3f gas_padding=%d",
+		simulatedGasUsed, gasToUse, fee, config.GasAdjustment, config.GasPadding), nil)
 
 	// Step 4: Build and sign transaction
 	txBytes, err := m.BuildAndSignTransaction(ctx, msgs, accountInfo, gasToUse, fee, config)
@@ -352,4 +365,25 @@ func validateTxConfig(config *TxConfig) error {
 		}
 	}
 	return nil
+}
+
+// isOutOfGas detects whether err represents a Cosmos SDK "out of gas" failure
+// observable from simulation or CheckTx (SYNC broadcast) paths.
+//
+// Matches both:
+//   - sdkerrors.ErrOutOfGas (code=11 codespace=sdk) surfaced from BroadcastTransaction
+//   - raw "out of gas" strings appearing in simulation/ante-handler errors
+func isOutOfGas(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "out of gas") {
+		return true
+	}
+	// Cosmos SDK ErrOutOfGas: code=11 codespace=sdk
+	if strings.Contains(msg, "code=11") && strings.Contains(msg, "codespace=sdk") {
+		return true
+	}
+	return false
 }
