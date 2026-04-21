@@ -76,8 +76,43 @@ The migration is:
 | `not an eth_secp256k1 key`                          | `evm_key_name` points to a secp256k1 key (wrong derivation)                         | Re-derive using `supernode keys recover` (uses coin type 60)                            |
 | `new address mismatch`                              | On-chain migration record has a different destination address than your local EVM key | Your `evm_key_name` doesn't match the key originally used for migration; fix the config |
 | `migration estimate indicates migration would fail` | Chain rejected the pre-flight check                                                   | Check `rejection_reason` in logs; migration may be disabled or account may not exist    |
+| `automatic migration is not supported` (multisig)   | Legacy supernode account is a K-of-N multisig; the daemon holds a single key         | Complete the migration out-of-band using the `lumerad tx evmigration` 4-step offline flow (see Multisig section below), then restart supernode to trigger local cleanup |
 | `migration tx was not confirmed`                    | Tx was not included in a block within 60s                                             | Restart to retry; the check is idempotent                                                 |
 | `failed to save updated config`                     | Config file write error after successful migration                                    | Manually update config as instructed in the error message                                 |
+
+### Multisig legacy accounts
+
+A supernode daemon holds a single signing key and cannot run the K-of-N signing
+ceremony required for a multisig legacy account. When startup detects
+`is_multisig=true` in `QueryMigrationEstimate`, the daemon refuses to sign and
+instructs the operator to complete migration offline using `lumerad`:
+
+```bash
+# 1. Generate the payload template (queries on-chain pubkey).
+lumerad tx evmigration generate-proof-payload \
+    --legacy-address <legacy-addr> --new-address <new-addr> \
+    --chain-id <chain-id> --kind claim \
+    > proof.json
+# Use --kind validator if the account is a validator operator.
+
+# 2. Each of K sub-signers signs independently.
+lumerad tx evmigration sign-proof proof.json --from <sub-key> \
+    --chain-id <chain-id> > partial-1.json
+# ... repeat on each sub-signer's machine, producing partial-2.json, ...
+
+# 3. Assemble the K partial proofs into one full proof.
+lumerad tx evmigration assemble-proof proof.json partial-*.json > signed.json
+
+# 4. Broadcast. Any funded account can pay the (zero) fee.
+lumerad tx evmigration submit-proof signed.json --from <broadcaster> \
+    --chain-id <chain-id>
+```
+
+After `submit-proof` lands in a block, restart supernode. The startup migration
+check sees the existing on-chain `MigrationRecord`, skips broadcasting, and
+performs local cleanup (delete legacy key from the keyring, update
+`key_name`/`identity`, clear `evm_key_name`) via the idempotent path — no
+special handling for multisig is needed on the daemon side.
 
 ## Chain-Side Reference
 

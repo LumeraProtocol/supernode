@@ -477,6 +477,70 @@ func TestEnsureLegacyAccountMigrated_EstimateWouldNotSucceed(t *testing.T) {
 	assert.Nil(t, mc.broadcastedMsg)
 }
 
+// --- multisig legacy account tests ---
+
+func TestEnsureLegacyAccountMigrated_MultisigRefused(t *testing.T) {
+	kr := newTestKeyring(t)
+	addLegacyKey(t, kr, "mykey")
+	addEVMKey(t, kr, "evm-key")
+
+	cfg := newMigrationCfg(t, "mykey", "evm-key")
+	cfg.LumeraClientConfig.ChainID = "lumera-devnet-1"
+
+	mc := &fakeMigrationClient{
+		recordResp: &evmigrationtypes.QueryMigrationRecordResponse{}, // no record
+		estimateResp: &evmigrationtypes.QueryMigrationEstimateResponse{
+			WouldSucceed: true,
+			IsValidator:  false,
+			IsMultisig:   true,
+			Threshold:    2,
+			NumSigners:   3,
+		},
+	}
+
+	err := ensureLegacyAccountMigrated(context.Background(), kr, cfg, mc, &fakeSuperNodeModule{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "2-of-3 multisig")
+	assert.Contains(t, err.Error(), "automatic migration is not supported")
+	assert.Contains(t, err.Error(), "lumerad tx evmigration generate-proof-payload")
+	assert.Contains(t, err.Error(), "sign-proof")
+	assert.Contains(t, err.Error(), "assemble-proof")
+	assert.Contains(t, err.Error(), "submit-proof")
+	assert.Contains(t, err.Error(), "lumera-devnet-1")
+	assert.Nil(t, mc.broadcastedMsg, "should not broadcast for multisig accounts")
+}
+
+// Multisig accounts that were already migrated out-of-band should still reach
+// local cleanup via the alreadyMigrated branch — the daemon never looks at the
+// proof shape on the chain record, only at the new address.
+func TestEnsureLegacyAccountMigrated_MultisigAlreadyMigrated_CleanupProceeds(t *testing.T) {
+	kr := newTestKeyring(t)
+	addLegacyKey(t, kr, "mykey")
+	addEVMKey(t, kr, "evm-key")
+
+	newAddr := evmKeyAddr(t, kr, "evm-key")
+	cfg := newMigrationCfg(t, "mykey", "evm-key")
+
+	mc := &fakeMigrationClient{
+		recordResp: &evmigrationtypes.QueryMigrationRecordResponse{
+			Record: &evmigrationtypes.MigrationRecord{
+				NewAddress: newAddr,
+			},
+		},
+		// estimateResp intentionally absent — alreadyMigrated short-circuits before the estimate call.
+	}
+
+	err := ensureLegacyAccountMigrated(context.Background(), kr, cfg, mc, &fakeSuperNodeModule{})
+	require.NoError(t, err)
+
+	// Local cleanup must complete: legacy key deleted, config updated to EVM key.
+	_, err = kr.Key("mykey")
+	require.Error(t, err, "legacy key should be deleted after offline migration completes")
+	assert.Equal(t, "evm-key", cfg.SupernodeConfig.KeyName)
+	assert.Equal(t, newAddr, cfg.SupernodeConfig.Identity)
+	assert.Nil(t, mc.broadcastedMsg, "no broadcast needed — migration already on-chain")
+}
+
 // --- broadcast failure tests ---
 
 func TestEnsureLegacyAccountMigrated_BroadcastFails(t *testing.T) {

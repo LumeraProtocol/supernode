@@ -28,6 +28,39 @@ const (
 	evmModuleName = "evm"
 )
 
+// multisigMigrationInstructions returns an error directing the operator to the
+// lumerad offline CLI flow. The supernode daemon holds a single signing key and
+// cannot participate in the K-of-N ceremony required for a multisig legacy
+// account; migration must be completed out-of-band, after which the next
+// supernode restart will detect the on-chain MigrationRecord and finish local
+// cleanup (delete legacy key, update config) via the idempotent path.
+func multisigMigrationInstructions(legacyAddr, newAddr, chainID string, threshold, numSigners uint32) error {
+	return fmt.Errorf(
+		"legacy supernode account %s is a %d-of-%d multisig; automatic migration is not supported.\n\n"+
+			"The daemon holds a single key and cannot run the multi-party signing ceremony. "+
+			"Please complete migration offline using the lumerad CLI, then restart supernode — "+
+			"the existing on-chain record will trigger local cleanup automatically.\n\n"+
+			"Offline flow (run on any host with lumerad and the sub-signers' keyrings):\n"+
+			"  1. lumerad tx evmigration generate-proof-payload \\\n"+
+			"       --legacy-address %s --new-address %s --chain-id %s --kind claim \\\n"+
+			"       > proof.json\n"+
+			"     (use --kind validator if this account is a validator operator)\n"+
+			"  2. Each of %d sub-signers runs:\n"+
+			"       lumerad tx evmigration sign-proof proof.json --from <sub-key> \\\n"+
+			"         --chain-id %s > partial-<i>.json\n"+
+			"  3. lumerad tx evmigration assemble-proof proof.json partial-*.json > signed.json\n"+
+			"  4. lumerad tx evmigration submit-proof signed.json --from <broadcaster> \\\n"+
+			"       --chain-id %s\n\n"+
+			"After submit-proof lands in a block, restart supernode to complete local cleanup.\n"+
+			"See docs/evm-migration.md for details.",
+		legacyAddr, threshold, numSigners,
+		legacyAddr, newAddr, chainID,
+		threshold,
+		chainID,
+		chainID,
+	)
+}
+
 func legacyKeyMigrationInstructions(keyName string) string {
 	return fmt.Sprintf(
 		"Lumera is running with the EVM module enabled, but supernode.key_name=%q still points to a legacy secp256k1 key (coin type 118).\n\n"+
@@ -275,6 +308,9 @@ func ensureLegacyAccountMigrated(
 				"would_succeed":    estimateResp.WouldSucceed,
 				"rejection_reason": estimateResp.RejectionReason,
 				"is_validator":     estimateResp.IsValidator,
+				"is_multisig":      estimateResp.IsMultisig,
+				"threshold":        estimateResp.Threshold,
+				"num_signers":      estimateResp.NumSigners,
 				"total_touched":    estimateResp.TotalTouched,
 			})
 			if !estimateResp.WouldSucceed {
@@ -282,6 +318,9 @@ func ensureLegacyAccountMigrated(
 					"migration estimate indicates migration would fail for %s: %s",
 					legacyAddr.String(), estimateResp.RejectionReason,
 				)
+			}
+			if estimateResp.IsMultisig {
+				return multisigMigrationInstructions(legacyAddr.String(), newAddr.String(), cfg.LumeraClientConfig.ChainID, estimateResp.Threshold, estimateResp.NumSigners)
 			}
 		}
 
