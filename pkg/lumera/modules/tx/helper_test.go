@@ -354,6 +354,88 @@ func TestExecuteWithOOGRetry_NilBaseReturnsError(t *testing.T) {
 	}
 }
 
+// --- UpdateConfig safety: hard cap on GasAdjustmentMaxAttempts ---------------
+// Regression: UpdateConfig previously accepted any positive value, bypassing
+// the applyTxHelperDefaults() cap and allowing fee runaway via runtime reconfig.
+func TestTxHelper_UpdateConfig_CapsMaxAttempts(t *testing.T) {
+	t.Parallel()
+	h := &TxHelper{config: &TxConfig{GasAdjustmentMaxAttempts: 3}}
+	h.UpdateConfig(&TxHelperConfig{GasAdjustmentMaxAttempts: 9999})
+	if h.config.GasAdjustmentMaxAttempts != MaxGasAdjustmentAttemptsCap {
+		t.Fatalf("UpdateConfig accepted un-capped MaxAttempts = %d, want %d",
+			h.config.GasAdjustmentMaxAttempts, MaxGasAdjustmentAttemptsCap)
+	}
+}
+
+func TestTxHelper_UpdateConfig_PreservesReasonableMaxAttempts(t *testing.T) {
+	t.Parallel()
+	h := &TxHelper{config: &TxConfig{GasAdjustmentMaxAttempts: 3}}
+	h.UpdateConfig(&TxHelperConfig{GasAdjustmentMaxAttempts: 5})
+	if h.config.GasAdjustmentMaxAttempts != 5 {
+		t.Fatalf("UpdateConfig dropped reasonable value: got %d, want 5",
+			h.config.GasAdjustmentMaxAttempts)
+	}
+}
+
+// --- ExecuteTransactionWithMsgs: OOG retry parity with ExecuteTransaction ----
+// Regression: the pre-built-messages path previously called ProcessTransaction
+// directly, bypassing the OOG escalation. External SDK consumers (sdk-go)
+// relying on this entry point must get the same behavior.
+func TestExecuteTransactionWithMsgs_AppliesOOGRetry(t *testing.T) {
+	t.Parallel()
+
+	mod := &scenarioTxModule{oogAttempts: 2}
+
+	h := &TxHelper{
+		txmod: mod,
+		config: &TxConfig{
+			GasAdjustment:            0.5,
+			GasAdjustmentMultiplier:  2.0,
+			GasAdjustmentMaxAttempts: 5,
+		},
+	}
+
+	acc := &authtypes.BaseAccount{Address: "lumera1abc", Sequence: 1}
+	resp, err := h.ExecuteTransactionWithMsgs(context.Background(), []types.Msg{}, acc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatalf("expected non-nil resp after OOG retry")
+	}
+	if got := len(mod.seenAdjustments); got != 3 {
+		t.Fatalf("attempts = %d, want 3 (OOG retry should escalate)", got)
+	}
+	// Sanity: gas_adjustment should have escalated between attempts.
+	if !(mod.seenAdjustments[0] < mod.seenAdjustments[1] && mod.seenAdjustments[1] < mod.seenAdjustments[2]) {
+		t.Fatalf("expected escalating gas_adjustment, got %v", mod.seenAdjustments)
+	}
+}
+
+func TestExecuteTransactionWithMsgs_NonOOGBailsImmediately(t *testing.T) {
+	t.Parallel()
+
+	mod := &scenarioTxModule{nonOOGError: fmt.Errorf("signature verification failed")}
+
+	h := &TxHelper{
+		txmod: mod,
+		config: &TxConfig{
+			GasAdjustment:            1.3,
+			GasAdjustmentMultiplier:  1.3,
+			GasAdjustmentMaxAttempts: 5,
+		},
+	}
+
+	acc := &authtypes.BaseAccount{Address: "lumera1abc", Sequence: 1}
+	_, err := h.ExecuteTransactionWithMsgs(context.Background(), []types.Msg{}, acc)
+	if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("expected non-OOG error to bubble up, got: %v", err)
+	}
+	if got := len(mod.seenAdjustments); got != 1 {
+		t.Fatalf("attempts = %d, want 1 (non-OOG must not retry)", got)
+	}
+}
+
 // --- smoke: fn signature requires ctx + account usable -----------------------
 // This asserts executeWithOOGRetry does not depend on any undeclared globals.
 func TestExecuteWithOOGRetry_CallableSmokeUsesAccountInfo(t *testing.T) {

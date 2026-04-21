@@ -33,9 +33,13 @@ const (
 	// DefaultGasAdjustmentMaxAttempts is the total number of attempts
 	// (including the initial attempt) made before giving up on OOG.
 	// Range: [1, 10]. Default 3 gives adjustments 1.3 → 1.69 → 2.197.
-	DefaultGasAdjustmentMaxAttempts int    = 3
-	DefaultGasPadding               uint64 = 50000
-	DefaultFeeDenom                 string = "ulume"
+	DefaultGasAdjustmentMaxAttempts int = 3
+	// MaxGasAdjustmentAttemptsCap is a hard safety cap on the number of OOG
+	// retries. Even if an operator (or a runtime reconfiguration) sets a
+	// larger value, we never exceed this — protects against fee runaway.
+	MaxGasAdjustmentAttemptsCap int    = 10
+	DefaultGasPadding           uint64 = 50000
+	DefaultFeeDenom             string = "ulume"
 	// DefaultGasPrice is the default min gas price in denom units (e.g., ulume)
 	// Set to 0.025 to match chain defaults where applicable.
 	DefaultGasPrice string = "0.025"

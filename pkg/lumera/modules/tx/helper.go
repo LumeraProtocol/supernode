@@ -116,9 +116,9 @@ func applyTxHelperDefaults(cfg *TxHelperConfig) TxHelperConfig {
 	if out.GasAdjustmentMaxAttempts <= 0 {
 		out.GasAdjustmentMaxAttempts = DefaultGasAdjustmentMaxAttempts
 	}
-	if out.GasAdjustmentMaxAttempts > 10 {
+	if out.GasAdjustmentMaxAttempts > MaxGasAdjustmentAttemptsCap {
 		// hard cap as a safety net to prevent runaway fee spend.
-		out.GasAdjustmentMaxAttempts = 10
+		out.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
 	}
 	if out.GasPadding == 0 {
 		out.GasPadding = DefaultGasPadding
@@ -362,9 +362,22 @@ func parseExpectedSequence(err error) (uint64, bool) {
 	return 0, false
 }
 
-// ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info
+// ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info.
+// Wraps the inner broadcast in executeWithOOGRetry so external callers benefit
+// from the same OOG escalation as ExecuteTransaction. Sequence-mismatch retry
+// is NOT performed here because the caller owns accountInfo; the caller is
+// responsible for refreshing it on sequence errors.
 func (h *TxHelper) ExecuteTransactionWithMsgs(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount) (*sdktx.BroadcastTxResponse, error) {
-	return h.txmod.ProcessTransaction(ctx, msgs, accountInfo, h.config)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return executeWithOOGRetry(
+		ctx,
+		h.config,
+		func(cfg *TxConfig) (*sdktx.BroadcastTxResponse, error) {
+			return h.txmod.ProcessTransaction(ctx, msgs, accountInfo, cfg)
+		},
+	)
 }
 
 // GetCreatorAddress returns the creator address for the configured key
@@ -424,6 +437,11 @@ func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
 		h.config.GasAdjustmentMultiplier = config.GasAdjustmentMultiplier
 	}
 	if config.GasAdjustmentMaxAttempts > 0 {
+		if config.GasAdjustmentMaxAttempts > MaxGasAdjustmentAttemptsCap {
+			// hard cap mirrors applyTxHelperDefaults — prevents runtime
+			// reconfiguration from bypassing the fee-runaway safety net.
+			config.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
+		}
 		h.config.GasAdjustmentMaxAttempts = config.GasAdjustmentMaxAttempts
 	}
 	if config.GasPadding != 0 {
