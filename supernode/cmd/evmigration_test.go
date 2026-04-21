@@ -839,10 +839,12 @@ func TestEnsureLegacyAccountMigrated_ValidatorFullHappyPath(t *testing.T) {
 	valMsg, isVal := mc.broadcastedMsg.(*evmigrationtypes.MsgMigrateValidator)
 	require.True(t, isVal, "should use MsgMigrateValidator for validator")
 	assert.Equal(t, newAddr, valMsg.NewAddress)
-	assert.NotEmpty(t, valMsg.LegacySignature)
 	assert.NotEmpty(t, valMsg.NewSignature)
-	assert.NotEmpty(t, valMsg.LegacyPubKey)
-	assert.NotEmpty(t, valMsg.NewPubKey)
+	valSingle := valMsg.LegacyProof.GetSingle()
+	require.NotNil(t, valSingle, "expected single-key legacy proof")
+	assert.NotEmpty(t, valSingle.Signature)
+	assert.NotEmpty(t, valSingle.PubKey)
+	assert.Equal(t, evmigrationtypes.SigFormat_SIG_FORMAT_CLI, valSingle.SigFormat)
 
 	// Legacy key deleted.
 	_, err = kr.Key("val-key")
@@ -1044,10 +1046,12 @@ func TestEnsureLegacyAccountMigrated_MessageFieldsCorrect(t *testing.T) {
 
 	assert.Equal(t, legacyAddr.String(), claimMsg.LegacyAddress)
 	assert.Equal(t, newAddr, claimMsg.NewAddress)
-	assert.Equal(t, legacyPub.Bytes(), claimMsg.LegacyPubKey)
-	assert.Equal(t, evmPub.Bytes(), claimMsg.NewPubKey)
-	assert.NotEmpty(t, claimMsg.LegacySignature)
 	assert.NotEmpty(t, claimMsg.NewSignature)
+	claimSingle := claimMsg.LegacyProof.GetSingle()
+	require.NotNil(t, claimSingle, "expected single-key legacy proof")
+	assert.Equal(t, legacyPub.Bytes(), claimSingle.PubKey)
+	assert.NotEmpty(t, claimSingle.Signature)
+	assert.Equal(t, evmigrationtypes.SigFormat_SIG_FORMAT_CLI, claimSingle.SigFormat)
 }
 
 // --- estimate with both record query error and estimate error ---

@@ -316,15 +316,28 @@ func ensureLegacyAccountMigrated(
 			return fmt.Errorf("failed to sign migration payload with EVM key: %w", err)
 		}
 
+		// Build the LegacyProof wrapper. The keeper replaced the flat
+		// LegacyPubKey/LegacySignature fields with a single oneof carrying
+		// either a SingleKeyProof or MultisigProof; supernode only ever signs
+		// with one secp256k1 key so we always use the Single case.
+		legacyProof := evmigrationtypes.LegacyProof{
+			Proof: &evmigrationtypes.LegacyProof_Single{
+				Single: &evmigrationtypes.SingleKeyProof{
+					PubKey:    legacyPubKey.Bytes(),
+					Signature: legacySig,
+					SigFormat: evmigrationtypes.SigFormat_SIG_FORMAT_CLI,
+				},
+			},
+		}
+
 		// Build the appropriate message type.
 		var msg sdk.Msg
 		if isValidator {
 			msg = &evmigrationtypes.MsgMigrateValidator{
-				NewAddress:      newAddr.String(),
-				LegacyAddress:   legacyAddr.String(),
-				LegacyPubKey:    legacyPubKey.Bytes(),
-				LegacySignature: legacySig,
-				NewSignature:    newSig,
+				NewAddress:    newAddr.String(),
+				LegacyAddress: legacyAddr.String(),
+				LegacyProof:   legacyProof,
+				NewSignature:  newSig,
 			}
 			logtrace.Info(ctx, "Validator account detected — using MsgMigrateValidator", logtrace.Fields{
 				"legacy_address": legacyAddr.String(),
@@ -332,11 +345,10 @@ func ensureLegacyAccountMigrated(
 			})
 		} else {
 			msg = &evmigrationtypes.MsgClaimLegacyAccount{
-				NewAddress:      newAddr.String(),
-				LegacyAddress:   legacyAddr.String(),
-				LegacyPubKey:    legacyPubKey.Bytes(),
-				LegacySignature: legacySig,
-				NewSignature:    newSig,
+				NewAddress:    newAddr.String(),
+				LegacyAddress: legacyAddr.String(),
+				LegacyProof:   legacyProof,
+				NewSignature:  newSig,
 			}
 		}
 

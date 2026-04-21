@@ -150,7 +150,7 @@ Query MigrationRecord(legacy_address)
   v
 Query MigrationEstimate(legacy_address)
   |-- WouldSucceed=false --> ERROR (with rejection reason)
-  |-- Query error        --> proceed anyway, default isValidator=false
+  |-- Query error        --> ERROR (fail closed; restart to retry)
   |-- WouldSucceed=true  --> capture IsValidator flag
   v
 Build payload: "lumera-evm-migration:<chainID>:<evmChainID>:{claim|validator}:<legacy>:<new>"
@@ -168,9 +168,9 @@ broadcastMigrationTx()
   v
 Verify new address registered as supernode (non-fatal)
   v
-Delete legacy key from keyring
-  v
 Update config (key_name, identity, evm_key_name) and save
+  v
+Delete legacy key from keyring
 ```
 
 ### Signing Protocol
@@ -366,7 +366,7 @@ type SupernodeConfig struct {
 **Message fields and resilience (2 tests):**
 
 - `TestEnsureLegacyAccountMigrated_MessageFieldsCorrect` — verifies addresses, public keys, and signatures in broadcasted message
-- `TestEnsureLegacyAccountMigrated_BothQueriesFail_StillBroadcasts` — both MigrationRecord and MigrationEstimate fail, still broadcasts with defaults
+- `TestEnsureLegacyAccountMigrated_BothQueriesFail_FailsClosed` — MigrationRecord query failure is tolerated, but MigrationEstimate query failure aborts before broadcast
 
 **End-to-end (1 test):**
 
