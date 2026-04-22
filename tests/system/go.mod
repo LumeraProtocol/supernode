@@ -1,6 +1,6 @@
 module github.com/LumeraProtocol/supernode/v2/tests/systemtests
 
-go 1.25.5
+go 1.25.9
 
 replace (
 	github.com/LumeraProtocol/supernode/v2 => ../../
@@ -11,9 +11,9 @@ replace (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.11.2-0.20260413145614-4ffe74bb13dc
+	github.com/LumeraProtocol/lumera v1.12.0-rc
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
-	github.com/cometbft/cometbft v0.38.20
+	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/ibc-go/v10 v10.5.0
 	github.com/tidwall/gjson v1.14.2
 	github.com/tidwall/sjson v1.2.5
