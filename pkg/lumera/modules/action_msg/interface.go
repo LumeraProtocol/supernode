@@ -19,6 +19,19 @@ type Module interface {
 	SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.SimulateResponse, error)
 }
 
+// NewModule creates an action_msg module using default TxHelper settings.
+// Preserved for backward compatibility. For customized gas policy use NewModuleWithTxHelperConfig.
 func NewModule(conn *grpc.ClientConn, authmod auth.Module, txmodule tx.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
-	return newModule(conn, authmod, txmodule, kr, keyName, chainID)
+	return newModuleWithHelper(conn, authmod, txmodule, &tx.TxHelperConfig{
+		ChainID: chainID,
+		Keyring: kr,
+		KeyName: keyName,
+	})
+}
+
+// NewModuleWithTxHelperConfig creates an action_msg module with an explicit TxHelper configuration.
+// Zero-valued fields in cfg fall back to package defaults (see tx.DefaultGas* constants).
+// cfg.ChainID / cfg.Keyring / cfg.KeyName are required (validated inside newModuleWithHelper).
+func NewModuleWithTxHelperConfig(conn *grpc.ClientConn, authmod auth.Module, txmodule tx.Module, cfg *tx.TxHelperConfig) (Module, error) {
+	return newModuleWithHelper(conn, authmod, txmodule, cfg)
 }

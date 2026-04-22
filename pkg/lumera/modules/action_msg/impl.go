@@ -8,7 +8,6 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"
@@ -20,7 +19,10 @@ type module struct {
 	mu       sync.Mutex
 }
 
-func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
+// newModuleWithHelper creates the action_msg module using the supplied
+// TxHelperConfig. The config is normalized inside tx.NewTxHelper (zero-valued
+// fields fall back to defaults).
+func newModuleWithHelper(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, cfg *txmod.TxHelperConfig) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
 	}
@@ -30,19 +32,22 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 	if txmodule == nil {
 		return nil, fmt.Errorf("tx module cannot be nil")
 	}
-	if kr == nil {
+	if cfg == nil {
+		return nil, fmt.Errorf("tx helper config cannot be nil")
+	}
+	if cfg.Keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if keyName == "" {
+	if cfg.KeyName == "" {
 		return nil, fmt.Errorf("key name cannot be empty")
 	}
-	if chainID == "" {
+	if cfg.ChainID == "" {
 		return nil, fmt.Errorf("chain ID cannot be empty")
 	}
 
 	return &module{
 		client:   actiontypes.NewMsgClient(conn),
-		txHelper: txmod.NewTxHelperWithDefaults(authmodule, txmodule, chainID, keyName, kr),
+		txHelper: txmod.NewTxHelper(authmodule, txmodule, cfg),
 	}, nil
 }
 

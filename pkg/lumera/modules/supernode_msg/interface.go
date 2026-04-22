@@ -23,7 +23,8 @@ type Module interface {
 }
 
 // NewModule constructs a supernode_msg Module using the shared auth and tx
-// modules, the supernode query module, and keyring configuration.
+// modules, the supernode query module, and keyring configuration. Uses default
+// TxHelper settings (see tx.DefaultGas* constants).
 func NewModule(
 	conn *grpc.ClientConn,
 	authmod auth.Module,
@@ -33,5 +34,21 @@ func NewModule(
 	keyName string,
 	chainID string,
 ) (Module, error) {
-	return newModule(conn, authmod, txmod, supernodeQuery, kr, keyName, chainID)
+	return newModuleWithHelper(conn, authmod, txmod, supernodeQuery, &tx.TxHelperConfig{
+		ChainID: chainID,
+		Keyring: kr,
+		KeyName: keyName,
+	})
+}
+
+// NewModuleWithTxHelperConfig constructs a supernode_msg Module with explicit TxHelper
+// configuration. Zero-valued fields in cfg fall back to package defaults.
+func NewModuleWithTxHelperConfig(
+	conn *grpc.ClientConn,
+	authmod auth.Module,
+	txmod tx.Module,
+	supernodeQuery supernode.Module,
+	cfg *tx.TxHelperConfig,
+) (Module, error) {
+	return newModuleWithHelper(conn, authmod, txmod, supernodeQuery, cfg)
 }

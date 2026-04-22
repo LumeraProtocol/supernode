@@ -349,7 +349,20 @@ func initLumeraClient(ctx context.Context, config *config.Config, kr cKeyring.Ke
 		return nil, fmt.Errorf("config is nil")
 	}
 
-	lumeraConfig, err := lumera.NewConfig(config.LumeraClientConfig.GRPCAddr, config.LumeraClientConfig.ChainID, config.SupernodeConfig.KeyName, kr)
+	lumeraConfig, err := lumera.NewConfig(
+		config.LumeraClientConfig.GRPCAddr,
+		config.LumeraClientConfig.ChainID,
+		config.SupernodeConfig.KeyName,
+		kr,
+		lumera.TxOptions{
+			GasAdjustment:            config.LumeraClientConfig.GasAdjustment,
+			GasAdjustmentMultiplier:  config.LumeraClientConfig.GasAdjustmentMultiplier,
+			GasAdjustmentMaxAttempts: config.LumeraClientConfig.GasAdjustmentMaxAttempts,
+			GasPadding:               config.LumeraClientConfig.GasPadding,
+			GasPrice:                 config.LumeraClientConfig.GasPrice,
+			FeeDenom:                 config.LumeraClientConfig.FeeDenom,
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Lumera config: %w", err)
 	}

@@ -48,27 +48,35 @@ type TxHelper struct {
 
 // TxHelperConfig holds configuration for creating a TxHelper
 type TxHelperConfig struct {
-	ChainID       string
-	Keyring       keyring.Keyring
-	KeyName       string
-	GasLimit      uint64
-	GasAdjustment float64
-	GasPadding    uint64
-	FeeDenom      string
-	GasPrice      string
+	ChainID                  string
+	Keyring                  keyring.Keyring
+	KeyName                  string
+	GasLimit                 uint64
+	GasAdjustment            float64
+	GasAdjustmentMultiplier  float64
+	GasAdjustmentMaxAttempts int
+	GasPadding               uint64
+	FeeDenom                 string
+	GasPrice                 string
 }
 
-// NewTxHelper creates a new transaction helper with the given configuration
+// NewTxHelper creates a new transaction helper with the given configuration.
+// Any zero-valued field in config falls back to the package-level Default* value,
+// so callers can pass partially-populated configs.
 func NewTxHelper(authmod auth.Module, txmod Module, config *TxHelperConfig) *TxHelper {
+	applied := applyTxHelperDefaults(config)
+
 	txConfig := &TxConfig{
-		ChainID:       config.ChainID,
-		Keyring:       config.Keyring,
-		KeyName:       config.KeyName,
-		GasLimit:      config.GasLimit,
-		GasAdjustment: config.GasAdjustment,
-		GasPadding:    config.GasPadding,
-		FeeDenom:      config.FeeDenom,
-		GasPrice:      config.GasPrice,
+		ChainID:                  applied.ChainID,
+		Keyring:                  applied.Keyring,
+		KeyName:                  applied.KeyName,
+		GasLimit:                 applied.GasLimit,
+		GasAdjustment:            applied.GasAdjustment,
+		GasAdjustmentMultiplier:  applied.GasAdjustmentMultiplier,
+		GasAdjustmentMaxAttempts: applied.GasAdjustmentMaxAttempts,
+		GasPadding:               applied.GasPadding,
+		FeeDenom:                 applied.FeeDenom,
+		GasPrice:                 applied.GasPrice,
 	}
 
 	return &TxHelper{
@@ -78,20 +86,60 @@ func NewTxHelper(authmod auth.Module, txmod Module, config *TxHelperConfig) *TxH
 	}
 }
 
-// NewTxHelperWithDefaults creates a new transaction helper with default configuration
+// NewTxHelperWithDefaults creates a new transaction helper with default configuration.
+// Preserved for backward compatibility with callers that only know chainID/keyName/keyring.
 func NewTxHelperWithDefaults(authmod auth.Module, txmod Module, chainID, keyName string, kr keyring.Keyring) *TxHelper {
-	config := &TxHelperConfig{
-		ChainID:       chainID,
-		Keyring:       kr,
-		KeyName:       keyName,
-		GasLimit:      DefaultGasLimit,
-		GasAdjustment: DefaultGasAdjustment,
-		GasPadding:    DefaultGasPadding,
-		FeeDenom:      DefaultFeeDenom,
-		GasPrice:      DefaultGasPrice,
-	}
+	return NewTxHelper(authmod, txmod, &TxHelperConfig{
+		ChainID: chainID,
+		Keyring: kr,
+		KeyName: keyName,
+	})
+}
 
-	return NewTxHelper(authmod, txmod, config)
+// applyTxHelperDefaults fills zero-valued fields in cfg with package defaults
+// and returns a new, fully-populated config. cfg itself is not mutated.
+func applyTxHelperDefaults(cfg *TxHelperConfig) TxHelperConfig {
+	if cfg == nil {
+		cfg = &TxHelperConfig{}
+	}
+	out := *cfg
+	if out.GasLimit == 0 {
+		out.GasLimit = DefaultGasLimit
+	}
+	if out.GasAdjustment <= 0 {
+		out.GasAdjustment = DefaultGasAdjustment
+	}
+	if out.GasAdjustmentMultiplier <= 1.0 {
+		// Must be strictly >1 for escalation to do anything.
+		out.GasAdjustmentMultiplier = DefaultGasAdjustmentMultiplier
+	}
+	if out.GasAdjustmentMaxAttempts <= 0 {
+		out.GasAdjustmentMaxAttempts = DefaultGasAdjustmentMaxAttempts
+	}
+	if out.GasAdjustmentMaxAttempts > MaxGasAdjustmentAttemptsCap {
+		// hard cap as a safety net to prevent runaway fee spend.
+		out.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
+	}
+	if out.GasPadding == 0 {
+		out.GasPadding = DefaultGasPadding
+	}
+	if strings.TrimSpace(out.FeeDenom) == "" {
+		out.FeeDenom = DefaultFeeDenom
+	}
+	if strings.TrimSpace(out.GasPrice) == "" {
+		out.GasPrice = DefaultGasPrice
+	}
+	return out
+}
+
+// cloneTxConfig returns a shallow copy safe for per-attempt mutation.
+// Keyring is interface-valued; we share the pointer (read-only usage).
+func cloneTxConfig(c *TxConfig) *TxConfig {
+	if c == nil {
+		return nil
+	}
+	copy := *c
+	return &copy
 }
 
 func (h *TxHelper) ExecuteTransaction(
@@ -141,8 +189,16 @@ func (h *TxHelper) ExecuteTransaction(
 			Address:       creator,
 		}
 
-		// Run full tx flow
-		resp, err := h.ExecuteTransactionWithMsgs(ctx, []types.Msg{msg}, accountInfo)
+		// Run the inner attempt with OOG-retry escalation on gas_adjustment.
+		// Sequence is *not* bumped between OOG retries because a SYNC-rejected
+		// CheckTx (the OOG path we detect here) does not consume the sequence.
+		resp, err := executeWithOOGRetry(
+			ctx,
+			h.config,
+			func(cfg *TxConfig) (*sdktx.BroadcastTxResponse, error) {
+				return h.txmod.ProcessTransaction(ctx, []types.Msg{msg}, accountInfo, cfg)
+			},
+		)
 		if err == nil {
 			h.nextSequence++
 			return resp, nil
@@ -187,6 +243,94 @@ func (h *TxHelper) ExecuteTransaction(
 	return nil, fmt.Errorf("unreachable state in ExecuteTransaction")
 }
 
+// executeWithOOGRetry runs fn with progressively larger GasAdjustment on
+// out-of-gas errors. cfg is cloned per attempt so callers are unaffected by
+// the mutation of GasAdjustment. Non-OOG errors abort the loop immediately
+// (bail semantics preserved for sequence mismatch, signature errors, etc).
+//
+// Emits a structured "tx_oog_retry" log line on every retry that Datadog can
+// facet on.
+func executeWithOOGRetry(
+	ctx context.Context,
+	baseCfg *TxConfig,
+	fn func(cfg *TxConfig) (*sdktx.BroadcastTxResponse, error),
+) (*sdktx.BroadcastTxResponse, error) {
+	if baseCfg == nil {
+		return nil, fmt.Errorf("tx config cannot be nil")
+	}
+
+	maxAttempts := baseCfg.GasAdjustmentMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultGasAdjustmentMaxAttempts
+	}
+	multiplier := baseCfg.GasAdjustmentMultiplier
+	if multiplier <= 1.0 {
+		multiplier = DefaultGasAdjustmentMultiplier
+	}
+
+	current := cloneTxConfig(baseCfg)
+	initialAdj := current.GasAdjustment
+
+	var (
+		resp *sdktx.BroadcastTxResponse
+		err  error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, err = fn(current)
+		if err == nil {
+			if attempt > 1 {
+				logtrace.Info(ctx, "tx succeeded after OOG retry", logtrace.Fields{
+					"metric":                    "tx_oog_retry",
+					"attempt":                   attempt,
+					"attempts_total":            attempt,
+					"initial_gas_adjustment":    initialAdj,
+					"final_gas_adjustment":      current.GasAdjustment,
+					"gas_adjustment_multiplier": multiplier,
+					"outcome":                   "success",
+				})
+			}
+			return resp, nil
+		}
+		if !isOutOfGas(err) {
+			// Non-OOG errors are not retried here; caller may retry at a
+			// higher level (e.g. sequence-mismatch loop in ExecuteTransaction).
+			return resp, err
+		}
+		if attempt >= maxAttempts {
+			logtrace.Warn(ctx, "tx out-of-gas: max retries exhausted", logtrace.Fields{
+				"metric":                    "tx_oog_retry",
+				"attempt":                   attempt,
+				"attempts_total":            attempt,
+				"initial_gas_adjustment":    initialAdj,
+				"final_gas_adjustment":      current.GasAdjustment,
+				"gas_adjustment_multiplier": multiplier,
+				"outcome":                   "exhausted",
+				"error":                     err.Error(),
+			})
+			return resp, fmt.Errorf("out of gas after %d attempts (final gas_adjustment=%.3f): %w",
+				attempt, current.GasAdjustment, err)
+		}
+		// Escalate for next attempt. Clone to avoid mutating caller state.
+		next := cloneTxConfig(current)
+		next.GasAdjustment = current.GasAdjustment * multiplier
+		logtrace.Info(ctx, "tx out-of-gas: retrying with higher gas_adjustment", logtrace.Fields{
+			"metric":                    "tx_oog_retry",
+			"attempt":                   attempt,
+			"next_attempt":              attempt + 1,
+			"max_attempts":              maxAttempts,
+			"prev_gas_adjustment":       current.GasAdjustment,
+			"new_gas_adjustment":        next.GasAdjustment,
+			"initial_gas_adjustment":    initialAdj,
+			"gas_adjustment_multiplier": multiplier,
+			"outcome":                   "retrying",
+			"error":                     err.Error(),
+		})
+		current = next
+	}
+	// Unreachable given the loop above, but be explicit.
+	return resp, err
+}
+
 func isSequenceMismatch(err error) bool {
 	if err == nil {
 		return false
@@ -218,9 +362,22 @@ func parseExpectedSequence(err error) (uint64, bool) {
 	return 0, false
 }
 
-// ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info
+// ExecuteTransactionWithMsgs processes a transaction with pre-created messages and account info.
+// Wraps the inner broadcast in executeWithOOGRetry so external callers benefit
+// from the same OOG escalation as ExecuteTransaction. Sequence-mismatch retry
+// is NOT performed here because the caller owns accountInfo; the caller is
+// responsible for refreshing it on sequence errors.
 func (h *TxHelper) ExecuteTransactionWithMsgs(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount) (*sdktx.BroadcastTxResponse, error) {
-	return h.txmod.ProcessTransaction(ctx, msgs, accountInfo, h.config)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return executeWithOOGRetry(
+		ctx,
+		h.config,
+		func(cfg *TxConfig) (*sdktx.BroadcastTxResponse, error) {
+			return h.txmod.ProcessTransaction(ctx, msgs, accountInfo, cfg)
+		},
+	)
 }
 
 // GetCreatorAddress returns the creator address for the configured key
@@ -275,6 +432,17 @@ func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
 	}
 	if config.GasAdjustment != 0 {
 		h.config.GasAdjustment = config.GasAdjustment
+	}
+	if config.GasAdjustmentMultiplier > 1.0 {
+		h.config.GasAdjustmentMultiplier = config.GasAdjustmentMultiplier
+	}
+	if config.GasAdjustmentMaxAttempts > 0 {
+		if config.GasAdjustmentMaxAttempts > MaxGasAdjustmentAttemptsCap {
+			// hard cap mirrors applyTxHelperDefaults — prevents runtime
+			// reconfiguration from bypassing the fee-runaway safety net.
+			config.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
+		}
+		h.config.GasAdjustmentMaxAttempts = config.GasAdjustmentMaxAttempts
 	}
 	if config.GasPadding != 0 {
 		h.config.GasPadding = config.GasPadding
