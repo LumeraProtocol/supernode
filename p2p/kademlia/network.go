@@ -261,8 +261,8 @@ func (s *Network) handleStoreData(ctx context.Context, message *Message) (res []
 		// Self-state gate: non-ACTIVE supernodes (STORAGE_FULL, POSTPONED,
 		// etc.) must not accept new-key writes. Replication of an
 		// already-held key is still permitted (the Retrieve above returned
-		// a non-empty value, short-circuiting this branch).
-		if !s.dht.selfStoreEligible() {
+		// a non-empty value, short-circuiting this branch — newKeys=0).
+		if s.dht.shouldRejectStore(1) {
 			logtrace.Warn(ctx, "rejecting STORE: self is not store-eligible", logtrace.Fields{
 				logtrace.FieldModule: "p2p",
 				"sender":             message.Sender.String(),
@@ -1241,10 +1241,10 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	s.dht.addNode(ctx, message.Sender)
 
 	// Self-state gate: non-ACTIVE supernodes (STORAGE_FULL, POSTPONED, etc.)
-	// must not accept new-key batch writes. Filter the incoming batch to
-	// only keys we already hold; reject if any genuinely new keys remain.
+	// must not accept new-key batch writes. Count genuinely new keys; if
+	// self is not store-eligible AND the batch contains any new keys,
+	// reject. Pure replication of already-held keys is still permitted.
 	if !s.dht.selfStoreEligible() {
-		// Compute keys for each payload and check against local store.
 		newKeys := 0
 		for _, data := range request.Data {
 			k, _ := utils.Blake3Hash(data)

@@ -47,6 +47,25 @@ func isStoreEligibleState(s int32) bool {
 	return s == snStateInt(sntypes.SuperNodeStateActive)
 }
 
+// shouldRejectStore reports whether an incoming STORE/BatchStore request
+// should be rejected because the self-node is not currently store-eligible
+// AND the request contains genuinely new keys (not just replication of
+// already-held data).
+//
+//   newKeys > 0 && !selfStoreEligible()  =>  reject
+//
+// When newKeys == 0 (all keys already held) replication is always allowed.
+// When self is store-eligible (ACTIVE, or pre-bootstrap), always allow.
+func (s *DHT) shouldRejectStore(newKeys int) bool {
+	if s == nil {
+		return false
+	}
+	if newKeys <= 0 {
+		return false
+	}
+	return !s.selfStoreEligible()
+}
+
 // setSelfState caches the latest known chain state for this node. Safe for
 // concurrent callers. Called by the bootstrap refresher.
 func (s *DHT) setSelfState(state int32) {
