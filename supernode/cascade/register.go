@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
@@ -102,6 +103,31 @@ func (task *CascadeRegistrationTask) Register(
 		return err
 	}
 
+	// Step 7b (LEP-5): Verify Merkle root against on-chain commitment and build tree
+	var chunkProofs []*actiontypes.ChunkProof
+	if cascadeMeta.AvailabilityCommitment != nil {
+		tree, err := cascadekit.VerifyCommitmentRoot(req.FilePath, cascadeMeta.AvailabilityCommitment)
+		if err != nil {
+			return task.wrapErr(ctx, "LEP-5 commitment root verification failed", err, fields)
+		}
+		logtrace.Info(ctx, "register: LEP-5 merkle root verified", fields)
+		if err := task.streamEvent(ctx, SupernodeEventTypeMerkleRootVerified, "Merkle root verified", "", send); err != nil {
+			return err
+		}
+
+		// Generate chunk proofs for the challenge indices
+		chunkProofs, err = cascadekit.GenerateChunkProofs(tree, cascadeMeta.AvailabilityCommitment.ChallengeIndices)
+		if err != nil {
+			return task.wrapErr(ctx, "LEP-5 chunk proof generation failed", err, fields)
+		}
+		logtrace.Info(ctx, "register: LEP-5 chunk proofs generated", logtrace.WithFields(fields, logtrace.Fields{
+			"proof_count": len(chunkProofs),
+		}))
+		if err := task.streamEvent(ctx, SupernodeEventTypeChunkProofsGenerated, "Chunk proofs generated", "", send); err != nil {
+			return err
+		}
+	}
+
 	// Step 8: Encode input using the RQ codec to produce layout and symbols
 	encodeResult, err := task.encodeInput(ctx, req.ActionID, req.FilePath, fields)
 	if err != nil {
@@ -153,7 +179,7 @@ func (task *CascadeRegistrationTask) Register(
 	}
 
 	// Step 11: Simulate finalize to ensure the tx will succeed
-	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqIDs); err != nil {
+	if _, err := task.LumeraClient.SimulateFinalizeAction(ctx, action.ActionID, rqIDs, chunkProofs); err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Info(ctx, "register: finalize simulation failed", fields)
 		if err := task.streamEvent(ctx, SupernodeEventTypeFinalizeSimulationFailed, "Finalize simulation failed", "", send); err != nil {
@@ -175,7 +201,7 @@ func (task *CascadeRegistrationTask) Register(
 	}
 
 	// Step 13: Finalize the action on-chain
-	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqIDs)
+	resp, err := task.LumeraClient.FinalizeAction(ctx, action.ActionID, rqIDs, chunkProofs)
 	if err != nil {
 		fields[logtrace.FieldError] = err.Error()
 		logtrace.Info(ctx, "register: finalize action error", fields)

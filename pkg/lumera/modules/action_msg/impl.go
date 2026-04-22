@@ -64,7 +64,7 @@ func (m *module) RequestAction(ctx context.Context, actionType, metadata, price,
 	})
 }
 
-func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.BroadcastTxResponse, error) {
+func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 	defer m.mu.Unlock()
 
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
-		return createFinalizeActionMessage(creator, actionId, rqIdsIds)
+		return createFinalizeActionMessage(creator, actionId, rqIdsIds, chunkProofs)
 	})
 }
 
@@ -91,7 +91,7 @@ func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
 // SimulateFinalizeCascadeAction builds the finalize message and performs a simulation
 // without broadcasting the transaction. This is useful to ensure the transaction
 // would pass ante/ValidateBasic before doing irreversible work.
-func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.SimulateResponse, error) {
+func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId str
 	}
 
 	// Build the finalize message
-	msg, err := createFinalizeActionMessage(creator, actionId, rqIdsIds)
+	msg, err := createFinalizeActionMessage(creator, actionId, rqIdsIds, chunkProofs)
 	if err != nil {
 		return nil, err
 	}

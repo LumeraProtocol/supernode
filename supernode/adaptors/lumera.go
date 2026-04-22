@@ -15,8 +15,8 @@ type LumeraClient interface {
 	ListSupernodes(ctx context.Context) (*sntypes.QueryListSuperNodesResponse, error)
 	Verify(ctx context.Context, address string, msg []byte, sig []byte) error
 	GetActionFee(ctx context.Context, dataSizeKB string) (*actiontypes.QueryGetActionFeeResponse, error)
-	SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error)
-	FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error)
+	SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error)
+	FinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error)
 }
 
 type lumeraImpl struct{ c lumera.Client }
@@ -45,10 +45,10 @@ func (l *lumeraImpl) GetActionFee(ctx context.Context, dataSizeKB string) (*acti
 	return l.c.Action().GetActionFee(ctx, dataSizeKB)
 }
 
-func (l *lumeraImpl) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.SimulateResponse, error) {
-	return l.c.ActionMsg().SimulateFinalizeCascadeAction(ctx, actionID, rqids)
+func (l *lumeraImpl) SimulateFinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
+	return l.c.ActionMsg().SimulateFinalizeCascadeAction(ctx, actionID, rqids, chunkProofs)
 }
 
-func (l *lumeraImpl) FinalizeAction(ctx context.Context, actionID string, rqids []string) (*sdktx.BroadcastTxResponse, error) {
-	return l.c.ActionMsg().FinalizeCascadeAction(ctx, actionID, rqids)
+func (l *lumeraImpl) FinalizeAction(ctx context.Context, actionID string, rqids []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
+	return l.c.ActionMsg().FinalizeCascadeAction(ctx, actionID, rqids, chunkProofs)
 }
