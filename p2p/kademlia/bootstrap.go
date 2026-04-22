@@ -16,10 +16,8 @@ import (
 )
 
 const (
-	bootstrapRefreshInterval       = 10 * time.Minute
-	defaultSuperNodeP2PPort  int   = 4445
-	superNodeStateActive     int32 = 1
-	superNodeStatePostponed  int32 = 5
+	bootstrapRefreshInterval      = 10 * time.Minute
+	defaultSuperNodeP2PPort   int = 4445
 )
 
 // seed a couple of obviously bad addrs (unless in integration tests)
@@ -125,6 +123,7 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 	routingIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
 	storeIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
 	mapNodes := make(map[string]*Node, len(resp.Supernodes))
+	selfID := strings.TrimSpace(string(s.options.ID))
 	for _, sn := range resp.Supernodes {
 		if len(sn.States) == 0 {
 			continue
@@ -137,9 +136,16 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 				latestState = int32(st.State)
 			}
 		}
-		// Routing/read eligibility includes Active + Postponed.
-		// Store/write eligibility remains Active-only.
-		if latestState != superNodeStateActive && latestState != superNodeStatePostponed {
+		// Record self-state regardless of routing eligibility; the STORE
+		// RPC self-guard needs the authoritative value even when self is
+		// DISABLED/STOPPED/PENALIZED (in which case all states are
+		// non-store-eligible anyway).
+		if selfID != "" && strings.TrimSpace(sn.SupernodeAccount) == selfID {
+			s.setSelfState(latestState)
+		}
+		// Routing/read eligibility: {ACTIVE, POSTPONED, STORAGE_FULL}.
+		// Store/write eligibility: {ACTIVE} only.
+		if !isRoutingEligibleState(latestState) {
 			continue
 		}
 
@@ -158,7 +164,7 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 			var key [32]byte
 			copy(key[:], h)
 			routingIDs[key] = struct{}{}
-			if latestState == superNodeStateActive {
+			if isStoreEligibleState(latestState) {
 				storeIDs[key] = struct{}{}
 			}
 		}
@@ -306,6 +312,10 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 	// Write/replication targets are Active-only.
 	s.setStoreAllowlist(ctx, storeIDs)
 	s.pruneIneligibleRoutingPeers(ctx)
+	// Eagerly flip replication_info.Active=false for peers that are no
+	// longer store-eligible (STORAGE_FULL/POSTPONED/evicted). Closes the
+	// window between chain transition and next successful ping.
+	s.pruneIneligibleStorePeers(ctx)
 
 	// Upsert candidates to replication_info
 	seen := make(map[string]struct{}, len(cands))

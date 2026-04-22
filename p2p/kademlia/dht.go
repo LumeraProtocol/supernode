@@ -86,6 +86,14 @@ type DHT struct {
 	storeAllow      map[[32]byte]struct{} // blake3(peerID) -> exists
 	storeAllowReady atomic.Bool
 	storeAllowCount atomic.Int64
+
+	// selfState caches this node's latest chain state, refreshed on the
+	// bootstrap cadence. Used by STORE RPC self-guards to reject new-key
+	// writes when self is not ACTIVE (e.g. STORAGE_FULL, POSTPONED).
+	// A value of 0 (Unspecified) means "unknown" — handlers should not
+	// reject in that case to avoid lockout during bootstrap.
+	selfState      atomic.Int32
+	selfStateReady atomic.Bool
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -1015,6 +1023,11 @@ func (s *DHT) BatchRetrieve(ctx context.Context, keys []string, required int32, 
 		}
 
 		top6 := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, hashes[i], ignoredSet, nil)
+		// Defensive: ensure we only ask routing-eligible peers. In steady
+		// state the hashtable is already filtered on admission; this closes
+		// the door against any future regression where a non-eligible peer
+		// enters via a new path.
+		top6.Nodes = s.filterEligibleNodes(top6.Nodes)
 		closestMu.Lock()
 		globalClosestContacts[keys[i]] = top6
 		closestMu.Unlock()
@@ -1368,6 +1381,8 @@ func (s *DHT) BatchRetrieveStream(
 			continue
 		}
 		topK := s.ht.closestContactsWithIncludingNodeWithIgnoredSet(Alpha, hashes[i], ignoredSet, nil)
+		// Defensive: filter to routing-eligible peers (see BatchRetrieve).
+		topK.Nodes = s.filterEligibleNodes(topK.Nodes)
 		closestMu.Lock()
 		globalClosestContacts[keys[i]] = topK
 		closestMu.Unlock()
