@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
@@ -487,9 +488,36 @@ waitLoop:
 	var toAddress string
 	var amount string
 
+	// Validate fee-distribution invariant (value conservation).
+	//
+	// Pre-Everlight the finalize tx produced a single coin_spent event with
+	// amount == autoPrice (the action module paying the supernode). Under
+	// Everlight Phase 1 (lumera PR #113) the action module splits the fee
+	// across multiple bank sends — reward-pool share, optional foundation
+	// share, and the supernode payout — so no single event equals autoPrice.
+	//
+	// The real product invariant is value conservation: for this finalize
+	// message, total tokens leaving the action module equals autoPrice, and
+	// total tokens received across recipients equals autoPrice. That is
+	// independent of the split ratio (which is a governance-tunable parameter
+	// `RegistrationFeeShareBps`), so this assertion also survives future
+	// parameter changes.
+	//
+	// Discriminating message-triggered bank events from the tx gas-fee
+	// deduction: the gas-fee coin_spent/coin_received pair carries no
+	// `msg_index` attribute; events emitted from inside MsgFinalizeAction
+	// execution carry `msg_index=0`. We sum only the msg_index-tagged events.
+	autoPriceCoin, err := sdk.ParseCoinNormalized(autoPrice)
+	require.NoError(t, err, "autoPrice must parse as a coin")
+
+	spenderTotals := make(map[string]sdk.Coins)
+	recvTotals := make(map[string]sdk.Coins)
+
 	for _, event := range events {
+		etype := event.Get("type").String()
+
 		// Check for action finalized event
-		if event.Get("type").String() == "action_finalized" {
+		if etype == "action_finalized" {
 			actionFinalized = true
 			attrs := event.Get("attributes").Array()
 			for _, attr := range attrs {
@@ -500,43 +528,77 @@ waitLoop:
 					require.Equal(t, actionID, attr.Get("value").String(), "Action ID should match")
 				}
 			}
+			continue
 		}
 
-		// Check for fee spent event
-		if event.Get("type").String() == "coin_spent" {
-			attrs := event.Get("attributes").Array()
-			for i, attr := range attrs {
-				if attr.Get("key").String() == "amount" && attr.Get("value").String() == autoPrice {
-					feeSpent = true
-					// Get the spender address from the same event group
-					for j, addrAttr := range attrs {
-						if j < i && addrAttr.Get("key").String() == "spender" {
-							fromAddress = addrAttr.Get("value").String()
-							break
-						}
-					}
-				}
+		if etype != "coin_spent" && etype != "coin_received" {
+			continue
+		}
+
+		attrs := event.Get("attributes").Array()
+		var addr, amtStr string
+		var hasMsgIndex bool
+		addrKey := "spender"
+		if etype == "coin_received" {
+			addrKey = "receiver"
+		}
+		for _, a := range attrs {
+			switch a.Get("key").String() {
+			case addrKey:
+				addr = a.Get("value").String()
+			case "amount":
+				amtStr = a.Get("value").String()
+			case "msg_index":
+				hasMsgIndex = true
 			}
 		}
+		// Exclude tx-level gas-fee events (no msg_index) — they belong to
+		// the finalizer, not the action-module payout flow.
+		if !hasMsgIndex || addr == "" || amtStr == "" {
+			continue
+		}
+		coin, perr := sdk.ParseCoinNormalized(amtStr)
+		if perr != nil || coin.Denom != autoPriceCoin.Denom {
+			continue
+		}
+		if etype == "coin_spent" {
+			spenderTotals[addr] = spenderTotals[addr].Add(coin)
+		} else {
+			recvTotals[addr] = recvTotals[addr].Add(coin)
+		}
+	}
 
-		// Check for fee received event
-		if event.Get("type").String() == "coin_received" {
-			attrs := event.Get("attributes").Array()
-			for i, attr := range attrs {
-				if attr.Get("key").String() == "amount" && attr.Get("value").String() == autoPrice {
-					feeReceived = true
-					// Get the receiver address from the same event group
-					for j, addrAttr := range attrs {
-						if j < i && addrAttr.Get("key").String() == "receiver" {
-							toAddress = addrAttr.Get("value").String()
-							break
-						}
-					}
-					amount = attr.Get("value").String()
-				}
+	// feeSpent: exactly one spender (the action module) paid out autoPrice
+	// in total across all message-triggered coin_spent events.
+	for addr, coins := range spenderTotals {
+		if coins.AmountOf(autoPriceCoin.Denom).Equal(autoPriceCoin.Amount) {
+			feeSpent = true
+			fromAddress = addr
+			amount = autoPriceCoin.String()
+			break
+		}
+	}
+
+	// feeReceived: recipients received autoPrice in total.
+	totalReceived := sdk.NewCoins()
+	for _, coins := range recvTotals {
+		totalReceived = totalReceived.Add(coins...)
+	}
+	if totalReceived.AmountOf(autoPriceCoin.Denom).Equal(autoPriceCoin.Amount) {
+		feeReceived = true
+		// Pick the recipient of the largest single share for the payment-flow
+		// log (this is the supernode payout under the default split ratio).
+		var maxAmt = math.ZeroInt()
+		for addr, coins := range recvTotals {
+			amt := coins.AmountOf(autoPriceCoin.Denom)
+			if amt.GT(maxAmt) {
+				maxAmt = amt
+				toAddress = addr
 			}
 		}
 	}
+
+	t.Logf("Fee distribution: spender_totals=%v receiver_totals=%v", spenderTotals, recvTotals)
 
 	// Validate events
 	require.True(t, actionFinalized, "Action finalized event should be emitted")
