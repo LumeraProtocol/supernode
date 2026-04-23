@@ -17,6 +17,14 @@ import (
 
 const (
 	bootstrapRefreshInterval      = 10 * time.Minute
+	// allowlistRefreshInterval is a faster refresh cadence for just the
+	// chain-derived routing/store allowlists. A full bootstrap cycle
+	// (bootstrapRefreshInterval) also refreshes replication_info, pings
+	// peers and reseeds the routing table; that is expensive and we do
+	// not want to pay that cost every time a supernode's on-chain state
+	// changes. This lightweight refresh re-queries ListSuperNodes and
+	// updates the allowlists + replication_info.Active flags only.
+	allowlistRefreshInterval      = 30 * time.Second
 	defaultSuperNodeP2PPort   int = 4445
 )
 
@@ -364,6 +372,69 @@ func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string
 	}()
 }
 
+// RefreshAllowlistsFromChain re-queries the chain and refreshes ONLY the
+// routing/store allowlists, the self-state cache, and the
+// replication_info.Active flags. It does not ping peers, does not reseed the
+// routing table, and does not upsert bootstrap candidates into replication_info.
+//
+// Called on a short interval (allowlistRefreshInterval) and opportunistically
+// at the top of write-path RPCs (IterateBatchStore) so that on-chain
+// STORAGE_FULL / POSTPONED transitions propagate to the local write-gate
+// within O(seconds) rather than O(bootstrapRefreshInterval).
+//
+// Safe to call concurrently with SyncBootstrapOnce: both use the same
+// setRoutingAllowlist/setStoreAllowlist serialization (mutexes in DHT).
+func (s *DHT) RefreshAllowlistsFromChain(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if integrationTestEnabled() {
+		return nil
+	}
+	if s.options == nil || s.options.LumeraClient == nil {
+		return nil
+	}
+	supernodeAddr, err := s.getSupernodeAddress(ctx)
+	if err != nil {
+		return fmt.Errorf("get supernode address: %w", err)
+	}
+	selfAddress := fmt.Sprintf("%s:%d", parseSupernodeAddress(supernodeAddr), s.options.Port)
+	_, routingIDs, storeIDs, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
+	if err != nil {
+		return err
+	}
+	s.setRoutingAllowlist(ctx, routingIDs)
+	s.setStoreAllowlist(ctx, storeIDs)
+	// Flip replication_info.Active=false for peers no longer store-eligible.
+	s.pruneIneligibleStorePeers(ctx)
+	return nil
+}
+
+// StartAllowlistRefresher runs RefreshAllowlistsFromChain every
+// allowlistRefreshInterval. Short cadence ensures on-chain state transitions
+// are reflected in the local p2p write/read gates before the next upload
+// tries to dispatch STORE RPCs.
+func (s *DHT) StartAllowlistRefresher(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(allowlistRefreshInterval)
+		defer t.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := s.RefreshAllowlistsFromChain(ctx); err != nil {
+					logtrace.Debug(ctx, "periodic allowlist refresh failed", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				}
+			}
+		}
+	}()
+}
+
 // ConfigureBootstrapNodes wires to the new sync/refresher (no pings here).
 func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
 	// One-time sync attempt; keep service running if it fails and rely on refresher retries.
@@ -376,6 +447,15 @@ func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string
 
 	// Always start periodic retries so transient chain/API outages can recover.
 	s.StartBootstrapRefresher(ctx, bootstrapNodes)
+
+	// Also start a fast allowlist-only refresher so on-chain
+	// STORAGE_FULL / POSTPONED transitions propagate to the local p2p
+	// write-gate within O(seconds) rather than O(bootstrapRefreshInterval).
+	// Without this, a supernode that just flipped to STORAGE_FULL remains
+	// in the local storeAllowlist until the next full bootstrap cycle and
+	// the client will dispatch STORE RPCs that the peer correctly rejects,
+	// tanking the success rate and failing uploads.
+	s.StartAllowlistRefresher(ctx)
 
 	return nil
 }

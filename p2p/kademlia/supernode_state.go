@@ -2,6 +2,7 @@ package kademlia
 
 import (
 	"context"
+	"strings"
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
@@ -148,5 +149,51 @@ func (s *DHT) pruneIneligibleStorePeers(ctx context.Context) {
 			logtrace.FieldModule: "p2p",
 			"cleared":            cleared,
 		})
+	}
+}
+
+// peerStoreIneligibleMarker is the unique substring emitted by both
+// handleStoreData and handleBatchStoreData when the receiving node rejects a
+// STORE / BatchStore RPC because its own on-chain state is not store-eligible.
+// Kept as a constant so the client-side recognizer cannot drift from the
+// server-side emitter without breaking the invariant test
+// TestIsPeerStoreIneligibleError.
+const peerStoreIneligibleMarker = "self not store-eligible"
+
+// isPeerStoreIneligibleError reports whether the given error message came
+// from a peer's STORE / BatchStore self-guard. Used on the client side to
+// distinguish authoritative "peer is not write-eligible" signals from real
+// failures; the former must not be counted against the store success rate.
+func isPeerStoreIneligibleError(msg string) bool {
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, peerStoreIneligibleMarker)
+}
+
+// pruneStoreAllowEntry removes the given peer from the in-memory store
+// allowlist. Called when a peer's response indicates its on-chain state has
+// changed and the local allowlist is stale, so that subsequent hot-path
+// lookups in the same run do not re-select the peer while the next
+// RefreshAllowlistsFromChain converges.
+func (s *DHT) pruneStoreAllowEntry(n *Node) {
+	if s == nil || n == nil || len(n.ID) == 0 {
+		return
+	}
+	n.SetHashedID()
+	if len(n.HashedID) != 32 {
+		return
+	}
+	var key [32]byte
+	copy(key[:], n.HashedID)
+
+	s.storeAllowMu.Lock()
+	defer s.storeAllowMu.Unlock()
+	if s.storeAllow == nil {
+		return
+	}
+	if _, ok := s.storeAllow[key]; ok {
+		delete(s.storeAllow, key)
+		s.storeAllowCount.Store(int64(len(s.storeAllow)))
 	}
 }

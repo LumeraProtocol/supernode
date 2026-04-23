@@ -2384,7 +2384,30 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 // during this run; success rate is successful responses divided by this count.
 // If the success rate is below `minimumDataStoreSuccessRate`, an error is
 // returned alongside the measured rate and request count.
+//
+// Authoritative peer rejections of the form "self not store-eligible" /
+// "store rejected: self not store-eligible" are NOT counted as failures:
+// the peer is telling us its on-chain state has changed (STORAGE_FULL or
+// otherwise write-ineligible) and our local allowlist is stale. Counting
+// those responses as failures would let a single recently-transitioned peer
+// tank the success rate and fail the entire upload. Instead we decrement the
+// request count (so the peer is treated as though it had never been in the
+// candidate set) and prune it from the in-memory store allowlist so the
+// same run does not re-pick it. A background refresh
+// (StartAllowlistRefresher) brings the authoritative allowlist in sync with
+// the chain within O(seconds).
 func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) error {
+	// Best-effort allowlist refresh on the write hot path. This is the
+	// first line of defense against a stale storeAllowlist on the very
+	// first upload after a chain state transition. The peer-rejection
+	// handling below is the second line of defense for races we miss.
+	if err := s.RefreshAllowlistsFromChain(ctx); err != nil {
+		logtrace.Debug(ctx, "dht: opportunistic allowlist refresh failed", logtrace.Fields{
+			logtrace.FieldModule: "dht",
+			"task_id":            id,
+			logtrace.FieldError:  err.Error(),
+		})
+	}
 	globalClosestContacts := make(map[string]*NodeList)
 	knownNodes := make(map[string]*Node)
 	hashes := make([][]byte, len(values))
@@ -2502,12 +2525,34 @@ func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, i
 					if v.Status.ErrMsg != "" {
 						errMsg = v.Status.ErrMsg
 					}
-					logtrace.Error(ctx, "Batch store to node failed", logtrace.Fields{
-						logtrace.FieldModule: "dht",
-						"err":                errMsg,
-						"task_id":            id,
-						"node":               nodeAddr,
-					})
+					// Authoritative "peer is not store-eligible" rejection.
+					// The peer's on-chain state changed (typically to
+					// STORAGE_FULL) and the caller's local storeAllowlist is
+					// stale. Do not count this against success rate; instead
+					// treat the candidate as if it had never been eligible
+					// and prune it from the in-memory allowlist so the same
+					// run does not re-pick it.
+					if isPeerStoreIneligibleError(errMsg) {
+						requests--
+						if response.Receiver != nil {
+							s.pruneStoreAllowEntry(response.Receiver)
+						} else if response.Message != nil && response.Message.Sender != nil {
+							s.pruneStoreAllowEntry(response.Message.Sender)
+						}
+						logtrace.Info(ctx, "dht: peer reported not store-eligible; excluded from success-rate denominator", logtrace.Fields{
+							logtrace.FieldModule: "dht",
+							"task_id":            id,
+							"node":               nodeAddr,
+							"err":                errMsg,
+						})
+					} else {
+						logtrace.Error(ctx, "Batch store to node failed", logtrace.Fields{
+							logtrace.FieldModule: "dht",
+							"err":                errMsg,
+							"task_id":            id,
+							"node":               nodeAddr,
+						})
+					}
 				}
 			}
 		}
