@@ -1,6 +1,6 @@
 module github.com/LumeraProtocol/supernode/v2
 
-go 1.25.5
+go 1.25.9
 
 replace (
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
@@ -12,11 +12,11 @@ require (
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.11.2-0.20260413145614-4ffe74bb13dc
+	github.com/LumeraProtocol/lumera v1.12.0-rc
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/cometbft/cometbft v0.38.20
+	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/btcutil v1.0.5
 	github.com/cosmos/cosmos-sdk v0.53.5
 	github.com/cosmos/go-bip39 v1.0.0

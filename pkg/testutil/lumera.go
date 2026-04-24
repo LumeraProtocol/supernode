@@ -22,6 +22,7 @@ import (
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -265,6 +266,18 @@ func (m *MockSupernodeModule) GetSupernodeWithLatestAddress(ctx context.Context,
 
 func (m *MockSupernodeModule) ListSuperNodes(ctx context.Context) (*supernodeTypes.QueryListSuperNodesResponse, error) {
 	return &supernodeTypes.QueryListSuperNodesResponse{}, nil
+}
+
+func (m *MockSupernodeModule) GetPoolState(ctx context.Context) (*supernodeTypes.QueryPoolStateResponse, error) {
+	return &supernodeTypes.QueryPoolStateResponse{}, nil
+}
+
+func (m *MockSupernodeModule) GetSNEligibility(ctx context.Context, validatorAddress string) (*supernodeTypes.QuerySNEligibilityResponse, error) {
+	return &supernodeTypes.QuerySNEligibilityResponse{Eligible: true, Reason: "mock"}, nil
+}
+
+func (m *MockSupernodeModule) GetPayoutHistory(ctx context.Context, validatorAddress string, pagination *query.PageRequest) (*supernodeTypes.QueryPayoutHistoryResponse, error) {
+	return &supernodeTypes.QueryPayoutHistoryResponse{}, nil
 }
 
 // ReportMetrics mocks broadcasting a metrics report transaction.

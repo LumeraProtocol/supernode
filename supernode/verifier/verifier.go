@@ -131,9 +131,9 @@ func (cv *ConfigVerifier) checkSupernodeExists(ctx context.Context, result *Veri
 
 func (cv *ConfigVerifier) checkSupernodeState(result *VerificationResult, supernodeInfo *snmodule.SuperNodeInfo) {
 	state := adapterlumera.ParseSupernodeState(supernodeInfo.CurrentState)
-	allowedStates := fmt.Sprintf("%s or %s", adapterlumera.SUPERNODE_STATE_ACTIVE, adapterlumera.SUPERNODE_STATE_POSTPONED)
+	allowedStates := fmt.Sprintf("%s or %s or %s", adapterlumera.SUPERNODE_STATE_ACTIVE, adapterlumera.SUPERNODE_STATE_STORAGE_FULL, adapterlumera.SUPERNODE_STATE_POSTPONED)
 
-	if supernodeInfo.CurrentState == "" || state == adapterlumera.SUPERNODE_STATE_ACTIVE {
+	if supernodeInfo.CurrentState == "" || state == adapterlumera.SUPERNODE_STATE_ACTIVE || state == adapterlumera.SUPERNODE_STATE_STORAGE_FULL {
 		return
 	}
 

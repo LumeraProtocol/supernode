@@ -16,8 +16,23 @@ import (
 )
 
 const (
-	bootstrapRefreshInterval     = 10 * time.Minute
-	defaultSuperNodeP2PPort  int = 4445
+	bootstrapRefreshInterval = 10 * time.Minute
+	// allowlistRefreshInterval is a faster refresh cadence for just the
+	// chain-derived routing/store allowlists. A full bootstrap cycle
+	// (bootstrapRefreshInterval) also refreshes replication_info, pings
+	// peers and reseeds the routing table; that is expensive and we do
+	// not want to pay that cost every time a supernode's on-chain state
+	// changes. This lightweight refresh re-queries ListSuperNodes and
+	// updates the allowlists + replication_info.Active flags only.
+	allowlistRefreshInterval = 30 * time.Second
+	// allowlistOpportunisticMinInterval is the minimum wall-clock gap
+	// between opportunistic allowlist refreshes from hot RPC paths
+	// (IterateBatchStore). Debounces a burst of concurrent uploads so
+	// they don't each spawn their own ListSuperNodes chain query. A
+	// successful refresh from the 30s background ticker counts, so in
+	// steady state the opportunistic path is always a no-op.
+	allowlistOpportunisticMinInterval = 10 * time.Second
+	defaultSuperNodeP2PPort        int = 4445
 )
 
 // seed a couple of obviously bad addrs (unless in integration tests)
@@ -108,16 +123,22 @@ func (s *DHT) setBootstrapNodesFromConfigVar(ctx context.Context, bootstrapNodes
 	return nil
 }
 
-// loadBootstrapCandidatesFromChain returns active supernodes (by latest state)
-// mapped by "ip:port". No pings here.
-func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress string) (map[string]*Node, map[[32]byte]struct{}, error) {
+// loadBootstrapCandidatesFromChain returns routing candidates (by latest state) mapped by "ip:port",
+// plus two allowlists:
+//   - routingIDs: Active + Postponed
+//   - storeIDs: Active only
+//
+// No pings here.
+func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress string) (map[string]*Node, map[[32]byte]struct{}, map[[32]byte]struct{}, error) {
 	resp, err := s.options.LumeraClient.SuperNode().ListSuperNodes(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list supernodes: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to list supernodes: %w", err)
 	}
 
-	activeIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
+	routingIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
+	storeIDs := make(map[[32]byte]struct{}, len(resp.Supernodes))
 	mapNodes := make(map[string]*Node, len(resp.Supernodes))
+	selfID := strings.TrimSpace(string(s.options.ID))
 	for _, sn := range resp.Supernodes {
 		if len(sn.States) == 0 {
 			continue
@@ -130,7 +151,16 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 				latestState = int32(st.State)
 			}
 		}
-		if latestState != 1 { // SuperNodeStateActive = 1
+		// Record self-state regardless of routing eligibility; the STORE
+		// RPC self-guard needs the authoritative value even when self is
+		// DISABLED/STOPPED/PENALIZED (in which case all states are
+		// non-store-eligible anyway).
+		if selfID != "" && strings.TrimSpace(sn.SupernodeAccount) == selfID {
+			s.setSelfState(latestState)
+		}
+		// Routing/read eligibility: {ACTIVE, POSTPONED, STORAGE_FULL}.
+		// Store/write eligibility: {ACTIVE} only.
+		if !isRoutingEligibleState(latestState) {
 			continue
 		}
 
@@ -148,7 +178,10 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 		} else if len(h) == 32 {
 			var key [32]byte
 			copy(key[:], h)
-			activeIDs[key] = struct{}{}
+			routingIDs[key] = struct{}{}
+			if isStoreEligibleState(latestState) {
+				storeIDs[key] = struct{}{}
+			}
 		}
 
 		// latest IP by height
@@ -190,7 +223,7 @@ func (s *DHT) loadBootstrapCandidatesFromChain(ctx context.Context, selfAddress 
 		node.ID = []byte(id)
 		mapNodes[full] = node
 	}
-	return mapNodes, activeIDs, nil
+	return mapNodes, routingIDs, storeIDs, nil
 }
 
 // upsertBootstrapNode inserts/updates replication_info for the discovered node (Active=false).
@@ -245,6 +278,24 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 		if err := s.setBootstrapNodesFromConfigVar(ctx, bootstrapNodes); err != nil {
 			return err
 		}
+		allow := make(map[[32]byte]struct{}, len(s.options.BootstrapNodes))
+		for _, n := range s.options.BootstrapNodes {
+			if n == nil || len(n.ID) == 0 {
+				continue
+			}
+			h, err := utils.Blake3Hash(n.ID)
+			if err != nil || len(h) != 32 {
+				continue
+			}
+			var key [32]byte
+			copy(key[:], h)
+			allow[key] = struct{}{}
+		}
+		// Config bootstrap has no chain states; treat provided peers as both routing/store-eligible.
+		s.setRoutingAllowlist(ctx, allow)
+		s.setStoreAllowlist(ctx, allow)
+		s.pruneIneligibleRoutingPeers(ctx)
+
 		for _, n := range s.options.BootstrapNodes {
 			if err := s.upsertBootstrapNode(ctx, n); err != nil {
 				logtrace.Warn(ctx, "bootstrap upsert failed", logtrace.Fields{
@@ -265,15 +316,21 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 	}
 	selfAddress := fmt.Sprintf("%s:%d", parseSupernodeAddress(supernodeAddr), s.options.Port)
 
-	cands, activeIDs, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
+	cands, routingIDs, storeIDs, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
 	if err != nil {
 		return err
 	}
 
-	// Update eligibility gate from chain Active state and prune any peers that slipped in via
+	// Update routing/read gate from chain state and prune any peers that slipped in via
 	// inbound traffic before the last bootstrap refresh.
-	s.setRoutingAllowlist(ctx, activeIDs)
+	s.setRoutingAllowlist(ctx, routingIDs)
+	// Write/replication targets are Active-only.
+	s.setStoreAllowlist(ctx, storeIDs)
 	s.pruneIneligibleRoutingPeers(ctx)
+	// Eagerly flip replication_info.Active=false for peers that are no
+	// longer store-eligible (STORAGE_FULL/POSTPONED/evicted). Closes the
+	// window between chain transition and next successful ping.
+	s.pruneIneligibleStorePeers(ctx)
 
 	// Upsert candidates to replication_info
 	seen := make(map[string]struct{}, len(cands))
@@ -303,13 +360,6 @@ func (s *DHT) SyncBootstrapOnce(ctx context.Context, bootstrapNodes string) erro
 // This keeps replication_info and routing table current as the validator set changes.
 func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string) {
 	go func() {
-		// Initial sync
-		if err := s.SyncBootstrapOnce(ctx, bootstrapNodes); err != nil {
-			logtrace.Warn(ctx, "initial bootstrap sync failed", logtrace.Fields{
-				logtrace.FieldModule: "p2p",
-				logtrace.FieldError:  err.Error(),
-			})
-		}
 		t := time.NewTicker(bootstrapRefreshInterval)
 		defer t.Stop()
 
@@ -329,14 +379,127 @@ func (s *DHT) StartBootstrapRefresher(ctx context.Context, bootstrapNodes string
 	}()
 }
 
-// ConfigureBootstrapNodes wires to the new sync/refresher (no pings here).
-func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
-	// One-time sync; start refresher in the background
-	if err := s.SyncBootstrapOnce(ctx, bootstrapNodes); err != nil {
+// RefreshAllowlistsFromChain re-queries the chain and refreshes ONLY the
+// routing/store allowlists, the self-state cache, and the
+// replication_info.Active flags. It does not ping peers, does not reseed the
+// routing table, and does not upsert bootstrap candidates into replication_info.
+//
+// Called on a short interval (allowlistRefreshInterval) and opportunistically
+// at the top of write-path RPCs (IterateBatchStore) so that on-chain
+// STORAGE_FULL / POSTPONED transitions propagate to the local write-gate
+// within O(seconds) rather than O(bootstrapRefreshInterval).
+//
+// Safe to call concurrently with SyncBootstrapOnce: both use the same
+// setRoutingAllowlist/setStoreAllowlist serialization (mutexes in DHT).
+func (s *DHT) RefreshAllowlistsFromChain(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if integrationTestEnabled() {
+		return nil
+	}
+	if s.options == nil || s.options.LumeraClient == nil {
+		return nil
+	}
+	supernodeAddr, err := s.getSupernodeAddress(ctx)
+	if err != nil {
+		return fmt.Errorf("get supernode address: %w", err)
+	}
+	selfAddress := fmt.Sprintf("%s:%d", parseSupernodeAddress(supernodeAddr), s.options.Port)
+	_, routingIDs, storeIDs, err := s.loadBootstrapCandidatesFromChain(ctx, selfAddress)
+	if err != nil {
 		return err
 	}
+	s.setRoutingAllowlist(ctx, routingIDs)
+	s.setStoreAllowlist(ctx, storeIDs)
+	// Flip replication_info.Active=false for peers no longer store-eligible.
+	s.pruneIneligibleStorePeers(ctx)
+	// Stamp the successful-refresh timestamp so MaybeRefreshAllowlists can
+	// debounce opportunistic callers on hot RPC paths.
+	s.lastAllowlistRefreshUnixNano.Store(time.Now().UnixNano())
+	return nil
+}
 
+// MaybeRefreshAllowlists is a debounced variant of RefreshAllowlistsFromChain
+// intended for hot RPC paths (e.g. IterateBatchStore). It skips the chain
+// query if ANY refresh attempt (successful or not) happened within
+// allowlistOpportunisticMinInterval. The 30-second background
+// StartAllowlistRefresher is the primary convergence mechanism; this
+// function exists only to shrink the worst-case staleness window for the
+// very first upload after a chain state transition.
+//
+// The debounce stamps on attempt (not success) so a persistently-failing
+// chain does not produce one RPC attempt per batch; the background ticker
+// retries on its own cadence.
+//
+// Returns true iff a refresh was attempted, false iff the call was skipped
+// due to debounce. Returned err, if any, is from the underlying
+// RefreshAllowlistsFromChain.
+func (s *DHT) MaybeRefreshAllowlists(ctx context.Context) (refreshed bool, err error) {
+	if s == nil {
+		return false, nil
+	}
+	if integrationTestEnabled() {
+		return false, nil
+	}
+	last := s.lastAllowlistRefreshUnixNano.Load()
+	if last != 0 && time.Since(time.Unix(0, last)) < allowlistOpportunisticMinInterval {
+		return false, nil
+	}
+	// Stamp BEFORE the call so subsequent in-flight callers see the
+	// debounce, and so a chain failure does not reset the window to the
+	// next caller's wall clock. The background StartAllowlistRefresher is
+	// responsible for eventual convergence if this attempt fails.
+	s.lastAllowlistRefreshUnixNano.Store(time.Now().UnixNano())
+	return true, s.RefreshAllowlistsFromChain(ctx)
+}
+
+// StartAllowlistRefresher runs RefreshAllowlistsFromChain every
+// allowlistRefreshInterval. Short cadence ensures on-chain state transitions
+// are reflected in the local p2p write/read gates before the next upload
+// tries to dispatch STORE RPCs.
+func (s *DHT) StartAllowlistRefresher(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(allowlistRefreshInterval)
+		defer t.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := s.RefreshAllowlistsFromChain(ctx); err != nil {
+					logtrace.Debug(ctx, "periodic allowlist refresh failed", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						logtrace.FieldError:  err.Error(),
+					})
+				}
+			}
+		}
+	}()
+}
+
+// ConfigureBootstrapNodes wires to the new sync/refresher (no pings here).
+func (s *DHT) ConfigureBootstrapNodes(ctx context.Context, bootstrapNodes string) error {
+	// One-time sync attempt; keep service running if it fails and rely on refresher retries.
+	if err := s.SyncBootstrapOnce(ctx, bootstrapNodes); err != nil {
+		logtrace.Warn(ctx, "initial bootstrap sync failed; continuing with periodic refresher", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
+	}
+
+	// Always start periodic retries so transient chain/API outages can recover.
 	s.StartBootstrapRefresher(ctx, bootstrapNodes)
+
+	// Also start a fast allowlist-only refresher so on-chain
+	// STORAGE_FULL / POSTPONED transitions propagate to the local p2p
+	// write-gate within O(seconds) rather than O(bootstrapRefreshInterval).
+	// Without this, a supernode that just flipped to STORAGE_FULL remains
+	// in the local storeAllowlist until the next full bootstrap cycle and
+	// the client will dispatch STORE RPCs that the peer correctly rejects,
+	// tanking the success rate and failing uploads.
+	s.StartAllowlistRefresher(ctx)
 
 	return nil
 }

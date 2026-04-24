@@ -1,0 +1,237 @@
+package kademlia
+
+import (
+	"context"
+	"strings"
+
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+)
+
+// Supernode p2p eligibility policy.
+//
+// Chain is the single source of truth for state values; we re-use
+// sntypes.SuperNodeState ordinals to avoid drift.
+//
+// Two orthogonal gates govern p2p behavior:
+//
+//   - Routing / read eligibility: peer may sit in the routing table and
+//     answer FIND_NODE, FIND_VALUE, BatchRetrieve.
+//   - Store / write eligibility:  peer may receive STORE / batch-store
+//     and be targeted by replication pushes.
+//
+// Post-LEP-5 / Everlight (lumera #113) policy:
+//
+//   routing = {ACTIVE, POSTPONED, STORAGE_FULL}
+//   store   = {ACTIVE}
+//
+// POSTPONED: probation; still holds data, must keep serving reads, no writes.
+// STORAGE_FULL: disk-full; still holds data, still payout-eligible, no writes.
+//
+// All other states (UNSPECIFIED, DISABLED, STOPPED, PENALIZED) are excluded
+// from both gates.
+
+// snStateInt normalizes a chain SuperNodeState to int32 for comparison.
+func snStateInt(s sntypes.SuperNodeState) int32 { return int32(s) }
+
+// isRoutingEligibleState reports whether the given chain supernode state is
+// eligible for participation in routing/read paths.
+func isRoutingEligibleState(s int32) bool {
+	return s == snStateInt(sntypes.SuperNodeStateActive) ||
+		s == snStateInt(sntypes.SuperNodeStatePostponed) ||
+		s == snStateInt(sntypes.SuperNodeStateStorageFull)
+}
+
+// isStoreEligibleState reports whether the given chain supernode state is
+// eligible for write/replication targeting.
+func isStoreEligibleState(s int32) bool {
+	return s == snStateInt(sntypes.SuperNodeStateActive)
+}
+
+// shouldRejectStore is the single source of truth for the STORE / STORE_BATCH
+// self-guard decision. Keeping the logic here rather than inlined at RPC call
+// sites means future refinements (logging, metrics, grace periods) propagate
+// to every write-path handler uniformly.
+//
+//	newKeys > 0 && !selfStoreEligible()  =>  reject
+//
+// When newKeys == 0 (all keys already held) replication is always allowed.
+// When self is store-eligible (ACTIVE, or pre-bootstrap), always allow.
+func (s *DHT) shouldRejectStore(newKeys int) bool {
+	if s == nil {
+		return false
+	}
+	if newKeys <= 0 {
+		return false
+	}
+	return !s.selfStoreEligible()
+}
+
+// shouldRejectBatchStore is the batch-sized companion to shouldRejectStore.
+// It implements the exact same semantic (reject iff any genuinely-new key is
+// present AND self is not store-eligible) but preserves the short-circuit on
+// the happy path: when self is store-eligible we skip the O(len(payloads))
+// storage retrievals entirely.
+//
+// On return `ok=true` the caller must accept the batch; on `ok=false` the
+// caller must respond with ResultFailed ("batch store rejected: self not
+// store-eligible"). The returned newKeys is the genuinely-new key count
+// (0 if we short-circuited), useful for structured logging at the call site.
+//
+// This helper exists so that handleBatchStoreData does not reimplement the
+// shouldRejectStore contract inline. A future change to shouldRejectStore
+// (e.g. adding a grace period or metrics) flows into this function via the
+// shared semantics and both RPC handlers stay aligned.
+func (s *DHT) shouldRejectBatchStore(ctx context.Context, payloads [][]byte) (reject bool, newKeys int) {
+	if s == nil {
+		return false, 0
+	}
+	// Happy path: self is store-eligible => accept without touching storage.
+	// Preserves the prior behavior's performance on the 99% case.
+	if s.selfStoreEligible() {
+		return false, 0
+	}
+	// Self is not store-eligible. Count genuinely new keys; an all-replication
+	// batch (newKeys == 0) is still permitted so availability is preserved
+	// while self is in STORAGE_FULL / POSTPONED.
+	for _, data := range payloads {
+		k, _ := utils.Blake3Hash(data)
+		existing, rErr := s.store.Retrieve(ctx, k)
+		if rErr != nil || len(existing) == 0 {
+			newKeys++
+		}
+	}
+	return s.shouldRejectStore(newKeys), newKeys
+}
+
+// setSelfState caches the latest known chain state for this node. Safe for
+// concurrent callers. Called by the bootstrap refresher.
+func (s *DHT) setSelfState(state int32) {
+	if s == nil {
+		return
+	}
+	s.selfState.Store(state)
+	s.selfStateReady.Store(true)
+}
+
+// selfStoreEligible reports whether this node is currently permitted to accept
+// new-key STORE writes. Returns true when self-state is unknown (pre-bootstrap)
+// to avoid lockout; returns true in integration-test mode.
+func (s *DHT) selfStoreEligible() bool {
+	if s == nil {
+		return false
+	}
+	if integrationTestEnabled() {
+		return true
+	}
+	if !s.selfStateReady.Load() {
+		return true
+	}
+	return isStoreEligibleState(s.selfState.Load())
+}
+
+// pruneIneligibleStorePeers clears replication_info.Active for peers no longer
+// in the store allowlist. Keeps the replication worker from pushing writes to
+// STORAGE_FULL / POSTPONED / evicted peers between ping cycles.
+//
+// Integration tests bypass this via integrationTestEnabled() check in the
+// allowlist setter (empty allowlist => ready=false => no-op here).
+func (s *DHT) pruneIneligibleStorePeers(ctx context.Context) {
+	if s == nil || s.store == nil {
+		return
+	}
+	if !s.storeAllowReady.Load() {
+		return
+	}
+	infos, err := s.store.GetAllReplicationInfo(ctx)
+	if err != nil {
+		logtrace.Warn(ctx, "pruneIneligibleStorePeers: list replication info failed", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			logtrace.FieldError:  err.Error(),
+		})
+		return
+	}
+	cleared := 0
+	for _, info := range infos {
+		if !info.Active {
+			continue
+		}
+		// Derive the same key used by the allowlist.
+		node := &Node{ID: info.ID}
+		node.SetHashedID()
+		if len(node.HashedID) != 32 {
+			continue
+		}
+		var key [32]byte
+		copy(key[:], node.HashedID)
+
+		s.storeAllowMu.RLock()
+		_, ok := s.storeAllow[key]
+		s.storeAllowMu.RUnlock()
+		if ok {
+			continue
+		}
+		if uerr := s.store.UpdateIsActive(ctx, string(info.ID), false, false); uerr != nil {
+			logtrace.Warn(ctx, "pruneIneligibleStorePeers: UpdateIsActive failed", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				logtrace.FieldError:  uerr.Error(),
+				"node_id":            string(info.ID),
+			})
+			continue
+		}
+		cleared++
+	}
+	if cleared > 0 {
+		logtrace.Info(ctx, "pruneIneligibleStorePeers: cleared replication_info.Active for ineligible peers", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"cleared":            cleared,
+		})
+	}
+}
+
+// peerStoreIneligibleMarker is the unique substring emitted by both
+// handleStoreData and handleBatchStoreData when the receiving node rejects a
+// STORE / BatchStore RPC because its own on-chain state is not store-eligible.
+// Kept as a constant so the client-side recognizer cannot drift from the
+// server-side emitter without breaking the invariant test
+// TestIsPeerStoreIneligibleError.
+const peerStoreIneligibleMarker = "self not store-eligible"
+
+// isPeerStoreIneligibleError reports whether the given error message came
+// from a peer's STORE / BatchStore self-guard. Used on the client side to
+// distinguish authoritative "peer is not write-eligible" signals from real
+// failures; the former must not be counted against the store success rate.
+func isPeerStoreIneligibleError(msg string) bool {
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, peerStoreIneligibleMarker)
+}
+
+// pruneStoreAllowEntry removes the given peer from the in-memory store
+// allowlist. Called when a peer's response indicates its on-chain state has
+// changed and the local allowlist is stale, so that subsequent hot-path
+// lookups in the same run do not re-select the peer while the next
+// RefreshAllowlistsFromChain converges.
+func (s *DHT) pruneStoreAllowEntry(n *Node) {
+	if s == nil || n == nil || len(n.ID) == 0 {
+		return
+	}
+	n.SetHashedID()
+	if len(n.HashedID) != 32 {
+		return
+	}
+	var key [32]byte
+	copy(key[:], n.HashedID)
+
+	s.storeAllowMu.Lock()
+	defer s.storeAllowMu.Unlock()
+	if s.storeAllow == nil {
+		return
+	}
+	if _, ok := s.storeAllow[key]; ok {
+		delete(s.storeAllow, key)
+		s.storeAllowCount.Store(int64(len(s.storeAllow)))
+	}
+}
