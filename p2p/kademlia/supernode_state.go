@@ -6,6 +6,7 @@ import (
 
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // Supernode p2p eligibility policy.
@@ -48,12 +49,12 @@ func isStoreEligibleState(s int32) bool {
 	return s == snStateInt(sntypes.SuperNodeStateActive)
 }
 
-// shouldRejectStore reports whether an incoming STORE/BatchStore request
-// should be rejected because the self-node is not currently store-eligible
-// AND the request contains genuinely new keys (not just replication of
-// already-held data).
+// shouldRejectStore is the single source of truth for the STORE / STORE_BATCH
+// self-guard decision. Keeping the logic here rather than inlined at RPC call
+// sites means future refinements (logging, metrics, grace periods) propagate
+// to every write-path handler uniformly.
 //
-//   newKeys > 0 && !selfStoreEligible()  =>  reject
+//	newKeys > 0 && !selfStoreEligible()  =>  reject
 //
 // When newKeys == 0 (all keys already held) replication is always allowed.
 // When self is store-eligible (ACTIVE, or pre-bootstrap), always allow.
@@ -65,6 +66,43 @@ func (s *DHT) shouldRejectStore(newKeys int) bool {
 		return false
 	}
 	return !s.selfStoreEligible()
+}
+
+// shouldRejectBatchStore is the batch-sized companion to shouldRejectStore.
+// It implements the exact same semantic (reject iff any genuinely-new key is
+// present AND self is not store-eligible) but preserves the short-circuit on
+// the happy path: when self is store-eligible we skip the O(len(payloads))
+// storage retrievals entirely.
+//
+// On return `ok=true` the caller must accept the batch; on `ok=false` the
+// caller must respond with ResultFailed ("batch store rejected: self not
+// store-eligible"). The returned newKeys is the genuinely-new key count
+// (0 if we short-circuited), useful for structured logging at the call site.
+//
+// This helper exists so that handleBatchStoreData does not reimplement the
+// shouldRejectStore contract inline. A future change to shouldRejectStore
+// (e.g. adding a grace period or metrics) flows into this function via the
+// shared semantics and both RPC handlers stay aligned.
+func (s *DHT) shouldRejectBatchStore(ctx context.Context, payloads [][]byte) (reject bool, newKeys int) {
+	if s == nil {
+		return false, 0
+	}
+	// Happy path: self is store-eligible => accept without touching storage.
+	// Preserves the prior behavior's performance on the 99% case.
+	if s.selfStoreEligible() {
+		return false, 0
+	}
+	// Self is not store-eligible. Count genuinely new keys; an all-replication
+	// batch (newKeys == 0) is still permitted so availability is preserved
+	// while self is in STORAGE_FULL / POSTPONED.
+	for _, data := range payloads {
+		k, _ := utils.Blake3Hash(data)
+		existing, rErr := s.store.Retrieve(ctx, k)
+		if rErr != nil || len(existing) == 0 {
+			newKeys++
+		}
+	}
+	return s.shouldRejectStore(newKeys), newKeys
 }
 
 // setSelfState caches the latest known chain state for this node. Safe for

@@ -1241,28 +1241,19 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 	s.dht.addNode(ctx, message.Sender)
 
 	// Self-state gate: non-ACTIVE supernodes (STORAGE_FULL, POSTPONED, etc.)
-	// must not accept new-key batch writes. Count genuinely new keys; if
-	// self is not store-eligible AND the batch contains any new keys,
-	// reject. Pure replication of already-held keys is still permitted.
-	if !s.dht.selfStoreEligible() {
-		newKeys := 0
-		for _, data := range request.Data {
-			k, _ := utils.Blake3Hash(data)
-			existing, rErr := s.dht.store.Retrieve(ctx, k)
-			if rErr != nil || len(existing) == 0 {
-				newKeys++
-			}
-		}
-		if newKeys > 0 {
-			logtrace.Warn(ctx, "rejecting BatchStore: self is not store-eligible", logtrace.Fields{
-				logtrace.FieldModule: "p2p",
-				"sender":             message.Sender.String(),
-				"self_state":         s.dht.selfState.Load(),
-				"new_keys":           newKeys,
-				"total_keys":         len(request.Data),
-			})
-			return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, "batch store rejected: self not store-eligible")
-		}
+	// must not accept new-key batch writes. Delegates the decision to
+	// shouldRejectBatchStore so the STORE and BatchStore handlers share a
+	// single source of truth; any future refinement to shouldRejectStore
+	// (logging, metrics, grace periods) flows into both paths uniformly.
+	if reject, newKeys := s.dht.shouldRejectBatchStore(ctx, request.Data); reject {
+		logtrace.Warn(ctx, "rejecting BatchStore: self is not store-eligible", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"sender":             message.Sender.String(),
+			"self_state":         s.dht.selfState.Load(),
+			"new_keys":           newKeys,
+			"total_keys":         len(request.Data),
+		})
+		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, "batch store rejected: self not store-eligible")
 	}
 
 	if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {

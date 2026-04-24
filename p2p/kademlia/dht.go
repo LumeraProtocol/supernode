@@ -87,6 +87,13 @@ type DHT struct {
 	storeAllowReady atomic.Bool
 	storeAllowCount atomic.Int64
 
+	// lastAllowlistRefreshUnixNano is the timestamp of the most recent
+	// successful RefreshAllowlistsFromChain call (unix nanoseconds, 0 if
+	// never). Used by MaybeRefreshAllowlists to debounce opportunistic
+	// refreshes on hot RPC paths so a burst of concurrent uploads does not
+	// fan out to one chain ListSuperNodes query per upload.
+	lastAllowlistRefreshUnixNano atomic.Int64
+
 	// selfState caches this node's latest chain state, refreshed on the
 	// bootstrap cadence. Used by STORE RPC self-guards to reject new-key
 	// writes when self is not ACTIVE (e.g. STORAGE_FULL, POSTPONED).
@@ -193,6 +200,25 @@ func (s *DHT) setStoreAllowlist(ctx context.Context, allow map[[32]byte]struct{}
 	if integrationTestEnabled() {
 		return
 	}
+	// Avoid accidentally blocking ALL writes network-wide due to a transient
+	// chain issue. If ListSuperNodes returns zero write-eligible peers we
+	// retain the previous allowlist rather than clamping storeAllowCount to 0
+	// and failing eligibleForStore for every peer. Symmetric with the
+	// setRoutingAllowlist guard. Pre-bootstrap this is a debug log (expected
+	// while the chain is still warming up); post-bootstrap it is a WARN because
+	// it indicates either a chain outage or a genuine empty-active-set condition.
+	if len(allow) == 0 {
+		if !s.storeAllowReady.Load() {
+			logtrace.Debug(ctx, "store allowlist from chain is empty; leaving store gating disabled (bootstrap)", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		} else {
+			logtrace.Warn(ctx, "store allowlist update skipped: chain returned zero store-eligible supernodes; retaining previous allowlist", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+			})
+		}
+		return
+	}
 
 	s.storeAllowMu.Lock()
 	s.storeAllow = allow
@@ -245,6 +271,9 @@ func (s *DHT) eligibleForStore(n *Node) bool {
 	if s == nil {
 		return false
 	}
+	if n == nil || len(n.ID) == 0 {
+		return false
+	}
 	// In integration tests allow everything; chain state gating is not stable/available there.
 	if integrationTestEnabled() {
 		return true
@@ -255,9 +284,6 @@ func (s *DHT) eligibleForStore(n *Node) bool {
 	}
 	// Once initialized, an empty active set means no write-eligible peers.
 	if s.storeAllowCount.Load() == 0 {
-		return false
-	}
-	if n == nil || len(n.ID) == 0 {
 		return false
 	}
 
@@ -2397,11 +2423,14 @@ func (s *DHT) addKnownNodes(ctx context.Context, nodes []*Node, knownNodes map[s
 // (StartAllowlistRefresher) brings the authoritative allowlist in sync with
 // the chain within O(seconds).
 func (s *DHT) IterateBatchStore(ctx context.Context, values [][]byte, typ int, id string) error {
-	// Best-effort allowlist refresh on the write hot path. This is the
-	// first line of defense against a stale storeAllowlist on the very
-	// first upload after a chain state transition. The peer-rejection
-	// handling below is the second line of defense for races we miss.
-	if err := s.RefreshAllowlistsFromChain(ctx); err != nil {
+	// Best-effort debounced allowlist refresh on the write hot path. This
+	// is the first line of defense against a stale storeAllowlist on the
+	// very first upload after a chain state transition. The peer-rejection
+	// handling below is the second line of defense for races we miss. The
+	// debounce (allowlistOpportunisticMinInterval) ensures a burst of
+	// concurrent uploads does not fan out to one chain query per batch;
+	// the 30-second background StartAllowlistRefresher handles steady state.
+	if _, err := s.MaybeRefreshAllowlists(ctx); err != nil {
 		logtrace.Debug(ctx, "dht: opportunistic allowlist refresh failed", logtrace.Fields{
 			logtrace.FieldModule: "dht",
 			"task_id":            id,

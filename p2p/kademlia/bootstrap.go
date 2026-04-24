@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	bootstrapRefreshInterval      = 10 * time.Minute
+	bootstrapRefreshInterval = 10 * time.Minute
 	// allowlistRefreshInterval is a faster refresh cadence for just the
 	// chain-derived routing/store allowlists. A full bootstrap cycle
 	// (bootstrapRefreshInterval) also refreshes replication_info, pings
@@ -24,8 +24,15 @@ const (
 	// not want to pay that cost every time a supernode's on-chain state
 	// changes. This lightweight refresh re-queries ListSuperNodes and
 	// updates the allowlists + replication_info.Active flags only.
-	allowlistRefreshInterval      = 30 * time.Second
-	defaultSuperNodeP2PPort   int = 4445
+	allowlistRefreshInterval = 30 * time.Second
+	// allowlistOpportunisticMinInterval is the minimum wall-clock gap
+	// between opportunistic allowlist refreshes from hot RPC paths
+	// (IterateBatchStore). Debounces a burst of concurrent uploads so
+	// they don't each spawn their own ListSuperNodes chain query. A
+	// successful refresh from the 30s background ticker counts, so in
+	// steady state the opportunistic path is always a no-op.
+	allowlistOpportunisticMinInterval = 10 * time.Second
+	defaultSuperNodeP2PPort        int = 4445
 )
 
 // seed a couple of obviously bad addrs (unless in integration tests)
@@ -407,7 +414,44 @@ func (s *DHT) RefreshAllowlistsFromChain(ctx context.Context) error {
 	s.setStoreAllowlist(ctx, storeIDs)
 	// Flip replication_info.Active=false for peers no longer store-eligible.
 	s.pruneIneligibleStorePeers(ctx)
+	// Stamp the successful-refresh timestamp so MaybeRefreshAllowlists can
+	// debounce opportunistic callers on hot RPC paths.
+	s.lastAllowlistRefreshUnixNano.Store(time.Now().UnixNano())
 	return nil
+}
+
+// MaybeRefreshAllowlists is a debounced variant of RefreshAllowlistsFromChain
+// intended for hot RPC paths (e.g. IterateBatchStore). It skips the chain
+// query if ANY refresh attempt (successful or not) happened within
+// allowlistOpportunisticMinInterval. The 30-second background
+// StartAllowlistRefresher is the primary convergence mechanism; this
+// function exists only to shrink the worst-case staleness window for the
+// very first upload after a chain state transition.
+//
+// The debounce stamps on attempt (not success) so a persistently-failing
+// chain does not produce one RPC attempt per batch; the background ticker
+// retries on its own cadence.
+//
+// Returns true iff a refresh was attempted, false iff the call was skipped
+// due to debounce. Returned err, if any, is from the underlying
+// RefreshAllowlistsFromChain.
+func (s *DHT) MaybeRefreshAllowlists(ctx context.Context) (refreshed bool, err error) {
+	if s == nil {
+		return false, nil
+	}
+	if integrationTestEnabled() {
+		return false, nil
+	}
+	last := s.lastAllowlistRefreshUnixNano.Load()
+	if last != 0 && time.Since(time.Unix(0, last)) < allowlistOpportunisticMinInterval {
+		return false, nil
+	}
+	// Stamp BEFORE the call so subsequent in-flight callers see the
+	// debounce, and so a chain failure does not reset the window to the
+	// next caller's wall clock. The background StartAllowlistRefresher is
+	// responsible for eventual convergence if this attempt fails.
+	s.lastAllowlistRefreshUnixNano.Store(time.Now().UnixNano())
+	return true, s.RefreshAllowlistsFromChain(ctx)
 }
 
 // StartAllowlistRefresher runs RefreshAllowlistsFromChain every
