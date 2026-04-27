@@ -134,6 +134,28 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	totalBytesStored := 0
 	metadataBytesStored := 0
 	firstBatchProcessed := false
+	if len(keys) == 0 && len(metadataFiles) > 0 {
+		logtrace.Info(ctx, "store: batch send (metadata-only)", logtrace.Fields{
+			"taskID":          taskID,
+			"metadata_count":  len(metadataFiles),
+			"metadata_bytes":  metadataBytes,
+			"metadata_mb_est": utils.BytesIntToMB(metadataBytes),
+		})
+		bctx, cancel := context.WithTimeout(ctx, storeBatchContextTimeout)
+		err = p.p2p.StoreBatch(bctx, metadataFiles, P2PDataRaptorQSymbol, taskID)
+		cancel()
+		if err != nil {
+			return totalSymbols, totalAvailable, fmt.Errorf("p2p store batch (metadata-only): %w", err)
+		}
+		logtrace.Info(ctx, "store: batch ok (metadata-only)", logtrace.Fields{
+			"taskID":         taskID,
+			"metadata_count": len(metadataFiles),
+			"metadata_bytes": metadataBytes,
+		})
+		totalBytesStored += metadataBytes
+		metadataBytesStored += metadataBytes
+		firstBatchProcessed = true
+	}
 	for start := 0; start < len(keys); {
 		end := min(start+loadSymbolsBatchSize, len(keys))
 		batch := keys[start:end]
