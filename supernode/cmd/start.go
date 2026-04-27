@@ -162,16 +162,29 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-		hostReporter, err := hostReporterService.NewService(
-			appConfig.SupernodeConfig.Identity,
-			lumeraClient,
-			kr,
-			appConfig.SupernodeConfig.KeyName,
-			appConfig.BaseDir,
-			appConfig.GetP2PDataDir(),
-		)
-		if err != nil {
-			logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
+		// Test/devnet affordance: when LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1 is set,
+		// skip starting the on-chain host_reporter service. This frees the supernode's
+		// reporter key for externally driven `MsgSubmitEpochReport` flows (e.g. the
+		// everlight devnet test scenarios) that would otherwise lose the account-sequence
+		// race against the SN's own ~5s auto-submit ticker. Production deployments must
+		// leave this unset; gated behind an env var with no config-file surface so the
+		// canonical path is unchanged.
+		var hostReporter service
+		if v := strings.TrimSpace(os.Getenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")); v == "1" || strings.EqualFold(v, "true") {
+			logtrace.Info(ctx, "host_reporter disabled via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", logtrace.Fields{})
+		} else {
+			hr, err := hostReporterService.NewService(
+				appConfig.SupernodeConfig.Identity,
+				lumeraClient,
+				kr,
+				appConfig.SupernodeConfig.KeyName,
+				appConfig.BaseDir,
+				appConfig.GetP2PDataDir(),
+			)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
+			}
+			hostReporter = hr
 		}
 
 		// Legacy on-chain supernode metrics reporting has been superseded by `x/audit`.
@@ -254,7 +267,10 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Start the services using the standard runner and capture exit
 		servicesErr := make(chan error, 1)
 		go func() {
-			services := []service{grpcServer, cService, p2pService, gatewayServer, hostReporter}
+			services := []service{grpcServer, cService, p2pService, gatewayServer}
+			if hostReporter != nil {
+				services = append(services, hostReporter)
+			}
 			if storageChallengeRunner != nil {
 				services = append(services, storageChallengeRunner)
 			}
