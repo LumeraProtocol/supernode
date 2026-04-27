@@ -28,6 +28,17 @@ const (
 	maxConcurrentTargets = 8
 )
 
+// ProofResultProvider supplies the LEP-6 storage proof results that the host
+// reporter must include in MsgSubmitEpochReport for a given epoch. The storage
+// challenge runtime (PR3) implements this; until then the field stays nil and
+// the host reporter submits an empty storage_proof_results slice.
+type ProofResultProvider interface {
+	// CollectResults returns the storage proof results buffered for epochID and
+	// clears the buffer. Implementations must be safe for concurrent use.
+	// Returning nil or an empty slice is valid (no proofs produced this epoch).
+	CollectResults(epochID uint64) []*audittypes.StorageProofResult
+}
+
 // Service submits one MsgSubmitEpochReport per epoch for the local supernode.
 // All runtime behavior is driven by on-chain params/queries; there are no local config knobs.
 type Service struct {
@@ -43,6 +54,15 @@ type Service struct {
 	metrics      *statussvc.MetricsCollector
 	storagePaths []string
 	p2pDataDir   string
+
+	proofResultProvider ProofResultProvider
+}
+
+// SetProofResultProvider attaches a ProofResultProvider to be drained on each
+// epoch report. Wiring happens in supernode/cmd/start.go after the storage
+// challenge runtime is constructed. May be called once before Run.
+func (s *Service) SetProofResultProvider(p ProofResultProvider) {
+	s.proofResultProvider = p
 }
 
 func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring, keyName string, baseDir string, p2pDataDir string) (*Service, error) {
@@ -143,6 +163,11 @@ func (s *Service) tick(ctx context.Context) {
 
 	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
 
+	var storageProofResults []*audittypes.StorageProofResult
+	if s.proofResultProvider != nil {
+		storageProofResults = s.proofResultProvider.CollectResults(epochID)
+	}
+
 	hostReport := audittypes.HostReport{
 		// Intentionally submit 0% usage for CPU/memory so the chain treats these as "unknown".
 		// Disk usage is reported accurately (legacy-aligned) so disk-based enforcement can work.
@@ -152,11 +177,13 @@ func (s *Service) tick(ctx context.Context) {
 	if diskUsagePercent, ok := s.diskUsagePercent(tickCtx); ok {
 		hostReport.DiskUsagePercent = diskUsagePercent
 	}
-	if cascadeBytes, ok := s.cascadeKademliaDBBytes(tickCtx); ok {
-		hostReport.CascadeKademliaDbBytes = float64(cascadeBytes)
-	}
+	// Note: chain HostReport at LEP-6-foundation no longer carries
+	// CascadeKademliaDbBytes; the field was removed upstream. The local
+	// cascadeKademliaDBBytes() helper is retained (and unit-tested) so it
+	// can be re-wired if a successor metric is reintroduced.
+	_, _ = s.cascadeKademliaDBBytes(tickCtx)
 
-	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations); err != nil {
+	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations, storageProofResults); err != nil {
 		logtrace.Warn(tickCtx, "epoch report submit failed", logtrace.Fields{
 			"epoch_id": epochID,
 			"error":    err.Error(),
@@ -167,6 +194,7 @@ func (s *Service) tick(ctx context.Context) {
 	logtrace.Info(tickCtx, "epoch report submitted", logtrace.Fields{
 		"epoch_id":                             epochID,
 		"storage_challenge_observations_count": len(storageChallengeObservations),
+		"storage_proof_results_count":          len(storageProofResults),
 	})
 }
 

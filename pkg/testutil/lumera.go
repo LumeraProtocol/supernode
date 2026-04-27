@@ -218,13 +218,49 @@ func (m *MockAuditModule) GetEpochReport(ctx context.Context, epochID uint64, su
 	return &audittypes.QueryEpochReportResponse{}, nil
 }
 
+func (m *MockAuditModule) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
+	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
+}
+
+func (m *MockAuditModule) GetReporterReliabilityState(ctx context.Context, reporterAccount string) (*audittypes.QueryReporterReliabilityStateResponse, error) {
+	return &audittypes.QueryReporterReliabilityStateResponse{}, nil
+}
+
+func (m *MockAuditModule) GetTicketDeteriorationState(ctx context.Context, ticketID string) (*audittypes.QueryTicketDeteriorationStateResponse, error) {
+	return &audittypes.QueryTicketDeteriorationStateResponse{}, nil
+}
+
+func (m *MockAuditModule) GetHealOp(ctx context.Context, healOpID uint64) (*audittypes.QueryHealOpResponse, error) {
+	return &audittypes.QueryHealOpResponse{}, nil
+}
+
+func (m *MockAuditModule) GetHealOpsByStatus(ctx context.Context, status audittypes.HealOpStatus, pagination *query.PageRequest) (*audittypes.QueryHealOpsByStatusResponse, error) {
+	return &audittypes.QueryHealOpsByStatusResponse{}, nil
+}
+
+func (m *MockAuditModule) GetHealOpsByTicket(ctx context.Context, ticketID string, pagination *query.PageRequest) (*audittypes.QueryHealOpsByTicketResponse, error) {
+	return &audittypes.QueryHealOpsByTicketResponse{}, nil
+}
+
 type MockAuditMsgModule struct{}
 
 func (m *MockAuditMsgModule) SubmitEvidence(ctx context.Context, subjectAddress string, evidenceType audittypes.EvidenceType, actionID string, metadataJSON string) (*sdktx.BroadcastTxResponse, error) {
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
-func (m *MockAuditMsgModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error) {
+func (m *MockAuditMsgModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport audittypes.HostReport, storageChallengeObservations []*audittypes.StorageChallengeObservation, storageProofResults []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+func (m *MockAuditMsgModule) SubmitStorageRecheckEvidence(ctx context.Context, epochID uint64, challengedSupernodeAccount string, ticketID string, challengedResultTranscriptHash string, recheckTranscriptHash string, recheckResultClass audittypes.StorageProofResultClass, details string) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+func (m *MockAuditMsgModule) ClaimHealComplete(ctx context.Context, healOpID uint64, ticketID string, healManifestHash string, details string) (*sdktx.BroadcastTxResponse, error) {
+	return &sdktx.BroadcastTxResponse{}, nil
+}
+
+func (m *MockAuditMsgModule) SubmitHealVerification(ctx context.Context, healOpID uint64, verified bool, verificationHash string, details string) (*sdktx.BroadcastTxResponse, error) {
 	return &sdktx.BroadcastTxResponse{}, nil
 }
 
