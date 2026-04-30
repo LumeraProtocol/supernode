@@ -355,15 +355,28 @@ func ensureLegacyAccountMigrated(
 			return fmt.Errorf("failed to sign migration payload with EVM key: %w", err)
 		}
 
-		// Build the LegacyProof wrapper. The keeper replaced the flat
-		// LegacyPubKey/LegacySignature fields with a single oneof carrying
-		// either a SingleKeyProof or MultisigProof; supernode only ever signs
-		// with one secp256k1 key so we always use the Single case.
-		legacyProof := evmigrationtypes.LegacyProof{
-			Proof: &evmigrationtypes.LegacyProof_Single{
+		// Build the MigrationProof wrappers for both sides. Lumera's
+		// proof.proto unifies legacy and new sides under a single MigrationProof
+		// type with a oneof carrying either SingleKeyProof or MultisigProof.
+		// The supernode daemon holds exactly one signing key per side
+		// (legacy secp256k1, new eth_secp256k1), so it always populates the
+		// Single variant on both. Multisig legacy accounts are rejected
+		// upstream by multisigMigrationInstructions; the daemon never reaches
+		// this branch with a multisig-shaped key.
+		legacyProof := evmigrationtypes.MigrationProof{
+			Proof: &evmigrationtypes.MigrationProof_Single{
 				Single: &evmigrationtypes.SingleKeyProof{
 					PubKey:    legacyPubKey.Bytes(),
 					Signature: legacySig,
+					SigFormat: evmigrationtypes.SigFormat_SIG_FORMAT_CLI,
+				},
+			},
+		}
+		newProof := evmigrationtypes.MigrationProof{
+			Proof: &evmigrationtypes.MigrationProof_Single{
+				Single: &evmigrationtypes.SingleKeyProof{
+					PubKey:    newPubKey.Bytes(),
+					Signature: newSig,
 					SigFormat: evmigrationtypes.SigFormat_SIG_FORMAT_CLI,
 				},
 			},
@@ -376,7 +389,7 @@ func ensureLegacyAccountMigrated(
 				NewAddress:    newAddr.String(),
 				LegacyAddress: legacyAddr.String(),
 				LegacyProof:   legacyProof,
-				NewSignature:  newSig,
+				NewProof:      newProof,
 			}
 			logtrace.Info(ctx, "Validator account detected — using MsgMigrateValidator", logtrace.Fields{
 				"legacy_address": legacyAddr.String(),
@@ -387,7 +400,7 @@ func ensureLegacyAccountMigrated(
 				NewAddress:    newAddr.String(),
 				LegacyAddress: legacyAddr.String(),
 				LegacyProof:   legacyProof,
-				NewSignature:  newSig,
+				NewProof:      newProof,
 			}
 		}
 
