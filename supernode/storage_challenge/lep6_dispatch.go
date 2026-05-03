@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -106,6 +107,7 @@ type LEP6Dispatcher struct {
 	tickets         TicketProvider
 	meta            CascadeMetaProvider
 	buffer          *Buffer
+	mu              sync.Mutex
 }
 
 // NewLEP6Dispatcher constructs a dispatcher. supernodeClient, tickets,
@@ -167,8 +169,11 @@ func NewLEP6Dispatcher(
 // rather than returning an error.
 func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) error {
 	paramsResp, err := d.client.Audit().GetParams(ctx)
-	if err != nil || paramsResp == nil {
+	if err != nil {
 		return fmt.Errorf("lep6 dispatch: get params: %w", err)
+	}
+	if paramsResp == nil {
+		return fmt.Errorf("lep6 dispatch: get params returned nil response")
 	}
 	params := paramsResp.Params
 	mode := params.StorageTruthEnforcementMode
@@ -217,6 +222,9 @@ func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) erro
 		"mode":     mode.String(),
 		"targets":  len(targets),
 	})
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	for _, target := range targets {
 		target = strings.TrimSpace(target)

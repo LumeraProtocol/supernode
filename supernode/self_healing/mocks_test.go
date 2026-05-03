@@ -91,6 +91,9 @@ func (p *programmableAudit) GetAssignedTargets(ctx context.Context, supernodeAcc
 func (p *programmableAudit) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
 	return &audittypes.QueryEpochReportResponse{}, nil
 }
+func (p *programmableAudit) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
+}
 func (p *programmableAudit) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
 	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
 }

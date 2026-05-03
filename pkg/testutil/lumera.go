@@ -222,6 +222,10 @@ func (m *MockAuditModule) GetEpochReport(ctx context.Context, epochID uint64, su
 	return &audittypes.QueryEpochReportResponse{}, nil
 }
 
+func (m *MockAuditModule) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
+}
+
 func (m *MockAuditModule) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
 	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
 }

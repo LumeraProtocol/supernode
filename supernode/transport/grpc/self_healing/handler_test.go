@@ -254,6 +254,9 @@ func (h *handlerStubAudit) GetAssignedTargets(ctx context.Context, supernodeAcco
 func (h *handlerStubAudit) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
 	return &audittypes.QueryEpochReportResponse{}, nil
 }
+func (h *handlerStubAudit) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
+}
 func (h *handlerStubAudit) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
 	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
 }

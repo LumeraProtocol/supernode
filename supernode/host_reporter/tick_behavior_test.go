@@ -27,6 +27,7 @@ import (
 type stubAuditModule struct {
 	currentEpoch   *audittypes.QueryCurrentEpochResponse
 	anchor         *audittypes.QueryEpochAnchorResponse
+	epochReport    *audittypes.QueryEpochReportResponse
 	epochReportErr error
 	assigned       *audittypes.QueryAssignedTargetsResponse
 }
@@ -50,7 +51,10 @@ func (s *stubAuditModule) GetEpochReport(ctx context.Context, epochID uint64, su
 	if s.epochReportErr != nil {
 		return nil, s.epochReportErr
 	}
-	return &audittypes.QueryEpochReportResponse{}, nil
+	return s.epochReport, nil
+}
+func (s *stubAuditModule) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
 }
 func (s *stubAuditModule) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
 	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
