@@ -13,6 +13,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 	grpcclient "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/pkg/netutil"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"google.golang.org/grpc"
 )
@@ -85,7 +86,7 @@ func (f *secureSupernodeClientFactory) Dial(ctx context.Context, target string) 
 	if raw == "" {
 		return nil, fmt.Errorf("no address for target %q", target)
 	}
-	host, port, ok := parseHostAndPort(raw, int(f.defaultPort))
+	host, port, ok := netutil.ParseHostAndPort(raw, int(f.defaultPort))
 	if !ok || strings.TrimSpace(host) == "" {
 		return nil, fmt.Errorf("invalid address %q for target %q", raw, target)
 	}
