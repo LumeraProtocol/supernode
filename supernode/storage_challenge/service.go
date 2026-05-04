@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 	grpcclient "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/pkg/netutil"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -514,69 +514,11 @@ func (s *Service) supernodeGRPCAddr(ctx context.Context, supernodeAccount string
 	// both forms:
 	// - "host" -> use our configured default gRPC port
 	// - "host:port" -> use the stored port as the dial target
-	host, port, ok := parseHostAndPort(raw, int(s.grpcPort))
+	host, port, ok := netutil.ParseHostAndPort(raw, int(s.grpcPort))
 	if !ok || strings.TrimSpace(host) == "" {
 		return "", fmt.Errorf("invalid supernode address for %s: %q", supernodeAccount, raw)
 	}
 	return net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(port)), nil
-}
-
-// parseHostAndPort parses a "host" or "host:port" string and returns a host and port.
-// If a port is not present, defaultPort is returned. If a port is present but invalid,
-func parseHostAndPort(address string, defaultPort int) (host string, port int, ok bool) {
-	address = strings.TrimSpace(address)
-	if address == "" {
-		return "", 0, false
-	}
-
-	// If it looks like a URL, parse and use the host[:port] portion.
-	if u, err := url.Parse(address); err == nil && u.Host != "" {
-		address = u.Host
-	}
-
-	if h, p, err := net.SplitHostPort(address); err == nil {
-		h = strings.TrimSpace(h)
-		if h == "" {
-			return "", 0, false
-		}
-		if n, err := strconv.Atoi(p); err == nil && n > 0 && n <= 65535 {
-			return h, n, true
-		}
-		return h, defaultPort, true
-	}
-
-	// No port present. Treat it as a raw host if it is plausibly valid; otherwise fail.
-	host = strings.TrimSpace(address)
-	if host == "" {
-		return "", 0, false
-	}
-
-	// Accept bracketed IPv6 literal without a port (e.g. "[2001:db8::1]") by stripping brackets.
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && strings.Count(host, "]") == 1 {
-		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-		host = strings.TrimSpace(host)
-		if host == "" {
-			return "", 0, false
-		}
-	}
-
-	// Reject obviously malformed inputs (paths, fragments, userinfo, whitespace, or stray brackets).
-	if strings.ContainsAny(host, " \t\r\n/\\?#@[]") {
-		return "", 0, false
-	}
-
-	// If it contains ':' it must be a valid IPv6 literal (optionally with a zone, e.g. "fe80::1%eth0").
-	if strings.Contains(host, ":") {
-		ipPart := host
-		if i := strings.IndexByte(ipPart, '%'); i >= 0 {
-			ipPart = ipPart[:i]
-		}
-		if net.ParseIP(ipPart) == nil {
-			return "", 0, false
-		}
-	}
-
-	return host, defaultPort, true
 }
 
 func (s *Service) callGetSliceProof(ctx context.Context, remoteIdentity string, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {

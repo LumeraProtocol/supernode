@@ -92,6 +92,34 @@ type StorageChallengeLEP6Config struct {
 	RecipientReadTimeout time.Duration `yaml:"recipient_read_timeout,omitempty"`
 }
 
+// SelfHealingConfig configures the LEP-6 chain-driven self-healing runtime
+// (supernode/self_healing). Mode gating is also enforced at runtime via
+// the chain's StorageTruthEnforcementMode param — UNSPECIFIED skips the
+// dispatcher regardless of Enabled.
+type SelfHealingConfig struct {
+	// Enabled toggles the dispatcher and the §19 transport server. Default
+	// false until activation rollout (PR-6).
+	Enabled bool `yaml:"enabled"`
+	// PollIntervalMs is the dispatcher tick cadence (default 30000).
+	PollIntervalMs int `yaml:"poll_interval_ms,omitempty"`
+	// MaxConcurrentReconstructs bounds RaptorQ reseeds (RAM-heavy).
+	// Default 2.
+	MaxConcurrentReconstructs int `yaml:"max_concurrent_reconstructs,omitempty"`
+	// MaxConcurrentVerifications bounds verifier fetch+hash workers.
+	// Default 4.
+	MaxConcurrentVerifications int `yaml:"max_concurrent_verifications,omitempty"`
+	// MaxConcurrentPublishes bounds publish-to-KAD workers. Default 2.
+	MaxConcurrentPublishes int `yaml:"max_concurrent_publishes,omitempty"`
+	// StagingDir is the local staging root (default ~/.supernode/heal-staging).
+	StagingDir string `yaml:"staging_dir,omitempty"`
+	// VerifierFetchTimeoutMs caps a single ServeReconstructedArtefacts
+	// stream from healer (default 60000).
+	VerifierFetchTimeoutMs int `yaml:"verifier_fetch_timeout_ms,omitempty"`
+	// VerifierFetchAttempts bounds retries when fetching from healer
+	// (default 3).
+	VerifierFetchAttempts int `yaml:"verifier_fetch_attempts,omitempty"`
+}
+
 type Config struct {
 	SupernodeConfig        `yaml:"supernode"`
 	KeyringConfig          `yaml:"keyring"`
@@ -99,6 +127,7 @@ type Config struct {
 	LumeraClientConfig     `yaml:"lumera"`
 	RaptorQConfig          `yaml:"raptorq"`
 	StorageChallengeConfig `yaml:"storage_challenge"`
+	SelfHealingConfig      `yaml:"self_healing"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`

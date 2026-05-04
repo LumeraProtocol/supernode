@@ -152,7 +152,7 @@ gen-supernode:
 		--grpc-gateway_out=gen \
 		--grpc-gateway_opt=paths=source_relative \
 		--openapiv2_out=gen \
-		proto/supernode/service.proto proto/supernode/status.proto proto/supernode/storage_challenge.proto
+		proto/supernode/service.proto proto/supernode/status.proto proto/supernode/storage_challenge.proto proto/supernode/self_healing.proto
 
 # Define the paths
 SUPERNODE_SRC=supernode/main.go
