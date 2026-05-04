@@ -24,6 +24,8 @@ import (
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	hostReporterService "github.com/LumeraProtocol/supernode/v2/supernode/host_reporter"
+	recheckService "github.com/LumeraProtocol/supernode/v2/supernode/recheck"
+	selfHealingService "github.com/LumeraProtocol/supernode/v2/supernode/self_healing"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
 	// Legacy supernode metrics reporter (MsgReportSupernodeMetrics) has been superseded by
@@ -31,6 +33,7 @@ import (
 	// supernodeMetrics "github.com/LumeraProtocol/supernode/v2/supernode/supernode_metrics"
 	"github.com/LumeraProtocol/supernode/v2/supernode/transport/gateway"
 	cascadeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/cascade"
+	selfHealingRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/self_healing"
 	server "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/status"
 	storageChallengeRPC "github.com/LumeraProtocol/supernode/v2/supernode/transport/grpc/storage_challenge"
 	"github.com/LumeraProtocol/supernode/v2/supernode/verifier"
@@ -169,7 +172,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// race against the SN's own ~5s auto-submit ticker. Production deployments must
 		// leave this unset; gated behind an env var with no config-file surface so the
 		// canonical path is unchanged.
-		var hostReporter service
+		var hostReporter *hostReporterService.Service
 		if v := strings.TrimSpace(os.Getenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")); v == "1" || strings.EqualFold(v, "true") {
 			logtrace.Info(ctx, "host_reporter disabled via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", logtrace.Fields{})
 		} else {
@@ -206,8 +209,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to open history DB", logtrace.Fields{"error": err.Error()})
 		}
 
-		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore)
+		// LEP-6 result buffer: drained by host_reporter on each tick and
+		// appended to by the LEP6Dispatcher.
+		resultBuffer := storageChallengeService.NewBuffer()
+		if hostReporter != nil {
+			hostReporter.SetProofResultProvider(resultBuffer)
+		}
+
+		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore).
+			WithArtifactReader(newP2PArtifactReader(p2pService)).
+			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName)
 		var storageChallengeRunner *storageChallengeService.Service
+		var recheckRunner *recheckService.Service
 		if appConfig.StorageChallengeConfig.Enabled {
 			storageChallengeRunner, err = storageChallengeService.NewService(
 				appConfig.SupernodeConfig.Identity,
@@ -226,12 +239,97 @@ The supernode will connect to the Lumera network and begin participating in the 
 			if err != nil {
 				logtrace.Fatal(ctx, "Failed to initialize storage challenge runner", logtrace.Fields{"error": err.Error()})
 			}
+
+			// LEP-6 dispatcher (mode-gated internally; see DispatchEpoch).
+			if appConfig.StorageChallengeConfig.LEP6.Enabled {
+				dispatcher, derr := storageChallengeService.NewLEP6Dispatcher(
+					lumeraClient,
+					kr,
+					appConfig.SupernodeConfig.KeyName,
+					appConfig.SupernodeConfig.Identity,
+					storageChallengeService.NewSecureSupernodeClientFactory(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port),
+					storageChallengeService.NewChainTicketProvider(lumeraClient),
+					newCascadeMetaProvider(lumeraClient),
+					resultBuffer,
+				)
+				if derr != nil {
+					logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
+				}
+				storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
+
+				if appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled {
+					rc := appConfig.StorageChallengeConfig.LEP6.Recheck
+					tickInterval := time.Duration(rc.TickIntervalMs) * time.Millisecond
+					recheckCfg := recheckService.Config{Enabled: true, LookbackEpochs: rc.LookbackEpochs, MaxPerTick: rc.MaxPerTick, TickInterval: tickInterval}
+					attestor := recheckService.NewAttestor(appConfig.SupernodeConfig.Identity, lumeraClient.AuditMsg(), historyStore)
+					reporterSource := recheckService.NewSupernodeReporterSource(lumeraClient.SuperNode(), appConfig.SupernodeConfig.Identity)
+					recheckRunner, err = recheckService.NewServiceWithReporters(recheckCfg, lumeraClient.Audit(), historyStore, dispatcher, attestor, appConfig.SupernodeConfig.Identity, reporterSource)
+					if err != nil {
+						logtrace.Fatal(ctx, "Failed to initialize LEP-6 recheck runner", logtrace.Fields{"error": err.Error()})
+					}
+				}
+			}
 		}
 
 		// Create supernode server
 		supernodeServer := server.NewSupernodeServer(statusSvc)
 
+		// LEP-6 self-healing runtime (chain-driven heal-op dispatch).
+		// The dispatcher polls audit heal-ops and runs healer/verifier/
+		// finalizer roles based on chain assignment. The §19 transport
+		// server lets verifiers fetch reconstructed bytes from the
+		// assigned healer before chain VERIFIED quorum.
+		var selfHealingRunner *selfHealingService.Service
+		var selfHealingServer *selfHealingRPC.Server
+		if appConfig.SelfHealingConfig.Enabled {
+			pollInterval := time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond
+			fetchTimeout := time.Duration(appConfig.SelfHealingConfig.VerifierFetchTimeoutMs) * time.Millisecond
+			shCfg := selfHealingService.Config{
+				Enabled:                    true,
+				PollInterval:               pollInterval,
+				MaxConcurrentReconstructs:  appConfig.SelfHealingConfig.MaxConcurrentReconstructs,
+				MaxConcurrentVerifications: appConfig.SelfHealingConfig.MaxConcurrentVerifications,
+				MaxConcurrentPublishes:     appConfig.SelfHealingConfig.MaxConcurrentPublishes,
+				StagingRoot:                appConfig.SelfHealingConfig.StagingDir,
+				VerifierFetchTimeout:       fetchTimeout,
+				VerifierFetchAttempts:      appConfig.SelfHealingConfig.VerifierFetchAttempts,
+				KeyName:                    appConfig.SupernodeConfig.KeyName,
+			}
+			fetcher := selfHealingService.NewSecureVerifierFetcher(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port)
+			selfHealingRunner, err = selfHealingService.New(
+				appConfig.SupernodeConfig.Identity,
+				shCfg,
+				lumeraClient,
+				historyStore,
+				cService,
+				fetcher,
+			)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to initialize self-healing runner", logtrace.Fields{"error": err.Error()})
+			}
+			selfHealingServer, err = selfHealingRPC.NewServer(
+				appConfig.SupernodeConfig.Identity,
+				shCfg.StagingRoot,
+				lumeraClient,
+				selfHealingRPC.DefaultCallerIdentityResolver(),
+			)
+			if err != nil {
+				logtrace.Fatal(ctx, "Failed to initialize self-healing transport", logtrace.Fields{"error": err.Error()})
+			}
+		}
+
 		// Create gRPC server (explicit args, no config struct)
+		grpcServices := []grpcserver.ServiceDesc{
+			{Desc: &pbcascade.CascadeService_ServiceDesc, Service: cascadeActionServer},
+			{Desc: &pbsupernode.SupernodeService_ServiceDesc, Service: supernodeServer},
+			{Desc: &pbsupernode.StorageChallengeService_ServiceDesc, Service: storageChallengeServer},
+		}
+		if selfHealingServer != nil {
+			grpcServices = append(grpcServices, grpcserver.ServiceDesc{
+				Desc:    &pbsupernode.SelfHealingService_ServiceDesc,
+				Service: selfHealingServer,
+			})
+		}
 		grpcServer, err := server.New(
 			appConfig.SupernodeConfig.Identity,
 			appConfig.SupernodeConfig.Host,
@@ -239,9 +337,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			"service",
 			kr,
 			lumeraClient,
-			grpcserver.ServiceDesc{Desc: &pbcascade.CascadeService_ServiceDesc, Service: cascadeActionServer},
-			grpcserver.ServiceDesc{Desc: &pbsupernode.SupernodeService_ServiceDesc, Service: supernodeServer},
-			grpcserver.ServiceDesc{Desc: &pbsupernode.StorageChallengeService_ServiceDesc, Service: storageChallengeServer},
+			grpcServices...,
 		)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to create gRPC server", logtrace.Fields{"error": err.Error()})
@@ -273,6 +369,12 @@ The supernode will connect to the Lumera network and begin participating in the 
 			}
 			if storageChallengeRunner != nil {
 				services = append(services, storageChallengeRunner)
+			}
+			if selfHealingRunner != nil {
+				services = append(services, selfHealingRunner)
+			}
+			if recheckRunner != nil {
+				services = append(services, recheckRunner)
 			}
 			servicesErr <- RunServices(ctx, services...)
 		}()

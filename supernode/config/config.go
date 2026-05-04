@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"gopkg.in/yaml.v3"
@@ -66,9 +67,66 @@ type LogConfig struct {
 }
 
 type StorageChallengeConfig struct {
+	Enabled        bool                       `yaml:"enabled"`
+	PollIntervalMs uint64                     `yaml:"poll_interval_ms,omitempty"`
+	SubmitEvidence bool                       `yaml:"submit_evidence,omitempty"`
+	LEP6           StorageChallengeLEP6Config `yaml:"lep6,omitempty"`
+}
+
+// StorageChallengeLEP6Config holds the supernode-binary-owned knobs for
+// the LEP-6 compound storage challenge runtime. All chain-driven knobs
+// (bucket thresholds, ranges-per-artifact, range size, enforcement mode)
+// flow via x/audit Params and are deliberately omitted here. See
+// docs/plans/LEP6_SUPERNODE_IMPLEMENTATION_PLAN_v2.md §2.3.
+type StorageChallengeLEP6Config struct {
+	// Enabled gates construction of the LEP6Dispatcher. When false, the
+	// legacy single-range loop runs alone (default true; PR3 ships LEP-6
+	// alongside the legacy loop with internal mode-gating).
+	Enabled bool `yaml:"enabled"`
+	// MaxConcurrentTargets bounds parallelism inside DispatchEpoch.
+	// Default 4. Reserved for follow-up parallelism work; PR3 dispatch
+	// is currently sequential per target.
+	MaxConcurrentTargets int `yaml:"max_concurrent_targets,omitempty"`
+	// RecipientReadTimeout caps a single GetCompoundProof RPC. Default
+	// 30s.
+	RecipientReadTimeout time.Duration `yaml:"recipient_read_timeout,omitempty"`
+	// Recheck owns the PR-5 storage-truth recheck evidence submitter.
+	Recheck StorageRecheckConfig `yaml:"recheck,omitempty"`
+}
+
+type StorageRecheckConfig struct {
 	Enabled        bool   `yaml:"enabled"`
-	PollIntervalMs uint64 `yaml:"poll_interval_ms,omitempty"`
-	SubmitEvidence bool   `yaml:"submit_evidence,omitempty"`
+	LookbackEpochs uint64 `yaml:"lookback_epochs,omitempty"`
+	MaxPerTick     int    `yaml:"max_per_tick,omitempty"`
+	TickIntervalMs int    `yaml:"tick_interval_ms,omitempty"`
+}
+
+// SelfHealingConfig configures the LEP-6 chain-driven self-healing runtime
+// (supernode/self_healing). Mode gating is also enforced at runtime via
+// the chain's StorageTruthEnforcementMode param — UNSPECIFIED skips the
+// dispatcher regardless of Enabled.
+type SelfHealingConfig struct {
+	// Enabled toggles the dispatcher and the §19 transport server. Default
+	// false until activation rollout (PR-6).
+	Enabled bool `yaml:"enabled"`
+	// PollIntervalMs is the dispatcher tick cadence (default 30000).
+	PollIntervalMs int `yaml:"poll_interval_ms,omitempty"`
+	// MaxConcurrentReconstructs bounds RaptorQ reseeds (RAM-heavy).
+	// Default 2.
+	MaxConcurrentReconstructs int `yaml:"max_concurrent_reconstructs,omitempty"`
+	// MaxConcurrentVerifications bounds verifier fetch+hash workers.
+	// Default 4.
+	MaxConcurrentVerifications int `yaml:"max_concurrent_verifications,omitempty"`
+	// MaxConcurrentPublishes bounds publish-to-KAD workers. Default 2.
+	MaxConcurrentPublishes int `yaml:"max_concurrent_publishes,omitempty"`
+	// StagingDir is the local staging root (default ~/.supernode/heal-staging).
+	StagingDir string `yaml:"staging_dir,omitempty"`
+	// VerifierFetchTimeoutMs caps a single ServeReconstructedArtefacts
+	// stream from healer (default 60000).
+	VerifierFetchTimeoutMs int `yaml:"verifier_fetch_timeout_ms,omitempty"`
+	// VerifierFetchAttempts bounds retries when fetching from healer
+	// (default 3).
+	VerifierFetchAttempts int `yaml:"verifier_fetch_attempts,omitempty"`
 }
 
 type Config struct {
@@ -78,6 +136,7 @@ type Config struct {
 	LumeraClientConfig     `yaml:"lumera"`
 	RaptorQConfig          `yaml:"raptorq"`
 	StorageChallengeConfig `yaml:"storage_challenge"`
+	SelfHealingConfig      `yaml:"self_healing"`
 
 	// Store base directory (not from YAML)
 	BaseDir string `yaml:"-"`

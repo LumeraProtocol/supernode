@@ -16,6 +16,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/go-bip39"
 	"go.uber.org/mock/gomock"
@@ -26,6 +27,7 @@ import (
 type stubAuditModule struct {
 	currentEpoch   *audittypes.QueryCurrentEpochResponse
 	anchor         *audittypes.QueryEpochAnchorResponse
+	epochReport    *audittypes.QueryEpochReportResponse
 	epochReportErr error
 	assigned       *audittypes.QueryAssignedTargetsResponse
 }
@@ -49,7 +51,28 @@ func (s *stubAuditModule) GetEpochReport(ctx context.Context, epochID uint64, su
 	if s.epochReportErr != nil {
 		return nil, s.epochReportErr
 	}
-	return &audittypes.QueryEpochReportResponse{}, nil
+	return s.epochReport, nil
+}
+func (s *stubAuditModule) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
+}
+func (s *stubAuditModule) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
+	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
+}
+func (s *stubAuditModule) GetReporterReliabilityState(ctx context.Context, reporterAccount string) (*audittypes.QueryReporterReliabilityStateResponse, error) {
+	return &audittypes.QueryReporterReliabilityStateResponse{}, nil
+}
+func (s *stubAuditModule) GetTicketDeteriorationState(ctx context.Context, ticketID string) (*audittypes.QueryTicketDeteriorationStateResponse, error) {
+	return &audittypes.QueryTicketDeteriorationStateResponse{}, nil
+}
+func (s *stubAuditModule) GetHealOp(ctx context.Context, healOpID uint64) (*audittypes.QueryHealOpResponse, error) {
+	return &audittypes.QueryHealOpResponse{}, nil
+}
+func (s *stubAuditModule) GetHealOpsByStatus(ctx context.Context, status audittypes.HealOpStatus, pagination *query.PageRequest) (*audittypes.QueryHealOpsByStatusResponse, error) {
+	return &audittypes.QueryHealOpsByStatusResponse{}, nil
+}
+func (s *stubAuditModule) GetHealOpsByTicket(ctx context.Context, ticketID string, pagination *query.PageRequest) (*audittypes.QueryHealOpsByTicketResponse, error) {
+	return &audittypes.QueryHealOpsByTicketResponse{}, nil
 }
 
 func testKeyringAndIdentity(t *testing.T) (keyring.Keyring, string, string) {
@@ -109,8 +132,8 @@ func TestTick_ProberSubmitsObservationsForAssignedTargets(t *testing.T) {
 
 	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
 	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snB").Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
-	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(7), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ uint64, _ audittypes.HostReport, obs []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error) {
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(7), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, _ audittypes.HostReport, obs []*audittypes.StorageChallengeObservation, proofs []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
 			if len(obs) != 2 {
 				t.Fatalf("expected 2 observations, got %d", len(obs))
 			}
@@ -118,6 +141,9 @@ func TestTick_ProberSubmitsObservationsForAssignedTargets(t *testing.T) {
 				if o == nil || o.TargetSupernodeAccount == "" || len(o.PortStates) != 1 {
 					t.Fatalf("invalid observation: %+v", o)
 				}
+			}
+			if len(proofs) != 0 {
+				t.Fatalf("expected 0 proof results when no provider attached, got %d", len(proofs))
 			}
 			return &sdktx.BroadcastTxResponse{}, nil
 		},
@@ -153,8 +179,8 @@ func TestTick_NonProberSubmitsHostOnly(t *testing.T) {
 	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
 	client.EXPECT().SuperNode().AnyTimes().Return(sn)
 	client.EXPECT().Node().AnyTimes().Return(node)
-	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(8), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, _ uint64, _ audittypes.HostReport, obs []*audittypes.StorageChallengeObservation) (*sdktx.BroadcastTxResponse, error) {
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(8), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, _ audittypes.HostReport, obs []*audittypes.StorageChallengeObservation, _ []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
 			if len(obs) != 0 {
 				t.Fatalf("expected 0 observations for non-prober, got %d", len(obs))
 			}
@@ -188,7 +214,7 @@ func TestTick_SkipsWhenEpochAlreadyReported(t *testing.T) {
 	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
 	client.EXPECT().SuperNode().AnyTimes().Return(sn)
 	client.EXPECT().Node().AnyTimes().Return(node)
-	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 	svc, err := NewService(identity, client, kr, keyName, "", "")
 	if err != nil {
@@ -216,11 +242,74 @@ func TestTick_SkipsOnEpochReportLookupError(t *testing.T) {
 	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
 	client.EXPECT().SuperNode().AnyTimes().Return(sn)
 	client.EXPECT().Node().AnyTimes().Return(node)
-	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 	svc, err := NewService(identity, client, kr, keyName, "", "")
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
 	svc.tick(context.Background())
+}
+
+// stubProofResultProvider records the epoch it was queried with and returns a
+// fixed slice of synthetic StorageProofResult records.
+type stubProofResultProvider struct {
+	queriedEpochs []uint64
+	results       []*audittypes.StorageProofResult
+}
+
+func (s *stubProofResultProvider) CollectResults(epochID uint64) []*audittypes.StorageProofResult {
+	s.queriedEpochs = append(s.queriedEpochs, epochID)
+	return s.results
+}
+
+func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	kr, keyName, identity := testKeyringAndIdentity(t)
+	auditMod := &stubAuditModule{
+		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 11},
+		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 11}},
+		epochReportErr: status.Error(codes.NotFound, "not found"),
+		assigned:       &audittypes.QueryAssignedTargetsResponse{},
+	}
+	auditMsg := auditmsgmod.NewMockModule(ctrl)
+	node := nodemod.NewMockModule(ctrl)
+	sn := supernodemod.NewMockModule(ctrl)
+	client := lumeraMock.NewMockClient(ctrl)
+	client.EXPECT().Audit().AnyTimes().Return(auditMod)
+	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
+	client.EXPECT().SuperNode().AnyTimes().Return(sn)
+	client.EXPECT().Node().AnyTimes().Return(node)
+
+	provider := &stubProofResultProvider{
+		results: []*audittypes.StorageProofResult{
+			{TargetSupernodeAccount: "snA", TicketId: "ticket-1", TranscriptHash: "hash-1"},
+			{TargetSupernodeAccount: "snB", TicketId: "ticket-2", TranscriptHash: "hash-2"},
+		},
+	}
+
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(11), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, _ audittypes.HostReport, _ []*audittypes.StorageChallengeObservation, proofs []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
+			if len(proofs) != 2 {
+				t.Fatalf("expected 2 proof results from provider, got %d", len(proofs))
+			}
+			if proofs[0].TicketId != "ticket-1" || proofs[1].TicketId != "ticket-2" {
+				t.Fatalf("proof results not forwarded verbatim: %+v", proofs)
+			}
+			return &sdktx.BroadcastTxResponse{}, nil
+		},
+	)
+
+	svc, err := NewService(identity, client, kr, keyName, "", "")
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	svc.SetProofResultProvider(provider)
+	svc.tick(context.Background())
+
+	if len(provider.queriedEpochs) != 1 || provider.queriedEpochs[0] != 11 {
+		t.Fatalf("expected provider queried once for epoch 11, got %v", provider.queriedEpochs)
+	}
 }

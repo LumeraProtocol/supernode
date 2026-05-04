@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"google.golang.org/grpc"
 )
 
@@ -56,4 +57,31 @@ func (m *module) GetParams(ctx context.Context) (*types.QueryParamsResponse, err
 	}
 
 	return resp, nil
+}
+
+// ListActionsBySuperNode lists actions assigned to a specific supernode.
+func (m *module) ListActionsBySuperNode(ctx context.Context, superNodeAddress string) (*types.QueryListActionsBySuperNodeResponse, error) {
+	var all []*types.Action
+	var nextKey []byte
+	for {
+		resp, err := m.client.ListActionsBySuperNode(ctx, &types.QueryListActionsBySuperNodeRequest{
+			SuperNodeAddress: superNodeAddress,
+			Pagination: &query.PageRequest{
+				Key:   nextKey,
+				Limit: 100,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			return &types.QueryListActionsBySuperNodeResponse{Actions: all}, nil
+		}
+		all = append(all, resp.Actions...)
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			resp.Actions = all
+			return resp, nil
+		}
+		nextKey = resp.Pagination.NextKey
+	}
 }
