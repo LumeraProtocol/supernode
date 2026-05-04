@@ -85,3 +85,18 @@ func (mr *MockModuleMockRecorder) GetParams(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParams", reflect.TypeOf((*MockModule)(nil).GetParams), ctx)
 }
+
+// ListActions mocks base method.
+func (m *MockModule) ListActions(ctx context.Context, req *types.QueryListActionsRequest) (*types.QueryListActionsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListActions", ctx, req)
+	ret0, _ := ret[0].(*types.QueryListActionsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListActions indicates an expected call of ListActions.
+func (mr *MockModuleMockRecorder) ListActions(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActions", reflect.TypeOf((*MockModule)(nil).ListActions), ctx, req)
+}

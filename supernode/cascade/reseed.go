@@ -2,6 +2,7 @@ package cascade
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,7 +14,8 @@ import (
 )
 
 type RecoveryReseedRequest struct {
-	ActionID string
+	ActionID         string
+	PersistArtifacts *bool
 }
 
 type RecoveryReseedResult struct {
@@ -21,6 +23,7 @@ type RecoveryReseedResult struct {
 	DownloadEvents       int
 	DownloadLastEvent    string
 	DecodeCleanupError   string
+	ReconstructedHashHex string
 	RQIC                 uint64
 	RQMax                uint64
 	DataHashVerified     bool
@@ -114,7 +117,12 @@ func (task *CascadeRegistrationTask) RecoveryReseed(ctx context.Context, req *Re
 	if err := cascadekit.VerifyB64DataHash(fileHash, meta.DataHash); err != nil {
 		return result, task.wrapErr(ctx, "decoded file hash does not match action metadata", err, fields)
 	}
+	result.ReconstructedHashHex = hex.EncodeToString(fileHash)
 	result.DataHashVerified = true
+
+	if !shouldPersistArtifacts(req) {
+		return result, nil
+	}
 
 	encodeResult, err := task.encodeInput(ctx, actionID, decodeFilePath, fields)
 	if err != nil {
@@ -141,6 +149,13 @@ func (task *CascadeRegistrationTask) RecoveryReseed(ctx context.Context, req *Re
 	result.SymbolsGenerated = len(result.SymbolKeys)
 
 	return result, nil
+}
+
+func shouldPersistArtifacts(req *RecoveryReseedRequest) bool {
+	if req == nil || req.PersistArtifacts == nil {
+		return true
+	}
+	return *req.PersistArtifacts
 }
 
 func symbolIDsFromLayout(layout codec.Layout) []string {

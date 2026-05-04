@@ -70,6 +70,44 @@ jobs:
       - name: Run cascade e2e tests
         run: make test-cascade
 
+  self-healing-e2e-tests:
+    name: self-healing-e2e-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.1
+
+      - name: Setup Go and system deps
+        uses: ./.github/actions/setup-env
+        # with:
+        #   bust_lumera_retag: 'true'
+
+      - name: Go mod tidy
+        run: go mod tidy
+
+      - name: Install Lumera
+        run: make install-lumera
+
+      - name: Setup Supernode environments
+        run: make setup-supernodes
+
+      - name: Run self-healing e2e tests
+        run: make test-self-healing
+
+      - name: Dump self-healing runtime traces
+        if: always()
+        run: |
+          cd tests/system
+          for f in supernode0.out supernode1.out supernode2.out; do
+            echo "==== ${f} (self-healing excerpts) ===="
+            if [ -f "$f" ]; then
+              grep -E "self-healing|sh-e2e-happy|RequestSelfHealing|VerifySelfHealing|CommitSelfHealing|reconstructed_hash_hex|observer" "$f" | tail -n 200 || true
+            else
+              echo "missing ${f}"
+            fi
+          done
+
   # sn-manager-e2e-tests:
   #   name: sn-manager-e2e-tests
   #   runs-on: ubuntu-latest
