@@ -665,3 +665,74 @@ func TestSortStrings_StableForPairs(t *testing.T) {
 		t.Fatalf("stable sort mismatch: %v != %v", xs, want)
 	}
 }
+
+// TestChainDefaults_BoundToSupernodeConstants is a chain-binding cross-validation
+// guard: the supernode's deterministic primitives are a parallel implementation
+// of chain logic, and any drift between supernode constants and chain defaults
+// breaks consensus equivalence silently. This test imports the chain types
+// package (already in go.mod via PR1) and asserts the supernode's hardcoded
+// constants and the values consumed by SelectLEP6Targets/ClassifyTicketBucket
+// match chain DefaultParams() byte-for-byte.
+//
+// Why this test belongs here (not in PR6 e2e): chain defaults are pure values
+// reachable without an sdk.Context. A unit-level binding catches drift the
+// instant chain bumps a default, before any integration env is even spun up.
+//
+// If chain ever renames or removes one of these symbols, this test will fail
+// to compile — which is the desired loud-failure mode.
+func TestChainDefaults_BoundToSupernodeConstants(t *testing.T) {
+	chain := audittypes.DefaultParams().WithDefaults()
+
+	// 1. Challenge target divisor — drives SelectLEP6Targets count.
+	if got, want := uint32(LEP6ChallengeTargetDivisor), audittypes.DefaultStorageTruthChallengeTargetDivisor; got != want {
+		t.Fatalf("LEP6ChallengeTargetDivisor drift: supernode=%d chain=%d", got, want)
+	}
+	if got, want := chain.StorageTruthChallengeTargetDivisor, audittypes.DefaultStorageTruthChallengeTargetDivisor; got != want {
+		t.Fatalf("DefaultParams().StorageTruthChallengeTargetDivisor drift: %d vs %d", got, want)
+	}
+
+	// 2. Recent-bucket window — drives ClassifyTicketBucket RECENT boundary.
+	if chain.StorageTruthRecentBucketMaxBlocks != audittypes.DefaultStorageTruthRecentBucketMaxBlocks {
+		t.Fatalf("DefaultStorageTruthRecentBucketMaxBlocks drift: params=%d const=%d",
+			chain.StorageTruthRecentBucketMaxBlocks, audittypes.DefaultStorageTruthRecentBucketMaxBlocks)
+	}
+
+	// 3. Old-bucket window — drives ClassifyTicketBucket OLD boundary.
+	if chain.StorageTruthOldBucketMinBlocks != audittypes.DefaultStorageTruthOldBucketMinBlocks {
+		t.Fatalf("DefaultStorageTruthOldBucketMinBlocks drift: params=%d const=%d",
+			chain.StorageTruthOldBucketMinBlocks, audittypes.DefaultStorageTruthOldBucketMinBlocks)
+	}
+
+	// 4. Old > Recent invariant — chain's bucket classification depends on
+	//    OLD floor being strictly greater than RECENT ceiling. If governance
+	//    ever flips this, supernode's ClassifyTicketBucket would silently
+	//    misclassify all in-between heights.
+	if chain.StorageTruthOldBucketMinBlocks <= chain.StorageTruthRecentBucketMaxBlocks {
+		t.Fatalf("OLD floor must exceed RECENT ceiling: old=%d recent=%d",
+			chain.StorageTruthOldBucketMinBlocks, chain.StorageTruthRecentBucketMaxBlocks)
+	}
+
+	// 5. End-to-end: drive SelectLEP6Targets with chain-sourced divisor on the
+	//    chain test's exact fixture and confirm the same 2-target outcome the
+	//    chain test asserts. Locks supernode→chain agreement to chain's own
+	//    test vector, not just a self-generated one.
+	active := []string{"sn-a", "sn-b", "sn-c", "sn-d", "sn-e", "sn-f"}
+	tgt := SelectLEP6Targets(active, chainSeed, chain.StorageTruthChallengeTargetDivisor)
+	if len(tgt) != 2 {
+		t.Fatalf("chain-defaults end-to-end: want 2 targets per chain test, got %d (%v)", len(tgt), tgt)
+	}
+
+	// 6. ClassifyTicketBucket sanity at chain-default boundaries: an action
+	//    anchored exactly RECENT_MAX blocks behind current is RECENT; anchored
+	//    OLD_MIN behind is OLD. Crosses both windows; locks bucket logic to
+	//    chain defaults.
+	const currentH int64 = 1_000_000
+	recentAnchor := currentH - int64(chain.StorageTruthRecentBucketMaxBlocks) // RECENT inclusive at boundary
+	oldAnchor := currentH - int64(chain.StorageTruthOldBucketMinBlocks)       // OLD inclusive at boundary
+	if got := ClassifyTicketBucket(currentH, recentAnchor, chain.StorageTruthRecentBucketMaxBlocks, chain.StorageTruthOldBucketMinBlocks); got != audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT {
+		t.Fatalf("RECENT boundary classification drift: got %v at delta=%d", got, currentH-recentAnchor)
+	}
+	if got := ClassifyTicketBucket(currentH, oldAnchor, chain.StorageTruthRecentBucketMaxBlocks, chain.StorageTruthOldBucketMinBlocks); got != audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_OLD {
+		t.Fatalf("OLD boundary classification drift: got %v at delta=%d", got, currentH-oldAnchor)
+	}
+}

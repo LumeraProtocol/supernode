@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"gopkg.in/yaml.v3"
@@ -66,9 +67,29 @@ type LogConfig struct {
 }
 
 type StorageChallengeConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	PollIntervalMs uint64 `yaml:"poll_interval_ms,omitempty"`
-	SubmitEvidence bool   `yaml:"submit_evidence,omitempty"`
+	Enabled        bool                       `yaml:"enabled"`
+	PollIntervalMs uint64                     `yaml:"poll_interval_ms,omitempty"`
+	SubmitEvidence bool                       `yaml:"submit_evidence,omitempty"`
+	LEP6           StorageChallengeLEP6Config `yaml:"lep6,omitempty"`
+}
+
+// StorageChallengeLEP6Config holds the supernode-binary-owned knobs for
+// the LEP-6 compound storage challenge runtime. All chain-driven knobs
+// (bucket thresholds, ranges-per-artifact, range size, enforcement mode)
+// flow via x/audit Params and are deliberately omitted here. See
+// docs/plans/LEP6_SUPERNODE_IMPLEMENTATION_PLAN_v2.md §2.3.
+type StorageChallengeLEP6Config struct {
+	// Enabled gates construction of the LEP6Dispatcher. When false, the
+	// legacy single-range loop runs alone (default true; PR3 ships LEP-6
+	// alongside the legacy loop with internal mode-gating).
+	Enabled bool `yaml:"enabled"`
+	// MaxConcurrentTargets bounds parallelism inside DispatchEpoch.
+	// Default 4. Reserved for follow-up parallelism work; PR3 dispatch
+	// is currently sequential per target.
+	MaxConcurrentTargets int `yaml:"max_concurrent_targets,omitempty"`
+	// RecipientReadTimeout caps a single GetCompoundProof RPC. Default
+	// 30s.
+	RecipientReadTimeout time.Duration `yaml:"recipient_read_timeout,omitempty"`
 }
 
 type Config struct {

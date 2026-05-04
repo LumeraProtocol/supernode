@@ -69,6 +69,20 @@ type Service struct {
 
 	grpcClient *grpcclient.Client
 	grpcOpts   *grpcclient.ClientOptions
+
+	// lep6 is the LEP-6 compound storage challenge dispatcher. Optional:
+	// if nil the legacy fixed-range path is the only active flow. When
+	// non-nil, the dispatcher runs once per new epoch in addition to the
+	// legacy loop. Mode gating (UNSPECIFIED skips) lives inside
+	// LEP6Dispatcher.DispatchEpoch.
+	lep6 *LEP6Dispatcher
+}
+
+// SetLEP6Dispatcher attaches the LEP-6 compound-challenge dispatcher.
+// May be called once before Run; nil-safe at the call site (Run skips
+// LEP-6 work when the field is nil).
+func (s *Service) SetLEP6Dispatcher(d *LEP6Dispatcher) {
+	s.lep6 = d
 }
 
 type Config struct {
@@ -251,6 +265,20 @@ func (s *Service) Run(ctx context.Context) error {
 				lastRunEpoch = epochID
 				lastRunOK = false
 				continue
+			}
+
+			// LEP-6 compound dispatch runs alongside the legacy single-range
+			// challenge for forward compatibility. The dispatcher gates
+			// internally on StorageTruthEnforcementMode (UNSPECIFIED skips),
+			// so it is dormant under chains that have not enabled storage
+			// truth enforcement and a no-op cost otherwise.
+			if s.lep6 != nil {
+				if err := s.lep6.DispatchEpoch(ctx, epochID); err != nil {
+					logtrace.Warn(ctx, "lep6 dispatch error", logtrace.Fields{
+						"epoch_id": epochID,
+						"error":    err.Error(),
+					})
+				}
 			}
 
 			lastRunEpoch = epochID

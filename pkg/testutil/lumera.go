@@ -171,6 +171,10 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*actiontypes.QueryPar
 	return &actiontypes.QueryParamsResponse{}, nil
 }
 
+func (m *MockActionModule) ListActionsBySuperNode(ctx context.Context, superNodeAddress string) (*actiontypes.QueryListActionsBySuperNodeResponse, error) {
+	return &actiontypes.QueryListActionsBySuperNodeResponse{}, nil
+}
+
 // MockActionMsgModule implements the action_msg.Module interface for testing
 type MockActionMsgModule struct{}
 
