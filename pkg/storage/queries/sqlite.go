@@ -396,6 +396,10 @@ func OpenHistoryDB() (LocalStoreInterface, error) {
 		return nil, fmt.Errorf("cannot create heal_verifications_submitted: %w", err)
 	}
 
+	if _, err := db.Exec(createStorageRecheckSubmissions); err != nil {
+		return nil, fmt.Errorf("cannot create storage_recheck_submissions: %w", err)
+	}
+
 	_, _ = db.Exec(alterTaskHistory)
 
 	_, _ = db.Exec(alterTablePingHistory)

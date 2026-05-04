@@ -16,6 +16,7 @@ type Module interface {
 	GetCurrentEpoch(ctx context.Context) (*types.QueryCurrentEpochResponse, error)
 	GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*types.QueryAssignedTargetsResponse, error)
 	GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*types.QueryEpochReportResponse, error)
+	GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*types.QueryEpochReportsByReporterResponse, error)
 
 	// LEP-6 storage-truth state queries.
 	GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*types.QueryNodeSuspicionStateResponse, error)

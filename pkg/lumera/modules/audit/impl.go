@@ -75,6 +75,18 @@ func (m *module) GetEpochReport(ctx context.Context, epochID uint64, supernodeAc
 	return resp, nil
 }
 
+func (m *module) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*types.QueryEpochReportsByReporterResponse, error) {
+	resp, err := m.client.EpochReportsByReporter(ctx, &types.QueryEpochReportsByReporterRequest{
+		SupernodeAccount: reporterAccount,
+		EpochId:          epochID,
+		FilterByEpochId:  true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get epoch reports by reporter: %w", err)
+	}
+	return resp, nil
+}
+
 func (m *module) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*types.QueryNodeSuspicionStateResponse, error) {
 	resp, err := m.client.NodeSuspicionState(ctx, &types.QueryNodeSuspicionStateRequest{
 		SupernodeAccount: supernodeAccount,

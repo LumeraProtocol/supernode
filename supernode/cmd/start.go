@@ -24,6 +24,7 @@ import (
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 	hostReporterService "github.com/LumeraProtocol/supernode/v2/supernode/host_reporter"
+	recheckService "github.com/LumeraProtocol/supernode/v2/supernode/recheck"
 	selfHealingService "github.com/LumeraProtocol/supernode/v2/supernode/self_healing"
 	statusService "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	storageChallengeService "github.com/LumeraProtocol/supernode/v2/supernode/storage_challenge"
@@ -219,6 +220,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 			WithArtifactReader(newP2PArtifactReader(p2pService)).
 			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName)
 		var storageChallengeRunner *storageChallengeService.Service
+		var recheckRunner *recheckService.Service
 		if appConfig.StorageChallengeConfig.Enabled {
 			storageChallengeRunner, err = storageChallengeService.NewService(
 				appConfig.SupernodeConfig.Identity,
@@ -254,6 +256,18 @@ The supernode will connect to the Lumera network and begin participating in the 
 					logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
 				}
 				storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
+
+				if appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled {
+					rc := appConfig.StorageChallengeConfig.LEP6.Recheck
+					tickInterval := time.Duration(rc.TickIntervalMs) * time.Millisecond
+					recheckCfg := recheckService.Config{Enabled: true, LookbackEpochs: rc.LookbackEpochs, MaxPerTick: rc.MaxPerTick, TickInterval: tickInterval}
+					attestor := recheckService.NewAttestor(appConfig.SupernodeConfig.Identity, lumeraClient.AuditMsg(), historyStore)
+					reporterSource := recheckService.NewSupernodeReporterSource(lumeraClient.SuperNode(), appConfig.SupernodeConfig.Identity)
+					recheckRunner, err = recheckService.NewServiceWithReporters(recheckCfg, lumeraClient.Audit(), historyStore, dispatcher, attestor, appConfig.SupernodeConfig.Identity, reporterSource)
+					if err != nil {
+						logtrace.Fatal(ctx, "Failed to initialize LEP-6 recheck runner", logtrace.Fields{"error": err.Error()})
+					}
+				}
 			}
 		}
 
@@ -358,6 +372,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 			}
 			if selfHealingRunner != nil {
 				services = append(services, selfHealingRunner)
+			}
+			if recheckRunner != nil {
+				services = append(services, recheckRunner)
 			}
 			servicesErr <- RunServices(ctx, services...)
 		}()

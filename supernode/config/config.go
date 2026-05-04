@@ -90,6 +90,15 @@ type StorageChallengeLEP6Config struct {
 	// RecipientReadTimeout caps a single GetCompoundProof RPC. Default
 	// 30s.
 	RecipientReadTimeout time.Duration `yaml:"recipient_read_timeout,omitempty"`
+	// Recheck owns the PR-5 storage-truth recheck evidence submitter.
+	Recheck StorageRecheckConfig `yaml:"recheck,omitempty"`
+}
+
+type StorageRecheckConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	LookbackEpochs uint64 `yaml:"lookback_epochs,omitempty"`
+	MaxPerTick     int    `yaml:"max_per_tick,omitempty"`
+	TickIntervalMs int    `yaml:"tick_interval_ms,omitempty"`
 }
 
 // SelfHealingConfig configures the LEP-6 chain-driven self-healing runtime

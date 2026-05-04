@@ -14,6 +14,7 @@ import (
 	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
 	nodemod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/node"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
+	"github.com/LumeraProtocol/supernode/v2/supernode/recheck"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -31,14 +32,18 @@ import (
 // dispatchAuditModule is an in-test stub of audit.Module used to drive
 // LEP6Dispatcher per-test; mirrors the host_reporter test pattern.
 type dispatchAuditModule struct {
-	params   *audittypes.QueryParamsResponse
-	anchor   *audittypes.QueryEpochAnchorResponse
-	assigned *audittypes.QueryAssignedTargetsResponse
+	params        *audittypes.QueryParamsResponse
+	anchor        *audittypes.QueryEpochAnchorResponse
+	assigned      *audittypes.QueryAssignedTargetsResponse
+	getParamsHook func()
 }
 
 var _ auditmod.Module = (*dispatchAuditModule)(nil)
 
 func (s *dispatchAuditModule) GetParams(ctx context.Context) (*audittypes.QueryParamsResponse, error) {
+	if s.getParamsHook != nil {
+		s.getParamsHook()
+	}
 	return s.params, nil
 }
 func (s *dispatchAuditModule) GetEpochAnchor(ctx context.Context, epochID uint64) (*audittypes.QueryEpochAnchorResponse, error) {
@@ -55,6 +60,9 @@ func (s *dispatchAuditModule) GetAssignedTargets(ctx context.Context, supernodeA
 }
 func (s *dispatchAuditModule) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
 	return &audittypes.QueryEpochReportResponse{}, nil
+}
+func (s *dispatchAuditModule) GetEpochReportsByReporter(ctx context.Context, reporterAccount string, epochID uint64) (*audittypes.QueryEpochReportsByReporterResponse, error) {
+	return &audittypes.QueryEpochReportsByReporterResponse{}, nil
 }
 func (s *dispatchAuditModule) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*audittypes.QueryNodeSuspicionStateResponse, error) {
 	return &audittypes.QueryNodeSuspicionStateResponse{}, nil
@@ -210,6 +218,36 @@ func TestDispatchEpoch_ModeUnspecified_NoOp(t *testing.T) {
 
 	require.NoError(t, d.DispatchEpoch(context.Background(), 7))
 	require.Empty(t, buf.CollectResults(7), "buffer must be empty under UNSPECIFIED mode")
+}
+
+func TestDispatchEpoch_GetParamsDoesNotHoldDispatcherLock(t *testing.T) {
+	var dispatcher *LEP6Dispatcher
+	var sawUnlocked bool
+	audit := &dispatchAuditModule{
+		params: &audittypes.QueryParamsResponse{
+			Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED),
+		},
+	}
+	audit.getParamsHook = func() {
+		if dispatcher.mu.TryLock() {
+			sawUnlocked = true
+			dispatcher.mu.Unlock()
+		}
+	}
+	dispatcher, _ = newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
+
+	require.NoError(t, dispatcher.DispatchEpoch(context.Background(), 7))
+	require.True(t, sawUnlocked, "DispatchEpoch must not hold dispatcher mutex while querying params")
+}
+
+func TestDispatchEpoch_GetParamsNilResponseIsClear(t *testing.T) {
+	audit := &dispatchAuditModule{}
+	dispatcher, _ := newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
+
+	err := dispatcher.DispatchEpoch(context.Background(), 7)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "lep6 dispatch: get params returned nil response")
+	require.NotContains(t, err.Error(), "<nil>")
 }
 
 func TestDispatchEpoch_ModeShadow_AppendsResults(t *testing.T) {
@@ -426,4 +464,32 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 		}
 	}
 	require.True(t, sawPass, "expected a PASS-class result on happy path")
+}
+
+func TestRecheck_GetParamsNilResponseIsClearAndDoesNotHoldDispatcherLock(t *testing.T) {
+	var dispatcher *LEP6Dispatcher
+	var sawUnlocked bool
+	audit := &dispatchAuditModule{}
+	audit.getParamsHook = func() {
+		if dispatcher.mu.TryLock() {
+			sawUnlocked = true
+			dispatcher.mu.Unlock()
+		}
+	}
+	dispatcher, _ = newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
+
+	candidate := recheck.Candidate{
+		EpochID:                  7,
+		TargetAccount:            "sn-target",
+		TicketID:                 "ticket-1",
+		ChallengedTranscriptHash: "original-transcript",
+		OriginalReporter:         "sn-reporter",
+		OriginalResultClass:      audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH,
+	}
+
+	_, err := dispatcher.Recheck(context.Background(), candidate)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "lep6 recheck: get params returned nil response")
+	require.NotContains(t, err.Error(), "<nil>")
+	require.True(t, sawUnlocked, "Recheck must not hold dispatcher mutex while querying params")
 }
