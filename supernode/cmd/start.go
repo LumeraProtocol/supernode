@@ -169,7 +169,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// race against the SN's own ~5s auto-submit ticker. Production deployments must
 		// leave this unset; gated behind an env var with no config-file surface so the
 		// canonical path is unchanged.
-		var hostReporter service
+		var hostReporter *hostReporterService.Service
 		if v := strings.TrimSpace(os.Getenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")); v == "1" || strings.EqualFold(v, "true") {
 			logtrace.Info(ctx, "host_reporter disabled via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", logtrace.Fields{})
 		} else {
@@ -206,7 +206,16 @@ The supernode will connect to the Lumera network and begin participating in the 
 			logtrace.Fatal(ctx, "Failed to open history DB", logtrace.Fields{"error": err.Error()})
 		}
 
-		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore)
+		// LEP-6 result buffer: drained by host_reporter on each tick and
+		// appended to by the LEP6Dispatcher.
+		resultBuffer := storageChallengeService.NewBuffer()
+		if hostReporter != nil {
+			hostReporter.SetProofResultProvider(resultBuffer)
+		}
+
+		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore).
+			WithArtifactReader(newP2PArtifactReader(p2pService)).
+			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName)
 		var storageChallengeRunner *storageChallengeService.Service
 		if appConfig.StorageChallengeConfig.Enabled {
 			storageChallengeRunner, err = storageChallengeService.NewService(
@@ -225,6 +234,24 @@ The supernode will connect to the Lumera network and begin participating in the 
 			)
 			if err != nil {
 				logtrace.Fatal(ctx, "Failed to initialize storage challenge runner", logtrace.Fields{"error": err.Error()})
+			}
+
+			// LEP-6 dispatcher (mode-gated internally; see DispatchEpoch).
+			if appConfig.StorageChallengeConfig.LEP6.Enabled {
+				dispatcher, derr := storageChallengeService.NewLEP6Dispatcher(
+					lumeraClient,
+					kr,
+					appConfig.SupernodeConfig.KeyName,
+					appConfig.SupernodeConfig.Identity,
+					storageChallengeService.NewSecureSupernodeClientFactory(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port),
+					storageChallengeService.NewChainTicketProvider(lumeraClient),
+					newCascadeMetaProvider(lumeraClient),
+					resultBuffer,
+				)
+				if derr != nil {
+					logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
+				}
+				storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
 			}
 		}
 
