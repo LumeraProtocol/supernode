@@ -7,6 +7,7 @@ import (
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge"
 )
 
@@ -125,11 +126,13 @@ func throttleResults(epochID uint64, results []*audittypes.StorageProofResult, m
 	kept = append(kept, recent...)
 	kept = append(kept, nonRecent...)
 
+	dropped := originalCount - len(kept)
+	lep6metrics.IncDispatchThrottled("drop-non-RECENT-first", dropped)
 	logtrace.Warn(context.Background(), "storage_challenge: result buffer throttled to chain cap", logtrace.Fields{
 		"epoch_id": epochID,
 		"original": originalCount,
 		"kept":     len(kept),
-		"dropped":  originalCount - len(kept),
+		"dropped":  dropped,
 		"cap":      maxKeep,
 		"policy":   "drop-non-RECENT-first",
 	})

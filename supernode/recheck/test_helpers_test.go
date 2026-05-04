@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
@@ -18,12 +19,29 @@ var callSeq int
 
 type memoryStore struct {
 	seen            map[string]bool
+	failures        map[string]int
 	recordCallIndex int
 }
 
-func newMemoryStore() *memoryStore { return &memoryStore{seen: map[string]bool{}} }
+func newMemoryStore() *memoryStore {
+	return &memoryStore{seen: map[string]bool{}, failures: map[string]int{}}
+}
 func (m *memoryStore) HasRecheckSubmission(_ context.Context, epochID uint64, ticketID string) (bool, error) {
 	return m.seen[key(epochID, ticketID)], nil
+}
+func (m *memoryStore) RecordPendingRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
+	callSeq++
+	m.recordCallIndex = callSeq
+	m.seen[key(epochID, ticketID)] = true
+	return nil
+}
+func (m *memoryStore) MarkRecheckSubmissionSubmitted(_ context.Context, epochID uint64, ticketID string) error {
+	m.seen[key(epochID, ticketID)] = true
+	return nil
+}
+func (m *memoryStore) DeletePendingRecheckSubmission(_ context.Context, epochID uint64, ticketID string) error {
+	delete(m.seen, key(epochID, ticketID))
+	return nil
 }
 func (m *memoryStore) RecordRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
 	callSeq++
@@ -31,7 +49,15 @@ func (m *memoryStore) RecordRecheckSubmission(_ context.Context, epochID uint64,
 	m.seen[key(epochID, ticketID)] = true
 	return nil
 }
-func key(epochID uint64, ticketID string) string { return fmt.Sprintf("%d/%s", epochID, ticketID) }
+func (m *memoryStore) RecordRecheckAttemptFailure(_ context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error {
+	m.failures[key(epochID, ticketID)]++
+	return nil
+}
+func (m *memoryStore) HasRecheckAttemptFailureBudgetExceeded(_ context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error) {
+	return maxAttempts > 0 && m.failures[key(epochID, ticketID)] >= maxAttempts, nil
+}
+func (m *memoryStore) PurgeExpiredRecheckAttemptFailures(_ context.Context) error { return nil }
+func key(epochID uint64, ticketID string) string                                  { return fmt.Sprintf("%d/%s", epochID, ticketID) }
 
 type recordingAuditMsg struct {
 	calls []submitCall

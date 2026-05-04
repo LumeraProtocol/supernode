@@ -668,6 +668,128 @@
         }
       }
     },
+    "StatusResponseLEP6Metrics": {
+      "type": "object",
+      "properties": {
+        "dispatchResultsTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "Storage challenge / dispatch signals."
+        },
+        "dispatchThrottledTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "dispatchEpochDurationMillisTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "dispatchEpochDurationMillisMax": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "dispatchEpochDurationCount": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "ticketDiscoveryTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "noTicketProviderActive": {
+          "type": "string",
+          "format": "int64"
+        },
+        "healClaimsSubmittedTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          },
+          "description": "Self-healing signals."
+        },
+        "healClaimsReconciledTotal": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "healVerificationsSubmittedTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "healVerificationsAlreadyExistsTotal": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "healFinalizePublishesTotal": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "healFinalizeCleanupsTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "selfHealingPendingClaims": {
+          "type": "string",
+          "format": "int64"
+        },
+        "selfHealingStagingBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "recheckCandidatesFoundTotal": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Storage recheck signals."
+        },
+        "recheckEvidenceSubmittedTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "recheckEvidenceAlreadySubmittedTotal": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "recheckExecutionFailuresTotal": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uint64"
+          }
+        },
+        "recheckPendingCandidates": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "LEP-6 storage-truth runtime metrics and diagnostics. These are in-memory\ncounters/gauges reset on process restart, matching the existing typed\nstatus-snapshot pattern used for P2P metrics."
+    },
     "StatusResponseNetwork": {
       "type": "object",
       "properties": {
@@ -876,6 +998,9 @@
         },
         "p2pMetrics": {
           "$ref": "#/definitions/StatusResponseP2PMetrics"
+        },
+        "lep6Metrics": {
+          "$ref": "#/definitions/StatusResponseLEP6Metrics"
         }
       },
       "title": "The StatusResponse represents system status with clear organization"

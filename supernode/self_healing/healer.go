@@ -10,6 +10,7 @@ import (
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 )
@@ -69,11 +70,21 @@ func (s *Service) reconstructAndClaim(ctx context.Context, op audittypes.HealOp)
 		return fmt.Errorf("empty manifest hash")
 	}
 
-	// Submit FIRST — let chain be the source of truth. Only persist on
-	// chain acceptance.
+	// Pre-stage before chain submit. This closes the restart window where the
+	// tx is accepted but the process dies before recording local dedup state;
+	// on restart, the pending row prevents a duplicate submit loop and lets
+	// finalizer/reconciliation continue from local durable state.
+	if err := s.store.RecordPendingHealClaim(ctx, op.HealOpId, op.TicketId, manifestHash, stagingDir); err != nil {
+		if errors.Is(err, queries.ErrLEP6ClaimAlreadyRecorded) {
+			lep6metrics.IncHealClaim("dedup")
+			return nil
+		}
+		_ = os.RemoveAll(stagingDir)
+		lep6metrics.IncHealClaim("stage_error")
+		return fmt.Errorf("stage heal claim before submit: %w", err)
+	}
+
 	if _, err := s.lumera.AuditMsg().ClaimHealComplete(ctx, op.HealOpId, op.TicketId, manifestHash, ""); err != nil {
-		// If the chain rejected because the op already moved past SCHEDULED
-		// (a prior submit that we lost the response for), reconcile.
 		if isChainHealOpInvalidState(err) {
 			if recErr := s.reconcileExistingClaim(ctx, op, manifestHash, stagingDir); recErr != nil {
 				_ = os.RemoveAll(stagingDir)
@@ -81,19 +92,17 @@ func (s *Service) reconstructAndClaim(ctx context.Context, op audittypes.HealOp)
 			}
 			return nil
 		}
+		_ = s.store.DeletePendingHealClaim(ctx, op.HealOpId)
 		_ = os.RemoveAll(stagingDir)
+		lep6metrics.IncHealClaim("submit_error")
 		return fmt.Errorf("submit claim: %w", err)
 	}
 
-	if err := s.store.RecordHealClaim(ctx, op.HealOpId, op.TicketId, manifestHash, stagingDir); err != nil {
-		if errors.Is(err, queries.ErrLEP6ClaimAlreadyRecorded) {
-			// Concurrent tick beat us; staging on disk matches.
-			return nil
-		}
-		// Persist failed but chain accepted — we'll see the row missing
-		// next tick; reconcileExistingClaim will fix it on retry.
-		return fmt.Errorf("record heal claim (chain accepted): %w", err)
+	if err := s.store.MarkHealClaimSubmitted(ctx, op.HealOpId); err != nil {
+		lep6metrics.IncHealClaim("mark_error")
+		return fmt.Errorf("mark heal claim submitted (chain accepted): %w", err)
 	}
+	lep6metrics.IncHealClaim("submitted")
 	logtrace.Info(ctx, "self_healing(LEP-6): claim submitted", logtrace.Fields{
 		"heal_op_id":  op.HealOpId,
 		"ticket_id":   op.TicketId,
@@ -136,16 +145,25 @@ func (s *Service) reconcileExistingClaim(ctx context.Context, op audittypes.Heal
 		_ = os.RemoveAll(stagingDir)
 		return nil
 	}
-	// Manifest matches — persist dedup row (no-op if already present) so
-	// finalizer can publish on VERIFIED.
-	if err := s.store.RecordHealClaim(ctx, op.HealOpId, op.TicketId, manifestHash, stagingDir); err != nil && !errors.Is(err, queries.ErrLEP6ClaimAlreadyRecorded) {
-		return fmt.Errorf("record reconciled claim: %w", err)
+	// Manifest matches — persist/mark dedup row so finalizer can publish on
+	// VERIFIED. If this tick pre-staged the row before seeing the already-on-
+	// chain error, mark it submitted; otherwise insert a submitted row.
+	if err := s.store.RecordHealClaim(ctx, op.HealOpId, op.TicketId, manifestHash, stagingDir); err != nil {
+		if errors.Is(err, queries.ErrLEP6ClaimAlreadyRecorded) {
+			if markErr := s.store.MarkHealClaimSubmitted(ctx, op.HealOpId); markErr != nil {
+				return fmt.Errorf("mark reconciled claim submitted: %w", markErr)
+			}
+		} else {
+			return fmt.Errorf("record reconciled claim: %w", err)
+		}
 	}
 	logtrace.Info(ctx, "self_healing(LEP-6): reconciled existing chain claim", logtrace.Fields{
 		"heal_op_id":   op.HealOpId,
 		"chain_status": chainOp.Status.String(),
 		"manifest_h":   manifestHash,
 	})
+	lep6metrics.IncHealClaimReconciled()
+	lep6metrics.IncHealClaim("reconciled")
 	return nil
 }
 

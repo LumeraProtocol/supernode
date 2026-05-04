@@ -204,7 +204,7 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// logtrace.Info(ctx, "Metrics collection enabled", logtrace.Fields{})
 
 		// Storage challenge history DB (shared by the gRPC handler and runner).
-		historyStore, err := queries.OpenHistoryDB()
+		historyStore, err := queries.OpenHistoryDBAt(appConfig.BaseDir)
 		if err != nil {
 			logtrace.Fatal(ctx, "Failed to open history DB", logtrace.Fields{"error": err.Error()})
 		}
@@ -260,7 +260,15 @@ The supernode will connect to the Lumera network and begin participating in the 
 				if appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled {
 					rc := appConfig.StorageChallengeConfig.LEP6.Recheck
 					tickInterval := time.Duration(rc.TickIntervalMs) * time.Millisecond
-					recheckCfg := recheckService.Config{Enabled: true, LookbackEpochs: rc.LookbackEpochs, MaxPerTick: rc.MaxPerTick, TickInterval: tickInterval}
+					failureBackoffTTL := time.Duration(rc.FailureBackoffTTLms) * time.Millisecond
+					recheckCfg := recheckService.Config{
+						Enabled:                     true,
+						LookbackEpochs:              rc.LookbackEpochs,
+						MaxPerTick:                  rc.MaxPerTick,
+						TickInterval:                tickInterval,
+						MaxFailureAttemptsPerTicket: rc.MaxFailureAttemptsPerTicket,
+						FailureBackoffTTL:           failureBackoffTTL,
+					}
 					attestor := recheckService.NewAttestor(appConfig.SupernodeConfig.Identity, lumeraClient.AuditMsg(), historyStore)
 					reporterSource := recheckService.NewSupernodeReporterSource(lumeraClient.SuperNode(), appConfig.SupernodeConfig.Identity)
 					recheckRunner, err = recheckService.NewServiceWithReporters(recheckCfg, lumeraClient.Audit(), historyStore, dispatcher, attestor, appConfig.SupernodeConfig.Identity, reporterSource)
@@ -293,6 +301,8 @@ The supernode will connect to the Lumera network and begin participating in the 
 				StagingRoot:                appConfig.SelfHealingConfig.StagingDir,
 				VerifierFetchTimeout:       fetchTimeout,
 				VerifierFetchAttempts:      appConfig.SelfHealingConfig.VerifierFetchAttempts,
+				VerifierBackoffBase:        time.Duration(appConfig.SelfHealingConfig.VerifierBackoffBaseMs) * time.Millisecond,
+				AuditQueryTimeout:          time.Duration(appConfig.SelfHealingConfig.AuditQueryTimeoutMs) * time.Millisecond,
 				KeyName:                    appConfig.SupernodeConfig.KeyName,
 			}
 			fetcher := selfHealingService.NewSecureVerifierFetcher(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port)

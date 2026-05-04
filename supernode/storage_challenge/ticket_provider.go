@@ -7,6 +7,8 @@ import (
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 // ChainTicketProvider discovers finalized cascade actions assigned to a target
@@ -43,6 +45,7 @@ func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupern
 	seen := make(map[string]struct{}, len(resp.Actions))
 	for _, act := range resp.Actions {
 		if !isEligibleCascadeAction(act, target) {
+			lep6metrics.IncTicketDiscovery("ineligible")
 			continue
 		}
 		id := strings.TrimSpace(act.ActionID)
@@ -53,6 +56,7 @@ func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupern
 			continue
 		}
 		seen[id] = struct{}{}
+		lep6metrics.IncTicketDiscovery("eligible")
 		out = append(out, TicketDescriptor{TicketID: id, AnchorBlock: act.BlockHeight})
 	}
 
@@ -76,10 +80,33 @@ func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
 	if act.BlockHeight <= 0 {
 		return false
 	}
+	if !hasValidCascadeMetadata(act.Metadata) {
+		return false
+	}
 	for _, sn := range act.SuperNodes {
 		if strings.TrimSpace(sn) == target {
 			return true
 		}
 	}
 	return false
+}
+
+func hasValidCascadeMetadata(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var meta actiontypes.CascadeMetadata
+	if err := proto.Unmarshal(raw, &meta); err != nil {
+		return false
+	}
+	if strings.TrimSpace(meta.DataHash) == "" {
+		return false
+	}
+	if meta.RqIdsMax == 0 || len(meta.RqIdsIds) == 0 {
+		return false
+	}
+	if meta.IndexArtifactCount == 0 || meta.SymbolArtifactCount == 0 {
+		return false
+	}
+	return true
 }

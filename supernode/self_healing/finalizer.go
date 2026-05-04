@@ -8,6 +8,7 @@ import (
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 )
 
@@ -81,6 +82,7 @@ func (s *Service) publishStagingDir(ctx context.Context, claim queries.HealClaim
 	if err := s.store.DeleteHealClaim(ctx, claim.HealOpID); err != nil {
 		return fmt.Errorf("delete heal claim row: %w", err)
 	}
+	lep6metrics.IncHealFinalizePublish()
 	logtrace.Info(ctx, "self_healing(LEP-6): published staged artefacts to KAD", logtrace.Fields{
 		"heal_op_id":  claim.HealOpID,
 		"ticket_id":   claim.TicketID,
@@ -100,6 +102,7 @@ func (s *Service) cleanupClaim(ctx context.Context, claim queries.HealClaimRecor
 	if err := s.store.DeleteHealClaim(ctx, claim.HealOpID); err != nil {
 		return fmt.Errorf("delete heal claim row: %w", err)
 	}
+	lep6metrics.IncHealFinalizeCleanup(status.String())
 	logtrace.Info(ctx, "self_healing(LEP-6): claim cleaned up (no publish)", logtrace.Fields{
 		"heal_op_id": claim.HealOpID,
 		"status":     status.String(),

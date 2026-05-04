@@ -58,6 +58,7 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"golang.org/x/sync/semaphore"
@@ -73,6 +74,7 @@ const (
 	defaultVerifierFetchTimeout       = 60 * time.Second
 	defaultVerifierFetchAttempts      = 3
 	defaultVerifierBackoffBase        = 2 * time.Second
+	defaultAuditQueryTimeout          = 10 * time.Second
 )
 
 // Config captures supernode-binary-owned tunables for the LEP-6 heal runtime.
@@ -97,6 +99,12 @@ type Config struct {
 	VerifierFetchTimeout  time.Duration
 	VerifierFetchAttempts int
 	VerifierBackoffBase   time.Duration
+
+	// AuditQueryTimeout bounds each chain query made by the dispatcher. A
+	// wedged status/params query must not pin the whole tick forever and starve
+	// other roles (especially verifier dispatch while a healer-reported op is
+	// waiting on quorum before deadline).
+	AuditQueryTimeout time.Duration
 
 	// KeyName is the supernode's keyring key used to sign claim/verification
 	// txs. Must match the on-chain HealerSupernodeAccount /
@@ -133,6 +141,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.VerifierBackoffBase <= 0 {
 		c.VerifierBackoffBase = defaultVerifierBackoffBase
+	}
+	if c.AuditQueryTimeout <= 0 {
+		c.AuditQueryTimeout = defaultAuditQueryTimeout
 	}
 	return c
 }
@@ -285,7 +296,9 @@ func (s *Service) tick(ctx context.Context) error {
 // modeGate returns (skip=true) when the chain enforcement mode is
 // UNSPECIFIED. Heal-ops only exist in SHADOW/SOFT/FULL.
 func (s *Service) modeGate(ctx context.Context) (bool, error) {
-	resp, err := s.lumera.Audit().GetParams(ctx)
+	queryCtx, cancel := s.auditQueryContext(ctx)
+	defer cancel()
+	resp, err := s.lumera.Audit().GetParams(queryCtx)
 	if err != nil {
 		return false, err
 	}
@@ -349,9 +362,19 @@ func (s *Service) dispatchVerifierOps(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if len(ops) > 0 {
+		logtrace.Info(ctx, "self_healing(LEP-6): verifier status scan", logtrace.Fields{
+			"identity": s.identity,
+			"ops":      len(ops),
+		})
+	}
 	for i := range ops {
 		op := ops[i]
 		if !accountInList(s.identity, op.VerifierSupernodeAccounts) {
+			logtrace.Debug(ctx, "self_healing(LEP-6): verifier op not assigned locally", logtrace.Fields{
+				"identity":   s.identity,
+				"heal_op_id": op.HealOpId,
+			})
 			continue
 		}
 		if isFinalStatus(op.Status) {
@@ -373,12 +396,21 @@ func (s *Service) dispatchVerifierOps(ctx context.Context) error {
 		}
 		go func(op audittypes.HealOp, key string) {
 			defer s.inFlight.Delete(key)
+			logtrace.Info(ctx, "self_healing(LEP-6): verifier dispatch start", logtrace.Fields{
+				"identity":   s.identity,
+				"heal_op_id": op.HealOpId,
+				"ticket_id":  op.TicketId,
+			})
 			if err := s.verifyAndSubmit(ctx, op); err != nil {
 				logtrace.Warn(ctx, "self_healing(LEP-6): verifyAndSubmit", logtrace.Fields{
 					logtrace.FieldError: err.Error(),
 					"heal_op_id":        op.HealOpId,
 				})
 			}
+			logtrace.Info(ctx, "self_healing(LEP-6): verifier dispatch end", logtrace.Fields{
+				"identity":   s.identity,
+				"heal_op_id": op.HealOpId,
+			})
 		}(op, key)
 	}
 	return nil
@@ -392,6 +424,8 @@ func (s *Service) dispatchFinalizer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	lep6metrics.SetSelfHealingPendingClaims(len(claims))
+	lep6metrics.SetSelfHealingStagingBytes(totalStagingBytes(claims))
 	for _, claim := range claims {
 		key := opRoleKey(claim.HealOpID, rolePublisher)
 		if _, loaded := s.inFlight.LoadOrStore(key, struct{}{}); loaded {
@@ -412,7 +446,9 @@ func (s *Service) dispatchFinalizer(ctx context.Context) error {
 
 // listOps wraps the paginated audit query. Returns a flattened slice.
 func (s *Service) listOps(ctx context.Context, status audittypes.HealOpStatus) ([]audittypes.HealOp, error) {
-	resp, err := s.lumera.Audit().GetHealOpsByStatus(ctx, status, nil)
+	queryCtx, cancel := s.auditQueryContext(ctx)
+	defer cancel()
+	resp, err := s.lumera.Audit().GetHealOpsByStatus(queryCtx, status, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -420,6 +456,33 @@ func (s *Service) listOps(ctx context.Context, status audittypes.HealOpStatus) (
 		return nil, nil
 	}
 	return resp.HealOps, nil
+}
+
+func (s *Service) auditQueryContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := s.cfg.AuditQueryTimeout
+	if timeout <= 0 {
+		timeout = defaultAuditQueryTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func totalStagingBytes(claims []queries.HealClaimRecord) int64 {
+	var total int64
+	for _, claim := range claims {
+		if strings.TrimSpace(claim.StagingDir) == "" {
+			continue
+		}
+		_ = filepath.WalkDir(claim.StagingDir, func(_ string, d os.DirEntry, err error) error {
+			if err != nil || d == nil || d.IsDir() {
+				return nil
+			}
+			if info, statErr := d.Info(); statErr == nil {
+				total += info.Size()
+			}
+			return nil
+		})
+	}
+	return total
 }
 
 func accountInList(account string, list []string) bool {

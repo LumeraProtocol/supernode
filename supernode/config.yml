@@ -32,3 +32,31 @@ storage_challenge:
   enabled: true
   poll_interval_ms: 5000
   submit_evidence: true
+  lep6:
+    # Local challenger toggle only. Chain audit params remain the global
+    # protocol gate; STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED disables
+    # LEP-6 behavior even when this is true.
+    enabled: true
+    max_concurrent_targets: 4
+    recipient_read_timeout: 30s
+    recheck:
+      enabled: true
+      lookback_epochs: 7
+      max_per_tick: 5
+      tick_interval_ms: 60000
+      max_failure_attempts_per_ticket: 3
+      failure_backoff_ttl_ms: 900000
+
+# LEP-6 Self-Healing Configuration
+self_healing:
+  # Local healer/verifier/finalizer toggle only; chain mode remains the
+  # global protocol gate.
+  enabled: true
+  poll_interval_ms: 30000
+  max_concurrent_reconstructs: 2
+  max_concurrent_verifications: 4
+  max_concurrent_publishes: 2
+  staging_dir: "heal-staging"
+  verifier_fetch_timeout_ms: 60000
+  verifier_fetch_attempts: 3
+  verifier_backoff_base_ms: 2000

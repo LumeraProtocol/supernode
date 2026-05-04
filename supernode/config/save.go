@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -61,6 +62,30 @@ func CreateDefaultConfig(keyName, identity, chainID string, keyringBackend, keyr
 			Enabled:        true,
 			PollIntervalMs: DefaultStorageChallengePollIntervalMs,
 			SubmitEvidence: true,
+			LEP6: StorageChallengeLEP6Config{
+				Enabled:              true,
+				MaxConcurrentTargets: DefaultLEP6MaxConcurrentTargets,
+				RecipientReadTimeout: DefaultLEP6RecipientReadTimeout,
+				Recheck: StorageRecheckConfig{
+					Enabled:                     true,
+					LookbackEpochs:              DefaultLEP6RecheckLookbackEpochs,
+					MaxPerTick:                  DefaultLEP6RecheckMaxPerTick,
+					TickIntervalMs:              int(DefaultLEP6RecheckTickInterval / time.Millisecond),
+					MaxFailureAttemptsPerTicket: DefaultLEP6RecheckMaxFailureAttemptsPerTicket,
+					FailureBackoffTTLms:         int(DefaultLEP6RecheckFailureBackoffTTL / time.Millisecond),
+				},
+			},
+		},
+		SelfHealingConfig: SelfHealingConfig{
+			Enabled:                    true,
+			PollIntervalMs:             int(DefaultSelfHealingPollInterval / time.Millisecond),
+			MaxConcurrentReconstructs:  DefaultSelfHealingMaxConcurrentReconstructs,
+			MaxConcurrentVerifications: DefaultSelfHealingMaxConcurrentVerifications,
+			MaxConcurrentPublishes:     DefaultSelfHealingMaxConcurrentPublishes,
+			StagingDir:                 DefaultSelfHealingStagingDir,
+			VerifierFetchTimeoutMs:     int(DefaultSelfHealingVerifierFetchTimeout / time.Millisecond),
+			VerifierFetchAttempts:      DefaultSelfHealingVerifierFetchAttempts,
+			VerifierBackoffBaseMs:      int(DefaultSelfHealingVerifierBackoffBase / time.Millisecond),
 		},
 	}
 }
