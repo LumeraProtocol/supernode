@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/jmoiron/sqlx"
@@ -292,21 +293,27 @@ func (s *SQLiteStore) CloseHistoryDB(ctx context.Context) {
 	}
 }
 
-// OpenHistoryDB opens history DB
+// OpenHistoryDB opens history DB in the default supernode home.
 func OpenHistoryDB() (LocalStoreInterface, error) {
-	// Always use ~/.supernode as the base directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("cannot get user home directory: %w", err)
 	}
-	historyBasePath := filepath.Join(homeDir, ".supernode")
+	return OpenHistoryDBAt(filepath.Join(homeDir, ".supernode"))
+}
 
-	// Ensure the base directory exists before opening the DB
-	if err := os.MkdirAll(historyBasePath, 0o755); err != nil {
-		return nil, fmt.Errorf("cannot create history db directory %q: %w", historyBasePath, err)
+// OpenHistoryDBAt opens history DB under baseDir.
+func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
+	if strings.TrimSpace(baseDir) == "" {
+		return nil, fmt.Errorf("history db base directory is required")
 	}
 
-	dbFile := filepath.Join(historyBasePath, historyDBName)
+	// Ensure the base directory exists before opening the DB.
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return nil, fmt.Errorf("cannot create history db directory %q: %w", baseDir, err)
+	}
+
+	dbFile := filepath.Join(baseDir, historyDBName)
 	db, err := sqlx.Connect("sqlite3", dbFile)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open sqlite database: %w", err)
@@ -391,13 +398,31 @@ func OpenHistoryDB() (LocalStoreInterface, error) {
 	if _, err := db.Exec(createHealClaimsSubmitted); err != nil {
 		return nil, fmt.Errorf("cannot create heal_claims_submitted: %w", err)
 	}
+	_, _ = db.Exec(alterHealClaimsSubmittedStatus)
+	if _, err := db.Exec(createHealClaimsStatusIndex); err != nil {
+		return nil, fmt.Errorf("cannot create heal_claims_submitted status index: %w", err)
+	}
 
 	if _, err := db.Exec(createHealVerificationsSubmitted); err != nil {
 		return nil, fmt.Errorf("cannot create heal_verifications_submitted: %w", err)
 	}
+	_, _ = db.Exec(alterHealVerificationsSubmittedStatus)
+	if _, err := db.Exec(createHealVerificationsStatusIndex); err != nil {
+		return nil, fmt.Errorf("cannot create heal_verifications_submitted status index: %w", err)
+	}
 
 	if _, err := db.Exec(createStorageRecheckSubmissions); err != nil {
 		return nil, fmt.Errorf("cannot create storage_recheck_submissions: %w", err)
+	}
+	_, _ = db.Exec(alterStorageRecheckSubmissionStatus)
+	if _, err := db.Exec(createStorageRecheckSubmissionStatusIndex); err != nil {
+		return nil, fmt.Errorf("cannot create storage_recheck_submissions status index: %w", err)
+	}
+	if _, err := db.Exec(createRecheckAttemptFailures); err != nil {
+		return nil, fmt.Errorf("cannot create recheck_attempt_failures: %w", err)
+	}
+	if _, err := db.Exec(createRecheckAttemptFailuresExpiresIndex); err != nil {
+		return nil, fmt.Errorf("cannot create recheck_attempt_failures expires index: %w", err)
 	}
 
 	_, _ = db.Exec(alterTaskHistory)

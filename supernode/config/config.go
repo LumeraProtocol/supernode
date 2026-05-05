@@ -31,8 +31,9 @@ type KeyringConfig struct {
 }
 
 type P2PConfig struct {
-	Port    uint16 `yaml:"port"`
-	DataDir string `yaml:"data_dir"`
+	Port           uint16 `yaml:"port"`
+	DataDir        string `yaml:"data_dir"`
+	BootstrapNodes string `yaml:"bootstrap_nodes,omitempty"`
 }
 
 type LumeraClientConfig struct {
@@ -79,9 +80,14 @@ type StorageChallengeConfig struct {
 // flow via x/audit Params and are deliberately omitted here. See
 // docs/plans/LEP6_SUPERNODE_IMPLEMENTATION_PLAN_v2.md §2.3.
 type StorageChallengeLEP6Config struct {
+	// enabledSet tracks whether YAML explicitly provided enabled. Plain bools
+	// cannot distinguish omitted from explicit false, but LEP-6 needs both safe
+	// default-on local toggles and emergency-disable `enabled: false`.
+	enabledSet bool `yaml:"-"`
+
 	// Enabled gates construction of the LEP6Dispatcher. When false, the
-	// legacy single-range loop runs alone (default true; PR3 ships LEP-6
-	// alongside the legacy loop with internal mode-gating).
+	// legacy single-range loop runs alone (default true; the chain audit
+	// StorageTruthEnforcementMode remains the protocol source of truth).
 	Enabled bool `yaml:"enabled"`
 	// MaxConcurrentTargets bounds parallelism inside DispatchEpoch.
 	// Default 4. Reserved for follow-up parallelism work; PR3 dispatch
@@ -95,10 +101,17 @@ type StorageChallengeLEP6Config struct {
 }
 
 type StorageRecheckConfig struct {
+	enabledSet bool `yaml:"-"`
+
 	Enabled        bool   `yaml:"enabled"`
 	LookbackEpochs uint64 `yaml:"lookback_epochs,omitempty"`
 	MaxPerTick     int    `yaml:"max_per_tick,omitempty"`
 	TickIntervalMs int    `yaml:"tick_interval_ms,omitempty"`
+	// MaxFailureAttemptsPerTicket bounds repeated failed recheck attempts for
+	// one epoch/ticket before the candidate is temporarily skipped.
+	MaxFailureAttemptsPerTicket int `yaml:"max_failure_attempts_per_ticket,omitempty"`
+	// FailureBackoffTTLms is the TTL for recorded recheck attempt failures.
+	FailureBackoffTTLms int `yaml:"failure_backoff_ttl_ms,omitempty"`
 }
 
 // SelfHealingConfig configures the LEP-6 chain-driven self-healing runtime
@@ -106,8 +119,12 @@ type StorageRecheckConfig struct {
 // the chain's StorageTruthEnforcementMode param — UNSPECIFIED skips the
 // dispatcher regardless of Enabled.
 type SelfHealingConfig struct {
+	// enabledSet tracks explicit YAML emergency-disable vs omitted default.
+	enabledSet bool `yaml:"-"`
+
 	// Enabled toggles the dispatcher and the §19 transport server. Default
-	// false until activation rollout (PR-6).
+	// true; chain StorageTruthEnforcementMode=UNSPECIFIED remains the global
+	// protocol disable.
 	Enabled bool `yaml:"enabled"`
 	// PollIntervalMs is the dispatcher tick cadence (default 30000).
 	PollIntervalMs int `yaml:"poll_interval_ms,omitempty"`
@@ -127,6 +144,12 @@ type SelfHealingConfig struct {
 	// VerifierFetchAttempts bounds retries when fetching from healer
 	// (default 3).
 	VerifierFetchAttempts int `yaml:"verifier_fetch_attempts,omitempty"`
+	// VerifierBackoffBaseMs is the exponential retry backoff base between
+	// healer fetch attempts (default 2000).
+	VerifierBackoffBaseMs int `yaml:"verifier_backoff_base_ms,omitempty"`
+	// AuditQueryTimeoutMs bounds each dispatcher chain query so one wedged
+	// status/params call cannot starve verifier/finalizer work (default 10000).
+	AuditQueryTimeoutMs int `yaml:"audit_query_timeout_ms,omitempty"`
 }
 
 type Config struct {
@@ -229,6 +252,9 @@ func LoadConfig(filename string, baseDir string) (*Config, error) {
 	// Apply storage challenge defaults.
 	if config.StorageChallengeConfig.PollIntervalMs == 0 {
 		config.StorageChallengeConfig.PollIntervalMs = DefaultStorageChallengePollIntervalMs
+	}
+	if err := config.applyLEP6DefaultsAndValidate(); err != nil {
+		return nil, err
 	}
 
 	// Create directories

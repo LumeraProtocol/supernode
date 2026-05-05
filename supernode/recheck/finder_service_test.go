@@ -109,6 +109,21 @@ func TestService_TickModeGateAndSubmit(t *testing.T) {
 	require.Equal(t, "target", msg.calls[0].target)
 }
 
+func TestService_TickSkipsRecheckWhenFailureBudgetExhausted(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryStore()
+	store.failures[key(10, "t")] = 2
+	msg := &recordingAuditMsg{}
+	a := &stubAudit{current: 10, mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL, reports: map[uint64]audittypes.EpochReport{10: {StorageProofResults: []*audittypes.StorageProofResult{resFrom("peer", "t", "target", "h", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH)}}}}
+	r := &stubRechecker{result: RecheckResult{TranscriptHash: "rh", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS}}
+	svc, err := NewService(Config{Enabled: true, TickInterval: time.Millisecond, MaxFailureAttemptsPerTicket: 2}, a, store, r, NewAttestor("self", msg, store), "self")
+	require.NoError(t, err)
+
+	require.NoError(t, svc.Tick(ctx))
+	require.Empty(t, r.calls, "recheck execution should be skipped after the per-ticket failure budget is exhausted")
+	require.Empty(t, msg.calls, "no chain submission should be attempted for a budget-blocked candidate")
+}
+
 func TestConfigDefaults(t *testing.T) {
 	got := (Config{}).WithDefaults()
 	require.Equal(t, DefaultLookbackEpochs, got.LookbackEpochs)

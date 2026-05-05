@@ -120,9 +120,9 @@ release:
 ###################################################
 ###              Tests and Simulation           ###
 ###################################################
-.PHONY: test-e2e test-unit test-integration test-system test-cascade test-sn-manager
-.PHONY: install-lumera setup-supernodes system-test-setup install-deps
-.PHONY: gen-cascade gen-supernode
+.PHONY: test-e2e test-unit test-integration test-system test-cascade test-lep6 test-sn-manager
+.PHONY: install-lumera setup-supernodes setup-lep6-supernodes system-test-setup install-deps
+.PHONY: gen-cascade gen-supernode audit-mod-clean lep6-reset-dedup lep6-validate-config
 test-unit:
 	${GO} test -v ./...
 
@@ -159,9 +159,15 @@ SUPERNODE_SRC=supernode/main.go
 DATA_DIR=tests/system/supernode-data1
 DATA_DIR2=tests/system/supernode-data2
 DATA_DIR3=tests/system/supernode-data3
+LEP6_DATA_DIR=tests/system/supernode-lep6-data1
+LEP6_DATA_DIR2=tests/system/supernode-lep6-data2
+LEP6_DATA_DIR3=tests/system/supernode-lep6-data3
 CONFIG_FILE=tests/system/config.test-1.yml
 CONFIG_FILE2=tests/system/config.test-2.yml
 CONFIG_FILE3=tests/system/config.test-3.yml
+LEP6_CONFIG_FILE=tests/system/config.lep6-1.yml
+LEP6_CONFIG_FILE2=tests/system/config.lep6-2.yml
+LEP6_CONFIG_FILE3=tests/system/config.lep6-3.yml
 
 # Setup script
 SETUP_SCRIPT=tests/scripts/setup-supernodes.sh
@@ -186,6 +192,12 @@ setup-supernodes:
 	@chmod +x $(SETUP_SCRIPT)
 	@bash $(SETUP_SCRIPT) all $(SUPERNODE_SRC) $(DATA_DIR) $(CONFIG_FILE) $(DATA_DIR2) $(CONFIG_FILE2) $(DATA_DIR3) $(CONFIG_FILE3)
 
+setup-lep6-supernodes:
+	@echo "Setting up isolated LEP-6 supernode environments..."
+	@rm -rf tests/system/heal-staging
+	@chmod +x $(SETUP_SCRIPT)
+	@bash $(SETUP_SCRIPT) all $(SUPERNODE_SRC) $(LEP6_DATA_DIR) $(LEP6_CONFIG_FILE) $(LEP6_DATA_DIR2) $(LEP6_CONFIG_FILE2) $(LEP6_DATA_DIR3) $(LEP6_CONFIG_FILE3)
+
 # Complete system test setup (Lumera + Supernodes)
 system-test-setup: install-lumera setup-supernodes
 	@echo "System test environment setup complete."
@@ -200,6 +212,31 @@ test-e2e:
 test-cascade:
 	@echo "Running cascade e2e tests..."
 	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -v -run TestCascadeE2E .
+
+# Run LEP-6 e2e tests only against the real lumerad/local-chain system harness.
+# The runtime test uses isolated supernode-lep6-data* directories so per-node
+# SQLite history/dedup state is not shared with Cascade fixtures or other nodes.
+test-lep6: setup-lep6-supernodes
+	@echo "Running LEP-6 e2e tests..."
+	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -timeout=900s -v -run '^TestLEP6' .
+
+# Validate LEP-6 local config/default/fixture coverage without starting a network.
+lep6-validate-config:
+	@echo "Validating LEP-6 supernode config fixtures..."
+	@${GO} test ./supernode/config -run 'TestLoadConfig_LEP6|TestCreateDefaultConfig_IncludesExplicitLEP6Blocks|TestSystemConfigFixturesIncludeLEP6' -count=1
+
+# Recover from stale Lumera module checksum/cache issues during local PR-6 work.
+audit-mod-clean:
+	@echo "Cleaning Go module cache and re-resolving modules..."
+	@${GO} clean -modcache
+	@${GO} mod download
+
+# Reset local LEP-6 dedup/reconciliation tables. Requires DB=/absolute/path/to/local.db.
+lep6-reset-dedup:
+	@if [ -z "$(DB)" ]; then echo "DB=/absolute/path/to/local.db is required"; exit 2; fi
+	@test -f "$(DB)" || (echo "DB does not exist: $(DB)"; exit 2)
+	@echo "Resetting LEP-6 local dedup tables in $(DB): heal_claims_submitted, heal_verifications_submitted, storage_recheck_submissions, recheck_attempt_failures"
+	@sqlite3 "$(DB)" "DELETE FROM heal_claims_submitted; DELETE FROM heal_verifications_submitted; DELETE FROM storage_recheck_submissions; DELETE FROM recheck_attempt_failures;"
 
 # Run sn-manager e2e tests only
 test-sn-manager:

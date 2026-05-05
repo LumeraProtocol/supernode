@@ -20,6 +20,7 @@ type programmableAudit struct {
 	opsByStatus map[audittypes.HealOpStatus][]audittypes.HealOp
 	opsByID     map[uint64]audittypes.HealOp
 	getOpErr    error
+	blockStatus map[audittypes.HealOpStatus]bool
 }
 
 func newProgrammableAudit(mode audittypes.StorageTruthEnforcementMode) *programmableAudit {
@@ -29,6 +30,7 @@ func newProgrammableAudit(mode audittypes.StorageTruthEnforcementMode) *programm
 		},
 		opsByStatus: map[audittypes.HealOpStatus][]audittypes.HealOp{},
 		opsByID:     map[uint64]audittypes.HealOp{},
+		blockStatus: map[audittypes.HealOpStatus]bool{},
 	}
 }
 
@@ -65,6 +67,13 @@ func (p *programmableAudit) GetHealOp(ctx context.Context, healOpID uint64) (*au
 	return &audittypes.QueryHealOpResponse{HealOp: op}, nil
 }
 func (p *programmableAudit) GetHealOpsByStatus(ctx context.Context, status audittypes.HealOpStatus, pagination *query.PageRequest) (*audittypes.QueryHealOpsByStatusResponse, error) {
+	p.mu.Lock()
+	block := p.blockStatus[status]
+	p.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	out := make([]audittypes.HealOp, 0, len(p.opsByStatus[status]))

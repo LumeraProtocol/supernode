@@ -11,7 +11,7 @@ replace (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.12.0-rc
+	github.com/LumeraProtocol/lumera v1.12.0
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/ibc-go/v10 v10.5.0
@@ -19,6 +19,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b
 	gopkg.in/yaml.v3 v3.0.1
+	lukechampine.com/blake3 v1.4.1
 )
 
 require (
@@ -39,7 +40,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/grpc v1.77.0 // indirect
+	google.golang.org/grpc v1.77.0
 )
 
 require (
@@ -183,7 +184,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-	lukechampine.com/blake3 v1.4.1 // indirect
 	nhooyr.io/websocket v1.8.17 // indirect
 	pgregory.net/rapid v1.2.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect

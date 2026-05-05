@@ -45,6 +45,73 @@
         }
       }
     },
+    "supernodeByteRange": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "end": {
+          "type": "string",
+          "format": "uint64",
+          "title": "exclusive"
+        }
+      },
+      "description": "ByteRange represents a half-open byte range [start, end) into an artifact."
+    },
+    "supernodeGetCompoundProofResponse": {
+      "type": "object",
+      "properties": {
+        "challengeId": {
+          "type": "string"
+        },
+        "epochId": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "ticketId": {
+          "type": "string"
+        },
+        "artifactClass": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "artifactOrdinal": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "bucketType": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "artifactKey": {
+          "type": "string"
+        },
+        "rangeBytes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "title": "i-th matches i-th request range"
+        },
+        "proofHashHex": {
+          "type": "string",
+          "title": "BLAKE3(concat(range_bytes...)) lowercase hex"
+        },
+        "recipientSignature": {
+          "type": "string",
+          "title": "recipient's keyring signature"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
     "supernodeGetSliceProofResponse": {
       "type": "object",
       "properties": {

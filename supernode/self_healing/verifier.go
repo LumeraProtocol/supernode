@@ -2,7 +2,6 @@ package self_healing
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,7 +11,9 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
+	"lukechampine.com/blake3"
 )
 
 // verifyAndSubmit runs LEP-6 §19 Phase 2 for one heal-op.
@@ -107,46 +108,50 @@ func (s *Service) submitNegativeWithReason(ctx context.Context, healOpID uint64,
 	return s.submitVerification(ctx, healOpID, false, placeholder, reason)
 }
 
-// negativeAttestationHash returns a stable non-empty base64 hash derived
-// from `reason` so audit trails can correlate identical failure modes.
-// Format matches the action.DataHash recipe (32-byte digest, base64) so
-// downstream consumers don't have to special-case width.
+// negativeAttestationHash returns a stable non-empty BLAKE3/base64 hash
+// derived from `reason` so audit trails can correlate identical failure
+// modes while staying aligned with LEP-6/Cascade storage hash conventions.
+// Format remains a 32-byte digest encoded as base64, so downstream consumers
+// don't have to special-case width.
 func negativeAttestationHash(reason string) string {
-	sum := sha256.Sum256([]byte("lep6:negative-attestation:" + reason))
+	sum := blake3.Sum256([]byte("lep6:negative-attestation:" + reason))
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
-// submitVerification submits MsgSubmitHealVerification THEN persists the
-// SQLite dedup row only on successful chain acceptance.
-//
-// Idempotency on retry: if the chain has already recorded a verification
-// from this verifier (for instance, a previous tick's submit succeeded but
-// the supernode crashed before persisting), it returns ErrHealVerification
-// Exists. We treat that as success and persist the row so the next tick
-// stops retrying.
+// submitVerification pre-stages the SQLite dedup row before submitting
+// MsgSubmitHealVerification, then marks it submitted after chain acceptance.
+// This closes the submit-success/persist-crash window without weakening
+// chain authority: on hard tx failure we remove only the pending row so the
+// verifier can retry later.
 func (s *Service) submitVerification(ctx context.Context, healOpID uint64, verified bool, hash, details string) error {
+	if err := s.store.RecordPendingHealVerification(ctx, healOpID, s.identity, verified, hash); err != nil {
+		if errors.Is(err, queries.ErrLEP6VerificationAlreadyRecorded) {
+			lep6metrics.IncHealVerification("dedup", verified)
+			lep6metrics.IncHealVerificationAlreadyExists()
+			return nil
+		}
+		lep6metrics.IncHealVerification("stage_error", verified)
+		return fmt.Errorf("stage heal verification before submit: %w", err)
+	}
+
 	resp, err := s.lumera.AuditMsg().SubmitHealVerification(ctx, healOpID, verified, hash, details)
 	if err != nil {
-		// If the chain already has a verification from us (prior submit
-		// succeeded but persist crashed), reconcile by persisting the
-		// dedup row now.
 		if isChainVerificationAlreadyExists(err) {
-			if persistErr := s.store.RecordHealVerification(ctx, healOpID, s.identity, verified, hash); persistErr != nil && !errors.Is(persistErr, queries.ErrLEP6VerificationAlreadyRecorded) {
-				return fmt.Errorf("reconcile dedup row: %w", persistErr)
+			if markErr := s.store.MarkHealVerificationSubmitted(ctx, healOpID, s.identity); markErr != nil {
+				return fmt.Errorf("mark reconciled verification submitted: %w", markErr)
 			}
 			return nil
 		}
+		_ = s.store.DeletePendingHealVerification(ctx, healOpID, s.identity)
+		lep6metrics.IncHealVerification("submit_error", verified)
 		return err
 	}
 	_ = resp
-	// Chain accepted — persist for restart dedup. If row already exists
-	// (in-flight retry beat us), it's a no-op.
-	if err := s.store.RecordHealVerification(ctx, healOpID, s.identity, verified, hash); err != nil {
-		if errors.Is(err, queries.ErrLEP6VerificationAlreadyRecorded) {
-			return nil
-		}
-		return fmt.Errorf("record heal verification: %w", err)
+	if err := s.store.MarkHealVerificationSubmitted(ctx, healOpID, s.identity); err != nil {
+		lep6metrics.IncHealVerification("mark_error", verified)
+		return fmt.Errorf("mark heal verification submitted: %w", err)
 	}
+	lep6metrics.IncHealVerification("submitted", verified)
 	return nil
 }
 

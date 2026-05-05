@@ -7,14 +7,17 @@ import (
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 )
 
 type Config struct {
-	Enabled        bool
-	LookbackEpochs uint64
-	MaxPerTick     int
-	TickInterval   time.Duration
-	Jitter         time.Duration
+	Enabled                     bool
+	LookbackEpochs              uint64
+	MaxPerTick                  int
+	TickInterval                time.Duration
+	Jitter                      time.Duration
+	MaxFailureAttemptsPerTicket int
+	FailureBackoffTTL           time.Duration
 }
 
 func (c Config) WithDefaults() Config {
@@ -30,12 +33,19 @@ func (c Config) WithDefaults() Config {
 	if c.Jitter < 0 {
 		c.Jitter = 0
 	}
+	if c.MaxFailureAttemptsPerTicket <= 0 {
+		c.MaxFailureAttemptsPerTicket = DefaultMaxFailureAttemptsPerTicket
+	}
+	if c.FailureBackoffTTL <= 0 {
+		c.FailureBackoffTTL = DefaultFailureBackoffTTL
+	}
 	return c
 }
 
 type Service struct {
 	cfg       Config
 	audit     AuditReader
+	store     Store
 	finder    *Finder
 	rechecker Rechecker
 	attestor  *Attestor
@@ -51,7 +61,7 @@ func NewServiceWithReporters(cfg Config, audit AuditReader, store Store, recheck
 		return nil, fmt.Errorf("recheck service missing deps")
 	}
 	finder := NewFinderWithReporters(audit, store, self, FinderConfig{LookbackEpochs: cfg.LookbackEpochs, MaxPerTick: cfg.MaxPerTick}, reporters)
-	return &Service{cfg: cfg, audit: audit, finder: finder, rechecker: rechecker, attestor: attestor}, nil
+	return &Service{cfg: cfg, audit: audit, store: store, finder: finder, rechecker: rechecker, attestor: attestor}, nil
 }
 
 func (s *Service) Run(ctx context.Context) error {
@@ -98,16 +108,32 @@ func (s *Service) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	lep6metrics.SetRecheckPendingCandidates(len(candidates))
+	_ = s.store.PurgeExpiredRecheckAttemptFailures(ctx)
 	for _, c := range candidates {
+		lep6metrics.IncRecheckCandidateFound()
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		blocked, err := s.store.HasRecheckAttemptFailureBudgetExceeded(ctx, c.EpochID, c.TicketID, s.cfg.MaxFailureAttemptsPerTicket)
+		if err != nil {
+			logtrace.Warn(ctx, "lep6 recheck: failure budget lookup failed", logtrace.Fields{"epoch_id": c.EpochID, "ticket_id": c.TicketID, "error": err.Error()})
+			continue
+		}
+		if blocked {
+			logtrace.Warn(ctx, "lep6 recheck: skipping candidate after failure budget exhausted", logtrace.Fields{"epoch_id": c.EpochID, "ticket_id": c.TicketID})
+			continue
+		}
 		result, err := s.rechecker.Recheck(ctx, c)
 		if err != nil {
+			_ = s.store.RecordRecheckAttemptFailure(ctx, c.EpochID, c.TicketID, c.TargetAccount, err, s.cfg.FailureBackoffTTL)
+			lep6metrics.IncRecheckFailure("execute")
 			logtrace.Warn(ctx, "lep6 recheck: execution failed", logtrace.Fields{"epoch_id": c.EpochID, "ticket_id": c.TicketID, "error": err.Error()})
 			continue
 		}
 		if err := s.attestor.Submit(ctx, c, result); err != nil {
+			_ = s.store.RecordRecheckAttemptFailure(ctx, c.EpochID, c.TicketID, c.TargetAccount, err, s.cfg.FailureBackoffTTL)
+			lep6metrics.IncRecheckFailure("submit")
 			logtrace.Warn(ctx, "lep6 recheck: submit failed", logtrace.Fields{"epoch_id": c.EpochID, "ticket_id": c.TicketID, "error": err.Error()})
 		}
 	}
