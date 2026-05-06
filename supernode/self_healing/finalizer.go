@@ -80,15 +80,15 @@ func (s *Service) publishStagingDir(ctx context.Context, claim queries.HealClaim
 		// has already recorded VERIFIED so no on-chain work pending.
 		return fmt.Errorf("publish staged artefacts: %w", err)
 	}
+	if err := s.store.DeleteHealClaim(ctx, claim.HealOpID); err != nil {
+		return fmt.Errorf("delete heal claim row: %w", err)
+	}
 	if err := os.RemoveAll(claim.StagingDir); err != nil {
 		logtrace.Warn(ctx, "self_healing(LEP-6): staging cleanup after publish failed", logtrace.Fields{
 			logtrace.FieldError: err.Error(),
 			"heal_op_id":        claim.HealOpID,
 			"staging_dir":       claim.StagingDir,
 		})
-	}
-	if err := s.store.DeleteHealClaim(ctx, claim.HealOpID); err != nil {
-		return fmt.Errorf("delete heal claim row: %w", err)
 	}
 	lep6metrics.IncHealFinalizePublish()
 	logtrace.Info(ctx, "self_healing(LEP-6): published staged artefacts to KAD", logtrace.Fields{

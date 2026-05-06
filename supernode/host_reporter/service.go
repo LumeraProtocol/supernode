@@ -42,6 +42,14 @@ type ProofResultProvider interface {
 	CollectResults(epochID uint64) []*audittypes.StorageProofResult
 }
 
+// ProofResultRequeuer is implemented by providers that can put drained results
+// back if the host reporter decides not to submit the epoch report. This keeps
+// the FULL-mode coverage guard from losing late-arriving results when it aborts
+// a would-be chain-rejected partial report.
+type ProofResultRequeuer interface {
+	RequeueResults(epochID uint64, results []*audittypes.StorageProofResult)
+}
+
 // Service submits one MsgSubmitEpochReport per epoch for the local supernode.
 // All runtime behavior is driven by on-chain params/queries; there are no local config knobs.
 type Service struct {
@@ -178,6 +186,21 @@ func (s *Service) tick(ctx context.Context) {
 	var storageProofResults []*audittypes.StorageProofResult
 	if proofResultProvider := s.getProofResultProvider(); proofResultProvider != nil {
 		storageProofResults = proofResultProvider.CollectResults(epochID)
+		if s.fullModeStorageProofCoverageRequired(tickCtx) {
+			complete, reason := storageProofCoverageComplete(storageProofResults, assignResp.TargetSupernodeAccounts)
+			if !complete {
+				if requeuer, ok := proofResultProvider.(ProofResultRequeuer); ok {
+					requeuer.RequeueResults(epochID, storageProofResults)
+				}
+				logtrace.Warn(tickCtx, "epoch report skipped: incomplete FULL-mode storage proof coverage", logtrace.Fields{
+					"epoch_id":         epochID,
+					"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+					"proof_results":    len(storageProofResults),
+					"reason":           reason,
+				})
+				return
+			}
+		}
 	}
 
 	hostReport := audittypes.HostReport{
@@ -206,6 +229,50 @@ func (s *Service) tick(ctx context.Context) {
 		"storage_challenge_observations_count": len(storageChallengeObservations),
 		"storage_proof_results_count":          len(storageProofResults),
 	})
+}
+
+func (s *Service) fullModeStorageProofCoverageRequired(ctx context.Context) bool {
+	paramsResp, err := s.lumera.Audit().GetParams(ctx)
+	if err != nil || paramsResp == nil {
+		return false
+	}
+	return paramsResp.Params.StorageTruthEnforcementMode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL
+}
+
+func storageProofCoverageComplete(results []*audittypes.StorageProofResult, targets []string) (bool, string) {
+	if len(targets) == 0 {
+		return true, ""
+	}
+	type coverage struct{ recent, old int }
+	byTarget := make(map[string]*coverage, len(targets))
+	for _, target := range targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		byTarget[target] = &coverage{}
+	}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		cov := byTarget[result.TargetSupernodeAccount]
+		if cov == nil {
+			continue
+		}
+		switch result.BucketType {
+		case audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT:
+			cov.recent++
+		case audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_OLD:
+			cov.old++
+		}
+	}
+	for target, cov := range byTarget {
+		if cov.recent != 1 || cov.old != 1 {
+			return false, fmt.Sprintf("target %s has recent=%d old=%d; FULL requires exactly one each", target, cov.recent, cov.old)
+		}
+	}
+	return true, ""
 }
 
 func (s *Service) diskUsagePercent(ctx context.Context) (float64, bool) {

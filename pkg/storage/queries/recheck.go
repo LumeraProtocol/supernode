@@ -58,10 +58,81 @@ CREATE TABLE IF NOT EXISTS recheck_attempt_failures (
   attempts INTEGER NOT NULL DEFAULT 1,
   last_error TEXT,
   expires_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch_id, ticket_id)
+  PRIMARY KEY (epoch_id, ticket_id, target_account)
 );`
 
 const createRecheckAttemptFailuresExpiresIndex = `CREATE INDEX IF NOT EXISTS idx_recheck_attempt_failures_expires ON recheck_attempt_failures(expires_at);`
+
+func migrateRecheckAttemptFailuresPK(ctx context.Context, db sqliteExecQuerier) error {
+	pkCols, err := primaryKeyColumns(ctx, db, "recheck_attempt_failures")
+	if err != nil {
+		return err
+	}
+	hasTarget := false
+	for _, c := range pkCols {
+		if c == "target_account" {
+			hasTarget = true
+			break
+		}
+	}
+	if hasTarget {
+		return nil
+	}
+	if len(pkCols) == 0 {
+		return fmt.Errorf("recheck_attempt_failures has no detectable primary key")
+	}
+	exec, ok := db.(interface {
+		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	})
+	if !ok {
+		return fmt.Errorf("recheck_attempt_failures migration: db handle does not support BeginTx")
+	}
+	tx, err := exec.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin recheck failure migration tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS recheck_attempt_failures_new;`); err != nil {
+		return fmt.Errorf("drop stale recheck failure migration table: %w", err)
+	}
+	const createNew = `
+CREATE TABLE recheck_attempt_failures_new (
+  epoch_id INTEGER NOT NULL,
+  ticket_id TEXT NOT NULL,
+  target_account TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  last_error TEXT,
+  expires_at INTEGER NOT NULL,
+  PRIMARY KEY (epoch_id, ticket_id, target_account)
+);`
+	if _, err := tx.ExecContext(ctx, createNew); err != nil {
+		return fmt.Errorf("create new recheck failure table: %w", err)
+	}
+	const copyData = `
+INSERT INTO recheck_attempt_failures_new
+  (epoch_id, ticket_id, target_account, attempts, last_error, expires_at)
+SELECT epoch_id, ticket_id, target_account, attempts, last_error, expires_at
+FROM recheck_attempt_failures;`
+	if _, err := tx.ExecContext(ctx, copyData); err != nil {
+		return fmt.Errorf("copy recheck failure rows: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE recheck_attempt_failures;`); err != nil {
+		return fmt.Errorf("drop old recheck failure table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE recheck_attempt_failures_new RENAME TO recheck_attempt_failures;`); err != nil {
+		return fmt.Errorf("rename new recheck failure table: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit recheck failure migration: %w", err)
+	}
+	committed = true
+	return nil
+}
 
 // migrateStorageRecheckSubmissionsPK migrates an old DB whose
 // storage_recheck_submissions table has PK (epoch_id, ticket_id) up to the
@@ -234,19 +305,19 @@ func (s *SQLiteStore) RecordRecheckAttemptFailure(ctx context.Context, epochID u
 	expiresAt := time.Now().Add(ttl).Unix()
 	const stmt = `INSERT INTO recheck_attempt_failures (epoch_id, ticket_id, target_account, attempts, last_error, expires_at)
 VALUES (?, ?, ?, 1, ?, ?)
-ON CONFLICT(epoch_id, ticket_id) DO UPDATE SET attempts = attempts + 1, last_error = excluded.last_error, expires_at = excluded.expires_at`
+ON CONFLICT(epoch_id, ticket_id, target_account) DO UPDATE SET attempts = attempts + 1, last_error = excluded.last_error, expires_at = excluded.expires_at`
 	_, execErr := s.db.ExecContext(ctx, stmt, epochID, ticketID, targetAccount, msg, expiresAt)
 	return execErr
 }
 
-func (s *SQLiteStore) HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error) {
+func (s *SQLiteStore) HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID, targetAccount string, maxAttempts int) (bool, error) {
 	if maxAttempts <= 0 {
 		return false, nil
 	}
-	const stmt = `SELECT attempts, expires_at FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? LIMIT 1`
+	const stmt = `SELECT attempts, expires_at FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? AND target_account = ? LIMIT 1`
 	var attempts int
 	var expiresAt int64
-	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID).Scan(&attempts, &expiresAt)
+	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID, targetAccount).Scan(&attempts, &expiresAt)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -254,7 +325,7 @@ func (s *SQLiteStore) HasRecheckAttemptFailureBudgetExceeded(ctx context.Context
 		return false, err
 	}
 	if expiresAt <= time.Now().Unix() {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ?`, epochID, ticketID)
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? AND target_account = ?`, epochID, ticketID, targetAccount)
 		return false, nil
 	}
 	return attempts >= maxAttempts, nil

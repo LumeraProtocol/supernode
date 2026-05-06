@@ -231,7 +231,8 @@ The supernode will connect to the Lumera network and begin participating in the 
 
 		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore).
 			WithArtifactReader(newP2PArtifactReader(p2pService)).
-			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName)
+			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName).
+			WithAuditParams(lumeraClient.Audit())
 		var storageChallengeRunner *storageChallengeService.Service
 		var recheckRunner *recheckService.Service
 		if appConfig.StorageChallengeConfig.Enabled {

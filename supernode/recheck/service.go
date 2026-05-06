@@ -115,7 +115,7 @@ func (s *Service) Tick(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		blocked, err := s.store.HasRecheckAttemptFailureBudgetExceeded(ctx, c.EpochID, c.TicketID, s.cfg.MaxFailureAttemptsPerTicket)
+		blocked, err := s.store.HasRecheckAttemptFailureBudgetExceeded(ctx, c.EpochID, c.TicketID, c.TargetAccount, s.cfg.MaxFailureAttemptsPerTicket)
 		if err != nil {
 			logtrace.Warn(ctx, "lep6 recheck: failure budget lookup failed", logtrace.Fields{"epoch_id": c.EpochID, "ticket_id": c.TicketID, "error": err.Error()})
 			continue

@@ -68,9 +68,13 @@ func (b *Buffer) Append(epochID uint64, result *audittypes.StorageProofResult) {
 	if result == nil {
 		return
 	}
+	b.appendEntry(epochID, result, time.Now())
+}
+
+func (b *Buffer) appendEntry(epochID uint64, result *audittypes.StorageProofResult, arrivedAt time.Time) {
 	entry := &bufferedResult{
 		result:    result,
-		arrivedAt: time.Now(),
+		arrivedAt: arrivedAt,
 		seq:       b.seq.Add(1),
 	}
 	b.mu.Lock()
@@ -78,8 +82,40 @@ func (b *Buffer) Append(epochID uint64, result *audittypes.StorageProofResult) {
 	b.byEpoch[epochID] = append(b.byEpoch[epochID], entry)
 }
 
+// RequeueResults puts previously drained results back under epochID. It is used
+// by host_reporter when FULL-mode coverage is incomplete, so the next tick can
+// retry instead of losing locally generated proofs.
+func (b *Buffer) RequeueResults(epochID uint64, results []*audittypes.StorageProofResult) {
+	now := time.Now()
+	for _, result := range results {
+		if result != nil {
+			b.appendEntry(epochID, result, now)
+		}
+	}
+}
+
+// HasEligibleResult reports whether the current in-memory buffer already has a
+// non-NO_ELIGIBLE row for (epoch,target,bucket). It is intentionally scoped to
+// this process/epoch; the current Lumera audit query interface does not expose
+// the chain keeper's transcript-history index used by validateNoEligibleTicketConsistency.
+func (b *Buffer) HasEligibleResult(epochID uint64, target string, bucket audittypes.StorageProofBucketType) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, entry := range b.byEpoch[epochID] {
+		if entry == nil || entry.result == nil {
+			continue
+		}
+		r := entry.result
+		if r.TargetSupernodeAccount == target && r.BucketType == bucket &&
+			r.ResultClass != audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET {
+			return true
+		}
+	}
+	return false
+}
+
 // CollectResults drains and returns the buffered results for epochID, applying
-// the LEP-6 16-cap self-throttle. Results buffered for other epochs are left
+// the LEP-6 chain cap self-throttle. Results buffered for other epochs are left
 // intact. The returned slice is sorted deterministically by
 // (BucketType, EpochId, TicketId) so that downstream signing/serialisation is
 // stable across challengers and re-runs.

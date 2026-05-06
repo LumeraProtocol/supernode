@@ -12,6 +12,7 @@ import (
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
 	"lukechampine.com/blake3"
@@ -74,6 +75,50 @@ func newTestStore(t *testing.T) queries.LocalStoreInterface {
 	}
 	t.Cleanup(func() { store.CloseHistoryDB(context.Background()) })
 	return store
+}
+
+func TestCleanupOrphanedStagingDirsRemovesOnlyNumericDirsWithoutClaims(t *testing.T) {
+	h := newHarness(t, "self", audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)
+	ctx := context.Background()
+	lep6metrics.Reset()
+
+	pendingHash := hashOf(t, []byte("pending"))
+	pendingDir := makeStagingDir(t, h.stagingRoot, 101, pendingHash, []byte("pending"))
+	if err := h.store.RecordPendingHealClaim(ctx, 101, "ticket-101", pendingHash, pendingDir); err != nil {
+		t.Fatalf("seed pending claim: %v", err)
+	}
+	orphanDir := filepath.Join(h.stagingRoot, "202")
+	if err := os.MkdirAll(orphanDir, 0o700); err != nil {
+		t.Fatalf("mkdir orphan: %v", err)
+	}
+	nonNumericDir := filepath.Join(h.stagingRoot, "not-a-heal-op")
+	if err := os.MkdirAll(nonNumericDir, 0o700); err != nil {
+		t.Fatalf("mkdir nonnumeric: %v", err)
+	}
+	regularFile := filepath.Join(h.stagingRoot, "303")
+	if err := os.WriteFile(regularFile, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("write regular file: %v", err)
+	}
+
+	if err := h.svc.cleanupOrphanedStagingDirs(ctx); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	if _, err := os.Stat(pendingDir); err != nil {
+		t.Fatalf("pending dir must remain: %v", err)
+	}
+	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+		t.Fatalf("orphan dir must be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(nonNumericDir); err != nil {
+		t.Fatalf("non-numeric dir must remain: %v", err)
+	}
+	if _, err := os.Stat(regularFile); err != nil {
+		t.Fatalf("numeric regular file must remain: %v", err)
+	}
+	if got := lep6metrics.Snapshot().HealOrphanedStagingCleanupsTotal; got != 1 {
+		t.Fatalf("orphan cleanup metric: got %d want 1", got)
+	}
 }
 
 // fakeFetcher returns a configurable response. Configure per-test by
@@ -399,6 +444,49 @@ func TestHealer_ReconcilesExistingChainClaimAfterCrash(t *testing.T) {
 	has, _ := h.store.HasHealClaim(context.Background(), 22)
 	if !has {
 		t.Fatalf("reconcile must persist dedup row when chain ResultHash matches manifest")
+	}
+}
+
+func TestHealer_UnclassifiedSubmitErrorQueriesChainBeforeCleanup(t *testing.T) {
+	h := newHarness(t, "sn-healer", audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)
+	body := []byte("recovered-payload-unclassified")
+	wantHash := hashOf(t, body)
+	h.cascade.reseedFn = func(ctx context.Context, req *cascadeService.RecoveryReseedRequest) (*cascadeService.RecoveryReseedResult, error) {
+		_ = makeStagingDir(t, h.stagingRoot, 24, wantHash, body)
+		return &cascadeService.RecoveryReseedResult{
+			ActionID:             req.ActionID,
+			DataHashVerified:     true,
+			ReconstructedHashB64: wantHash,
+			StagingDir:           req.StagingDir,
+		}, nil
+	}
+	// This is intentionally not a typed invalid-state error and not a
+	// transient gRPC code. It models the C3 lost/garbled-ack window where
+	// BroadcastTx may have committed, but the client receives an opaque wrapper.
+	h.auditMsg.claimErr = errors.New("opaque broadcast failure after commit")
+	h.audit.put(audittypes.HealOp{
+		HealOpId:               24,
+		TicketId:               "ticket-unclassified",
+		Status:                 audittypes.HealOpStatus_HEAL_OP_STATUS_HEALER_REPORTED,
+		HealerSupernodeAccount: "sn-healer",
+		ResultHash:             wantHash,
+	})
+	op := audittypes.HealOp{
+		HealOpId:               24,
+		TicketId:               "ticket-unclassified",
+		Status:                 audittypes.HealOpStatus_HEAL_OP_STATUS_SCHEDULED,
+		HealerSupernodeAccount: "sn-healer",
+	}
+	if err := h.svc.reconstructAndClaim(context.Background(), op); err != nil {
+		t.Fatalf("reconstructAndClaim: %v", err)
+	}
+	has, _ := h.store.HasHealClaim(context.Background(), 24)
+	if !has {
+		t.Fatalf("unclassified submit error must reconcile accepted chain claim before cleanup")
+	}
+	stagingDir := filepath.Join(h.stagingRoot, "24")
+	if _, err := os.Stat(stagingDir); err != nil {
+		t.Fatalf("staging dir must remain for finalizer after accepted chain claim: %v", err)
 	}
 }
 

@@ -16,13 +16,15 @@ import (
 // reads only GetParams, GetHealOp, and GetHealOpsByStatus, so other methods
 // are unused and may be left zero.
 type programmableAudit struct {
-	mu           sync.Mutex
-	params       audittypes.Params
-	opsByStatus  map[audittypes.HealOpStatus][]audittypes.HealOp
-	opsByID      map[uint64]audittypes.HealOp
-	getOpErr     error
-	blockStatus  map[audittypes.HealOpStatus]bool
-	currentEpoch uint64 // wired into GetCurrentEpoch (H1 deadline-pre-check tests)
+	mu            sync.Mutex
+	params        audittypes.Params
+	opsByStatus   map[audittypes.HealOpStatus][]audittypes.HealOp
+	opsByID       map[uint64]audittypes.HealOp
+	getOpErr      error
+	blockStatus   map[audittypes.HealOpStatus]bool
+	currentEpoch  uint64 // wired into GetCurrentEpoch (H1 deadline-pre-check tests)
+	currentAnchor audittypes.EpochAnchor
+	epochAnchors  map[uint64]audittypes.EpochAnchor
 }
 
 func newProgrammableAudit(mode audittypes.StorageTruthEnforcementMode) *programmableAudit {
@@ -30,9 +32,10 @@ func newProgrammableAudit(mode audittypes.StorageTruthEnforcementMode) *programm
 		params: audittypes.Params{
 			StorageTruthEnforcementMode: mode,
 		},
-		opsByStatus: map[audittypes.HealOpStatus][]audittypes.HealOp{},
-		opsByID:     map[uint64]audittypes.HealOp{},
-		blockStatus: map[audittypes.HealOpStatus]bool{},
+		opsByStatus:  map[audittypes.HealOpStatus][]audittypes.HealOp{},
+		opsByID:      map[uint64]audittypes.HealOp{},
+		blockStatus:  map[audittypes.HealOpStatus]bool{},
+		epochAnchors: map[uint64]audittypes.EpochAnchor{},
 	}
 }
 
@@ -95,10 +98,14 @@ func (p *programmableAudit) GetHealOpsByTicket(ctx context.Context, ticketID str
 	return &audittypes.QueryHealOpsByTicketResponse{}, nil
 }
 func (p *programmableAudit) GetEpochAnchor(ctx context.Context, epochID uint64) (*audittypes.QueryEpochAnchorResponse, error) {
-	return &audittypes.QueryEpochAnchorResponse{}, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &audittypes.QueryEpochAnchorResponse{Anchor: p.epochAnchors[epochID]}, nil
 }
 func (p *programmableAudit) GetCurrentEpochAnchor(ctx context.Context) (*audittypes.QueryCurrentEpochAnchorResponse, error) {
-	return &audittypes.QueryCurrentEpochAnchorResponse{}, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &audittypes.QueryCurrentEpochAnchorResponse{Anchor: p.currentAnchor}, nil
 }
 func (p *programmableAudit) GetCurrentEpoch(ctx context.Context) (*audittypes.QueryCurrentEpochResponse, error) {
 	p.mu.Lock()

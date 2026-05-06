@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
@@ -22,13 +23,25 @@ import (
 	"lukechampine.com/blake3"
 )
 
-const maxServedSliceBytes = uint64(65_536)
+const (
+	maxServedSliceBytes = uint64(65_536)
+	compoundCapsTTL     = time.Minute
+)
 
 // ArtifactReader is the recipient-side abstraction over cascade artifact storage
 // used to satisfy LEP-6 multi-range compound storage challenges. The B.3 wiring
 // will provide a cascade-module-backed implementation; tests inject their own.
 type ArtifactReader interface {
 	ReadArtifactRange(ctx context.Context, class audittypes.StorageProofArtifactClass, key string, start, end uint64) ([]byte, error)
+}
+
+type AuditParamReader interface {
+	GetParams(ctx context.Context) (*audittypes.QueryParamsResponse, error)
+}
+
+type compoundCaps struct {
+	maxRanges uint32
+	maxLen    uint32
 }
 
 type Server struct {
@@ -45,6 +58,11 @@ type Server struct {
 	// recipient_signature stays empty.
 	keyring keyring.Keyring
 	keyName string
+
+	auditParams AuditParamReader
+	capsMu      sync.RWMutex
+	caps        compoundCaps
+	capsUntil   time.Time
 }
 
 func NewServer(identity string, p2pClient p2p.Client, store queries.LocalStoreInterface) *Server {
@@ -65,6 +83,53 @@ func (s *Server) WithRecipientSigner(kr keyring.Keyring, keyName string) *Server
 	s.keyring = kr
 	s.keyName = keyName
 	return s
+}
+
+func (s *Server) WithAuditParams(audit AuditParamReader) *Server {
+	s.auditParams = audit
+	return s
+}
+
+func (s *Server) WithCompoundCapsForTest(maxRanges, maxLen uint32) *Server {
+	s.capsMu.Lock()
+	defer s.capsMu.Unlock()
+	s.caps = compoundCaps{maxRanges: maxRanges, maxLen: maxLen}
+	s.capsUntil = time.Now().Add(24 * time.Hour)
+	return s
+}
+
+func (s *Server) compoundCaps(ctx context.Context) compoundCaps {
+	fallback := compoundCaps{maxRanges: audittypes.DefaultStorageTruthCompoundRangesPerArtifact, maxLen: audittypes.DefaultStorageTruthCompoundRangeLenBytes}
+	now := time.Now()
+	s.capsMu.RLock()
+	cached, valid := s.caps, now.Before(s.capsUntil)
+	s.capsMu.RUnlock()
+	if valid && cached.maxRanges > 0 && cached.maxLen > 0 {
+		return cached
+	}
+	if s.auditParams == nil {
+		return fallback
+	}
+	resp, err := s.auditParams.GetParams(ctx)
+	if err != nil || resp == nil {
+		logtrace.Warn(ctx, "storage challenge: failed to refresh chain compound caps; using fallback", logtrace.Fields{"error": fmt.Sprint(err)})
+		return fallback
+	}
+	caps := compoundCaps{
+		maxRanges: resp.Params.StorageTruthCompoundRangesPerArtifact,
+		maxLen:    resp.Params.StorageTruthCompoundRangeLenBytes,
+	}
+	if caps.maxRanges == 0 {
+		caps.maxRanges = audittypes.DefaultStorageTruthCompoundRangesPerArtifact
+	}
+	if caps.maxLen == 0 {
+		caps.maxLen = audittypes.DefaultStorageTruthCompoundRangeLenBytes
+	}
+	s.capsMu.Lock()
+	s.caps = caps
+	s.capsUntil = now.Add(compoundCapsTTL)
+	s.capsMu.Unlock()
+	return caps
 }
 
 func (s *Server) GetSliceProof(ctx context.Context, req *supernode.GetSliceProofRequest) (*supernode.GetSliceProofResponse, error) {
@@ -313,11 +378,10 @@ func (s *Server) GetCompoundProof(ctx context.Context, req *supernode.GetCompoun
 		resp.Error = "at least one range is required"
 		return resp, nil
 	}
-	// LEP-6 §11 hardening (C6): bound per-call range count to prevent DoS /
-	// bulk-exfil. Spec k=4; cap 16 leaves headroom for chain-param drift.
-	if len(req.Ranges) > deterministic.MaxCompoundRanges {
+	caps := s.compoundCaps(ctx)
+	if len(req.Ranges) > int(caps.maxRanges) {
 		return nil, status.Errorf(codes.InvalidArgument,
-			"too many ranges: got %d, max %d", len(req.Ranges), deterministic.MaxCompoundRanges)
+			"too many ranges: got %d, max %d", len(req.Ranges), caps.maxRanges)
 	}
 	var requestRangeLen uint64
 	for i, rng := range req.Ranges {
@@ -341,16 +405,18 @@ func (s *Server) GetCompoundProof(ctx context.Context, req *supernode.GetCompoun
 			return resp, nil
 		}
 	}
-	// C6: per-range length cap (defends against giant single-range exfil).
-	if requestRangeLen > deterministic.MaxCompoundRangeLenBytes {
+	if requestRangeLen > uint64(caps.maxLen) {
 		return nil, status.Errorf(codes.InvalidArgument,
-			"range length %d exceeds cap %d", requestRangeLen, deterministic.MaxCompoundRangeLenBytes)
+			"range length %d exceeds cap %d", requestRangeLen, caps.maxLen)
 	}
-	// C6: aggregate-bytes cap across all ranges (spec aggregate is 1 KiB; cap 16 KiB).
 	aggregate := requestRangeLen * uint64(len(req.Ranges))
-	if aggregate > uint64(deterministic.MaxCompoundAggregateBytes) {
+	aggregateCap := uint64(caps.maxRanges) * uint64(caps.maxLen)
+	if aggregateCap > uint64(deterministic.MaxCompoundAggregateBytes) {
+		aggregateCap = uint64(deterministic.MaxCompoundAggregateBytes)
+	}
+	if aggregate > aggregateCap {
 		return nil, status.Errorf(codes.InvalidArgument,
-			"aggregate range bytes %d exceeds cap %d", aggregate, deterministic.MaxCompoundAggregateBytes)
+			"aggregate range bytes %d exceeds cap %d", aggregate, aggregateCap)
 	}
 
 	if s.reader == nil {

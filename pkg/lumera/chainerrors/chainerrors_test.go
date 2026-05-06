@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	errorsmod "cosmossdk.io/errors"
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -165,5 +165,16 @@ func TestRegression_TransientNotFoundDoesNotMatchHealOpNotFound(t *testing.T) {
 		if IsHealOpNotFound(e) {
 			t.Fatalf("case %d: transient %q must NOT classify as heal-op-not-found", i, e)
 		}
+	}
+}
+
+func TestIsHealOpPastDeadline(t *testing.T) {
+	deadlineErr := fmt.Errorf("submit claim: %w", errorsmod.Wrap(audittypes.ErrHealOpInvalidState, "heal op deadline has passed"))
+	if !IsHealOpPastDeadline(deadlineErr) {
+		t.Fatalf("expected deadline invalid-state error to match")
+	}
+	stateErr := fmt.Errorf("submit claim: %w", errorsmod.Wrap(audittypes.ErrHealOpInvalidState, "heal op status VERIFIED does not accept healer completion claim"))
+	if IsHealOpPastDeadline(stateErr) {
+		t.Fatalf("generic invalid-state error must not be treated as deadline")
 	}
 }

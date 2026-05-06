@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/gen/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/stretchr/testify/require"
@@ -80,7 +81,9 @@ func TestGetCompoundProof_AggregateAtExactCap(t *testing.T) {
 	t.Parallel()
 
 	reader := &deterministicReader{}
-	srv := NewServer("recipient-1", &testP2PClient{}, nil).WithArtifactReader(reader)
+	srv := NewServer("recipient-1", &testP2PClient{}, nil).
+		WithArtifactReader(reader).
+		WithCompoundCapsForTest(uint32(deterministic.MaxCompoundRanges), uint32(deterministic.MaxCompoundRangeLenBytes))
 
 	// 16 ranges × 1024 bytes/range = 16384 bytes = MaxCompoundAggregateBytes exactly.
 	rl := uint64(deterministic.MaxCompoundAggregateBytes / deterministic.MaxCompoundRanges)
@@ -96,4 +99,69 @@ func TestGetCompoundProof_AggregateAtExactCap(t *testing.T) {
 	require.NotNil(t, resp)
 	require.True(t, resp.Ok, "error: %s", resp.Error)
 	require.Equal(t, deterministic.MaxCompoundRanges, reader.calls)
+}
+
+func TestGetCompoundProofHonorsChainParamCaps(t *testing.T) {
+	srv := NewServer("recipient-1", &testP2PClient{}, nil).
+		WithArtifactReader(&deterministicReader{}).
+		WithCompoundCapsForTest(4, 256)
+	req := validCompoundRequestForCaps(5, 128)
+	_, err := srv.GetCompoundProof(context.Background(), req)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for 5 ranges over chain cap 4, got %v", err)
+	}
+
+	req = validCompoundRequestForCaps(4, 257)
+	_, err = srv.GetCompoundProof(context.Background(), req)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for len 257 over chain cap 256, got %v", err)
+	}
+}
+
+func validCompoundRequestForCaps(n int, size uint64) *supernode.GetCompoundProofRequest {
+	ranges := make([]*supernode.ByteRange, 0, n)
+	for i := 0; i < n; i++ {
+		start := uint64(i) * size
+		ranges = append(ranges, &supernode.ByteRange{Start: start, End: start + size})
+	}
+	return &supernode.GetCompoundProofRequest{
+		ChallengeId:     "challenge-caps",
+		EpochId:         7,
+		TicketId:        "ticket-caps",
+		ArtifactClass:   uint32(audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL),
+		ArtifactKey:     "artifact-caps",
+		ArtifactSize:    uint64(n)*size + 1,
+		BucketType:      uint32(audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT),
+		ArtifactOrdinal: 0,
+		ArtifactCount:   1,
+		Ranges:          ranges,
+	}
+}
+
+func TestGetCompoundProof_AggregateBytesCapBranch(t *testing.T) {
+	t.Parallel()
+
+	reader := &deterministicReader{}
+	srv := NewServer("recipient-1", &testP2PClient{}, nil).
+		WithArtifactReader(reader).
+		WithCompoundCapsForTest(20, 1024)
+
+	// Each range is within the chain-param count/length caps, but the total
+	// payload exceeds MaxCompoundAggregateBytes so the aggregate guard itself
+	// must reject before any artifact bytes are read.
+	rangeLen := uint64(1000)
+	ranges := make([]*supernode.ByteRange, 0, 17)
+	for i := uint64(0); i < 17; i++ {
+		ranges = append(ranges, &supernode.ByteRange{Start: i * (1 << 20), End: i*(1<<20) + rangeLen})
+	}
+	req := compoundRequestWith(ranges, 1<<30)
+
+	resp, err := srv.GetCompoundProof(context.Background(), req)
+	require.Error(t, err)
+	require.Nil(t, resp)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
+	require.Contains(t, st.Message(), "aggregate")
+	require.Equal(t, 0, reader.calls)
 }

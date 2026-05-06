@@ -87,36 +87,6 @@ func (m *module) GetEpochReportsByReporter(ctx context.Context, reporterAccount 
 	return resp, nil
 }
 
-func (m *module) GetNodeSuspicionState(ctx context.Context, supernodeAccount string) (*types.QueryNodeSuspicionStateResponse, error) {
-	resp, err := m.client.NodeSuspicionState(ctx, &types.QueryNodeSuspicionStateRequest{
-		SupernodeAccount: supernodeAccount,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get node suspicion state: %w", err)
-	}
-	return resp, nil
-}
-
-func (m *module) GetReporterReliabilityState(ctx context.Context, reporterAccount string) (*types.QueryReporterReliabilityStateResponse, error) {
-	resp, err := m.client.ReporterReliabilityState(ctx, &types.QueryReporterReliabilityStateRequest{
-		ReporterSupernodeAccount: reporterAccount,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get reporter reliability state: %w", err)
-	}
-	return resp, nil
-}
-
-func (m *module) GetTicketDeteriorationState(ctx context.Context, ticketID string) (*types.QueryTicketDeteriorationStateResponse, error) {
-	resp, err := m.client.TicketDeteriorationState(ctx, &types.QueryTicketDeteriorationStateRequest{
-		TicketId: ticketID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ticket deterioration state: %w", err)
-	}
-	return resp, nil
-}
-
 func (m *module) GetHealOp(ctx context.Context, healOpID uint64) (*types.QueryHealOpResponse, error) {
 	resp, err := m.client.HealOp(ctx, &types.QueryHealOpRequest{
 		HealOpId: healOpID,

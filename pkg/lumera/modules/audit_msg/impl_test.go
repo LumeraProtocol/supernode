@@ -44,3 +44,12 @@ func TestSubmitStorageRecheckEvidenceValidatesInputsBeforeTxExecution(t *testing
 	_, err = m.SubmitStorageRecheckEvidence(context.Background(), 7, "target", "ticket", "challenged", strings.Repeat(" ", 3), audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL, "")
 	require.ErrorContains(t, err, "recheck transcript hash cannot be empty")
 }
+
+func TestSubmitEvidenceValidatesInputsBeforeTxExecution(t *testing.T) {
+	m := &module{}
+	_, err := m.SubmitEvidence(context.Background(), "   ", audittypes.EvidenceType_EVIDENCE_TYPE_UNSPECIFIED, "action", "{}")
+	require.ErrorContains(t, err, "subject address cannot be empty")
+
+	_, err = m.SubmitEvidence(context.Background(), "subject", audittypes.EvidenceType_EVIDENCE_TYPE_UNSPECIFIED, "action", "   ")
+	require.ErrorContains(t, err, "metadata cannot be empty")
+}

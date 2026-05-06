@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
@@ -35,6 +36,12 @@ func (a *Attestor) Submit(ctx context.Context, c Candidate, r RecheckResult) err
 		return fmt.Errorf("invalid recheck candidate")
 	}
 	if strings.TrimSpace(r.TranscriptHash) == "" || !validRecheckResultClass(r.ResultClass) {
+		logtrace.Warn(ctx, "lep6 recheck: dropping invalid local recheck result", logtrace.Fields{
+			"epoch_id":     c.EpochID,
+			"ticket_id":    c.TicketID,
+			"target":       c.TargetAccount,
+			"result_class": r.ResultClass.String(),
+		})
 		return fmt.Errorf("invalid recheck result")
 	}
 	if err := a.store.RecordPendingRecheckSubmission(ctx, c.EpochID, c.TicketID, c.TargetAccount, c.ChallengedTranscriptHash, r.TranscriptHash, r.ResultClass); err != nil {
@@ -75,6 +82,7 @@ func (a *Attestor) Submit(ctx context.Context, c Candidate, r RecheckResult) err
 func validRecheckResultClass(cls audittypes.StorageProofResultClass) bool {
 	switch cls {
 	case audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
+		audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH,
 		audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL,
 		audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_TIMEOUT_OR_NO_RESPONSE,
 		audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL,

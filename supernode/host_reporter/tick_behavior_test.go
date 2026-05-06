@@ -30,10 +30,11 @@ type stubAuditModule struct {
 	epochReport    *audittypes.QueryEpochReportResponse
 	epochReportErr error
 	assigned       *audittypes.QueryAssignedTargetsResponse
+	params         audittypes.Params
 }
 
 func (s *stubAuditModule) GetParams(ctx context.Context) (*audittypes.QueryParamsResponse, error) {
-	return &audittypes.QueryParamsResponse{}, nil
+	return &audittypes.QueryParamsResponse{Params: s.params}, nil
 }
 func (s *stubAuditModule) GetEpochAnchor(ctx context.Context, epochID uint64) (*audittypes.QueryEpochAnchorResponse, error) {
 	return s.anchor, nil
@@ -254,13 +255,19 @@ func TestTick_SkipsOnEpochReportLookupError(t *testing.T) {
 // stubProofResultProvider records the epoch it was queried with and returns a
 // fixed slice of synthetic StorageProofResult records.
 type stubProofResultProvider struct {
-	queriedEpochs []uint64
-	results       []*audittypes.StorageProofResult
+	queriedEpochs  []uint64
+	requeuedEpochs []uint64
+	results        []*audittypes.StorageProofResult
 }
 
 func (s *stubProofResultProvider) CollectResults(epochID uint64) []*audittypes.StorageProofResult {
 	s.queriedEpochs = append(s.queriedEpochs, epochID)
 	return s.results
+}
+
+func (s *stubProofResultProvider) RequeueResults(epochID uint64, results []*audittypes.StorageProofResult) {
+	s.requeuedEpochs = append(s.requeuedEpochs, epochID)
+	s.results = append([]*audittypes.StorageProofResult(nil), results...)
 }
 
 func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
@@ -311,5 +318,50 @@ func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
 
 	if len(provider.queriedEpochs) != 1 || provider.queriedEpochs[0] != 11 {
 		t.Fatalf("expected provider queried once for epoch 11, got %v", provider.queriedEpochs)
+	}
+}
+
+func TestTick_FULLModeIncompleteStorageProofCoverageSkipsSubmitAndRequeues(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	kr, keyName, identity := testKeyringAndIdentity(t)
+	auditMod := &stubAuditModule{
+		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 12},
+		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 12}},
+		epochReportErr: status.Error(codes.NotFound, "not found"),
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			TargetSupernodeAccounts: []string{"snA"},
+			RequiredOpenPorts:       nil,
+		},
+		params: audittypes.Params{StorageTruthEnforcementMode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL},
+	}
+	auditMsg := auditmsgmod.NewMockModule(ctrl)
+	node := nodemod.NewMockModule(ctrl)
+	sn := supernodemod.NewMockModule(ctrl)
+	client := lumeraMock.NewMockClient(ctrl)
+	client.EXPECT().Audit().AnyTimes().Return(auditMod)
+	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
+	client.EXPECT().SuperNode().AnyTimes().Return(sn)
+	client.EXPECT().Node().AnyTimes().Return(node)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	provider := &stubProofResultProvider{results: []*audittypes.StorageProofResult{
+		{TargetSupernodeAccount: "snA", BucketType: audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, TicketId: "ticket-recent", TranscriptHash: "hash-recent"},
+	}}
+
+	svc, err := NewService(identity, client, kr, keyName, "", "")
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	svc.SetProofResultProvider(provider)
+	svc.tick(context.Background())
+
+	if len(provider.queriedEpochs) != 1 || provider.queriedEpochs[0] != 12 {
+		t.Fatalf("expected provider queried once for epoch 12, got %v", provider.queriedEpochs)
+	}
+	if len(provider.requeuedEpochs) != 1 || provider.requeuedEpochs[0] != 12 {
+		t.Fatalf("expected incomplete FULL proofs requeued for epoch 12, got %v", provider.requeuedEpochs)
 	}
 }

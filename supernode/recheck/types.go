@@ -48,7 +48,7 @@ type Store interface {
 	DeletePendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount string) error
 	RecordRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error
 	RecordRecheckAttemptFailure(ctx context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error
-	HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error)
+	HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID, targetAccount string, maxAttempts int) (bool, error)
 	PurgeExpiredRecheckAttemptFailures(ctx context.Context) error
 }
 
@@ -79,6 +79,15 @@ func IsRecheckEligibleResultClass(cls audittypes.StorageProofResultClass) bool {
 	}
 }
 
+// MapRecheckOutcome translates the local recheck verifier outcome into the
+// chain result class submitted via MsgSubmitStorageRecheckEvidence. A locally
+// confirmed hash mismatch intentionally maps to RECHECK_CONFIRMED_FAIL rather
+// than re-emitting HASH_MISMATCH: Lumera chain accepts both classes in
+// x/audit/v1/keeper/msg_storage_truth.go, and scoring deliberately gives the
+// recheck-confirmed class its own impact bucket in
+// x/audit/v1/keeper/storage_truth_scoring.go:492-541. Keeping the conversion
+// here makes the supernode submission match the chain's second-stage evidence
+// semantics without changing first-stage storage-proof report semantics.
 func MapRecheckOutcome(outcome Outcome) audittypes.StorageProofResultClass {
 	switch outcome {
 	case OutcomePass:

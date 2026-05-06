@@ -208,6 +208,36 @@ func newDispatcher(
 	return d, buf
 }
 
+func TestAppendNoEligiblePreservedWhenOnlySelectedTicketExists(t *testing.T) {
+	audit := &dispatchAuditModule{}
+	d, buf := newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
+	anchor := makeAnchor(9, 1000, "target-1")
+
+	d.appendNoEligible(context.Background(), buf, 9, anchor, "target-1", audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, "ticket-existing")
+
+	results := buf.CollectResults(9)
+	require.Len(t, results, 1, "selected ticket alone is not a chain transcript-history conflict; H6 class-roll fallback still emits NO_ELIGIBLE")
+	require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET, results[0].ResultClass)
+}
+
+func TestAppendNoEligibleSuppressedWhenBufferedEligibleResultExists(t *testing.T) {
+	audit := &dispatchAuditModule{}
+	d, buf := newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
+	anchor := makeAnchor(10, 1000, "target-1")
+	bucket := audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_OLD
+	buf.Append(10, &audittypes.StorageProofResult{
+		TargetSupernodeAccount: "target-1",
+		BucketType:             bucket,
+		ResultClass:            audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
+	})
+
+	d.appendNoEligible(context.Background(), buf, 10, anchor, "target-1", bucket, "")
+
+	results := buf.CollectResults(10)
+	require.Len(t, results, 1)
+	require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, results[0].ResultClass)
+}
+
 func TestDispatchEpoch_ModeUnspecified_NoOp(t *testing.T) {
 	audit := &dispatchAuditModule{
 		params: &audittypes.QueryParamsResponse{
