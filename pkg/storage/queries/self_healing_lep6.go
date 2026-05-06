@@ -16,9 +16,14 @@ import (
 // keyed so every (heal_op_id) or (heal_op_id, verifier) is permitted exactly
 // once.
 type LEP6HealQueries interface {
-	// RecordHealClaim persists a successfully-submitted MsgClaimHealComplete
-	// for restart-time dedup. Returns ErrLEP6ClaimAlreadyRecorded if the
-	// heal_op_id row already exists (idempotent on retry).
+	// RecordPendingHealClaim pre-stages a heal claim before chain submit.
+	RecordPendingHealClaim(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir string) error
+	// MarkHealClaimSubmitted flips a pending claim to submitted after chain ack.
+	MarkHealClaimSubmitted(ctx context.Context, healOpID uint64) error
+	// DeletePendingHealClaim deletes only a pending claim after hard tx failure.
+	DeletePendingHealClaim(ctx context.Context, healOpID uint64) error
+	// RecordHealClaim persists a submitted MsgClaimHealComplete for restart-time
+	// dedup. Returns ErrLEP6ClaimAlreadyRecorded if the row already exists.
 	RecordHealClaim(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir string) error
 	// HasHealClaim reports whether RecordHealClaim has been called for this
 	// heal_op_id. Used by the dispatcher to skip submission on restart.
@@ -34,10 +39,13 @@ type LEP6HealQueries interface {
 	// discarded the staging dir.
 	DeleteHealClaim(ctx context.Context, healOpID uint64) error
 
-	// RecordHealVerification persists a successfully-submitted
-	// MsgSubmitHealVerification for restart-time dedup. Returns
-	// ErrLEP6VerificationAlreadyRecorded if the (heal_op_id, verifier_account)
-	// pair already exists.
+	// RecordPendingHealVerification pre-stages a verifier vote before chain submit.
+	RecordPendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash string) error
+	// MarkHealVerificationSubmitted flips a pending vote to submitted after chain ack.
+	MarkHealVerificationSubmitted(ctx context.Context, healOpID uint64, verifierAccount string) error
+	// DeletePendingHealVerification deletes only a pending verifier row after hard tx failure.
+	DeletePendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) error
+	// RecordHealVerification persists a submitted MsgSubmitHealVerification.
 	RecordHealVerification(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash string) error
 	// HasHealVerification reports whether the (heal_op_id, verifier_account)
 	// row exists. Verifier dispatch uses this to skip resubmission on
@@ -52,6 +60,7 @@ type HealClaimRecord struct {
 	ManifestHash string
 	StagingDir   string
 	SubmittedAt  int64
+	Status       string
 }
 
 // ErrLEP6ClaimAlreadyRecorded is returned by RecordHealClaim when the
@@ -68,8 +77,12 @@ CREATE TABLE IF NOT EXISTS heal_claims_submitted (
     ticket_id     TEXT NOT NULL,
     manifest_hash TEXT NOT NULL,
     staging_dir   TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'submitted',
     submitted_at  INTEGER NOT NULL
 );`
+
+const createHealClaimsStatusIndex = `CREATE INDEX IF NOT EXISTS idx_heal_claims_status ON heal_claims_submitted(status);`
+const alterHealClaimsSubmittedStatus = `ALTER TABLE heal_claims_submitted ADD COLUMN status TEXT NOT NULL DEFAULT 'submitted';`
 
 const createHealVerificationsSubmitted = `
 CREATE TABLE IF NOT EXISTS heal_verifications_submitted (
@@ -77,14 +90,26 @@ CREATE TABLE IF NOT EXISTS heal_verifications_submitted (
     verifier_account  TEXT NOT NULL,
     verified          INTEGER NOT NULL,
     verification_hash TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'submitted',
     submitted_at      INTEGER NOT NULL,
     PRIMARY KEY (heal_op_id, verifier_account)
 );`
 
+const createHealVerificationsStatusIndex = `CREATE INDEX IF NOT EXISTS idx_heal_verifications_status ON heal_verifications_submitted(status);`
+const alterHealVerificationsSubmittedStatus = `ALTER TABLE heal_verifications_submitted ADD COLUMN status TEXT NOT NULL DEFAULT 'submitted';`
+
+func (s *SQLiteStore) RecordPendingHealClaim(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir string) error {
+	return s.recordHealClaimWithStatus(ctx, healOpID, ticketID, manifestHash, stagingDir, "pending")
+}
+
 // RecordHealClaim — see LEP6HealQueries.RecordHealClaim.
 func (s *SQLiteStore) RecordHealClaim(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir string) error {
-	const stmt = `INSERT INTO heal_claims_submitted (heal_op_id, ticket_id, manifest_hash, staging_dir, submitted_at) VALUES (?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, stmt, healOpID, ticketID, manifestHash, stagingDir, time.Now().Unix())
+	return s.recordHealClaimWithStatus(ctx, healOpID, ticketID, manifestHash, stagingDir, "submitted")
+}
+
+func (s *SQLiteStore) recordHealClaimWithStatus(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir, status string) error {
+	const stmt = `INSERT INTO heal_claims_submitted (heal_op_id, ticket_id, manifest_hash, staging_dir, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, stmt, healOpID, ticketID, manifestHash, stagingDir, status, time.Now().Unix())
 	if err != nil {
 		if isSQLiteUniqueViolation(err) {
 			return ErrLEP6ClaimAlreadyRecorded
@@ -92,6 +117,16 @@ func (s *SQLiteStore) RecordHealClaim(ctx context.Context, healOpID uint64, tick
 		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) MarkHealClaimSubmitted(ctx context.Context, healOpID uint64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE heal_claims_submitted SET status = 'submitted', submitted_at = ? WHERE heal_op_id = ?`, time.Now().Unix(), healOpID)
+	return err
+}
+
+func (s *SQLiteStore) DeletePendingHealClaim(ctx context.Context, healOpID uint64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM heal_claims_submitted WHERE heal_op_id = ? AND status = 'pending'`, healOpID)
+	return err
 }
 
 // HasHealClaim — see LEP6HealQueries.HasHealClaim.
@@ -110,15 +145,15 @@ func (s *SQLiteStore) HasHealClaim(ctx context.Context, healOpID uint64) (bool, 
 
 // GetHealClaim — see LEP6HealQueries.GetHealClaim.
 func (s *SQLiteStore) GetHealClaim(ctx context.Context, healOpID uint64) (HealClaimRecord, error) {
-	const stmt = `SELECT heal_op_id, ticket_id, manifest_hash, staging_dir, submitted_at FROM heal_claims_submitted WHERE heal_op_id = ?`
+	const stmt = `SELECT heal_op_id, ticket_id, manifest_hash, staging_dir, submitted_at, status FROM heal_claims_submitted WHERE heal_op_id = ?`
 	var r HealClaimRecord
-	err := s.db.QueryRowContext(ctx, stmt, healOpID).Scan(&r.HealOpID, &r.TicketID, &r.ManifestHash, &r.StagingDir, &r.SubmittedAt)
+	err := s.db.QueryRowContext(ctx, stmt, healOpID).Scan(&r.HealOpID, &r.TicketID, &r.ManifestHash, &r.StagingDir, &r.SubmittedAt, &r.Status)
 	return r, err
 }
 
 // ListHealClaims — see LEP6HealQueries.ListHealClaims.
 func (s *SQLiteStore) ListHealClaims(ctx context.Context) ([]HealClaimRecord, error) {
-	const stmt = `SELECT heal_op_id, ticket_id, manifest_hash, staging_dir, submitted_at FROM heal_claims_submitted ORDER BY heal_op_id ASC`
+	const stmt = `SELECT heal_op_id, ticket_id, manifest_hash, staging_dir, submitted_at, status FROM heal_claims_submitted ORDER BY heal_op_id ASC`
 	rows, err := s.db.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, err
@@ -127,7 +162,7 @@ func (s *SQLiteStore) ListHealClaims(ctx context.Context) ([]HealClaimRecord, er
 	out := make([]HealClaimRecord, 0)
 	for rows.Next() {
 		var r HealClaimRecord
-		if err := rows.Scan(&r.HealOpID, &r.TicketID, &r.ManifestHash, &r.StagingDir, &r.SubmittedAt); err != nil {
+		if err := rows.Scan(&r.HealOpID, &r.TicketID, &r.ManifestHash, &r.StagingDir, &r.SubmittedAt, &r.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -142,14 +177,22 @@ func (s *SQLiteStore) DeleteHealClaim(ctx context.Context, healOpID uint64) erro
 	return err
 }
 
+func (s *SQLiteStore) RecordPendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash string) error {
+	return s.recordHealVerificationWithStatus(ctx, healOpID, verifierAccount, verified, verificationHash, "pending")
+}
+
 // RecordHealVerification — see LEP6HealQueries.RecordHealVerification.
 func (s *SQLiteStore) RecordHealVerification(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash string) error {
-	const stmt = `INSERT INTO heal_verifications_submitted (heal_op_id, verifier_account, verified, verification_hash, submitted_at) VALUES (?, ?, ?, ?, ?)`
+	return s.recordHealVerificationWithStatus(ctx, healOpID, verifierAccount, verified, verificationHash, "submitted")
+}
+
+func (s *SQLiteStore) recordHealVerificationWithStatus(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash, status string) error {
+	const stmt = `INSERT INTO heal_verifications_submitted (heal_op_id, verifier_account, verified, verification_hash, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?)`
 	verifiedInt := 0
 	if verified {
 		verifiedInt = 1
 	}
-	_, err := s.db.ExecContext(ctx, stmt, healOpID, verifierAccount, verifiedInt, verificationHash, time.Now().Unix())
+	_, err := s.db.ExecContext(ctx, stmt, healOpID, verifierAccount, verifiedInt, verificationHash, status, time.Now().Unix())
 	if err != nil {
 		if isSQLiteUniqueViolation(err) {
 			return ErrLEP6VerificationAlreadyRecorded
@@ -157,6 +200,16 @@ func (s *SQLiteStore) RecordHealVerification(ctx context.Context, healOpID uint6
 		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) MarkHealVerificationSubmitted(ctx context.Context, healOpID uint64, verifierAccount string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE heal_verifications_submitted SET status = 'submitted', submitted_at = ? WHERE heal_op_id = ? AND verifier_account = ?`, time.Now().Unix(), healOpID, verifierAccount)
+	return err
+}
+
+func (s *SQLiteStore) DeletePendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM heal_verifications_submitted WHERE heal_op_id = ? AND verifier_account = ? AND status = 'pending'`, healOpID, verifierAccount)
+	return err
 }
 
 // HasHealVerification — see LEP6HealQueries.HasHealVerification.

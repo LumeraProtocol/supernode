@@ -7,6 +7,7 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	lumeraMock "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	actionmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
+	"github.com/cosmos/gogoproto/proto"
 	"go.uber.org/mock/gomock"
 )
 
@@ -15,15 +16,17 @@ func TestChainTicketProviderFiltersFinalizedCascadeActions(t *testing.T) {
 	client := lumeraMock.NewMockClient(ctrl)
 	actions := actionmod.NewMockModule(ctrl)
 
+	metadata := validCascadeMetadata(t)
 	client.EXPECT().Action().Return(actions).Times(2)
 	actions.EXPECT().ListActionsBySuperNode(gomock.Any(), "sn-target").Return(&actiontypes.QueryListActionsBySuperNodeResponse{Actions: []*actiontypes.Action{
-		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}},
-		{ActionID: "sym-approved", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateApproved, BlockHeight: 100, SuperNodes: []string{"sn-target"}},
-		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}}, // duplicate
-		{ActionID: "pending", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStatePending, BlockHeight: 101, SuperNodes: []string{"sn-target"}},
-		{ActionID: "wrong-type", ActionType: actiontypes.ActionTypeSense, State: actiontypes.ActionStateDone, BlockHeight: 102, SuperNodes: []string{"sn-target"}},
-		{ActionID: "wrong-target", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 103, SuperNodes: []string{"other"}},
-		{ActionID: "zero-height", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 0, SuperNodes: []string{"sn-target"}},
+		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}, Metadata: metadata},
+		{ActionID: "sym-approved", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateApproved, BlockHeight: 100, SuperNodes: []string{"sn-target"}, Metadata: metadata},
+		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}, Metadata: metadata}, // duplicate
+		{ActionID: "pending", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStatePending, BlockHeight: 101, SuperNodes: []string{"sn-target"}, Metadata: metadata},
+		{ActionID: "wrong-type", ActionType: actiontypes.ActionTypeSense, State: actiontypes.ActionStateDone, BlockHeight: 102, SuperNodes: []string{"sn-target"}, Metadata: metadata},
+		{ActionID: "wrong-target", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 103, SuperNodes: []string{"other"}, Metadata: metadata},
+		{ActionID: "zero-height", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 0, SuperNodes: []string{"sn-target"}, Metadata: metadata},
+		{ActionID: "bad-metadata", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 104, SuperNodes: []string{"sn-target"}, Metadata: []byte("not-proto")},
 	}}, nil)
 
 	got, err := NewChainTicketProvider(client).TicketsForTarget(context.Background(), "sn-target")
@@ -39,4 +42,19 @@ func TestChainTicketProviderFiltersFinalizedCascadeActions(t *testing.T) {
 	if got[1].TicketID != "sym-old" || got[1].AnchorBlock != 99 {
 		t.Fatalf("second sorted ticket mismatch: %#v", got[1])
 	}
+}
+
+func validCascadeMetadata(t *testing.T) []byte {
+	t.Helper()
+	bz, err := proto.Marshal(&actiontypes.CascadeMetadata{
+		DataHash:            "hash",
+		RqIdsMax:            3,
+		RqIdsIds:            []string{"rq-1"},
+		IndexArtifactCount:  1,
+		SymbolArtifactCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	return bz
 }

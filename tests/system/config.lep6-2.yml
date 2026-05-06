@@ -1,0 +1,60 @@
+# Note: During tests, local loopback/localhost is allowed by the P2P layer
+# when INTEGRATION_TEST=true (set by tests). No change needed here.
+#hope bulk clever tip road female fly quiz once dose journey sting hedgehog pull area envelope supreme maze project spike brave shed fish live
+# Supernode Configuration
+supernode:
+  key_name: "testkey2"
+  identity: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c"
+  host: "0.0.0.0"
+  port: 4446
+  gateway_port: 8003
+
+# Keyring Configuration
+keyring:
+  backend: "test"
+  dir: "keys"
+  password: "keyring-password"
+
+# P2P Network Configuration
+p2p:
+  port: 4447
+  data_dir: "data/p2p"
+
+# Lumera Chain Configuration
+lumera:
+  grpc_addr: "localhost:9090"
+  chain_id: "testing"
+
+# RaptorQ Configuration
+raptorq:
+  files_dir: "raptorq_files"
+
+storage_challenge:
+  # Runtime e2e submits deterministic chain reports manually. Keep the automatic
+  # dispatcher off so pre-upload P2P allowlist refreshes do not perturb the
+  # Cascade upload baseline before the heal-op is scheduled.
+  enabled: false
+  poll_interval_ms: 5000
+  submit_evidence: false
+  lep6:
+    enabled: false
+    max_concurrent_targets: 4
+    recipient_read_timeout: 30s
+    recheck:
+      enabled: true
+      lookback_epochs: 7
+      max_per_tick: 5
+      tick_interval_ms: 60000
+      max_failure_attempts_per_ticket: 3
+      failure_backoff_ttl_ms: 900000
+self_healing:
+  enabled: true
+  poll_interval_ms: 5000
+  max_concurrent_reconstructs: 2
+  max_concurrent_verifications: 4
+  max_concurrent_publishes: 2
+  staging_dir: supernode-lep6-data2/heal-staging
+  verifier_fetch_timeout_ms: 60000
+  verifier_fetch_attempts: 3
+  verifier_backoff_base_ms: 2000
+  audit_query_timeout_ms: 2000

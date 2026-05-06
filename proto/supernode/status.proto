@@ -129,4 +129,37 @@ message StatusResponse {
   }
   
   P2PMetrics p2p_metrics = 9;
+
+  // LEP-6 storage-truth runtime metrics and diagnostics. These are in-memory
+  // counters/gauges reset on process restart, matching the existing typed
+  // status-snapshot pattern used for P2P metrics.
+  message LEP6Metrics {
+    // Storage challenge / dispatch signals.
+    map<string, uint64> dispatch_results_total = 1;
+    map<string, uint64> dispatch_throttled_total = 2;
+    map<string, uint64> dispatch_epoch_duration_millis_total = 3;
+    map<string, uint64> dispatch_epoch_duration_millis_max = 4;
+    map<string, uint64> dispatch_epoch_duration_count = 5;
+    map<string, uint64> ticket_discovery_total = 6;
+    int64 no_ticket_provider_active = 7;
+
+    // Self-healing signals.
+    map<string, uint64> heal_claims_submitted_total = 8;
+    uint64 heal_claims_reconciled_total = 9;
+    map<string, uint64> heal_verifications_submitted_total = 10;
+    uint64 heal_verifications_already_exists_total = 11;
+    uint64 heal_finalize_publishes_total = 12;
+    map<string, uint64> heal_finalize_cleanups_total = 13;
+    int64 self_healing_pending_claims = 14;
+    int64 self_healing_staging_bytes = 15;
+
+    // Storage recheck signals.
+    uint64 recheck_candidates_found_total = 16;
+    map<string, uint64> recheck_evidence_submitted_total = 17;
+    uint64 recheck_evidence_already_submitted_total = 18;
+    map<string, uint64> recheck_execution_failures_total = 19;
+    int64 recheck_pending_candidates = 20;
+  }
+
+  LEP6Metrics lep6_metrics = 10;
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
 
@@ -33,14 +34,27 @@ func (a *Attestor) Submit(ctx context.Context, c Candidate, r RecheckResult) err
 	if strings.TrimSpace(r.TranscriptHash) == "" || !validRecheckResultClass(r.ResultClass) {
 		return fmt.Errorf("invalid recheck result")
 	}
+	if err := a.store.RecordPendingRecheckSubmission(ctx, c.EpochID, c.TicketID, c.TargetAccount, c.ChallengedTranscriptHash, r.TranscriptHash, r.ResultClass); err != nil {
+		lep6metrics.IncRecheckSubmission(r.ResultClass.String(), "stage_error")
+		return fmt.Errorf("stage recheck evidence before submit: %w", err)
+	}
 	_, err := a.msg.SubmitStorageRecheckEvidence(ctx, c.EpochID, c.TargetAccount, c.TicketID, c.ChallengedTranscriptHash, r.TranscriptHash, r.ResultClass, r.Details)
 	if err != nil {
 		if isAlreadySubmittedError(err) {
-			return a.store.RecordRecheckSubmission(ctx, c.EpochID, c.TicketID, c.TargetAccount, c.ChallengedTranscriptHash, r.TranscriptHash, r.ResultClass)
+			lep6metrics.IncRecheckAlreadySubmitted()
+			lep6metrics.IncRecheckSubmission(r.ResultClass.String(), "already_submitted")
+			return a.store.MarkRecheckSubmissionSubmitted(ctx, c.EpochID, c.TicketID)
 		}
+		_ = a.store.DeletePendingRecheckSubmission(ctx, c.EpochID, c.TicketID)
+		lep6metrics.IncRecheckSubmission(r.ResultClass.String(), "submit_error")
 		return err
 	}
-	return a.store.RecordRecheckSubmission(ctx, c.EpochID, c.TicketID, c.TargetAccount, c.ChallengedTranscriptHash, r.TranscriptHash, r.ResultClass)
+	if err := a.store.MarkRecheckSubmissionSubmitted(ctx, c.EpochID, c.TicketID); err != nil {
+		lep6metrics.IncRecheckSubmission(r.ResultClass.String(), "mark_error")
+		return err
+	}
+	lep6metrics.IncRecheckSubmission(r.ResultClass.String(), "submitted")
+	return nil
 }
 
 func validRecheckResultClass(cls audittypes.StorageProofResultClass) bool {

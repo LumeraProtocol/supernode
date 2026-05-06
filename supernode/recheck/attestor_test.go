@@ -21,8 +21,8 @@ func TestAttestor_SubmitsThenPersists(t *testing.T) {
 
 	require.NoError(t, a.Submit(ctx, candidate, result))
 	require.Len(t, msg.calls, 1)
-	require.Equal(t, 1, msg.calls[0].callIndex)
-	require.Greater(t, store.recordCallIndex, msg.calls[0].callIndex)
+	require.Equal(t, 2, msg.calls[0].callIndex)
+	require.Less(t, store.recordCallIndex, msg.calls[0].callIndex)
 	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1")
 	require.NoError(t, err)
 	require.True(t, exists)

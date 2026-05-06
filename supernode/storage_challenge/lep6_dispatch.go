@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +18,7 @@ import (
 	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -168,6 +170,9 @@ func NewLEP6Dispatcher(
 // Per-target failures are surfaced as StorageProofResult{ResultClass=FAIL}
 // rather than returning an error.
 func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) error {
+	started := time.Now()
+	defer func() { lep6metrics.ObserveDispatchEpochDuration("challenger", time.Since(started)) }()
+
 	paramsResp, err := d.client.Audit().GetParams(ctx)
 	if err != nil {
 		return fmt.Errorf("lep6 dispatch: get params: %w", err)
@@ -254,6 +259,7 @@ func (d *LEP6Dispatcher) dispatchTarget(
 	if err != nil {
 		// Treat as transient; emit no-eligible for both buckets so the
 		// chain still sees this epoch covered.
+		lep6metrics.SetNoTicketProviderActive(true)
 		logtrace.Warn(ctx, "lep6 dispatch: ticket provider error", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "error": err.Error(),
 		})
@@ -274,12 +280,14 @@ func (d *LEP6Dispatcher) dispatchTarget(
 		}
 
 		if len(eligibleIDs) == 0 {
+			lep6metrics.SetNoTicketProviderActive(true)
 			d.appendNoEligible(ctx, epochID, anchor, target, bucket)
 			continue
 		}
 
 		ticketID := deterministic.SelectTicketForBucket(eligibleIDs, nil, anchor.Seed, target, bucket)
 		if ticketID == "" {
+			lep6metrics.SetNoTicketProviderActive(true)
 			d.appendNoEligible(ctx, epochID, anchor, target, bucket)
 			continue
 		}
@@ -316,6 +324,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	}
 	sig, _ := snkeyring.SignBytes(d.keyring, d.keyName, []byte(transcriptHashHex))
 
+	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String())
 	d.buffer.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
 		ChallengerSupernodeAccount: d.self,
@@ -470,6 +479,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		return fmt.Errorf("sign transcript: %w", signErr)
 	}
 
+	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String())
 	d.buffer.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
 		ChallengerSupernodeAccount: d.self,
@@ -521,6 +531,7 @@ func (d *LEP6Dispatcher) appendFail(
 	}
 	sig, _ := snkeyring.SignBytes(d.keyring, d.keyName, []byte(transcriptHashHex))
 
+	lep6metrics.IncDispatchResult(resultClass.String())
 	d.buffer.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
 		ChallengerSupernodeAccount: d.self,

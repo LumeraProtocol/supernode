@@ -2,6 +2,7 @@ package self_healing
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
+	"lukechampine.com/blake3"
 )
 
 // helper builds a Service + its hooks for testing. Returns Service plus the
@@ -206,6 +208,41 @@ func TestVerifier_FetchFailureSubmitsNonEmptyHash(t *testing.T) {
 	}
 	if !strings.Contains(vc[0].Details, "fetch_failed") {
 		t.Fatalf("details should record reason; got %q", vc[0].Details)
+	}
+}
+
+func TestNegativeAttestationHashUsesBlake3Convention(t *testing.T) {
+	reason := "fetch_failed:connection refused"
+	sum := blake3.Sum256([]byte("lep6:negative-attestation:" + reason))
+	want := base64.StdEncoding.EncodeToString(sum[:])
+	if got := negativeAttestationHash(reason); got != want {
+		t.Fatalf("negative attestation hash must use BLAKE3/base64 per LEP-6 storage hash convention; got %q want %q", got, want)
+	}
+}
+
+func TestDispatcher_StuckScheduledQueryDoesNotStarveVerifier(t *testing.T) {
+	h := newHarness(t, "sn-verifier", audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)
+	h.svc.cfg.AuditQueryTimeout = 20 * time.Millisecond
+	h.audit.blockStatus[audittypes.HealOpStatus_HEAL_OP_STATUS_SCHEDULED] = true
+
+	body := []byte("verified-even-when-scheduled-query-hangs")
+	h.audit.put(audittypes.HealOp{
+		HealOpId:                  14,
+		TicketId:                  "ticket-verifier-not-starved",
+		Status:                    audittypes.HealOpStatus_HEAL_OP_STATUS_HEALER_REPORTED,
+		HealerSupernodeAccount:    "sn-healer",
+		VerifierSupernodeAccounts: []string{"sn-verifier"},
+		ResultHash:                hashOf(t, body),
+	})
+	h.svc.fetcher = &fakeFetcher{body: body}
+
+	if err := h.svc.tick(context.Background()); err != nil {
+		t.Fatalf("tick should continue past a timed-out scheduled query: %v", err)
+	}
+	waitForVerifications(t, h.auditMsg, 1)
+	_, vc := h.auditMsg.snapshot()
+	if len(vc) != 1 || !vc[0].Verified {
+		t.Fatalf("expected verifier dispatch despite stuck scheduled query, got %+v", vc)
 	}
 }
 
