@@ -323,6 +323,27 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	bucket audittypes.StorageProofBucketType,
 	selectedTicketIDForLog string,
 ) {
+	// Wave 2 / F-PR286-02: Lumera chain validateNoEligibleTicketConsistency
+	// rejects NO_ELIGIBLE_TICKET when a recent eligible transcript exists for
+	// the same (target,bucket) within its consistency window. The current
+	// supernode audit.Module does not expose that chain history query, so this
+	// guard covers the safe local subset: never emit NO_ELIGIBLE when this
+	// process already buffered an eligible row for the same epoch/target/bucket.
+	// Skipping is safer than poisoning the whole report; in FULL mode Wave 1
+	// coverage checks will abort submission. A selectedTicketIDForLog alone is
+	// not enough to suppress: H6 class-roll fallback intentionally emits
+	// NO_ELIGIBLE when the selected ticket has no rolled concrete class.
+	if buf != nil && buf.HasEligibleResult(epochID, target, bucket) {
+		lep6metrics.IncDispatchInternalFailure("no_eligible_consistency_suppressed")
+		logtrace.Warn(ctx, "lep6 dispatch: suppressed no-eligible row due to eligible-ticket consistency", logtrace.Fields{
+			"epoch_id":        epochID,
+			"target":          target,
+			"bucket":          bucket.String(),
+			"selected_ticket": selectedTicketIDForLog,
+		})
+		return
+	}
+
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
 		EpochID:                    epochID,
 		ChallengerSupernodeAccount: d.self,

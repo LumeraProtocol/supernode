@@ -9,6 +9,7 @@ replace (
 )
 
 require (
+	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/math v1.5.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
@@ -55,7 +56,6 @@ require (
 	cosmossdk.io/collections v1.3.1 // indirect
 	cosmossdk.io/core v0.11.3 // indirect
 	cosmossdk.io/depinject v1.2.1 // indirect
-	cosmossdk.io/errors v1.0.2 // indirect
 	cosmossdk.io/log v1.6.1 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
 	cosmossdk.io/store v1.1.2 // indirect

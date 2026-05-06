@@ -92,15 +92,15 @@ func TestRecheckPendingSubmittedAndFailureBudget(t *testing.T) {
 	require.True(t, has)
 	require.NoError(t, store.MarkRecheckSubmissionSubmitted(ctx, 7, "ticket-7", "target"))
 
-	blocked, err := store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", 2)
+	blocked, err := store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", "target", 2)
 	require.NoError(t, err)
 	require.False(t, blocked)
 	require.NoError(t, store.RecordRecheckAttemptFailure(ctx, 7, "ticket-7", "target", assert.AnError, time.Hour))
-	blocked, err = store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", 2)
+	blocked, err = store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", "target", 2)
 	require.NoError(t, err)
 	require.False(t, blocked)
 	require.NoError(t, store.RecordRecheckAttemptFailure(ctx, 7, "ticket-7", "target", assert.AnError, time.Hour))
-	blocked, err = store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", 2)
+	blocked, err = store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-7", "target", 2)
 	require.NoError(t, err)
 	require.True(t, blocked)
 }

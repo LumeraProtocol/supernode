@@ -105,9 +105,9 @@ func (s *Service) reconstructAndClaim(ctx context.Context, op audittypes.HealOp)
 		_ = os.RemoveAll(stagingDir)
 		lep6metrics.IncHealClaim("deadline_skipped")
 		logtrace.Warn(ctx, "self_healing(LEP-6): heal op deadline passed before submit; skipping", logtrace.Fields{
-			"heal_op_id":   op.HealOpId,
-			"deadline":     op.DeadlineEpochId,
-			"staging_dir":  stagingDir,
+			"heal_op_id":  op.HealOpId,
+			"deadline":    op.DeadlineEpochId,
+			"staging_dir": stagingDir,
 		})
 		return nil
 	}
@@ -119,17 +119,28 @@ func (s *Service) reconstructAndClaim(ctx context.Context, op audittypes.HealOp)
 			lep6metrics.IncHealClaim("submit_transient")
 			return fmt.Errorf("submit claim (transient, will retry): %w", err)
 		}
-		if chainerrors.IsHealOpInvalidState(err) {
-			if recErr := s.reconcileExistingClaim(ctx, op, manifestHash, stagingDir); recErr != nil {
-				_ = os.RemoveAll(stagingDir)
-				return fmt.Errorf("submit failed (%v) and reconcile failed: %w", err, recErr)
-			}
+		if chainerrors.IsHealOpPastDeadline(err) {
+			_ = s.store.DeletePendingHealClaim(ctx, op.HealOpId)
+			_ = os.RemoveAll(stagingDir)
+			lep6metrics.IncHealClaim("deadline_rejected")
+			logtrace.Warn(ctx, "self_healing(LEP-6): chain rejected heal claim after deadline; skipping reconcile", logtrace.Fields{
+				"heal_op_id":        op.HealOpId,
+				"deadline":          op.DeadlineEpochId,
+				logtrace.FieldError: err.Error(),
+			})
 			return nil
 		}
-		_ = s.store.DeletePendingHealClaim(ctx, op.HealOpId)
-		_ = os.RemoveAll(stagingDir)
-		lep6metrics.IncHealClaim("submit_error")
-		return fmt.Errorf("submit claim: %w", err)
+		if chainerrors.IsHealOpInvalidState(err) {
+			return s.reconcilePendingClaimSubmitError(ctx, op, err)
+		}
+		// Matee C3 follow-up: do not destructively drop staging on an
+		// unclassified submit error until we query chain state. A tx can be
+		// committed while the client receives a non-canonical transport / ABCI
+		// wrapper error that is neither IsTransientGrpc nor the typed invalid-
+		// state sentinel. resumePendingHealClaim promotes the row when chain
+		// shows our manifest, or deletes pending+staging only when chain still
+		// has no accepted claim / accepted a different manifest.
+		return s.reconcilePendingClaimSubmitError(ctx, op, err)
 	}
 
 	if err := s.store.MarkHealClaimSubmitted(ctx, op.HealOpId); err != nil {
@@ -144,6 +155,21 @@ func (s *Service) reconstructAndClaim(ctx context.Context, op audittypes.HealOp)
 		"staging_dir": stagingDir,
 	})
 	return nil
+}
+
+func (s *Service) reconcilePendingClaimSubmitError(ctx context.Context, op audittypes.HealOp, submitErr error) error {
+	if recErr := s.resumePendingHealClaim(ctx, op); recErr != nil {
+		return fmt.Errorf("submit failed (%v) and pending reconcile failed: %w", submitErr, recErr)
+	}
+	hasSubmitted, err := s.store.HasHealClaim(ctx, op.HealOpId)
+	if err != nil {
+		return fmt.Errorf("submit failed (%v) and post-reconcile submitted lookup failed: %w", submitErr, err)
+	}
+	if hasSubmitted {
+		return nil
+	}
+	lep6metrics.IncHealClaim("submit_error")
+	return fmt.Errorf("submit claim: %w", submitErr)
 }
 
 // reconcileExistingClaim handles the post-crash case where the chain has
@@ -231,6 +257,7 @@ func (s *Service) healOpDeadlinePassed(ctx context.Context, op audittypes.HealOp
 	}
 	return resp.EpochId >= op.DeadlineEpochId, nil
 }
+
 // resumePendingHealClaim is the C5 fix: a `pending` claim row from a
 // previous tick (crashed between RecordPendingHealClaim and chain ack)
 // exists locally. We must reconcile against the chain BEFORE either
@@ -316,11 +343,11 @@ func (s *Service) resumePendingHealClaim(ctx context.Context, op audittypes.Heal
 		}
 		lep6metrics.IncHealClaim("resume_foreign")
 		logtrace.Warn(ctx, "self_healing(LEP-6): resume foreign-hash (different healer's claim accepted)", logtrace.Fields{
-			"heal_op_id":    op.HealOpId,
-			"chain_hash":    chainOp.ResultHash,
-			"pending_hash":  row.ManifestHash,
-			"chain_status":  chainOp.Status.String(),
-			"staging_dir":   row.StagingDir,
+			"heal_op_id":   op.HealOpId,
+			"chain_hash":   chainOp.ResultHash,
+			"pending_hash": row.ManifestHash,
+			"chain_status": chainOp.Status.String(),
+			"staging_dir":  row.StagingDir,
 		})
 		return nil
 	default:

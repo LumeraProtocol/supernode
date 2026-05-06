@@ -2,7 +2,9 @@ package queries
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/jmoiron/sqlx"
@@ -116,4 +118,39 @@ func TestMigrateStorageRecheckSubmissionsPK_AlreadyMigratedNoOp(t *testing.T) {
 	pk, err := primaryKeyColumns(ctx, db, "storage_recheck_submissions")
 	require.NoError(t, err)
 	require.Equal(t, []string{"epoch_id", "ticket_id", "target_account"}, pk)
+}
+
+func TestMigrateRecheckAttemptFailuresPK(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlx.Open("sqlite3", ":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	_, err = db.Exec(`
+CREATE TABLE recheck_attempt_failures (
+  epoch_id INTEGER NOT NULL,
+  ticket_id TEXT NOT NULL,
+  target_account TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  last_error TEXT,
+  expires_at INTEGER NOT NULL,
+  PRIMARY KEY (epoch_id, ticket_id)
+);`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO recheck_attempt_failures VALUES (7, 'ticket-1', 'target-a', 1, 'boom', 999999);`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateRecheckAttemptFailuresPK(ctx, db))
+	pk, err := primaryKeyColumns(ctx, db, "recheck_attempt_failures")
+	require.NoError(t, err)
+	require.Equal(t, []string{"epoch_id", "ticket_id", "target_account"}, pk)
+
+	store := &SQLiteStore{db: db}
+	require.NoError(t, store.RecordRecheckAttemptFailure(ctx, 7, "ticket-1", "target-b", fmt.Errorf("nope"), time.Hour))
+	blockedA, err := store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-1", "target-a", 2)
+	require.NoError(t, err)
+	require.False(t, blockedA)
+	blockedB, err := store.HasRecheckAttemptFailureBudgetExceeded(ctx, 7, "ticket-1", "target-b", 2)
+	require.NoError(t, err)
+	require.False(t, blockedB)
 }

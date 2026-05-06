@@ -36,6 +36,7 @@ type MetricsSnapshot struct {
 	HealVerificationsAlreadyExistsTotal uint64
 	HealFinalizePublishesTotal          uint64
 	HealFinalizeCleanupsTotal           map[string]uint64 // status
+	HealOrphanedStagingCleanupsTotal    uint64
 	SelfHealingPendingClaims            int64
 	SelfHealingStagingBytes             int64
 
@@ -135,6 +136,7 @@ var metrics = struct {
 	healVerificationsAlreadyExist atomic.Uint64
 	healFinalizePublishes         atomic.Uint64
 	healFinalizeCleanups          counterMap
+	healOrphanedStagingCleanups   atomic.Uint64
 	selfHealingPendingClaims      atomic.Int64
 	selfHealingStagingBytes       atomic.Int64
 
@@ -162,6 +164,7 @@ func Reset() {
 	metrics.healVerificationsAlreadyExist.Store(0)
 	metrics.healFinalizePublishes.Store(0)
 	metrics.healFinalizeCleanups.reset()
+	metrics.healOrphanedStagingCleanups.Store(0)
 	metrics.selfHealingPendingClaims.Store(0)
 	metrics.selfHealingStagingBytes.Store(0)
 	metrics.recheckCandidatesFound.Store(0)
@@ -189,6 +192,7 @@ func Snapshot() MetricsSnapshot {
 		HealVerificationsAlreadyExistsTotal:  metrics.healVerificationsAlreadyExist.Load(),
 		HealFinalizePublishesTotal:           metrics.healFinalizePublishes.Load(),
 		HealFinalizeCleanupsTotal:            metrics.healFinalizeCleanups.snapshot(),
+		HealOrphanedStagingCleanupsTotal:     metrics.healOrphanedStagingCleanups.Load(),
 		SelfHealingPendingClaims:             metrics.selfHealingPendingClaims.Load(),
 		SelfHealingStagingBytes:              metrics.selfHealingStagingBytes.Load(),
 		RecheckCandidatesFoundTotal:          metrics.recheckCandidatesFound.Load(),
@@ -199,8 +203,8 @@ func Snapshot() MetricsSnapshot {
 	}
 }
 
-func IncDispatchResult(resultClass string) { metrics.dispatchResults.inc(resultClass, 1) }
-func IncDispatchSignFailure(context string) { metrics.dispatchSignFailures.inc(context, 1) }
+func IncDispatchResult(resultClass string)    { metrics.dispatchResults.inc(resultClass, 1) }
+func IncDispatchSignFailure(context string)   { metrics.dispatchSignFailures.inc(context, 1) }
 func IncDispatchInternalFailure(stage string) { metrics.dispatchInternalFailures.inc(stage, 1) }
 func IncDispatchThrottled(policy string, dropped int) {
 	if dropped > 0 {
@@ -237,6 +241,7 @@ func IncHealVerification(outcome string, verified bool) {
 func IncHealVerificationAlreadyExists()    { metrics.healVerificationsAlreadyExist.Add(1) }
 func IncHealFinalizePublish()              { metrics.healFinalizePublishes.Add(1) }
 func IncHealFinalizeCleanup(status string) { metrics.healFinalizeCleanups.inc(status, 1) }
+func IncHealOrphanedStagingCleanup()       { metrics.healOrphanedStagingCleanups.Add(1) }
 func SetSelfHealingPendingClaims(count int) {
 	metrics.selfHealingPendingClaims.Store(nonNegativeInt64(count))
 }

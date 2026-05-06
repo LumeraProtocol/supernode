@@ -51,6 +51,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,11 @@ const (
 	// or hung RaptorQ from holding its semaphore slot + inFlight key
 	// forever.
 	defaultDispatchOpTimeout = 15 * time.Minute
+	// defaultEstimatedChainBlockTime is used only to translate chain epoch-anchor
+	// block deltas into a wall-clock deadline for per-op contexts when the chain
+	// exposes heights but not timestamps. The hard DispatchOpTimeout remains the
+	// upper safety cap.
+	defaultEstimatedChainBlockTime = 6 * time.Second
 )
 
 // Config captures supernode-binary-owned tunables for the LEP-6 heal runtime.
@@ -245,6 +251,63 @@ func New(
 	}, nil
 }
 
+func (s *Service) cleanupOrphanedStagingDirs(ctx context.Context) error {
+	claims, err := s.store.ListHealClaims(ctx)
+	if err != nil {
+		return fmt.Errorf("list heal claims: %w", err)
+	}
+	known := make(map[uint64]struct{}, len(claims))
+	for _, claim := range claims {
+		known[claim.HealOpID] = struct{}{}
+	}
+	entries, err := os.ReadDir(s.cfg.StagingRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read staging root: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		healOpID, ok := parseNumericHealOpDir(entry.Name())
+		if !ok {
+			continue
+		}
+		if _, exists := known[healOpID]; exists {
+			continue
+		}
+		path := filepath.Join(s.cfg.StagingRoot, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove orphaned staging dir %q: %w", path, err)
+		}
+		lep6metrics.IncHealOrphanedStagingCleanup()
+		logtrace.Warn(ctx, "self_healing(LEP-6): removed orphaned staging dir", logtrace.Fields{
+			"heal_op_id":   healOpID,
+			"staging_dir":  path,
+			"staging_root": s.cfg.StagingRoot,
+		})
+	}
+	return nil
+}
+
+func parseNumericHealOpDir(name string) (uint64, bool) {
+	if name == "" {
+		return 0, false
+	}
+	for _, r := range name {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	id, err := strconv.ParseUint(name, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
 // Run blocks until ctx is cancelled, ticking every cfg.PollInterval.
 // Tick steps (single mechanism per LEP-6 plan §C.4 finalizer Opt-2b decision):
 //
@@ -274,6 +337,9 @@ func (s *Service) Run(ctx context.Context) error {
 		"max_concurrent_publishes":     s.cfg.MaxConcurrentPublishes,
 		"staging_root":                 s.cfg.StagingRoot,
 	})
+	if err := s.cleanupOrphanedStagingDirs(ctx); err != nil {
+		logtrace.Warn(ctx, "self_healing(LEP-6): cleanup orphaned staging dirs", logtrace.Fields{logtrace.FieldError: err.Error()})
+	}
 	t := time.NewTicker(s.cfg.PollInterval)
 	defer t.Stop()
 	for {
@@ -393,7 +459,7 @@ func (s *Service) dispatchHealerOps(ctx context.Context) error {
 			defer s.inFlight.Delete(key)
 			// M2 fix: bound the per-op goroutine so a wedged
 			// reconstruct or hung RaptorQ releases its semaphore slot.
-			opCtx, cancel := s.dispatchOpContext(ctx)
+			opCtx, cancel := s.dispatchOpContextForHealOp(ctx, op)
 			defer cancel()
 			if err := s.reconstructAndClaim(opCtx, op); err != nil {
 				logtrace.Warn(ctx, "self_healing(LEP-6): reconstructAndClaim", logtrace.Fields{
@@ -467,7 +533,7 @@ func (s *Service) dispatchVerifierOps(ctx context.Context) error {
 		go func(op audittypes.HealOp, key string) {
 			defer s.inFlight.Delete(key)
 			// M2 fix: bound per-op verifier goroutine.
-			opCtx, cancel := s.dispatchOpContext(ctx)
+			opCtx, cancel := s.dispatchOpContextForHealOp(ctx, op)
 			defer cancel()
 			logtrace.Info(opCtx, "self_healing(LEP-6): verifier dispatch start", logtrace.Fields{
 				"identity":   s.identity,
@@ -573,6 +639,66 @@ func (s *Service) dispatchOpContext(ctx context.Context) (context.Context, conte
 		timeout = defaultDispatchOpTimeout
 	}
 	return context.WithTimeout(ctx, timeout)
+}
+
+// dispatchOpContextForHealOp derives the per-op context from the earlier of:
+//
+//   - the configured hard DispatchOpTimeout; and
+//   - op.DeadlineEpochId translated through chain epoch-anchor heights.
+//
+// Lumera chain epoch anchors carry block heights (not timestamps), so the
+// translation uses a conservative estimated block time and still falls back to
+// DispatchOpTimeout if anchor queries fail or produce unusable data. This keeps
+// the M2 leak guard intact while respecting the chain heal-op deadline when it
+// can be derived locally.
+func (s *Service) dispatchOpContextForHealOp(ctx context.Context, op audittypes.HealOp) (context.Context, context.CancelFunc) {
+	deadline, ok := s.healOpWallDeadline(ctx, op)
+	if !ok {
+		return s.dispatchOpContext(ctx)
+	}
+	hardTimeout := s.cfg.DispatchOpTimeout
+	if hardTimeout <= 0 {
+		hardTimeout = defaultDispatchOpTimeout
+	}
+	hardDeadline := time.Now().Add(hardTimeout)
+	if deadline.After(hardDeadline) {
+		deadline = hardDeadline
+	}
+	return context.WithDeadline(ctx, deadline)
+}
+
+func (s *Service) healOpWallDeadline(ctx context.Context, op audittypes.HealOp) (time.Time, bool) {
+	if op.DeadlineEpochId == 0 {
+		return time.Time{}, false
+	}
+	queryCtx, cancel := s.auditQueryContext(ctx)
+	currentResp, err := s.lumera.Audit().GetCurrentEpochAnchor(queryCtx)
+	cancel()
+	if err != nil || currentResp == nil {
+		return time.Time{}, false
+	}
+	current := currentResp.Anchor
+	if current.EpochId == 0 || current.EpochEndHeight <= 0 {
+		return time.Time{}, false
+	}
+	if current.EpochId >= op.DeadlineEpochId {
+		return time.Now(), true
+	}
+	queryCtx, cancel = s.auditQueryContext(ctx)
+	deadlineResp, err := s.lumera.Audit().GetEpochAnchor(queryCtx, op.DeadlineEpochId)
+	cancel()
+	if err != nil || deadlineResp == nil {
+		return time.Time{}, false
+	}
+	deadlineAnchor := deadlineResp.Anchor
+	if deadlineAnchor.EpochEndHeight <= current.EpochEndHeight {
+		return time.Now(), true
+	}
+	remainingBlocks := deadlineAnchor.EpochEndHeight - current.EpochEndHeight
+	if remainingBlocks <= 0 {
+		return time.Time{}, false
+	}
+	return time.Now().Add(time.Duration(remainingBlocks) * defaultEstimatedChainBlockTime), true
 }
 
 func totalStagingBytes(claims []queries.HealClaimRecord) int64 {

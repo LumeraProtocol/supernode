@@ -60,11 +60,11 @@ type RecoveryReseedResult struct {
 type stagedManifest struct {
 	ActionID         string       `json:"action_id"`
 	Layout           codec.Layout `json:"layout"`
-	IDFiles          []string     `json:"id_files"`         // base64 of idFile bytes
-	SymbolKeys       []string     `json:"symbol_keys"`      // ordered, deduped
-	SymbolsDir       string       `json:"symbols_dir"`      // absolute path inside StagingDir/symbols
-	ReconstructedRel string       `json:"reconstructed_rel"`// staging-dir-relative path of the reconstructed file
-	ManifestHashB64  string       `json:"manifest_hash_b64"`// = action.DataHash recipe; HealManifestHash
+	IDFiles          []string     `json:"id_files"`          // base64 of idFile bytes
+	SymbolKeys       []string     `json:"symbol_keys"`       // ordered, deduped
+	SymbolsDir       string       `json:"symbols_dir"`       // absolute path inside StagingDir/symbols
+	ReconstructedRel string       `json:"reconstructed_rel"` // staging-dir-relative path of the reconstructed file
+	ManifestHashB64  string       `json:"manifest_hash_b64"` // = action.DataHash recipe; HealManifestHash
 }
 
 const stagedManifestFilename = "manifest.json"
@@ -368,6 +368,10 @@ func streamCopyFile(srcPath, dstPath string) error {
 	if _, err := io.Copy(dst, src); err != nil {
 		_ = dst.Close()
 		return fmt.Errorf("copy %q → %q: %w", srcPath, dstPath, err)
+	}
+	if err := dst.Sync(); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("sync dst %q: %w", dstPath, err)
 	}
 	if err := dst.Close(); err != nil {
 		return fmt.Errorf("close dst %q: %w", dstPath, err)

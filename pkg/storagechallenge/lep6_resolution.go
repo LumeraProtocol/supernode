@@ -23,7 +23,7 @@ import (
 // pinned chain commit. The supernode result buffer must self-throttle to this
 // cap before handing results to the host reporter — see
 // supernode/storage_challenge/result_buffer.go.
-const MaxStorageProofResultsPerReport = 16
+const MaxStorageProofResultsPerReport = audittypes.MaxStorageProofResultsPerReport
 
 // ErrUnspecifiedArtifactClass is returned when a caller passes the zero/UNSPECIFIED
 // StorageProofArtifactClass to a resolver that requires a concrete class.

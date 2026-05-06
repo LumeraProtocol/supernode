@@ -8,6 +8,12 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 )
 
+func TestMaxStorageProofResultsPerReportTracksChainConstant(t *testing.T) {
+	if MaxStorageProofResultsPerReport != audittypes.MaxStorageProofResultsPerReport {
+		t.Fatalf("MaxStorageProofResultsPerReport drifted from chain constant: got %d want %d", MaxStorageProofResultsPerReport, audittypes.MaxStorageProofResultsPerReport)
+	}
+}
+
 func TestResolveArtifactCount_Index_Symbol_Unspecified(t *testing.T) {
 	meta := &actiontypes.CascadeMetadata{
 		RqIdsIc:  7,

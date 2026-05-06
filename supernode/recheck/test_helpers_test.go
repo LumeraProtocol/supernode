@@ -55,17 +55,19 @@ func (m *memoryStore) RecordRecheckSubmission(_ context.Context, epochID uint64,
 	return nil
 }
 func (m *memoryStore) RecordRecheckAttemptFailure(_ context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error {
-	m.failures[failureKey(epochID, ticketID)]++
+	m.failures[failureKey(epochID, ticketID, targetAccount)]++
 	return nil
 }
-func (m *memoryStore) HasRecheckAttemptFailureBudgetExceeded(_ context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error) {
-	return maxAttempts > 0 && m.failures[failureKey(epochID, ticketID)] >= maxAttempts, nil
+func (m *memoryStore) HasRecheckAttemptFailureBudgetExceeded(_ context.Context, epochID uint64, ticketID, targetAccount string, maxAttempts int) (bool, error) {
+	return maxAttempts > 0 && m.failures[failureKey(epochID, ticketID, targetAccount)] >= maxAttempts, nil
 }
 func (m *memoryStore) PurgeExpiredRecheckAttemptFailures(_ context.Context) error { return nil }
 func key(epochID uint64, ticketID, targetAccount string) string {
 	return fmt.Sprintf("%d/%s/%s", epochID, ticketID, targetAccount)
 }
-func failureKey(epochID uint64, ticketID string) string { return fmt.Sprintf("%d/%s", epochID, ticketID) }
+func failureKey(epochID uint64, ticketID, targetAccount string) string {
+	return fmt.Sprintf("%d/%s/%s", epochID, ticketID, targetAccount)
+}
 
 type recordingAuditMsg struct {
 	calls []submitCall

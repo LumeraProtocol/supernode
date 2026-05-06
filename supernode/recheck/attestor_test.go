@@ -103,3 +103,9 @@ func TestAttestor_RejectsEmptyRequiredFieldsBeforeTx(t *testing.T) {
 	require.Error(t, a.Submit(ctx, candidate, result))
 	require.Empty(t, msg.calls)
 }
+
+func TestValidRecheckResultClassAcceptsHashMismatch(t *testing.T) {
+	if !validRecheckResultClass(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH) {
+		t.Fatal("HASH_MISMATCH must pass local validation because Lumera chain accepts it for recheck evidence")
+	}
+}

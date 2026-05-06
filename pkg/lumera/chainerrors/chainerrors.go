@@ -16,12 +16,12 @@
 //
 // The predicates here:
 //
-//   1. Prefer typed sentinel matching via errors.Is.
-//   2. Fall through to gRPC status codes for query-side rejections.
-//   3. Keep an English-substring fallback so we remain correct against any
-//      currently-deployed chain build whose error path doesn't preserve the
-//      typed sentinel through the wire (defense-in-depth, removable once
-//      every chain build in production guarantees end-to-end ABCIError).
+//  1. Prefer typed sentinel matching via errors.Is.
+//  2. Fall through to gRPC status codes for query-side rejections.
+//  3. Keep an English-substring fallback so we remain correct against any
+//     currently-deployed chain build whose error path doesn't preserve the
+//     typed sentinel through the wire (defense-in-depth, removable once
+//     every chain build in production guarantees end-to-end ABCIError).
 //
 // IsTransientGrpc is the safety valve: any path that classifies an error as
 // "definitely a chain-side reject" (and would therefore destructively clean
@@ -69,6 +69,23 @@ func IsHealOpInvalidState(err error) bool {
 // matched any error containing "not found" (gRPC "block N not found", codec
 // lookup miss, key-not-found inside Cosmos SDK), which led to destructive
 // cleanup on transient query failures.
+
+// IsHealOpPastDeadline reports whether err is the chain-side invalid-state
+// rejection for a heal-op whose deadline has already passed. As of Lumera
+// chain x/audit/v1/types/errors.go there is no dedicated past-deadline
+// sentinel; the tx path uses ErrHealOpInvalidState for several heal-op
+// rejections. Keep this predicate phrase-anchored so callers can short-circuit
+// deadline rejects without treating every invalid-state error as expired.
+func IsHealOpPastDeadline(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return errors.Is(err, audittypes.ErrHealOpInvalidState) &&
+		strings.Contains(msg, "heal op") &&
+		strings.Contains(msg, "deadline")
+}
+
 func IsHealOpNotFound(err error) bool {
 	if err == nil {
 		return false

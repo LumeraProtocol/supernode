@@ -433,6 +433,9 @@ func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
 	if _, err := db.Exec(createRecheckAttemptFailures); err != nil {
 		return nil, fmt.Errorf("cannot create recheck_attempt_failures: %w", err)
 	}
+	if err := migrateRecheckAttemptFailuresPK(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("migrate recheck_attempt_failures PK: %w", err)
+	}
 	if _, err := db.Exec(createRecheckAttemptFailuresExpiresIndex); err != nil {
 		return nil, fmt.Errorf("cannot create recheck_attempt_failures expires index: %w", err)
 	}
