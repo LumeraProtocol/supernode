@@ -128,7 +128,7 @@ func newHandlerHarness(t *testing.T, identity string, op *handlerOp, body []byte
 		Status:                    audittypes.HealOpStatus_HEAL_OP_STATUS_HEALER_REPORTED,
 		ResultHash:                hash,
 	}}
-	srv, err := NewServer(identity, root, &handlerLumera{audit: a}, nil)
+	srv, err := NewServerForTest(identity, root, &handlerLumera{audit: a}, nil)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

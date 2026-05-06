@@ -25,9 +25,14 @@ type LEP6HealQueries interface {
 	// RecordHealClaim persists a submitted MsgClaimHealComplete for restart-time
 	// dedup. Returns ErrLEP6ClaimAlreadyRecorded if the row already exists.
 	RecordHealClaim(ctx context.Context, healOpID uint64, ticketID, manifestHash, stagingDir string) error
-	// HasHealClaim reports whether RecordHealClaim has been called for this
-	// heal_op_id. Used by the dispatcher to skip submission on restart.
+	// HasHealClaim reports whether a SUBMITTED claim row exists for
+	// healOpID. Used by the dispatcher to skip resubmission on restart.
+	// Pending rows are excluded — see HasPendingHealClaim.
 	HasHealClaim(ctx context.Context, healOpID uint64) (bool, error)
+	// HasPendingHealClaim reports whether a pre-staged `pending` row exists
+	// for healOpID — a crash mid-submit left the row behind. Restart path
+	// uses this to drive a reconcile flow via GetHealOp. Wave 2 / C5 fix.
+	HasPendingHealClaim(ctx context.Context, healOpID uint64) (bool, error)
 	// GetHealClaim returns the persisted claim row (or sql.ErrNoRows). The
 	// finalizer reads staging_dir from this row when promoting a heal-op
 	// from HEALER_REPORTED to VERIFIED → publish.
@@ -47,10 +52,14 @@ type LEP6HealQueries interface {
 	DeletePendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) error
 	// RecordHealVerification persists a submitted MsgSubmitHealVerification.
 	RecordHealVerification(ctx context.Context, healOpID uint64, verifierAccount string, verified bool, verificationHash string) error
-	// HasHealVerification reports whether the (heal_op_id, verifier_account)
-	// row exists. Verifier dispatch uses this to skip resubmission on
-	// restart.
+	// HasHealVerification reports whether a SUBMITTED row exists for the
+	// (heal_op_id, verifier_account) tuple. Verifier dispatch uses this
+	// to skip resubmission on restart; pending rows are excluded — see
+	// HasPendingHealVerification.
 	HasHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) (bool, error)
+	// HasPendingHealVerification reports whether a pre-staged `pending`
+	// row exists for (heal_op_id, verifier_account). Wave 2 / C5 fix.
+	HasPendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) (bool, error)
 }
 
 // HealClaimRecord is the row shape for heal_claims_submitted.
@@ -129,9 +138,37 @@ func (s *SQLiteStore) DeletePendingHealClaim(ctx context.Context, healOpID uint6
 	return err
 }
 
-// HasHealClaim — see LEP6HealQueries.HasHealClaim.
+// HasHealClaim returns true only when a SUBMITTED claim row exists for
+// healOpID. Pending rows from an interrupted submit are intentionally
+// excluded so the dispatcher's restart path can detect them via
+// HasPendingHealClaim and run the resume reconcile flow (Wave 2 / C5 fix).
+//
+// Before Wave 2 this returned true for any status, which caused a
+// pending-row left over from a crash mid-submit to permanently block
+// fresh dispatch — chain stayed SCHEDULED, finalizer never fired,
+// heal-op silently expired and the supernode was penalized.
 func (s *SQLiteStore) HasHealClaim(ctx context.Context, healOpID uint64) (bool, error) {
-	const stmt = `SELECT 1 FROM heal_claims_submitted WHERE heal_op_id = ? LIMIT 1`
+	const stmt = `SELECT 1 FROM heal_claims_submitted WHERE heal_op_id = ? AND status = 'submitted' LIMIT 1`
+	var x int
+	err := s.db.QueryRowContext(ctx, stmt, healOpID).Scan(&x)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// HasPendingHealClaim reports whether a `pending` claim row exists for
+// healOpID — meaning a previous tick pre-staged the row but did not yet
+// confirm chain acceptance (or crashed between submit and persist).
+// Restart-path callers use this to drive a reconcile via GetHealOp instead
+// of either skipping the op forever or blindly resubmitting.
+//
+// Wave 2 / C5 fix.
+func (s *SQLiteStore) HasPendingHealClaim(ctx context.Context, healOpID uint64) (bool, error) {
+	const stmt = `SELECT 1 FROM heal_claims_submitted WHERE heal_op_id = ? AND status = 'pending' LIMIT 1`
 	var x int
 	err := s.db.QueryRowContext(ctx, stmt, healOpID).Scan(&x)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -212,9 +249,27 @@ func (s *SQLiteStore) DeletePendingHealVerification(ctx context.Context, healOpI
 	return err
 }
 
-// HasHealVerification — see LEP6HealQueries.HasHealVerification.
+// HasHealVerification reports whether a SUBMITTED verifier row exists for
+// (healOpID, verifierAccount). Pending rows from an interrupted submit are
+// excluded — Wave 2 / C5 fix mirroring HasHealClaim.
 func (s *SQLiteStore) HasHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) (bool, error) {
-	const stmt = `SELECT 1 FROM heal_verifications_submitted WHERE heal_op_id = ? AND verifier_account = ? LIMIT 1`
+	const stmt = `SELECT 1 FROM heal_verifications_submitted WHERE heal_op_id = ? AND verifier_account = ? AND status = 'submitted' LIMIT 1`
+	var x int
+	err := s.db.QueryRowContext(ctx, stmt, healOpID, verifierAccount).Scan(&x)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// HasPendingHealVerification reports whether a `pending` verifier row
+// exists for (healOpID, verifierAccount) — the verifier counterpart to
+// HasPendingHealClaim. Wave 2 / C5 fix.
+func (s *SQLiteStore) HasPendingHealVerification(ctx context.Context, healOpID uint64, verifierAccount string) (bool, error) {
+	const stmt = `SELECT 1 FROM heal_verifications_submitted WHERE heal_op_id = ? AND verifier_account = ? AND status = 'pending' LIMIT 1`
 	var x int
 	err := s.db.QueryRowContext(ctx, stmt, healOpID, verifierAccount).Scan(&x)
 	if errors.Is(err, sql.ErrNoRows) {

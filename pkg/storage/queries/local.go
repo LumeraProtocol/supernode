@@ -15,4 +15,5 @@ type LocalStoreInterface interface {
 	HealthCheckChallengeQueries
 	LEP6HealQueries
 	RecheckQueries
+	StorageChallengeStateQueries
 }

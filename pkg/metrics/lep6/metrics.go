@@ -20,6 +20,8 @@ import (
 type MetricsSnapshot struct {
 	// Storage challenge / dispatcher — LEP-6 §§9-12.
 	DispatchResultsTotal             map[string]uint64 // result_class
+	DispatchSignFailuresTotal        map[string]uint64 // context (e.g. PASS, NO_ELIGIBLE)
+	DispatchInternalFailuresTotal    map[string]uint64 // pre-derivation stage label
 	DispatchThrottledTotal           map[string]uint64 // policy
 	DispatchEpochDurationMillisTotal map[string]uint64 // role
 	DispatchEpochDurationMillisMax   map[string]uint64 // role
@@ -118,6 +120,8 @@ func (c *counterMap) reset() {
 
 var metrics = struct {
 	dispatchResults          counterMap
+	dispatchSignFailures     counterMap
+	dispatchInternalFailures counterMap
 	dispatchThrottled        counterMap
 	dispatchEpochMillisTotal counterMap
 	dispatchEpochMillisMax   counterMap
@@ -144,6 +148,8 @@ var metrics = struct {
 // Reset clears all counters/gauges. It is intended for tests.
 func Reset() {
 	metrics.dispatchResults.reset()
+	metrics.dispatchSignFailures.reset()
+	metrics.dispatchInternalFailures.reset()
 	metrics.dispatchThrottled.reset()
 	metrics.dispatchEpochMillisTotal.reset()
 	metrics.dispatchEpochMillisMax.reset()
@@ -169,6 +175,8 @@ func Reset() {
 func Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
 		DispatchResultsTotal:                 metrics.dispatchResults.snapshot(),
+		DispatchSignFailuresTotal:            metrics.dispatchSignFailures.snapshot(),
+		DispatchInternalFailuresTotal:        metrics.dispatchInternalFailures.snapshot(),
 		DispatchThrottledTotal:               metrics.dispatchThrottled.snapshot(),
 		DispatchEpochDurationMillisTotal:     metrics.dispatchEpochMillisTotal.snapshot(),
 		DispatchEpochDurationMillisMax:       metrics.dispatchEpochMillisMax.snapshot(),
@@ -192,6 +200,8 @@ func Snapshot() MetricsSnapshot {
 }
 
 func IncDispatchResult(resultClass string) { metrics.dispatchResults.inc(resultClass, 1) }
+func IncDispatchSignFailure(context string) { metrics.dispatchSignFailures.inc(context, 1) }
+func IncDispatchInternalFailure(stage string) { metrics.dispatchInternalFailures.inc(stage, 1) }
 func IncDispatchThrottled(policy string, dropped int) {
 	if dropped > 0 {
 		metrics.dispatchThrottled.inc(policy, uint64(dropped))

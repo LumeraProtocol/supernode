@@ -61,6 +61,7 @@ import (
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
+	query "github.com/cosmos/cosmos-sdk/types/query"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -75,6 +76,12 @@ const (
 	defaultVerifierFetchAttempts      = 3
 	defaultVerifierBackoffBase        = 2 * time.Second
 	defaultAuditQueryTimeout          = 10 * time.Second
+	// defaultDispatchOpTimeout caps the wall time any single per-op
+	// dispatcher goroutine (healer/verifier/publisher) may run before its
+	// derived ctx cancels. Wave 2 / M2 fix — prevents a wedged peer fetch
+	// or hung RaptorQ from holding its semaphore slot + inFlight key
+	// forever.
+	defaultDispatchOpTimeout = 15 * time.Minute
 )
 
 // Config captures supernode-binary-owned tunables for the LEP-6 heal runtime.
@@ -105,6 +112,12 @@ type Config struct {
 	// other roles (especially verifier dispatch while a healer-reported op is
 	// waiting on quorum before deadline).
 	AuditQueryTimeout time.Duration
+
+	// DispatchOpTimeout is a hard ceiling on each per-op goroutine
+	// (healer reconstruct+claim, verifier fetch+submit, publisher).
+	// Wave 2 / M2 fix — prevents semaphore-slot/inFlight-key leak on a
+	// wedged peer fetch or hung RaptorQ. 0 → defaultDispatchOpTimeout.
+	DispatchOpTimeout time.Duration
 
 	// KeyName is the supernode's keyring key used to sign claim/verification
 	// txs. Must match the on-chain HealerSupernodeAccount /
@@ -144,6 +157,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.AuditQueryTimeout <= 0 {
 		c.AuditQueryTimeout = defaultAuditQueryTimeout
+	}
+	if c.DispatchOpTimeout <= 0 {
+		c.DispatchOpTimeout = defaultDispatchOpTimeout
 	}
 	return c
 }
@@ -278,15 +294,23 @@ func (s *Service) tick(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mode gate: %w", err)
 	}
-	if skip {
-		return nil
+	if !skip {
+		// Mode-gated phases — chain creates no fresh heal-ops in
+		// UNSPECIFIED, so dispatching healer/verifier work would be
+		// a no-op anyway.
+		if err := s.dispatchHealerOps(ctx); err != nil {
+			logtrace.Warn(ctx, "self_healing(LEP-6): dispatch healer ops", logtrace.Fields{logtrace.FieldError: err.Error()})
+		}
+		if err := s.dispatchVerifierOps(ctx); err != nil {
+			logtrace.Warn(ctx, "self_healing(LEP-6): dispatch verifier ops", logtrace.Fields{logtrace.FieldError: err.Error()})
+		}
 	}
-	if err := s.dispatchHealerOps(ctx); err != nil {
-		logtrace.Warn(ctx, "self_healing(LEP-6): dispatch healer ops", logtrace.Fields{logtrace.FieldError: err.Error()})
-	}
-	if err := s.dispatchVerifierOps(ctx); err != nil {
-		logtrace.Warn(ctx, "self_healing(LEP-6): dispatch verifier ops", logtrace.Fields{logtrace.FieldError: err.Error()})
-	}
+	// M7 fix: finalizer runs ALWAYS, even when modeGate says skip.
+	// Pre-existing pending claim rows + staging dirs from a prior run
+	// (or from a governance rollback to UNSPECIFIED while in-flight ops
+	// were live) must still be drained — otherwise staging dirs leak
+	// forever after rollback. Finalizer is read-mostly w.r.t. chain
+	// (GetHealOp queries) so it doesn't generate work in UNSPECIFIED.
 	if err := s.dispatchFinalizer(ctx); err != nil {
 		logtrace.Warn(ctx, "self_healing(LEP-6): dispatch finalizer", logtrace.Fields{logtrace.FieldError: err.Error()})
 	}
@@ -341,9 +365,37 @@ func (s *Service) dispatchHealerOps(ctx context.Context) error {
 			s.inFlight.Delete(key)
 			continue
 		}
+		// C5 fix: if a pending row exists from an interrupted previous
+		// tick (crash between RecordPendingHealClaim and chain ack),
+		// HasHealClaim above returns false (submitted-only). Run the
+		// resume-reconcile path BEFORE attempting fresh reconstruct so
+		// we don't waste RaptorQ + bandwidth re-rebuilding bytes the
+		// chain may have already accepted.
+		hasPending, perr := s.store.HasPendingHealClaim(ctx, op.HealOpId)
+		if perr != nil {
+			s.inFlight.Delete(key)
+			logtrace.Warn(ctx, "self_healing(LEP-6): HasPendingHealClaim", logtrace.Fields{logtrace.FieldError: perr.Error(), "heal_op_id": op.HealOpId})
+			continue
+		}
+		if hasPending {
+			go func(op audittypes.HealOp, key string) {
+				defer s.inFlight.Delete(key)
+				if err := s.resumePendingHealClaim(ctx, op); err != nil {
+					logtrace.Warn(ctx, "self_healing(LEP-6): resumePendingHealClaim", logtrace.Fields{
+						logtrace.FieldError: err.Error(),
+						"heal_op_id":        op.HealOpId,
+					})
+				}
+			}(op, key)
+			continue
+		}
 		go func(op audittypes.HealOp, key string) {
 			defer s.inFlight.Delete(key)
-			if err := s.reconstructAndClaim(ctx, op); err != nil {
+			// M2 fix: bound the per-op goroutine so a wedged
+			// reconstruct or hung RaptorQ releases its semaphore slot.
+			opCtx, cancel := s.dispatchOpContext(ctx)
+			defer cancel()
+			if err := s.reconstructAndClaim(opCtx, op); err != nil {
 				logtrace.Warn(ctx, "self_healing(LEP-6): reconstructAndClaim", logtrace.Fields{
 					logtrace.FieldError: err.Error(),
 					"heal_op_id":        op.HealOpId,
@@ -394,14 +446,35 @@ func (s *Service) dispatchVerifierOps(ctx context.Context) error {
 			s.inFlight.Delete(key)
 			continue
 		}
+		// C5 fix: detect a stranded `pending` verifier row from a crash
+		// mid-submit. The next tick must retry; we cannot just leave the
+		// row stuck or quorum may fail.
+		hasPending, perr := s.store.HasPendingHealVerification(ctx, op.HealOpId, s.identity)
+		if perr != nil {
+			s.inFlight.Delete(key)
+			logtrace.Warn(ctx, "self_healing(LEP-6): HasPendingHealVerification", logtrace.Fields{logtrace.FieldError: perr.Error(), "heal_op_id": op.HealOpId})
+			continue
+		}
+		if hasPending {
+			// Best-effort: drop the stale pending row so the next
+			// re-attempt below proceeds normally. Chain-side dedup
+			// (ErrHealVerificationExists) absorbs any duplicate that
+			// did get through.
+			if delErr := s.store.DeletePendingHealVerification(ctx, op.HealOpId, s.identity); delErr != nil {
+				logtrace.Warn(ctx, "self_healing(LEP-6): drop stale pending verification", logtrace.Fields{logtrace.FieldError: delErr.Error(), "heal_op_id": op.HealOpId})
+			}
+		}
 		go func(op audittypes.HealOp, key string) {
 			defer s.inFlight.Delete(key)
-			logtrace.Info(ctx, "self_healing(LEP-6): verifier dispatch start", logtrace.Fields{
+			// M2 fix: bound per-op verifier goroutine.
+			opCtx, cancel := s.dispatchOpContext(ctx)
+			defer cancel()
+			logtrace.Info(opCtx, "self_healing(LEP-6): verifier dispatch start", logtrace.Fields{
 				"identity":   s.identity,
 				"heal_op_id": op.HealOpId,
 				"ticket_id":  op.TicketId,
 			})
-			if err := s.verifyAndSubmit(ctx, op); err != nil {
+			if err := s.verifyAndSubmit(opCtx, op); err != nil {
 				logtrace.Warn(ctx, "self_healing(LEP-6): verifyAndSubmit", logtrace.Fields{
 					logtrace.FieldError: err.Error(),
 					"heal_op_id":        op.HealOpId,
@@ -433,7 +506,10 @@ func (s *Service) dispatchFinalizer(ctx context.Context) error {
 		}
 		go func(claim queries.HealClaimRecord, key string) {
 			defer s.inFlight.Delete(key)
-			if err := s.finalizeClaim(ctx, claim); err != nil {
+			// M2 fix: bound per-op finalizer goroutine.
+			opCtx, cancel := s.dispatchOpContext(ctx)
+			defer cancel()
+			if err := s.finalizeClaim(opCtx, claim); err != nil {
 				logtrace.Warn(ctx, "self_healing(LEP-6): finalizeClaim", logtrace.Fields{
 					logtrace.FieldError: err.Error(),
 					"heal_op_id":        claim.HealOpID,
@@ -444,24 +520,57 @@ func (s *Service) dispatchFinalizer(ctx context.Context) error {
 	return nil
 }
 
-// listOps wraps the paginated audit query. Returns a flattened slice.
+// listOps wraps the paginated audit query. Walks pagination.NextKey until
+// exhausted (H2 fix — previous nil-pagination call dropped any heal-op past
+// the SDK default page size of 100, silently). A hard ceiling of
+// maxHealOpListPages prevents runaway loops if a buggy chain build never
+// returns an empty NextKey.
 func (s *Service) listOps(ctx context.Context, status audittypes.HealOpStatus) ([]audittypes.HealOp, error) {
-	queryCtx, cancel := s.auditQueryContext(ctx)
-	defer cancel()
-	resp, err := s.lumera.Audit().GetHealOpsByStatus(queryCtx, status, nil)
-	if err != nil {
-		return nil, err
+	const maxHealOpListPages = 100
+	const pageLimit uint64 = 100
+	var (
+		all     []audittypes.HealOp
+		pageKey []byte
+	)
+	for page := 0; page < maxHealOpListPages; page++ {
+		queryCtx, cancel := s.auditQueryContext(ctx)
+		resp, err := s.lumera.Audit().GetHealOpsByStatus(queryCtx, status, &query.PageRequest{Key: pageKey, Limit: pageLimit})
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			return all, nil
+		}
+		all = append(all, resp.HealOps...)
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			return all, nil
+		}
+		pageKey = resp.Pagination.NextKey
 	}
-	if resp == nil {
-		return nil, nil
-	}
-	return resp.HealOps, nil
+	logtrace.Warn(ctx, "self_healing(LEP-6): listOps hit max-pages ceiling; results truncated", logtrace.Fields{
+		"status":    status.String(),
+		"max_pages": maxHealOpListPages,
+		"collected": len(all),
+	})
+	return all, nil
 }
 
 func (s *Service) auditQueryContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	timeout := s.cfg.AuditQueryTimeout
 	if timeout <= 0 {
 		timeout = defaultAuditQueryTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+// dispatchOpContext derives a per-op-goroutine ctx with the configured
+// hard ceiling so a wedged reconstruct/fetch/publish releases its
+// semaphore slot + inFlight key. Wave 2 / M2 fix.
+func (s *Service) dispatchOpContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := s.cfg.DispatchOpTimeout
+	if timeout <= 0 {
+		timeout = defaultDispatchOpTimeout
 	}
 	return context.WithTimeout(ctx, timeout)
 }

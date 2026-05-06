@@ -82,6 +82,19 @@ const (
 	// LEP6ArtifactClassRollModulus is the divisor for the §10 class roll
 	// (0..1 -> INDEX, 2..9 -> SYMBOL).
 	LEP6ArtifactClassRollModulus = 10
+
+	// MaxCompoundRanges caps the number of ranges a single GetCompoundProof
+	// call may request. The LEP-6 §11 spec value is k=4; we accept up to 4x
+	// that to leave headroom for chain-param tweaks while bounding DoS amplification.
+	MaxCompoundRanges = 16
+	// MaxCompoundRangeLenBytes caps the per-range length on the recipient
+	// side. Spec is 256 bytes; cap is 4x to bound DoS amplification while
+	// tolerating chain-param drift.
+	MaxCompoundRangeLenBytes = 4 * LEP6CompoundRangeLenBytes
+	// MaxCompoundAggregateBytes caps the total bytes any single
+	// GetCompoundProof response may serve. Spec aggregate is k*range_len = 1 KiB;
+	// the 16 KiB cap bounds bulk-exfil even under chain-param drift.
+	MaxCompoundAggregateBytes = 16 * 1024
 	// LEP6ArtifactClassIndexCutoff is exclusive upper bound for INDEX bucket
 	// (roll < cutoff -> INDEX).
 	LEP6ArtifactClassIndexCutoff = 2
@@ -417,9 +430,20 @@ func SelectTicketForBucket(eligibleTicketIDs []string, excluded map[string]struc
 //	class_roll = SHA-256(seed || 0x00 || target || 0x00 || ticket_id || 0x00 || "artifact_class")[:8] (big-endian uint64) mod 10
 //	class_roll < 2 -> INDEX, else SYMBOL
 //
-// If the chosen class has zero artifacts, the function falls back
-// deterministically to the other class. If neither class has any artifacts,
-// returns UNSPECIFIED — the caller should record NO_ELIGIBLE_TICKET.
+// If the rolled class has zero artifacts, returns UNSPECIFIED — the caller
+// MUST emit NO_ELIGIBLE_TICKET for that (target, bucket) slot. Cross-class
+// fallback is intentionally NOT performed: the chain does not mirror a
+// supernode-side swap (see lumera@v1.12.0
+// x/audit/v1/keeper/msg_submit_epoch_report_storage_proofs.go:120-128 — chain
+// only validates that ArtifactClass is INDEX or SYMBOL and that
+// (class, ordinal) is consistent with the anchored count for that ticket; it
+// does not re-derive the class roll). Per LEP-6 §14, the artifact class
+// affects D/N delta routing, so a supernode-side swap would land deltas in
+// the wrong scoring bucket relative to a peer that did not swap.
+//
+// LEP-6 review (Matee, 2026-05-06) — H6: emitting NO_ELIGIBLE_TICKET is the
+// safer, deterministically reproducible result; chain has consistency checks
+// for NO_ELIGIBLE that still surface real coverage gaps.
 func SelectArtifactClass(seed []byte, target, ticketID string, indexCount, symbolCount uint32) audittypes.StorageProofArtifactClass {
 	if indexCount == 0 && symbolCount == 0 {
 		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
@@ -431,12 +455,12 @@ func SelectArtifactClass(seed []byte, target, ticketID string, indexCount, symbo
 		if indexCount > 0 {
 			return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX
 		}
-		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
+		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
 	}
 	if symbolCount > 0 {
 		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
 	}
-	return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX
+	return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
 }
 
 // SelectArtifactOrdinal implements LEP-6 §10 step 2:

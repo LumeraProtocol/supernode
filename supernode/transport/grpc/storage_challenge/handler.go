@@ -17,6 +17,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/LumeraProtocol/supernode/v2/pkg/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"lukechampine.com/blake3"
 )
 
@@ -311,6 +313,12 @@ func (s *Server) GetCompoundProof(ctx context.Context, req *supernode.GetCompoun
 		resp.Error = "at least one range is required"
 		return resp, nil
 	}
+	// LEP-6 §11 hardening (C6): bound per-call range count to prevent DoS /
+	// bulk-exfil. Spec k=4; cap 16 leaves headroom for chain-param drift.
+	if len(req.Ranges) > deterministic.MaxCompoundRanges {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"too many ranges: got %d, max %d", len(req.Ranges), deterministic.MaxCompoundRanges)
+	}
 	var requestRangeLen uint64
 	for i, rng := range req.Ranges {
 		if rng == nil {
@@ -332,6 +340,17 @@ func (s *Server) GetCompoundProof(ctx context.Context, req *supernode.GetCompoun
 			resp.Error = fmt.Sprintf("range[%d] out of bounds: end (%d) > artifact_size (%d)", i, rng.End, req.ArtifactSize)
 			return resp, nil
 		}
+	}
+	// C6: per-range length cap (defends against giant single-range exfil).
+	if requestRangeLen > deterministic.MaxCompoundRangeLenBytes {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"range length %d exceeds cap %d", requestRangeLen, deterministic.MaxCompoundRangeLenBytes)
+	}
+	// C6: aggregate-bytes cap across all ranges (spec aggregate is 1 KiB; cap 16 KiB).
+	aggregate := requestRangeLen * uint64(len(req.Ranges))
+	if aggregate > uint64(deterministic.MaxCompoundAggregateBytes) {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"aggregate range bytes %d exceeds cap %d", aggregate, deterministic.MaxCompoundAggregateBytes)
 	}
 
 	if s.reader == nil {

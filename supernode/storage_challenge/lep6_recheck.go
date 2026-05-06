@@ -9,10 +9,17 @@ import (
 )
 
 // Recheck executes a LEP-6 RECHECK-bucket proof for the candidate and returns
-// the result shape expected by MsgSubmitStorageRecheckEvidence. It reuses the
-// same deterministic compound-proof machinery as the epoch dispatcher, but
-// writes into a temporary buffer so recheck results are never mixed into the
-// host_reporter epoch-report buffer.
+// the result shape expected by MsgSubmitStorageRecheckEvidence.
+//
+// LEP-6 review (Matee, 2026-05-06) — M11: previously this routine took
+// d.mu.Lock(), shadow-swapped d.buffer to a temporary buffer, ran the
+// RPC-bound dispatch, and swapped back — all under the dispatcher's main
+// lock. That meant a slow recheck RPC blocked the per-epoch dispatcher loop
+// (head-of-line blocking on d.mu) and risked losing dispatcher writes if
+// `Append` was called against a swapped buffer concurrently.
+//
+// Fix: thread the temporary buffer as a parameter to dispatchTicket so the
+// dispatcher's shared d.buffer is never mutated. No lock around the RPC.
 func (d *LEP6Dispatcher) Recheck(ctx context.Context, c recheck.Candidate) (recheck.RecheckResult, error) {
 	if !c.Valid() {
 		return recheck.RecheckResult{}, fmt.Errorf("invalid recheck candidate")
@@ -39,15 +46,10 @@ func (d *LEP6Dispatcher) Recheck(ctx context.Context, c recheck.Candidate) (rech
 		return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: epoch anchor not yet available for epoch %d", c.EpochID)
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	orig := d.buffer
+	// Per-call ephemeral buffer: dispatchTicket writes here, dispatcher's
+	// shared buffer is left alone. No global lock held during the RPC.
 	tmp := NewBuffer()
-	d.buffer = tmp
-	defer func() { d.buffer = orig }()
-
-	if err := d.dispatchTicket(ctx, c.EpochID, anchorResp.Anchor, params, c.TargetAccount, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
+	if err := d.dispatchTicket(ctx, tmp, c.EpochID, anchorResp.Anchor, params, c.TargetAccount, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
 		return recheck.RecheckResult{}, err
 	}
 	results := tmp.CollectResults(c.EpochID)

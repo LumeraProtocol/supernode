@@ -39,8 +39,13 @@ storage_challenge:
     enabled: false
     max_concurrent_targets: 4
     recipient_read_timeout: 30s
+    # LEP-6 review L6 (Matee, 2026-05-06): the recheck runtime is gated
+    # by both `storage_challenge.enabled` and `storage_challenge.lep6.enabled`
+    # (see supernode/cmd/start.go). Both parents are explicitly false in
+    # this fixture (e2e tests submit reports manually), so recheck must
+    # also be false — otherwise the new validator rejects the config.
     recheck:
-      enabled: true
+      enabled: false
       lookback_epochs: 7
       max_per_tick: 5
       tick_interval_ms: 60000

@@ -167,8 +167,26 @@ func (s *Service) Run(ctx context.Context) error {
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
 
+	// LEP-6 review M9 (Matee, 2026-05-06): seed lastRunEpoch from persisted
+	// state so a restart does not re-dispatch / re-submit the most-recent
+	// epoch. A read failure is logged and treated as a fresh start (the
+	// dispatcher loop will re-derive epoch eligibility from the current
+	// chain height before submitting).
 	var lastRunEpoch uint64
 	var lastRunOK bool
+	if s.store != nil {
+		if persisted, ok, err := s.store.GetStorageChallengeState(ctx, queries.LEP6LastSubmittedEpochKey); err != nil {
+			logtrace.Warn(ctx, "storage challenge: failed to read persisted last-submitted-epoch; starting fresh", logtrace.Fields{
+				logtrace.FieldError: err.Error(),
+			})
+		} else if ok {
+			lastRunEpoch = persisted
+			lastRunOK = true
+			logtrace.Info(ctx, "storage challenge: resumed from persisted last-submitted-epoch", logtrace.Fields{
+				"epoch_id": persisted,
+			})
+		}
+	}
 	var loggedAlreadyRanEpoch uint64
 	var loggedNotSelectedEpoch uint64
 	var loggedDisabledEpoch uint64
@@ -283,7 +301,24 @@ func (s *Service) Run(ctx context.Context) error {
 
 			lastRunEpoch = epochID
 			lastRunOK = true
+			s.persistLastRunEpoch(ctx, epochID)
 		}
+	}
+}
+
+// persistLastRunEpoch writes the dispatcher's last-completed epoch to the
+// supernode SQLite store so that a restart does not re-dispatch the same
+// epoch (LEP-6 review M9). Best-effort: a write failure is logged but does
+// not fail the tick — worst case we re-dispatch one epoch on the next start.
+func (s *Service) persistLastRunEpoch(ctx context.Context, epochID uint64) {
+	if s.store == nil {
+		return
+	}
+	if err := s.store.SetStorageChallengeState(ctx, queries.LEP6LastSubmittedEpochKey, epochID); err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to persist last-submitted-epoch", logtrace.Fields{
+			"epoch_id":          epochID,
+			logtrace.FieldError: err.Error(),
+		})
 	}
 }
 

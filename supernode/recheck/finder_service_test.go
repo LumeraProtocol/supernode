@@ -112,7 +112,7 @@ func TestService_TickModeGateAndSubmit(t *testing.T) {
 func TestService_TickSkipsRecheckWhenFailureBudgetExhausted(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryStore()
-	store.failures[key(10, "t")] = 2
+	store.failures[failureKey(10, "t")] = 2
 	msg := &recordingAuditMsg{}
 	a := &stubAudit{current: 10, mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL, reports: map[uint64]audittypes.EpochReport{10: {StorageProofResults: []*audittypes.StorageProofResult{resFrom("peer", "t", "target", "h", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH)}}}}
 	r := &stubRechecker{result: RecheckResult{TranscriptHash: "rh", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS}}

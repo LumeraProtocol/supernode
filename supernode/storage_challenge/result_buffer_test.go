@@ -65,14 +65,20 @@ func TestBuffer_BelowCap_ReturnsAllSortedDeterministically(t *testing.T) {
 	}
 }
 
-func TestBuffer_AboveCap_DropsNonRecentFirst(t *testing.T) {
+func TestBuffer_AboveCap_DropsByArrivalAndFairness(t *testing.T) {
+	// LEP-6 review H5 (Matee): drop policy is now arrival-order with
+	// (target, bucket) fairness, not "non-RECENT first by ticket_id lex".
+	// 10 RECENT (target A) + 8 OLD (target B) = 18, cap 16 → 2 drops.
+	// Both groups have size > 1 so phase-1 fairness drops one from the
+	// LARGEST group first, then re-evaluates. Group A starts at 10, group B
+	// at 8 → first drop is A's oldest (the very first appended). Now A=9,
+	// B=8 → next drop is A's oldest again. Result: A=8, B=8.
 	b := NewBuffer()
-	// 10 RECENT + 8 OLD = 18 total, cap 16 → drop 2 OLD oldest. Kept: 10 R + 6 O.
 	for i := 0; i < 10; i++ {
-		b.Append(7, mkResult(bucketRecent, fmt.Sprintf("recent-%02d", i)))
+		b.Append(7, mkResultForTarget(bucketRecent, fmt.Sprintf("recent-%02d", i), "tA"))
 	}
 	for i := 0; i < 8; i++ {
-		b.Append(7, mkResult(bucketOld, fmt.Sprintf("old-%02d", i)))
+		b.Append(7, mkResultForTarget(bucketOld, fmt.Sprintf("old-%02d", i), "tB"))
 	}
 	got := b.CollectResults(7)
 	if len(got) != 16 {
@@ -87,27 +93,32 @@ func TestBuffer_AboveCap_DropsNonRecentFirst(t *testing.T) {
 			nOld++
 		}
 	}
-	if nRecent != 10 || nOld != 6 {
-		t.Fatalf("want 10 RECENT + 6 OLD, got %d RECENT + %d OLD", nRecent, nOld)
+	// Fairness: largest group (RECENT/tA, 10) drops 2 oldest; OLD/tB (8) untouched.
+	if nRecent != 8 || nOld != 8 {
+		t.Fatalf("want 8 RECENT + 8 OLD (fairness), got %d RECENT + %d OLD", nRecent, nOld)
 	}
-	// The two oldest OLD entries by ticket_id ("old-00", "old-01") must be the dropped ones.
+	// The two oldest in the dropped group are recent-00 and recent-01.
 	for _, r := range got {
-		if r.TicketId == "old-00" || r.TicketId == "old-01" {
-			t.Fatalf("expected oldest OLD entries dropped; %q present", r.TicketId)
+		if r.TicketId == "recent-00" || r.TicketId == "recent-01" {
+			t.Fatalf("expected oldest entries from largest group dropped; %q present", r.TicketId)
 		}
 	}
 }
 
-func TestBuffer_AboveCap_OnlyRecent_DropsOldest(t *testing.T) {
+func TestBuffer_AboveCap_OnlyRecent_DropsOldestArrival(t *testing.T) {
+	// LEP-6 review H5: 20 RECENT all same (target,bucket) group → fairness
+	// phase drops oldest 4 by ARRIVAL ORDER. (Within a single group, arrival
+	// order is the only key — deterministic per challenger.)
 	b := NewBuffer()
-	// 20 RECENT, cap 16 → drop 4 oldest by ticket_id lex.
 	for i := 0; i < 20; i++ {
-		b.Append(9, mkResult(bucketRecent, fmt.Sprintf("r-%02d", i)))
+		b.Append(9, mkResultForTarget(bucketRecent, fmt.Sprintf("r-%02d", i), "t1"))
 	}
 	got := b.CollectResults(9)
 	if len(got) != 16 {
 		t.Fatalf("want 16 results, got %d", len(got))
 	}
+	// r-00..r-03 are oldest arrivals → dropped. r-04..r-19 survive.
+	// Final delivered slice is sorted by (Bucket, TicketId) → ASC ticket id.
 	want := []string{
 		"r-04", "r-05", "r-06", "r-07", "r-08", "r-09",
 		"r-10", "r-11", "r-12", "r-13", "r-14", "r-15",
@@ -243,55 +254,67 @@ func TestBuffer_FullModeAssignedTargetCoverageBelowCap(t *testing.T) {
 	}
 }
 
-// TestBuffer_OverCap_DropPolicyIsNotTargetAware pins the documented limitation
-// of the current throttle: "drop non-RECENT first" is target-blind, so an
-// assigned target's OLD entry CAN be dropped if the buffer ever exceeds 16.
-// This is acceptable today because the dispatcher cannot realistically push
-// the buffer over cap (chain assigns ≤1 target/epoch → ≤2 emissions). If this
-// invariant ever changes, this test will catch the silent regression and force
-// a target-aware throttle revision (see LEP-6 v3 plan §3 PR3 item 6, deferred
-// to PR-4 ownership for heal-op driven multi-target scenarios).
-func TestBuffer_OverCap_DropPolicyIsNotTargetAware(t *testing.T) {
-	const assignedTarget = "lumera1assignedtarget000000000000000000target"
-	const otherTarget = "lumera1other00000000000000000000000000other"
+// TestBuffer_OverCap_FairnessByTargetBucket pins the new H5 throttle policy:
+// when over cap, drop oldest from the LARGEST (target, bucket) group first
+// so a single noisy target cannot starve other targets.
+//
+// Setup: 14 RECENT for noisyTarget + 1 RECENT + 2 OLD for assignedTarget +
+// 1 OLD for fillerTarget = 18 total. Cap 16, must drop 2.
+//   - Largest group is (noisyTarget, RECENT)=14. Phase-1 drops oldest 2
+//     entries from this group. All other groups untouched.
+//   - assignedTarget's coverage (1 RECENT + 1 OLD) survives.
+func TestBuffer_OverCap_FairnessByTargetBucket(t *testing.T) {
+	const noisy = "lumera1noisy0000000000000000000000000000noisy"
+	const assigned = "lumera1assignedtarget000000000000000000target"
+	const filler = "lumera1other00000000000000000000000000other"
 
 	b := NewBuffer()
-	// 14 RECENT for unrelated target + 1 RECENT + 1 OLD + 1 OLD (filler) for
-	// assigned target = 17 total → throttle drops 1 non-RECENT (oldest by
-	// ticket_id lex). The assigned target's OLD entry is at risk if its
-	// ticket_id sorts earlier than the filler's.
 	for i := 0; i < 14; i++ {
-		b.Append(99, mkResultForTarget(bucketRecent, fmt.Sprintf("other-recent-%02d", i), otherTarget))
+		b.Append(99, mkResultForTarget(bucketRecent, fmt.Sprintf("noisy-recent-%02d", i), noisy))
 	}
-	b.Append(99, mkResultForTarget(bucketRecent, "assigned-recent-A", assignedTarget))
-	b.Append(99, mkResultForTarget(bucketOld, "assigned-old-A", assignedTarget))
-	b.Append(99, mkResultForTarget(bucketOld, "filler-old-zzz", otherTarget))
+	b.Append(99, mkResultForTarget(bucketRecent, "assigned-recent-A", assigned))
+	b.Append(99, mkResultForTarget(bucketOld, "assigned-old-A", assigned))
+	b.Append(99, mkResultForTarget(bucketOld, "assigned-old-B", assigned))
+	b.Append(99, mkResultForTarget(bucketOld, "filler-old-zzz", filler))
 
 	got := b.CollectResults(99)
 	if len(got) != 16 {
 		t.Fatalf("want 16 (cap), got %d", len(got))
 	}
 
-	// Document current behavior: dropped one OLD by lex order. Either
-	// "assigned-old-A" or "filler-old-zzz" survives — current "drop oldest
-	// non-RECENT by ticket_id lex" implementation drops "assigned-old-A"
-	// because it sorts before "filler-old-zzz". This is the behavior pin —
-	// if a future change makes throttle target-aware (preserve assigned-target
-	// coverage even over cap), update this test accordingly.
-	var assignedOldKept, fillerOldKept bool
+	// Both assignedTarget rows (1 RECENT + 2 OLD = 3 entries) must survive.
+	var assignedKept int
 	for _, r := range got {
-		switch r.TicketId {
-		case "assigned-old-A":
-			assignedOldKept = true
-		case "filler-old-zzz":
-			fillerOldKept = true
+		if r.TargetSupernodeAccount == assigned {
+			assignedKept++
 		}
 	}
-	if assignedOldKept {
-		t.Fatalf("throttle became target-aware (kept assigned-target OLD) — update test or note the policy change")
+	if assignedKept != 3 {
+		t.Fatalf("fairness violated: assigned target should retain all 3 entries, got %d", assignedKept)
 	}
-	if !fillerOldKept {
-		t.Fatalf("expected filler-old-zzz to survive (lex-greater non-RECENT survives drop-oldest policy); got dropped")
+	// Filler (single-entry group) must survive.
+	var fillerKept bool
+	for _, r := range got {
+		if r.TicketId == "filler-old-zzz" {
+			fillerKept = true
+		}
+	}
+	if !fillerKept {
+		t.Fatalf("fairness violated: single-entry filler group should survive")
+	}
+	// Noisy target should have lost exactly 2 entries (its two oldest:
+	// noisy-recent-00 and noisy-recent-01).
+	var noisyKept int
+	for _, r := range got {
+		if r.TargetSupernodeAccount == noisy {
+			noisyKept++
+			if r.TicketId == "noisy-recent-00" || r.TicketId == "noisy-recent-01" {
+				t.Fatalf("expected oldest noisy entries dropped; %q present", r.TicketId)
+			}
+		}
+	}
+	if noisyKept != 12 {
+		t.Fatalf("noisy target should keep 12 (14-2), got %d", noisyKept)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -252,13 +253,10 @@ func (task *CascadeRegistrationTask) stageArtefacts(ctx context.Context, staging
 	}
 	// Stage the reconstructed file bytes so the §19 healer-served-path
 	// transport can stream them to verifiers without re-running download +
-	// decode.
+	// decode. M5 fix: stream via io.Copy instead of loading the whole file
+	// into RAM (peak RAM was 2 × file_size at MaxConcurrentReconstructs=2).
 	if strings.TrimSpace(reconstructedFilePath) != "" {
-		src, err := os.ReadFile(reconstructedFilePath)
-		if err != nil {
-			return task.wrapErr(ctx, "failed to read reconstructed file for staging", err, lf)
-		}
-		if err := os.WriteFile(filepath.Join(stagingDir, stagedReconstructedFilename), src, 0o600); err != nil {
+		if err := streamCopyFile(reconstructedFilePath, filepath.Join(stagingDir, stagedReconstructedFilename)); err != nil {
 			return task.wrapErr(ctx, "failed to stage reconstructed file", err, lf)
 		}
 	}
@@ -343,13 +341,36 @@ func copyDirContents(srcDir, dstDir string) error {
 			}
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(srcDir, e.Name()))
-		if err != nil {
+		if err := streamCopyFile(filepath.Join(srcDir, e.Name()), filepath.Join(dstDir, e.Name())); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dstDir, e.Name()), b, 0o600); err != nil {
-			return err
-		}
+	}
+	return nil
+}
+
+// streamCopyFile copies src→dst via io.Copy, avoiding the os.ReadFile+
+// os.WriteFile pattern that loads the entire file into RAM. Used by the
+// LEP-6 §19 staging path where reconstructed files can be multi-GB and
+// the healer runs MaxConcurrentReconstructs in parallel. dst is created
+// 0o600 to match the existing staging permission convention.
+//
+// Wave 2 / M5 fix.
+func streamCopyFile(srcPath, dstPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("open src %q: %w", srcPath, err)
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open dst %q: %w", dstPath, err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("copy %q → %q: %w", srcPath, dstPath, err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close dst %q: %w", dstPath, err)
 	}
 	return nil
 }

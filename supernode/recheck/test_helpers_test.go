@@ -26,38 +26,46 @@ type memoryStore struct {
 func newMemoryStore() *memoryStore {
 	return &memoryStore{seen: map[string]bool{}, failures: map[string]int{}}
 }
-func (m *memoryStore) HasRecheckSubmission(_ context.Context, epochID uint64, ticketID string) (bool, error) {
-	return m.seen[key(epochID, ticketID)], nil
+func (m *memoryStore) HasRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount string) (bool, error) {
+	return m.seen[key(epochID, ticketID, targetAccount)], nil
 }
 func (m *memoryStore) RecordPendingRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
 	callSeq++
 	m.recordCallIndex = callSeq
-	m.seen[key(epochID, ticketID)] = true
+	k := key(epochID, ticketID, targetAccount)
+	if m.seen[k] {
+		// Match production SQLite ON CONFLICT DO NOTHING semantics.
+		return nil
+	}
+	m.seen[k] = true
 	return nil
 }
-func (m *memoryStore) MarkRecheckSubmissionSubmitted(_ context.Context, epochID uint64, ticketID string) error {
-	m.seen[key(epochID, ticketID)] = true
+func (m *memoryStore) MarkRecheckSubmissionSubmitted(_ context.Context, epochID uint64, ticketID, targetAccount string) error {
+	m.seen[key(epochID, ticketID, targetAccount)] = true
 	return nil
 }
-func (m *memoryStore) DeletePendingRecheckSubmission(_ context.Context, epochID uint64, ticketID string) error {
-	delete(m.seen, key(epochID, ticketID))
+func (m *memoryStore) DeletePendingRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount string) error {
+	delete(m.seen, key(epochID, ticketID, targetAccount))
 	return nil
 }
 func (m *memoryStore) RecordRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
 	callSeq++
 	m.recordCallIndex = callSeq
-	m.seen[key(epochID, ticketID)] = true
+	m.seen[key(epochID, ticketID, targetAccount)] = true
 	return nil
 }
 func (m *memoryStore) RecordRecheckAttemptFailure(_ context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error {
-	m.failures[key(epochID, ticketID)]++
+	m.failures[failureKey(epochID, ticketID)]++
 	return nil
 }
 func (m *memoryStore) HasRecheckAttemptFailureBudgetExceeded(_ context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error) {
-	return maxAttempts > 0 && m.failures[key(epochID, ticketID)] >= maxAttempts, nil
+	return maxAttempts > 0 && m.failures[failureKey(epochID, ticketID)] >= maxAttempts, nil
 }
 func (m *memoryStore) PurgeExpiredRecheckAttemptFailures(_ context.Context) error { return nil }
-func key(epochID uint64, ticketID string) string                                  { return fmt.Sprintf("%d/%s", epochID, ticketID) }
+func key(epochID uint64, ticketID, targetAccount string) string {
+	return fmt.Sprintf("%d/%s/%s", epochID, ticketID, targetAccount)
+}
+func failureKey(epochID uint64, ticketID string) string { return fmt.Sprintf("%d/%s", epochID, ticketID) }
 
 type recordingAuditMsg struct {
 	calls []submitCall

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 )
@@ -31,7 +31,15 @@ import (
 func (s *Service) finalizeClaim(ctx context.Context, claim queries.HealClaimRecord) error {
 	resp, err := s.lumera.Audit().GetHealOp(ctx, claim.HealOpID)
 	if err != nil {
-		if isChainHealOpNotFound(err) {
+		// Transient gRPC failures MUST NOT trigger destructive cleanup —
+		// Wave 0 fix for C4. The previous implementation matched any
+		// "not found" / "not_found" substring including gRPC NotFound on
+		// blocks, codec lookup misses, and key-not-found errors, all of
+		// which would wipe healer staging dirs.
+		if chainerrors.IsTransientGrpc(err) {
+			return fmt.Errorf("get heal op (transient, will retry): %w", err)
+		}
+		if chainerrors.IsHealOpNotFound(err) {
 			logtrace.Warn(ctx, "self_healing(LEP-6): heal-op not found on chain; cleaning abandoned claim", logtrace.Fields{
 				logtrace.FieldError: err.Error(),
 				"heal_op_id":        claim.HealOpID,
@@ -110,10 +118,9 @@ func (s *Service) cleanupClaim(ctx context.Context, claim queries.HealClaimRecor
 	return nil
 }
 
-func isChainHealOpNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "not found") || strings.Contains(msg, "not_found")
-}
+// (Wave 0): isChainHealOpNotFound helper removed; classification is
+// centralised in pkg/lumera/chainerrors.IsHealOpNotFound which uses typed
+// sentinel matching (audittypes.ErrHealOpNotFound) plus a discriminating
+// gRPC codes.NotFound + "heal op not found" anchor to avoid the broad
+// "not found" / "not_found" trap that previously caused destructive
+// cleanup on transient query failures (e.g. "block N not found").

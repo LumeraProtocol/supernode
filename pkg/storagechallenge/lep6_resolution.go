@@ -143,14 +143,29 @@ func ResolveArtifactSize(act *actiontypes.Action, meta *actiontypes.CascadeMetad
 		if meta.RqIdsMax == 0 {
 			return 0, errors.New("storagechallenge: INDEX size requested but RqIdsMax is zero")
 		}
+		// LEP-6 review M4: avoid regenerating the full INDEX file set per
+		// dispatch — cache the per-ordinal sizes keyed by the deterministic
+		// inputs to GenerateIndexFiles.
+		cacheKey := indexSizeKey(meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
+		if sizes := globalIndexSizeCache.get(cacheKey); sizes != nil {
+			if int(ordinal) >= len(sizes) {
+				return 0, fmt.Errorf("storagechallenge: INDEX ordinal %d out of range (cached %d sizes)", ordinal, len(sizes))
+			}
+			return sizes[ordinal], nil
+		}
 		_, files, err := cascadekit.GenerateIndexFiles(meta.Signatures, uint32(meta.RqIdsIc), uint32(meta.RqIdsMax))
 		if err != nil {
 			return 0, fmt.Errorf("storagechallenge: derive INDEX files: %w", err)
 		}
-		if int(ordinal) >= len(files) {
-			return 0, fmt.Errorf("storagechallenge: INDEX ordinal %d out of range (derived %d files)", ordinal, len(files))
+		sizes := make([]uint64, len(files))
+		for i := range files {
+			sizes[i] = uint64(len(files[i]))
 		}
-		return uint64(len(files[ordinal])), nil
+		globalIndexSizeCache.put(cacheKey, sizes)
+		if int(ordinal) >= len(sizes) {
+			return 0, fmt.Errorf("storagechallenge: INDEX ordinal %d out of range (derived %d files)", ordinal, len(sizes))
+		}
+		return sizes[ordinal], nil
 	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED:
 		return 0, ErrUnspecifiedArtifactClass
 	default:

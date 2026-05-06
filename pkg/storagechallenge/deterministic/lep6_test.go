@@ -291,20 +291,41 @@ func TestSelectArtifactClass_WeightedDistribution(t *testing.T) {
 	}
 }
 
-func TestSelectArtifactClass_FallbackWhenClassEmpty(t *testing.T) {
-	// indexCount=0 → must always return SYMBOL even when roll wants INDEX.
-	for i := 0; i < 100; i++ {
+func TestSelectArtifactClass_NoSwapWhenRolledClassEmpty(t *testing.T) {
+	// LEP-6 review H6: rolled class empty → UNSPECIFIED (caller must emit
+	// NO_ELIGIBLE_TICKET). No cross-class fallback — chain does not mirror
+	// such a swap, so swapping would corrupt N/R/D delta routing per §14.
+	indexCutoffMet, symbolCutoffMet := 0, 0
+	for i := 0; i < 200; i++ {
+		// indexCount=0 → INDEX rolls land on UNSPECIFIED; SYMBOL rolls land on SYMBOL.
 		c := SelectArtifactClass(chainSeed, "sn-target", "t-"+ifmt(i), 0, 50)
-		if c != audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL {
-			t.Fatalf("with indexCount=0, must fall back to SYMBOL; got %v", c)
+		switch c {
+		case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED:
+			indexCutoffMet++
+		case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
+			symbolCutoffMet++
+		default:
+			t.Fatalf("with indexCount=0, expected UNSPECIFIED or SYMBOL; got %v", c)
 		}
 	}
-	// symbolCount=0 → always INDEX.
-	for i := 0; i < 100; i++ {
+	if indexCutoffMet == 0 || symbolCutoffMet == 0 {
+		t.Fatalf("distribution sanity failed: index-roll-empty=%d symbol-roll-symbol=%d", indexCutoffMet, symbolCutoffMet)
+	}
+	// symbolCount=0 → SYMBOL rolls land on UNSPECIFIED; INDEX rolls land on INDEX.
+	indexCutoffMet, symbolCutoffMet = 0, 0
+	for i := 0; i < 200; i++ {
 		c := SelectArtifactClass(chainSeed, "sn-target", "t-"+ifmt(i), 50, 0)
-		if c != audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX {
-			t.Fatalf("with symbolCount=0, must fall back to INDEX; got %v", c)
+		switch c {
+		case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX:
+			indexCutoffMet++
+		case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED:
+			symbolCutoffMet++
+		default:
+			t.Fatalf("with symbolCount=0, expected INDEX or UNSPECIFIED; got %v", c)
 		}
+	}
+	if indexCutoffMet == 0 || symbolCutoffMet == 0 {
+		t.Fatalf("distribution sanity failed: index-roll-index=%d symbol-roll-empty=%d", indexCutoffMet, symbolCutoffMet)
 	}
 	// Both zero → UNSPECIFIED.
 	if c := SelectArtifactClass(chainSeed, "sn-target", "t1", 0, 0); c != audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED {

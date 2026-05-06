@@ -77,9 +77,30 @@ func hasYAMLKey(value *yaml.Node, key string) bool {
 	return false
 }
 
+// applyLEP6DefaultsAndValidate applies safe defaults to LEP-6 toggles and
+// runtime knobs, then runs validation.
+//
+// LEP-6 review C1 (Matee, 2026-05-06): the missing-block default for the
+// three LEP-6 toggles (storage_challenge.lep6.enabled,
+// storage_challenge.lep6.recheck.enabled, self_healing.enabled) is FALSE.
+// Pre-Wave-4 the missing-block default was TRUE, which silently auto-opted
+// every operator into LEP-6 on upgrade. Now an operator must explicitly
+// opt in via either an explicit `enabled: true` in their YAML or by relying
+// on `CreateDefaultConfig`, which writes the explicit toggles into the
+// generated supernode.yml. Operators who want their existing config to
+// pick up LEP-6 must add the toggles explicitly.
+//
+// Chain enforcement remains the protocol source of truth: even when these
+// toggles are TRUE, every LEP-6 service no-ops while
+// StorageTruthEnforcementMode is UNSPECIFIED (see e.g.
+// LEP6Dispatcher.DispatchEpoch and self_healing.Service.Run). The toggles
+// are only an operator-side opt-in switch.
 func (c *Config) applyLEP6DefaultsAndValidate() error {
+	// LEP-6 toggles: missing-block defaults to FALSE (C1).
+	// enabledSet=true means the YAML had an explicit `enabled:` key — keep
+	// the operator's value verbatim.
 	if !c.StorageChallengeConfig.LEP6.enabledSet {
-		c.StorageChallengeConfig.LEP6.Enabled = true
+		c.StorageChallengeConfig.LEP6.Enabled = false
 	}
 	if c.StorageChallengeConfig.LEP6.MaxConcurrentTargets == 0 {
 		c.StorageChallengeConfig.LEP6.MaxConcurrentTargets = DefaultLEP6MaxConcurrentTargets
@@ -90,7 +111,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 
 	recheck := &c.StorageChallengeConfig.LEP6.Recheck
 	if !recheck.enabledSet {
-		recheck.Enabled = true
+		recheck.Enabled = false
 	}
 	if recheck.LookbackEpochs == 0 {
 		recheck.LookbackEpochs = DefaultLEP6RecheckLookbackEpochs
@@ -109,7 +130,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 	}
 
 	if !c.SelfHealingConfig.enabledSet {
-		c.SelfHealingConfig.Enabled = true
+		c.SelfHealingConfig.Enabled = false
 	}
 	if c.SelfHealingConfig.PollIntervalMs == 0 {
 		c.SelfHealingConfig.PollIntervalMs = int(DefaultSelfHealingPollInterval / time.Millisecond)
@@ -186,6 +207,20 @@ func (c *Config) validateLEP6Config() error {
 	}
 	if sh.AuditQueryTimeoutMs < 0 {
 		return fmt.Errorf("LEP-6 config: self_healing.audit_query_timeout_ms must be >= 0")
+	}
+
+	// LEP-6 review L6 (Matee, 2026-05-06): structural consistency check —
+	// the recheck runtime is only spawned when storage_challenge.enabled AND
+	// storage_challenge.lep6.enabled are both true (see supernode/cmd/start.go).
+	// Catching this at config-load surfaces the dead block at startup
+	// rather than letting it silently no-op.
+	if lep6.Recheck.Enabled {
+		if !c.StorageChallengeConfig.Enabled {
+			return fmt.Errorf("LEP-6 config: storage_challenge.lep6.recheck.enabled=true requires storage_challenge.enabled=true (recheck runtime is gated by parent storage_challenge service)")
+		}
+		if !lep6.Enabled {
+			return fmt.Errorf("LEP-6 config: storage_challenge.lep6.recheck.enabled=true requires storage_challenge.lep6.enabled=true (recheck runtime is gated by parent LEP-6 dispatcher)")
+		}
 	}
 	return nil
 }

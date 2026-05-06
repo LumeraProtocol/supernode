@@ -8,10 +8,10 @@ import (
 )
 
 type RecheckQueries interface {
-	HasRecheckSubmission(ctx context.Context, epochID uint64, ticketID string) (bool, error)
+	HasRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount string) (bool, error)
 	RecordPendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error
-	MarkRecheckSubmissionSubmitted(ctx context.Context, epochID uint64, ticketID string) error
-	DeletePendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID string) error
+	MarkRecheckSubmissionSubmitted(ctx context.Context, epochID uint64, ticketID, targetAccount string) error
+	DeletePendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount string) error
 	RecordRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error
 	RecordRecheckAttemptFailure(ctx context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error
 	HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID string, maxAttempts int) (bool, error)

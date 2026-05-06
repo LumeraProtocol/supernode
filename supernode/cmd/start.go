@@ -76,6 +76,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
 		logtrace.Debug(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
+		// LEP-6 review C1 (Matee, 2026-05-06): the LEP-6 toggles default to
+		// FALSE on missing-block. If this operator upgraded without adding
+		// the toggles, surface a WARN so they can see they are out of policy
+		// before the chain enforcement mode flips to SOFT/FULL. Empty string
+		// means everything is opted in.
+		if advisory := appConfig.LEP6OperatorOptInAdvisory(); advisory != "" {
+			logtrace.Warn(ctx, advisory, logtrace.Fields{
+				"storage_challenge.lep6.enabled":         appConfig.StorageChallengeConfig.LEP6.Enabled,
+				"storage_challenge.lep6.recheck.enabled": appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled,
+				"self_healing.enabled":                   appConfig.SelfHealingConfig.Enabled,
+			})
+		}
+
 		// Initialize keyring
 		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
@@ -292,13 +305,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		if appConfig.SelfHealingConfig.Enabled {
 			pollInterval := time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond
 			fetchTimeout := time.Duration(appConfig.SelfHealingConfig.VerifierFetchTimeoutMs) * time.Millisecond
+			// LEP-6 review M1 (Matee, 2026-05-06): the configured staging
+			// dir may be relative (default "heal-staging"). Resolve it
+			// against appConfig.BaseDir so we don't end up writing to the
+			// process's working directory (e.g. "/heal-staging" if launched
+			// from "/").
+			stagingRoot := appConfig.GetFullPath(appConfig.SelfHealingConfig.StagingDir)
 			shCfg := selfHealingService.Config{
 				Enabled:                    true,
 				PollInterval:               pollInterval,
 				MaxConcurrentReconstructs:  appConfig.SelfHealingConfig.MaxConcurrentReconstructs,
 				MaxConcurrentVerifications: appConfig.SelfHealingConfig.MaxConcurrentVerifications,
 				MaxConcurrentPublishes:     appConfig.SelfHealingConfig.MaxConcurrentPublishes,
-				StagingRoot:                appConfig.SelfHealingConfig.StagingDir,
+				StagingRoot:                stagingRoot,
 				VerifierFetchTimeout:       fetchTimeout,
 				VerifierFetchAttempts:      appConfig.SelfHealingConfig.VerifierFetchAttempts,
 				VerifierBackoffBase:        time.Duration(appConfig.SelfHealingConfig.VerifierBackoffBaseMs) * time.Millisecond,
@@ -422,7 +441,13 @@ The supernode will connect to the Lumera network and begin participating in the 
 			}
 		}()
 		grpcServer.Close()
-		historyStore.CloseHistoryDB(context.Background())
+
+		// LEP-6 review M3 (Matee, 2026-05-06): historyStore.CloseHistoryDB
+		// MUST run AFTER all services have drained — otherwise late writes
+		// from heal-claim / heal-verification finalisers race against the
+		// closing SQLite handle and silently lose state. We close the DB
+		// here only on the services-exited path; the signal path waits for
+		// drain below before closing.
 
 		// Close Lumera client without blocking shutdown
 		logtrace.Debug(ctx, "Closing Lumera client", logtrace.Fields{})
@@ -433,11 +458,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		}()
 
 		// If we triggered shutdown by signal, wait for services to drain
+		// BEFORE closing the history store. Self-healing finalisers can
+		// emit one final dedup-row update on shutdown; closing the DB
+		// before they finish loses that state.
 		if triggeredBySignal {
 			if err := <-servicesErr; err != nil {
 				logtrace.Error(ctx, "Service error on shutdown", logtrace.Fields{"error": err.Error()})
 			}
 		}
+
+		// Now safe to close the history store — services have drained on
+		// both shutdown paths (services-exited path: <-servicesErr already
+		// fired; signal path: just waited above).
+		historyStore.CloseHistoryDB(context.Background())
 
 		return nil
 	},

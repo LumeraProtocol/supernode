@@ -2,6 +2,7 @@ package host_reporter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
@@ -345,6 +347,22 @@ func normalizeProbeHost(raw string) string {
 	return raw
 }
 
+// probeTCP attempts a short TCP dial to (host, port) and maps the outcome to
+// an audittypes.PortState.
+//
+// LEP-6 review M6 (Matee, 2026-05-06): pre-Wave-4 every dial error mapped to
+// PORT_STATE_CLOSED, including transient operator-side faults (DNS
+// resolution failure, EHOSTUNREACH, context cancellation). Reporting these
+// as CLOSED told the chain "this peer's port is down" when in fact our
+// reporter just couldn't resolve / route to it. Post-Wave-4:
+//   - ECONNREFUSED → CLOSED (the canonical "port is closed" signal — TCP
+//     stack got a RST from the peer's host, which means the host is up
+//     but no process is listening).
+//   - DNS error / EHOSTUNREACH / ENETUNREACH / ctx.Err() / dial timeout →
+//     UNKNOWN with a structured WARN log so operators can see the noise.
+//   - Anything else also maps to UNKNOWN (default-safe). UNKNOWN does not
+//     contribute to scoring, so this errs on the side of "don't accuse the
+//     peer when we are not sure".
 func probeTCP(ctx context.Context, host string, port uint32, timeout time.Duration) audittypes.PortState {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -356,9 +374,39 @@ func probeTCP(ctx context.Context, host string, port uint32, timeout time.Durati
 
 	d := net.Dialer{Timeout: timeout}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10)))
-	if err != nil {
+	if err == nil {
+		_ = conn.Close()
+		return audittypes.PortState_PORT_STATE_OPEN
+	}
+
+	// Canonical CLOSED signal: RST from peer's host (host up, no listener).
+	if errors.Is(err, syscall.ECONNREFUSED) {
 		return audittypes.PortState_PORT_STATE_CLOSED
 	}
-	_ = conn.Close()
-	return audittypes.PortState_PORT_STATE_OPEN
+
+	// Operator-side / network-fault classes — UNKNOWN with structured warn.
+	switch {
+	case errors.Is(err, syscall.EHOSTUNREACH),
+		errors.Is(err, syscall.ENETUNREACH),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
+		// fall through to UNKNOWN below
+	default:
+		// DNS errors are *net.DNSError; timeouts implement net.Error.Timeout().
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) {
+			// fall through
+		} else {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				// fall through
+			}
+		}
+	}
+	logtrace.Warn(ctx, "host_reporter: probeTCP unclassified or operator-side fault — reporting UNKNOWN", logtrace.Fields{
+		"host":  host,
+		"port":  port,
+		"error": err.Error(),
+	})
+	return audittypes.PortState_PORT_STATE_UNKNOWN
 }

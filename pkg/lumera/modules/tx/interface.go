@@ -28,6 +28,11 @@ type TxConfig struct {
 	GasPadding               uint64
 	FeeDenom                 string
 	GasPrice                 string
+	// SequenceMismatchMaxAttempts caps the per-tx sequence-mismatch retry
+	// loop in TxHelper.ExecuteTransaction. 0 means "use package default".
+	// Hard ceiling enforced in both applyTxHelperDefaults and UpdateConfig
+	// (M12 fix; mirrors the GasAdjustmentMaxAttempts safety-cap pattern).
+	SequenceMismatchMaxAttempts int
 }
 
 // Module defines the interface for transaction-related operations

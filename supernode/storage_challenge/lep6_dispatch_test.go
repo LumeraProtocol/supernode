@@ -379,7 +379,7 @@ func TestDispatchEpoch_GetCompoundProofTimeout_EmitsTimeoutClass(t *testing.T) {
 		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
 	}
 	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
-		"sn-target": {{TicketID: "tkt-timeout", AnchorBlock: 100}},
+		"sn-target": {{TicketID: "tkt-symbol", AnchorBlock: 100}},
 	}}
 	meta := stubMetaProvider{
 		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
@@ -393,7 +393,7 @@ func TestDispatchEpoch_GetCompoundProofTimeout_EmitsTimeoutClass(t *testing.T) {
 	require.NotEmpty(t, results)
 	var sawTimeout bool
 	for _, r := range results {
-		if r.TicketId == "tkt-timeout" {
+		if r.TicketId == "tkt-symbol" {
 			sawTimeout = true
 			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_TIMEOUT_OR_NO_RESPONSE, r.ResultClass)
 		}

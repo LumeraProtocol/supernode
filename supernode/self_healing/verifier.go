@@ -11,6 +11,7 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	"lukechampine.com/blake3"
@@ -55,12 +56,31 @@ func (s *Service) verifyAndSubmit(ctx context.Context, op audittypes.HealOp) err
 		return fmt.Errorf("op.ResultHash empty (op not in HEALER_REPORTED?)")
 	}
 
+	// H1 fix: pre-check deadline before fetch + submit. Same fee-burn
+	// concern as the healer path; chain rejects past-deadline submits
+	// via ErrHealOpInvalidState.
+	if expired, expErr := s.healOpDeadlinePassed(ctx, op); expErr != nil {
+		logtrace.Warn(ctx, "self_healing(LEP-6): could not check verifier deadline; proceeding", logtrace.Fields{
+			"heal_op_id":        op.HealOpId,
+			logtrace.FieldError: expErr.Error(),
+		})
+	} else if expired {
+		logtrace.Warn(ctx, "self_healing(LEP-6): heal op deadline passed before verifier submit; skipping", logtrace.Fields{
+			"heal_op_id": op.HealOpId,
+			"deadline":   op.DeadlineEpochId,
+		})
+		return nil
+	}
+
 	bytesGot, fetchErr := s.fetchFromHealerWithRetry(ctx, op)
 	if fetchErr != nil {
 		// Submit negative verification with a non-empty placeholder hash —
 		// chain rejects empty VerificationHash even for negative votes.
-		details := fmt.Sprintf("fetch_failed:%v", fetchErr)
-		if err := s.submitNegativeWithReason(ctx, op.HealOpId, details); err != nil {
+		// L2 fix: hash a canonical reason taxonomy instead of the raw
+		// fetchErr string so audit trails can correlate identical failure
+		// modes across verifiers.
+		details := negativeReasonFetchFailed + ":" + fetchErr.Error()
+		if err := s.submitNegativeWithReason(ctx, op.HealOpId, negativeReasonFetchFailed, details); err != nil {
 			return fmt.Errorf("fetch %v; submit-negative %w", fetchErr, err)
 		}
 		logtrace.Warn(ctx, "self_healing(LEP-6): verifier submitted negative due to fetch failure", logtrace.Fields{
@@ -72,8 +92,8 @@ func (s *Service) verifyAndSubmit(ctx context.Context, op audittypes.HealOp) err
 
 	computedHash, hashErr := cascadekit.ComputeBlake3DataHashB64(bytesGot)
 	if hashErr != nil {
-		details := fmt.Sprintf("hash_compute_failed:%v", hashErr)
-		if err := s.submitNegativeWithReason(ctx, op.HealOpId, details); err != nil {
+		details := negativeReasonHashCompute + ":" + hashErr.Error()
+		if err := s.submitNegativeWithReason(ctx, op.HealOpId, negativeReasonHashCompute, details); err != nil {
 			return fmt.Errorf("hash %v; submit-negative %w", hashErr, err)
 		}
 		return nil
@@ -81,7 +101,7 @@ func (s *Service) verifyAndSubmit(ctx context.Context, op audittypes.HealOp) err
 	verified := computedHash == expectedHash
 	details := ""
 	if !verified {
-		details = "hash_mismatch"
+		details = negativeReasonHashMismatch
 	}
 	// Positive: chain validates VerificationHash == op.ResultHash. Negative:
 	// chain accepts any non-empty hash. Send computedHash either way so audit
@@ -99,22 +119,40 @@ func (s *Service) verifyAndSubmit(ctx context.Context, op audittypes.HealOp) err
 	return nil
 }
 
+// L2 fix: small canonical reason taxonomy for negative attestations.
+// Hashing the canonical reason (instead of raw error text) means two
+// verifiers that observed the same failure class produce the same
+// negative-attestation hash — easier audit-trail correlation.
+const (
+	negativeReasonFetchFailed  = "reason_fetch_failed"
+	negativeReasonHashCompute  = "reason_hash_compute_failed"
+	negativeReasonHashMismatch = "reason_hash_mismatch"
+	negativeReasonOther        = "reason_other"
+)
+
 // submitNegativeWithReason synthesizes a deterministic non-empty placeholder
-// hash from the failure reason and submits a negative verification. Chain
-// only validates VerificationHash content for positive votes
-// (msg_storage_truth.go:288-294), so any non-empty value is well-formed.
-func (s *Service) submitNegativeWithReason(ctx context.Context, healOpID uint64, reason string) error {
-	placeholder := negativeAttestationHash(reason)
-	return s.submitVerification(ctx, healOpID, false, placeholder, reason)
+// hash from the canonical reason category and submits a negative
+// verification. Chain only validates VerificationHash content for positive
+// votes (msg_storage_truth.go:288-294), so any non-empty value is well-
+// formed. `details` carries the full free-form context (raw error / file
+// info) for the chain log; the on-chain hash is derived from the canonical
+// reason only.
+func (s *Service) submitNegativeWithReason(ctx context.Context, healOpID uint64, reasonCategory, details string) error {
+	if reasonCategory == "" {
+		reasonCategory = negativeReasonOther
+	}
+	placeholder := negativeAttestationHash(reasonCategory)
+	return s.submitVerification(ctx, healOpID, false, placeholder, details)
 }
 
 // negativeAttestationHash returns a stable non-empty BLAKE3/base64 hash
-// derived from `reason` so audit trails can correlate identical failure
-// modes while staying aligned with LEP-6/Cascade storage hash conventions.
-// Format remains a 32-byte digest encoded as base64, so downstream consumers
-// don't have to special-case width.
-func negativeAttestationHash(reason string) string {
-	sum := blake3.Sum256([]byte("lep6:negative-attestation:" + reason))
+// derived from the canonical reason category. Format remains a 32-byte
+// digest encoded as base64 so downstream consumers don't have to special-
+// case width. Wave 2 / L2 fix: input is now a small enum string instead of
+// raw fetchErr.Error() — verifiers observing the same failure class
+// produce the same negative hash, allowing chain-side correlation.
+func negativeAttestationHash(reasonCategory string) string {
+	sum := blake3.Sum256([]byte("lep6:negative-attestation:" + reasonCategory))
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
@@ -136,7 +174,13 @@ func (s *Service) submitVerification(ctx context.Context, healOpID uint64, verif
 
 	resp, err := s.lumera.AuditMsg().SubmitHealVerification(ctx, healOpID, verified, hash, details)
 	if err != nil {
-		if isChainVerificationAlreadyExists(err) {
+		// Transient gRPC failures MUST NOT delete the pending row — the
+		// next tick will retry and reach idempotent dedup on the chain.
+		if chainerrors.IsTransientGrpc(err) {
+			lep6metrics.IncHealVerification("submit_transient", verified)
+			return fmt.Errorf("submit verification (transient, will retry): %w", err)
+		}
+		if chainerrors.IsHealVerificationAlreadySubmitted(err) {
 			if markErr := s.store.MarkHealVerificationSubmitted(ctx, healOpID, s.identity); markErr != nil {
 				return fmt.Errorf("mark reconciled verification submitted: %w", markErr)
 			}
@@ -155,16 +199,11 @@ func (s *Service) submitVerification(ctx context.Context, healOpID uint64, verif
 	return nil
 }
 
-// isChainVerificationAlreadyExists detects the chain's
-// ErrHealVerificationExists wrapped string. We can't import the chain's
-// errors package here without cycling through audittypes, but the wrapped
-// message is stable.
-func isChainVerificationAlreadyExists(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "verification already submitted by creator")
-}
+// (Wave 0): isChainVerificationAlreadyExists helper removed; classification
+// is centralised in pkg/lumera/chainerrors.IsHealVerificationAlreadySubmitted
+// which uses typed sentinel matching (audittypes.ErrHealVerificationExists)
+// with substring fallback, and the call site short-circuits on
+// IsTransientGrpc to preserve the pending row across transient failures.
 
 // fetchFromHealerWithRetry is the §19 healer-served-path GET with bounded
 // exponential backoff. Returns the reconstructed file bytes (concatenated

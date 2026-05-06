@@ -2,25 +2,27 @@ package self_healing
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	query "github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // programmableAudit is a per-test programmable audit module. The dispatcher
 // reads only GetParams, GetHealOp, and GetHealOpsByStatus, so other methods
 // are unused and may be left zero.
 type programmableAudit struct {
-	mu          sync.Mutex
-	params      audittypes.Params
-	opsByStatus map[audittypes.HealOpStatus][]audittypes.HealOp
-	opsByID     map[uint64]audittypes.HealOp
-	getOpErr    error
-	blockStatus map[audittypes.HealOpStatus]bool
+	mu           sync.Mutex
+	params       audittypes.Params
+	opsByStatus  map[audittypes.HealOpStatus][]audittypes.HealOp
+	opsByID      map[uint64]audittypes.HealOp
+	getOpErr     error
+	blockStatus  map[audittypes.HealOpStatus]bool
+	currentEpoch uint64 // wired into GetCurrentEpoch (H1 deadline-pre-check tests)
 }
 
 func newProgrammableAudit(mode audittypes.StorageTruthEnforcementMode) *programmableAudit {
@@ -62,7 +64,14 @@ func (p *programmableAudit) GetHealOp(ctx context.Context, healOpID uint64) (*au
 	}
 	op, ok := p.opsByID[healOpID]
 	if !ok {
-		return nil, errors.New("not found")
+		// Match the production chain query surface
+		// (x/audit/v1/keeper/query_storage_truth.go:78): a missing heal-op
+		// surfaces as gRPC status.NotFound with the discriminating
+		// "heal op not found" message. The previous test used a bare
+		// errors.New("not found") which the broad legacy substring
+		// matcher accepted, but which Wave 0 narrowly rejects (so as not
+		// to swallow transient "block N not found" errors).
+		return nil, status.Error(codes.NotFound, "heal op not found")
 	}
 	return &audittypes.QueryHealOpResponse{HealOp: op}, nil
 }
@@ -92,7 +101,9 @@ func (p *programmableAudit) GetCurrentEpochAnchor(ctx context.Context) (*auditty
 	return &audittypes.QueryCurrentEpochAnchorResponse{}, nil
 }
 func (p *programmableAudit) GetCurrentEpoch(ctx context.Context) (*audittypes.QueryCurrentEpochResponse, error) {
-	return &audittypes.QueryCurrentEpochResponse{}, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &audittypes.QueryCurrentEpochResponse{EpochId: p.currentEpoch}, nil
 }
 func (p *programmableAudit) GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*audittypes.QueryAssignedTargetsResponse, error) {
 	return &audittypes.QueryAssignedTargetsResponse{}, nil

@@ -105,7 +105,13 @@ func hasValidCascadeMetadata(raw []byte) bool {
 	if meta.RqIdsMax == 0 || len(meta.RqIdsIds) == 0 {
 		return false
 	}
-	if meta.IndexArtifactCount == 0 || meta.SymbolArtifactCount == 0 {
+	// LEP-6 review M10 (Matee, 2026-05-06): a ticket is eligible if AT LEAST
+	// ONE artifact class has a non-zero count. Previously we required BOTH
+	// counts to be > 0, which silently hid INDEX-only or SYMBOL-only tickets
+	// from the dispatcher. The class roll handles per-class emptiness via
+	// SelectArtifactClass returning UNSPECIFIED → caller emits NO_ELIGIBLE
+	// (post-H6 fix). Both zero remains invisible (legacy preserve).
+	if meta.IndexArtifactCount == 0 && meta.SymbolArtifactCount == 0 {
 		return false
 	}
 	return true

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 )
 
 type FinderConfig struct {
@@ -70,7 +71,16 @@ func (f *Finder) Find(ctx context.Context) ([]Candidate, error) {
 		for _, reporter := range reporters {
 			rep, err := f.audit.GetEpochReportsByReporter(ctx, reporter, epoch)
 			if err != nil {
-				return nil, fmt.Errorf("epoch reports reporter %s epoch %d: %w", reporter, epoch, err)
+				// L4 fix: isolate per-reporter RPC failures. A single
+				// unreachable reporter must not mask candidates from
+				// every other reporter in the same epoch — that's the
+				// silent-coverage-gap path Matee called out.
+				logtrace.Warn(ctx, "recheck finder: reporter epoch reports unavailable; skipping reporter for this tick", logtrace.Fields{
+					logtrace.FieldError: err.Error(),
+					"reporter":          reporter,
+					"epoch":             epoch,
+				})
+				continue
 			}
 			if rep == nil {
 				continue
@@ -95,12 +105,16 @@ func (f *Finder) Find(ctx context.Context) ([]Candidate, error) {
 			if !c.Valid() || c.TargetAccount == f.self || c.OriginalReporter == f.self {
 				continue
 			}
-			key := fmt.Sprintf("%d/%s", c.EpochID, c.TicketID)
+			// C2 fix: chain dedup is per-(epoch, ticket, target) — multi-
+			// target candidates within the same (epoch, ticket) must each
+			// produce a separate recheck. Key the seen map and the
+			// HasRecheckSubmission lookup on the full triple.
+			key := fmt.Sprintf("%d/%s/%s", c.EpochID, c.TicketID, c.TargetAccount)
 			if _, ok := seen[key]; ok {
 				continue
 			}
 			seen[key] = struct{}{}
-			done, err := f.store.HasRecheckSubmission(ctx, c.EpochID, c.TicketID)
+			done, err := f.store.HasRecheckSubmission(ctx, c.EpochID, c.TicketID, c.TargetAccount)
 			if err != nil {
 				return nil, err
 			}

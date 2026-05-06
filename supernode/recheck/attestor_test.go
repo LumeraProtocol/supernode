@@ -23,7 +23,7 @@ func TestAttestor_SubmitsThenPersists(t *testing.T) {
 	require.Len(t, msg.calls, 1)
 	require.Equal(t, 2, msg.calls[0].callIndex)
 	require.Less(t, store.recordCallIndex, msg.calls[0].callIndex)
-	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1")
+	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target")
 	require.NoError(t, err)
 	require.True(t, exists)
 }
@@ -38,7 +38,7 @@ func TestAttestor_DoesNotPersistOnTxFailure(t *testing.T) {
 	result := RecheckResult{TranscriptHash: "recheck-hash", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS}
 
 	require.Error(t, a.Submit(ctx, candidate, result))
-	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1")
+	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target")
 	require.NoError(t, err)
 	require.False(t, exists)
 }
@@ -53,7 +53,7 @@ func TestAttestor_AcceptsExistingChainRecheckAsIdempotent(t *testing.T) {
 	result := RecheckResult{TranscriptHash: "recheck-hash", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL}
 
 	require.NoError(t, a.Submit(ctx, candidate, result))
-	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1")
+	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target")
 	require.NoError(t, err)
 	require.True(t, exists)
 }
@@ -68,7 +68,7 @@ func TestAttestor_DoesNotTreatGenericDuplicateWordsAsIdempotent(t *testing.T) {
 	result := RecheckResult{TranscriptHash: "recheck-hash", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL}
 
 	require.Error(t, a.Submit(ctx, candidate, result))
-	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1")
+	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target")
 	require.NoError(t, err)
 	require.False(t, exists)
 }

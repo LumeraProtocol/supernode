@@ -102,7 +102,16 @@ func (f *secureVerifierFetcher) FetchReconstructed(ctx context.Context, healOpID
 	if err != nil {
 		return nil, fmt.Errorf("open serve stream: %w", err)
 	}
-	var buf []byte
+	// H7 fix: bound the verifier-side accumulator so a buggy or
+	// malicious healer cannot OOM the verifier by streaming more than
+	// MaxReconstructedBytes (or more than its own advertised TotalSize).
+	// TotalSize is read from the first message and validated against the
+	// supernode-wide ceiling before any allocation.
+	var (
+		buf       []byte
+		totalSize uint64 // 0 = not yet advertised
+		seenFirst bool
+	)
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -111,11 +120,42 @@ func (f *secureVerifierFetcher) FetchReconstructed(ctx context.Context, healOpID
 		if err != nil {
 			return nil, fmt.Errorf("recv: %w", err)
 		}
+		if !seenFirst {
+			seenFirst = true
+			totalSize = msg.TotalSize
+			if totalSize > MaxReconstructedBytes {
+				return nil, fmt.Errorf("healer advertised total_size=%d exceeds MaxReconstructedBytes=%d", totalSize, MaxReconstructedBytes)
+			}
+			if totalSize > 0 {
+				buf = make([]byte, 0, totalSize)
+			}
+		}
+		// Per-chunk overflow check — works for both bounded (TotalSize>0)
+		// and legacy unbounded (TotalSize=0) streams; in the unbounded
+		// case we still cap at MaxReconstructedBytes so a stream that
+		// "forgets" to advertise size is still safe.
+		next := uint64(len(buf)) + uint64(len(msg.Chunk))
+		if totalSize > 0 && next > totalSize {
+			return nil, fmt.Errorf("healer streamed %d bytes, exceeds advertised total_size=%d", next, totalSize)
+		}
+		if next > MaxReconstructedBytes {
+			return nil, fmt.Errorf("healer streamed %d bytes, exceeds MaxReconstructedBytes=%d", next, MaxReconstructedBytes)
+		}
 		buf = append(buf, msg.Chunk...)
 		if msg.IsLast {
 			// Drain any trailer.
 			_, _ = stream.Recv()
+			if totalSize > 0 && uint64(len(buf)) != totalSize {
+				return nil, fmt.Errorf("healer reached IsLast at %d bytes; advertised total_size=%d", len(buf), totalSize)
+			}
 			return buf, nil
 		}
 	}
 }
+
+// MaxReconstructedBytes caps the verifier-side accumulator for the §19
+// healer-served path. Set to 4 GiB which matches typical cascade max-action
+// size and bounds the worst-case verifier RAM footprint at runtime. The
+// chain-side action enforcement is the authoritative check; this is a
+// supernode-side defense-in-depth (H7).
+const MaxReconstructedBytes uint64 = 4 * 1024 * 1024 * 1024

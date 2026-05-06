@@ -21,6 +21,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	cascadeService "github.com/LumeraProtocol/supernode/v2/supernode/cascade"
+	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -65,14 +66,28 @@ type Server struct {
 	resolveCaller CallerIdentityResolver
 }
 
-// NewServer constructs the §19 transport handler.
+// NewServer constructs the §19 transport handler for production use.
 //
-// resolveCaller authenticates the gRPC peer. Pass DefaultCallerIdentity
-// Resolver() in production — it pulls the identity from the secure-rpc
-// (Lumera ALTS) handshake. Tests may pass a stub or nil; nil falls back to
-// trusting `req.VerifierAccount` (NOT secure — only for unit tests where
-// no transport stack is wired up).
+// resolveCaller authenticates the gRPC peer. It MUST be non-nil: production
+// paths use DefaultCallerIdentityResolver(), which pulls the identity from
+// the secure-rpc (Lumera ALTS) handshake. For unit tests where no transport
+// stack is wired up, use NewServerForTest, which permits a nil resolver and
+// falls back to trusting req.VerifierAccount.
 func NewServer(identity, stagingRoot string, lumeraClient lumera.Client, resolveCaller CallerIdentityResolver) (*Server, error) {
+	if resolveCaller == nil {
+		return nil, fmt.Errorf("resolveCaller is required in production; use NewServerForTest for unit tests")
+	}
+	return newServer(identity, stagingRoot, lumeraClient, resolveCaller)
+}
+
+// NewServerForTest is a test-only constructor that permits a nil resolver,
+// falling back to trusting req.VerifierAccount. It must NEVER be wired into
+// a production binary.
+func NewServerForTest(identity, stagingRoot string, lumeraClient lumera.Client, resolveCaller CallerIdentityResolver) (*Server, error) {
+	return newServer(identity, stagingRoot, lumeraClient, resolveCaller)
+}
+
+func newServer(identity, stagingRoot string, lumeraClient lumera.Client, resolveCaller CallerIdentityResolver) (*Server, error) {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {
 		return nil, fmt.Errorf("identity is empty")
@@ -135,6 +150,16 @@ func (s *Server) ServeReconstructedArtefacts(req *supernode.ServeReconstructedAr
 		// Not the assigned healer for this op — refuse to serve so verifiers
 		// don't accidentally consult a non-authoritative supernode.
 		return status.Error(codes.FailedPrecondition, "this supernode is not the assigned healer for this heal op")
+	}
+	// LEP-6 §19 hardening (H8): serving reconstructed artefacts is only
+	// valid while the heal-op is in HEALER_REPORTED — i.e. the healer has
+	// staged the file and verifiers are sampling it. After VERIFIED / FAILED /
+	// EXPIRED the staging dir is logically dead (and may be on its way to
+	// finalizer cleanup); mid-stage SCHEDULED has no committed reconstruction.
+	if op.Status != audittypes.HealOpStatus_HEAL_OP_STATUS_HEALER_REPORTED {
+		return status.Errorf(codes.FailedPrecondition,
+			"heal op %d status is %s; serve only valid in HEALER_REPORTED",
+			op.HealOpId, op.Status)
 	}
 	authorized := false
 	for _, v := range op.VerifierSupernodeAccounts {

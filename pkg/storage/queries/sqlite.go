@@ -398,7 +398,10 @@ func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
 	if _, err := db.Exec(createHealClaimsSubmitted); err != nil {
 		return nil, fmt.Errorf("cannot create heal_claims_submitted: %w", err)
 	}
-	_, _ = db.Exec(alterHealClaimsSubmittedStatus)
+	if err := addColumnIfMissing(context.Background(), db, "heal_claims_submitted", "status",
+		alterHealClaimsSubmittedStatus); err != nil {
+		return nil, fmt.Errorf("migrate heal_claims_submitted.status: %w", err)
+	}
 	if _, err := db.Exec(createHealClaimsStatusIndex); err != nil {
 		return nil, fmt.Errorf("cannot create heal_claims_submitted status index: %w", err)
 	}
@@ -406,7 +409,10 @@ func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
 	if _, err := db.Exec(createHealVerificationsSubmitted); err != nil {
 		return nil, fmt.Errorf("cannot create heal_verifications_submitted: %w", err)
 	}
-	_, _ = db.Exec(alterHealVerificationsSubmittedStatus)
+	if err := addColumnIfMissing(context.Background(), db, "heal_verifications_submitted", "status",
+		alterHealVerificationsSubmittedStatus); err != nil {
+		return nil, fmt.Errorf("migrate heal_verifications_submitted.status: %w", err)
+	}
 	if _, err := db.Exec(createHealVerificationsStatusIndex); err != nil {
 		return nil, fmt.Errorf("cannot create heal_verifications_submitted status index: %w", err)
 	}
@@ -414,7 +420,13 @@ func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
 	if _, err := db.Exec(createStorageRecheckSubmissions); err != nil {
 		return nil, fmt.Errorf("cannot create storage_recheck_submissions: %w", err)
 	}
-	_, _ = db.Exec(alterStorageRecheckSubmissionStatus)
+	if err := addColumnIfMissing(context.Background(), db, "storage_recheck_submissions", "status",
+		alterStorageRecheckSubmissionStatus); err != nil {
+		return nil, fmt.Errorf("migrate storage_recheck_submissions.status: %w", err)
+	}
+	if err := migrateStorageRecheckSubmissionsPK(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("migrate storage_recheck_submissions PK: %w", err)
+	}
 	if _, err := db.Exec(createStorageRecheckSubmissionStatusIndex); err != nil {
 		return nil, fmt.Errorf("cannot create storage_recheck_submissions status index: %w", err)
 	}
@@ -423,6 +435,10 @@ func OpenHistoryDBAt(baseDir string) (LocalStoreInterface, error) {
 	}
 	if _, err := db.Exec(createRecheckAttemptFailuresExpiresIndex); err != nil {
 		return nil, fmt.Errorf("cannot create recheck_attempt_failures expires index: %w", err)
+	}
+
+	if _, err := db.Exec(createStorageChallengeStateTable); err != nil {
+		return nil, fmt.Errorf("cannot create storage_challenge_state: %w", err)
 	}
 
 	_, _ = db.Exec(alterTaskHistory)
