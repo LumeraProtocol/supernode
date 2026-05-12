@@ -96,9 +96,31 @@ func requireEnoughFileHandlers(nodesCount int) {
 
 func initSDKConfig(bech32Prefix string) {
 	config := sdk.GetConfig()
+
+	if sdkConfigMatches(config, bech32Prefix) {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			if fmt.Sprint(r) == "Config is sealed" && sdkConfigMatches(config, bech32Prefix) {
+				return
+			}
+			panic(r)
+		}
+	}()
+
 	config.SetBech32PrefixForAccount(bech32Prefix, bech32Prefix+sdk.PrefixPublic)
 	config.SetBech32PrefixForValidator(bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator, bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator+sdk.PrefixPublic)
 	config.SetBech32PrefixForConsensusNode(bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus, bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus+sdk.PrefixPublic)
+}
+
+func sdkConfigMatches(config *sdk.Config, bech32Prefix string) bool {
+	return config.GetBech32AccountAddrPrefix() == bech32Prefix &&
+		config.GetBech32AccountPubPrefix() == bech32Prefix+sdk.PrefixPublic &&
+		config.GetBech32ValidatorAddrPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator &&
+		config.GetBech32ValidatorPubPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator+sdk.PrefixPublic &&
+		config.GetBech32ConsensusAddrPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus &&
+		config.GetBech32ConsensusPubPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus+sdk.PrefixPublic
 }
 
 const (

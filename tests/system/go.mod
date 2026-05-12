@@ -53,12 +53,12 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/cockroachdb/errors v1.12.0 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240616162244-4768e80dfb9a // indirect
 	github.com/cockroachdb/logtags v0.0.0-20241215232642-bb51bb14a506 // indirect
@@ -207,9 +207,6 @@ require (
 replace (
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
 
-	// Fix bytedance/sonic compatibility
-	github.com/bytedance/sonic => github.com/bytedance/sonic v1.12.3
-	github.com/bytedance/sonic/loader => github.com/bytedance/sonic/loader v0.2.1
 	// dgrijalva/jwt-go is deprecated and doesn't receive security updates.
 	// See: https://github.com/cosmos/cosmos-sdk/issues/13134
 	github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt/v4 v4.4.2

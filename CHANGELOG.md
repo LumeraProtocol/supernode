@@ -1,6 +1,34 @@
 # Changelog
 
 
+## Upcoming EVM Release
+
+This release adds end-to-end support for Lumera's EVM-enabled chain (Cosmos EVM integration, `evmigration` module, ERC-20 policy, unified migration proofs):
+
+- **EVM account migration on startup.** SuperNode and SDK can now migrate a legacy `secp256k1` account to a new `eth_secp256k1` (EVM) account on the chain. The flow:
+  - Detects whether the configured legacy key still exists in the keyring and whether on-chain migration has already happened (`QueryMigrationRecord`).
+  - Submits `MsgClaimLegacyAccount` for plain accounts and `MsgMigrateValidator` when the account is a validator operator, using a unified `MigrationProof` (single-key or multisig) for both the legacy and new sides.
+  - Estimates fees via `QueryMigrationEstimate`, signs with both legacy and new keys (CLI sig format), and broadcasts the migration tx.
+  - On success, deletes the legacy key from the keyring and rewrites the operator's SuperNode config to use the new EVM address.
+  - **Refuses automatic migration** when the legacy account is a multisig — these must be migrated manually because they require an offline multi-party signing ceremony. See `docs/evm-migration.md` for the full operator playbook.
+- **Keyring extensions** (`pkg/keyring`):
+  - Supports both `secp256k1` (legacy) and `eth_secp256k1` (EVM) key algorithms in the same keyring backend (Cosmos SDK + cosmos/evm codec registration).
+  - New helpers to look up keys by address, regardless of algorithm, and delete legacy keys after a successful migration.
+- **Protobuf / codec wiring** for cosmos/evm and `evmigration` types so that messages round-trip correctly through the SuperNode and SDK transaction pipelines.
+- **P2P bootstrap reacts to migrations.** After a successful EVM migration, the local DHT:
+  - Clears the `KeyExchanger` credential cache so subsequent handshakes use the post-migration identity for HKDF key derivation.
+  - Releases all pooled gRPC connections (they were authenticated with the old identity and would fail re-use).
+  - Signals the bootstrap refresher via `NotifyEVMMigration` to immediately re-sync peers from the chain and switch to an **accelerated 1-minute refresh interval for 5 cycles** so peer-address changes propagate quickly. Reverts to the normal 10-minute cadence afterwards.
+- **SDK ICA / signing updates** (`sdk/task`):
+  - Cascade signing path now produces signatures compatible with EVM-style accounts (eth_secp256k1) in addition to the legacy ADR-36 path.
+  - `spendable_balance` checks correctly handle EVM-derived addresses.
+- **Module dependencies bumped to EVM-enabled Lumera** (`v1.20.0-rc2`), which provides the `evmigration` module, `erc20policy`, Cosmos EVM integration, and forked `go-ethereum` (`cosmos/go-ethereum v1.16.2-cosmos-1`). Aligned across `supernode`, `sn-manager`, `cmd/sncli`, and `tests/system` go.mod files; Go toolchain bumped to **1.26.2**.
+- **Integration tests** for the full EVM migration flow (`tests/integration/evmigration`): legacy → EVM migration of plain accounts, validators, and rejection of multisig accounts; verifies on-chain state, keyring state, and config rewrites.
+- **Build & release** workflow updated to produce artifacts against the EVM-enabled toolchain.
+- **Operator documentation:** `docs/evm-migration.md` describes the migration model, supported account types, the automatic startup flow, manual multisig procedure, and recovery scenarios.
+
+(Will be finalized on release.)
+
 ## Upcoming Release: v2.4.9
 
 This release focuses on stability, performance, and operational clarity across the cascade pipeline and SuperNode operation:

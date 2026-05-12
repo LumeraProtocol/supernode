@@ -39,7 +39,7 @@ func NewLumeradCLI(t *testing.T, sut *SystemUnderTest, verbose bool) *LumeradCli
 		sut.AwaitNextBlock,
 		sut.nodesCount,
 		filepath.Join(WorkDir, sut.outputDir),
-		"1"+"ulume",
+		"1000ulume",
 		verbose,
 		assert.NoError,
 		true,
