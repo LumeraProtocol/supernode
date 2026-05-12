@@ -8,7 +8,6 @@ import (
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"
@@ -20,7 +19,10 @@ type module struct {
 	mu       sync.Mutex
 }
 
-func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, kr keyring.Keyring, keyName string, chainID string) (Module, error) {
+// newModuleWithHelper creates the action_msg module using the supplied
+// TxHelperConfig. The config is normalized inside tx.NewTxHelper (zero-valued
+// fields fall back to defaults).
+func newModuleWithHelper(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Module, cfg *txmod.TxHelperConfig) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
 	}
@@ -30,19 +32,22 @@ func newModule(conn *grpc.ClientConn, authmodule auth.Module, txmodule txmod.Mod
 	if txmodule == nil {
 		return nil, fmt.Errorf("tx module cannot be nil")
 	}
-	if kr == nil {
+	if cfg == nil {
+		return nil, fmt.Errorf("tx helper config cannot be nil")
+	}
+	if cfg.Keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if keyName == "" {
+	if cfg.KeyName == "" {
 		return nil, fmt.Errorf("key name cannot be empty")
 	}
-	if chainID == "" {
+	if cfg.ChainID == "" {
 		return nil, fmt.Errorf("chain ID cannot be empty")
 	}
 
 	return &module{
 		client:   actiontypes.NewMsgClient(conn),
-		txHelper: txmod.NewTxHelperWithDefaults(authmodule, txmodule, chainID, keyName, kr),
+		txHelper: txmod.NewTxHelper(authmodule, txmodule, cfg),
 	}, nil
 }
 
@@ -59,7 +64,7 @@ func (m *module) RequestAction(ctx context.Context, actionType, metadata, price,
 	})
 }
 
-func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.BroadcastTxResponse, error) {
+func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
@@ -68,7 +73,7 @@ func (m *module) FinalizeCascadeAction(ctx context.Context, actionId string, rqI
 	defer m.mu.Unlock()
 
 	return m.txHelper.ExecuteTransaction(ctx, func(creator string) (types.Msg, error) {
-		return createFinalizeActionMessage(creator, actionId, rqIdsIds)
+		return createFinalizeActionMessage(creator, actionId, rqIdsIds, chunkProofs)
 	})
 }
 
@@ -86,7 +91,7 @@ func (m *module) SetTxHelperConfig(config *txmod.TxHelperConfig) {
 // SimulateFinalizeCascadeAction builds the finalize message and performs a simulation
 // without broadcasting the transaction. This is useful to ensure the transaction
 // would pass ante/ValidateBasic before doing irreversible work.
-func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string) (*sdktx.SimulateResponse, error) {
+func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId string, rqIdsIds []string, chunkProofs []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
 	if err := validateFinalizeActionParams(actionId, rqIdsIds); err != nil {
 		return nil, err
 	}
@@ -105,7 +110,7 @@ func (m *module) SimulateFinalizeCascadeAction(ctx context.Context, actionId str
 	}
 
 	// Build the finalize message
-	msg, err := createFinalizeActionMessage(creator, actionId, rqIdsIds)
+	msg, err := createFinalizeActionMessage(creator, actionId, rqIdsIds, chunkProofs)
 	if err != nil {
 		return nil, err
 	}

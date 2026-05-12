@@ -42,21 +42,6 @@ func (m *MockModule) EXPECT() *MockModuleMockRecorder {
 	return m.recorder
 }
 
-// SubmitEvidence mocks base method.
-func (m *MockModule) SubmitEvidence(ctx context.Context, subjectAddress string, evidenceType types.EvidenceType, actionID, metadataJSON string) (*tx.BroadcastTxResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SubmitEvidence", ctx, subjectAddress, evidenceType, actionID, metadataJSON)
-	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SubmitEvidence indicates an expected call of SubmitEvidence.
-func (mr *MockModuleMockRecorder) SubmitEvidence(ctx, subjectAddress, evidenceType, actionID, metadataJSON any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEvidence", reflect.TypeOf((*MockModule)(nil).SubmitEvidence), ctx, subjectAddress, evidenceType, actionID, metadataJSON)
-}
-
 // SubmitEpochReport mocks base method.
 func (m *MockModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport types.HostReport, storageChallengeObservations []*types.StorageChallengeObservation) (*tx.BroadcastTxResponse, error) {
 	m.ctrl.T.Helper()
@@ -70,4 +55,19 @@ func (m *MockModule) SubmitEpochReport(ctx context.Context, epochID uint64, host
 func (mr *MockModuleMockRecorder) SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEpochReport", reflect.TypeOf((*MockModule)(nil).SubmitEpochReport), ctx, epochID, hostReport, storageChallengeObservations)
+}
+
+// SubmitEvidence mocks base method.
+func (m *MockModule) SubmitEvidence(ctx context.Context, subjectAddress string, evidenceType types.EvidenceType, actionID, metadataJSON string) (*tx.BroadcastTxResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubmitEvidence", ctx, subjectAddress, evidenceType, actionID, metadataJSON)
+	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SubmitEvidence indicates an expected call of SubmitEvidence.
+func (mr *MockModuleMockRecorder) SubmitEvidence(ctx, subjectAddress, evidenceType, actionID, metadataJSON any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEvidence", reflect.TypeOf((*MockModule)(nil).SubmitEvidence), ctx, subjectAddress, evidenceType, actionID, metadataJSON)
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
+	"github.com/cosmos/cosmos-sdk/types/query"
 
 	"google.golang.org/grpc"
 )
@@ -142,6 +143,33 @@ func (m *module) ListSuperNodes(ctx context.Context) (*types.QueryListSuperNodes
 	resp, err := m.client.ListSuperNodes(ctx, &types.QueryListSuperNodesRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list supernodes: %w", err)
+	}
+	return resp, nil
+}
+
+// GetPoolState returns supernode reward pool state.
+func (m *module) GetPoolState(ctx context.Context) (*types.QueryPoolStateResponse, error) {
+	resp, err := m.client.PoolState(ctx, &types.QueryPoolStateRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pool state: %w", err)
+	}
+	return resp, nil
+}
+
+// GetSNEligibility returns payout eligibility for validator.
+func (m *module) GetSNEligibility(ctx context.Context, validatorAddress string) (*types.QuerySNEligibilityResponse, error) {
+	resp, err := m.client.SNEligibility(ctx, &types.QuerySNEligibilityRequest{ValidatorAddress: validatorAddress})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supernode eligibility: %w", err)
+	}
+	return resp, nil
+}
+
+// GetPayoutHistory returns payout history for validator.
+func (m *module) GetPayoutHistory(ctx context.Context, validatorAddress string, pagination *query.PageRequest) (*types.QueryPayoutHistoryResponse, error) {
+	resp, err := m.client.PayoutHistory(ctx, &types.QueryPayoutHistoryRequest{ValidatorAddress: validatorAddress, Pagination: pagination})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payout history: %w", err)
 	}
 	return resp, nil
 }

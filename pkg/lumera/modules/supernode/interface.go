@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"google.golang.org/grpc"
 )
 
@@ -25,6 +26,9 @@ type Module interface {
 	GetSupernodeWithLatestAddress(ctx context.Context, address string) (*SuperNodeInfo, error)
 	GetParams(ctx context.Context) (*types.QueryParamsResponse, error)
 	ListSuperNodes(ctx context.Context) (*types.QueryListSuperNodesResponse, error)
+	GetPoolState(ctx context.Context) (*types.QueryPoolStateResponse, error)
+	GetSNEligibility(ctx context.Context, validatorAddress string) (*types.QuerySNEligibilityResponse, error)
+	GetPayoutHistory(ctx context.Context, validatorAddress string, pagination *query.PageRequest) (*types.QueryPayoutHistoryResponse, error)
 }
 
 // NewModule creates a new SuperNode module client

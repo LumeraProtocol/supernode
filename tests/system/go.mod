@@ -3,7 +3,6 @@ module github.com/LumeraProtocol/supernode/v2/tests/systemtests
 go 1.26.2
 
 replace (
-	github.com/LumeraProtocol/lumera => ../../../lumera
 	github.com/LumeraProtocol/supernode/v2 => ../../
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	// cosmos/evm requires a forked go-ethereum with custom EVM operation methods
@@ -14,7 +13,7 @@ replace (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.11.0
+	github.com/LumeraProtocol/lumera v1.20.0-rc2
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/cosmos-sdk v0.53.6

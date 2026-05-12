@@ -11,16 +11,23 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TxConfig holds configuration for transaction operations
+// TxConfig holds configuration for transaction operations.
+//
+// GasAdjustment / GasAdjustmentMultiplier / GasAdjustmentMaxAttempts together
+// drive the OOG-retry escalation policy inside TxHelper.ExecuteTransaction:
+// each OOG failure re-runs ProcessTransaction with
+// gas_adjustment *= GasAdjustmentMultiplier, up to GasAdjustmentMaxAttempts total attempts.
 type TxConfig struct {
-	ChainID       string
-	Keyring       keyring.Keyring
-	KeyName       string // Name of the key to use for signing
-	GasLimit      uint64
-	GasAdjustment float64
-	GasPadding    uint64
-	FeeDenom      string
-	GasPrice      string
+	ChainID                  string
+	Keyring                  keyring.Keyring
+	KeyName                  string // Name of the key to use for signing
+	GasLimit                 uint64
+	GasAdjustment            float64
+	GasAdjustmentMultiplier  float64 // per-retry multiplier applied to GasAdjustment on OOG (>1.0)
+	GasAdjustmentMaxAttempts int     // total attempts (including the initial one) before giving up on OOG
+	GasPadding               uint64
+	FeeDenom                 string
+	GasPrice                 string
 }
 
 // Module defines the interface for transaction-related operations

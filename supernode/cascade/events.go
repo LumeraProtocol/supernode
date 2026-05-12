@@ -22,4 +22,7 @@ const (
 	SupernodeEventTypeNetworkRetrieveStarted SupernodeEventType = 15
 	SupernodeEventTypeDecodeCompleted        SupernodeEventType = 16
 	SupernodeEventTypeServeReady             SupernodeEventType = 17
+	// LEP-5 events
+	SupernodeEventTypeMerkleRootVerified    SupernodeEventType = 18
+	SupernodeEventTypeChunkProofsGenerated  SupernodeEventType = 19
 )

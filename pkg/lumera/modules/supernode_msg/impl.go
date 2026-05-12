@@ -10,7 +10,6 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	snquery "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"
@@ -24,15 +23,14 @@ type module struct {
 	mu       sync.Mutex
 }
 
-// newModule creates a new supernode_msg module instance.
-func newModule(
+// newModuleWithHelper creates a new supernode_msg module instance using the
+// supplied TxHelperConfig (normalized by tx.NewTxHelper).
+func newModuleWithHelper(
 	conn *grpc.ClientConn,
 	authmodule auth.Module,
 	txmodule txmod.Module,
 	supernodeQuery snquery.Module,
-	kr keyring.Keyring,
-	keyName string,
-	chainID string,
+	cfg *txmod.TxHelperConfig,
 ) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
@@ -46,20 +44,23 @@ func newModule(
 	if supernodeQuery == nil {
 		return nil, fmt.Errorf("supernode query module cannot be nil")
 	}
-	if kr == nil {
+	if cfg == nil {
+		return nil, fmt.Errorf("tx helper config cannot be nil")
+	}
+	if cfg.Keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if strings.TrimSpace(keyName) == "" {
+	if strings.TrimSpace(cfg.KeyName) == "" {
 		return nil, fmt.Errorf("key name cannot be empty")
 	}
-	if strings.TrimSpace(chainID) == "" {
+	if strings.TrimSpace(cfg.ChainID) == "" {
 		return nil, fmt.Errorf("chain ID cannot be empty")
 	}
 
 	return &module{
 		client:   sntypes.NewMsgClient(conn),
 		query:    supernodeQuery,
-		txHelper: txmod.NewTxHelperWithDefaults(authmodule, txmodule, chainID, keyName, kr),
+		txHelper: txmod.NewTxHelper(authmodule, txmodule, cfg),
 	}, nil
 }
 

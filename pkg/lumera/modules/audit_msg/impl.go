@@ -9,7 +9,6 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/auth"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	"google.golang.org/grpc"
@@ -21,13 +20,13 @@ type module struct {
 	mu       sync.Mutex
 }
 
-func newModule(
+// newModuleWithHelper creates the audit_msg module using the supplied
+// TxHelperConfig (normalized by tx.NewTxHelper).
+func newModuleWithHelper(
 	conn *grpc.ClientConn,
 	authmodule auth.Module,
 	txmodule txmod.Module,
-	kr keyring.Keyring,
-	keyName string,
-	chainID string,
+	cfg *txmod.TxHelperConfig,
 ) (Module, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection cannot be nil")
@@ -38,19 +37,22 @@ func newModule(
 	if txmodule == nil {
 		return nil, fmt.Errorf("tx module cannot be nil")
 	}
-	if kr == nil {
+	if cfg == nil {
+		return nil, fmt.Errorf("tx helper config cannot be nil")
+	}
+	if cfg.Keyring == nil {
 		return nil, fmt.Errorf("keyring cannot be nil")
 	}
-	if strings.TrimSpace(keyName) == "" {
+	if strings.TrimSpace(cfg.KeyName) == "" {
 		return nil, fmt.Errorf("key name cannot be empty")
 	}
-	if strings.TrimSpace(chainID) == "" {
+	if strings.TrimSpace(cfg.ChainID) == "" {
 		return nil, fmt.Errorf("chain ID cannot be empty")
 	}
 
 	return &module{
 		client:   audittypes.NewMsgClient(conn),
-		txHelper: txmod.NewTxHelperWithDefaults(authmodule, txmodule, chainID, keyName, kr),
+		txHelper: txmod.NewTxHelper(authmodule, txmodule, cfg),
 	}, nil
 }
 

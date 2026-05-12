@@ -258,6 +258,18 @@ func (s *Network) handleStoreData(ctx context.Context, message *Message) (res []
 
 	value, err := s.dht.store.Retrieve(ctx, key)
 	if err != nil || len(value) == 0 {
+		// Self-state gate: non-ACTIVE supernodes (STORAGE_FULL, POSTPONED,
+		// etc.) must not accept new-key writes. Replication of an
+		// already-held key is still permitted (the Retrieve above returned
+		// a non-empty value, short-circuiting this branch — newKeys=0).
+		if s.dht.shouldRejectStore(1) {
+			logtrace.Warn(ctx, "rejecting STORE: self is not store-eligible", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"sender":             message.Sender.String(),
+				"self_state":         s.dht.selfState.Load(),
+			})
+			return s.generateResponseMessage(ctx, StoreData, message.Sender, ResultFailed, "store rejected: self not store-eligible")
+		}
 		// store the data to queries storage
 		if err := s.dht.store.Store(ctx, key, request.Data, request.Type, false); err != nil {
 			err = errors.Errorf("store the data: %w", err)
@@ -1227,6 +1239,22 @@ func (s *Network) handleBatchStoreData(ctx context.Context, message *Message) (r
 
 	// add the sender to queries hash table
 	s.dht.addNode(ctx, message.Sender)
+
+	// Self-state gate: non-ACTIVE supernodes (STORAGE_FULL, POSTPONED, etc.)
+	// must not accept new-key batch writes. Delegates the decision to
+	// shouldRejectBatchStore so the STORE and BatchStore handlers share a
+	// single source of truth; any future refinement to shouldRejectStore
+	// (logging, metrics, grace periods) flows into both paths uniformly.
+	if reject, newKeys := s.dht.shouldRejectBatchStore(ctx, request.Data); reject {
+		logtrace.Warn(ctx, "rejecting BatchStore: self is not store-eligible", logtrace.Fields{
+			logtrace.FieldModule: "p2p",
+			"sender":             message.Sender.String(),
+			"self_state":         s.dht.selfState.Load(),
+			"new_keys":           newKeys,
+			"total_keys":         len(request.Data),
+		})
+		return s.generateResponseMessage(ctx, BatchStoreData, message.Sender, ResultFailed, "batch store rejected: self not store-eligible")
+	}
 
 	if err := s.dht.store.StoreBatch(ctx, request.Data, 1, false); err != nil {
 		err = errors.Errorf("batch store the data: %w", err)

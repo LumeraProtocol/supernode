@@ -1,0 +1,371 @@
+{
+  "schema_version": "bridge.v2",
+  "project": {
+    "name": "supernode",
+    "one_liner": "Lumera validator companion service for Cascade storage, P2P routing, and Everlight epoch reporting.",
+    "mission": "Provide a Go-based supernode that complements a Lumera validator with Cascade storage/retrieval, Kademlia P2P routing and replication, gRPC/HTTP gateways, and audit-module epoch reporting compatible with Lumera Everlight Phase 1 (chain PR #113).",
+    "target_users": [
+      "Lumera validator operators running a co-located supernode",
+      "Devnet/integration test operators driving epoch flows externally",
+      "SDK/CLI consumers of cascade storage and challenge evidence"
+    ],
+    "success_metrics": [
+      "Epoch reports accepted by chain audit module in both prober and non-prober roles without manual intervention",
+      "STORAGE_FULL state transitions are driven solely from audit epoch reports and respected by P2P store/write paths",
+      "Targeted Go test packages for host_reporter, p2p/kademlia, verifier, and supernode query module pass on master"
+    ]
+  },
+  "scope": {
+    "in_scope": [
+      "Populating HostReport.cascade_kademlia_db_bytes from local Cascade Kademlia SQLite size in submitted epoch reports",
+      "Role-aware peer storage challenge observation submission (prober epoch only)",
+      "Supernode query wrappers for Everlight surfaces: pool-state, sn-eligibility, payout-history",
+      "P2P Kademlia eligibility policy distinguishing routing/read eligibility (ACTIVE+POSTPONED+STORAGE_FULL) from store/write eligibility (ACTIVE only) for new keys, while preserving existing-key replication and read",
+      "Supernode verifier acceptance of STORAGE_FULL as a valid state where appropriate",
+      "Test/devnet affordance to disable the on-chain host reporter via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER",
+      "LEP-5 availability commitment / Merkle proof challenge support in cascadekit and SDK evidence payload"
+    ],
+    "out_of_scope": [
+      "Re-implementing legacy supernode_metrics tx path for STORAGE_FULL transitions (superseded by audit epoch reports)",
+      "Chain-side (lumera) protocol changes — these are consumed, not redefined here",
+      "Coverage threshold enforcement in CI for the retrospectively captured Everlight work",
+      "Full repo-wide vet/govulncheck under environments without system WebP development headers"
+    ],
+    "non_goals": [
+      "Generic operator/admin web UI for Everlight readiness",
+      "Backfilling BRIDGE-style acceptance tests for code that pre-dates Everlight and is unrelated to it",
+      "Changing existing-key P2P store/replication behavior for STORAGE_FULL self-state"
+    ],
+    "assumptions": [
+      "Lumera chain at the supported tag exposes audit.v1 SubmitEpochReport with HostReport.cascade_kademlia_db_bytes and the supernode pool-state / sn-eligibility / payout-history queries.",
+      "Cascade Kademlia data lives in SQLite files matching data*.sqlite3* under the configured P2P data directory.",
+      "Operators install system WebP development headers when they want full repo-wide go test/vet/govulncheck. Build of the supernode binary itself does not require them at run time on release builds."
+    ]
+  },
+  "constraints": {
+    "languages": ["Go"],
+    "platforms": ["linux/amd64 (release target)", "linux/arm64", "darwin (developer)"],
+    "must_use": [
+      "github.com/LumeraProtocol/lumera audit.v1 message types",
+      "Existing logtrace structured logging",
+      "Existing P2P Kademlia SQLite store"
+    ],
+    "must_not_use": [
+      "Legacy supernode_metrics tx path for Everlight payout bytes or STORAGE_FULL state transitions"
+    ],
+    "compliance_security_notes": [
+      "No secrets in code or logs",
+      "Identity must be verified against keyring at host_reporter construction; mismatch is a hard error",
+      "Cryptographic correctness of LEP-5 Merkle proof challenge must be preserved"
+    ]
+  },
+  "domain_model": {
+    "core_entities": [
+      {
+        "name": "HostReport",
+        "notes": "audit.v1 host report submitted per epoch. Includes disk_usage_percent, cascade_kademlia_db_bytes (bytes, not MB), and storage_challenge_observations[]."
+      },
+      {
+        "name": "SupernodeState",
+        "notes": "Enum used by P2P eligibility: ACTIVE, POSTPONED, STORAGE_FULL, plus chain-defined disabled/penalised states. Routing/read eligibility ⊇ store/write eligibility."
+      },
+      {
+        "name": "AvailabilityCommitment",
+        "notes": "LEP-5 Merkle commitment over cascade artifact pieces; verified via Merkle proof challenge in cascadekit/SDK evidence path."
+      }
+    ],
+    "state_machine_notes": [
+      "STORAGE_FULL is reachable from ACTIVE via on-chain state machine driven by audit epoch reports; supernode does not transition itself.",
+      "P2P eligibility for self: new-key STORE/BatchStore require ACTIVE; existing-key replication and reads are unchanged."
+    ]
+  },
+  "features": [
+    {
+      "id": "F01",
+      "name": "Everlight host epoch report payload",
+      "description": "Host reporter populates HostReport.cascade_kademlia_db_bytes from the local Cascade Kademlia SQLite footprint and continues to report disk_usage_percent. Submitted per-epoch via audit module SubmitEpochReport.",
+      "user_value": "Enables Everlight payout weighting and STORAGE_FULL transitions for this validator/supernode pair.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Targeted unit/behavior tests for host_reporter pass and exercise epoch report payload assembly.",
+          "evidence": [
+            "supernode/host_reporter/service.go",
+            "supernode/host_reporter/service_test.go",
+            "supernode/host_reporter/tick_behavior_test.go",
+            "go test ./supernode/host_reporter"
+          ]
+        },
+        {
+          "id": "AT02",
+          "criterion": "Role-aware observation handling: prober epochs include one observation per assigned target; non-prober epochs include none.",
+          "evidence": [
+            "supernode/host_reporter/service.go",
+            "supernode/host_reporter/tick_behavior_test.go"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F02",
+      "name": "Everlight supernode query wrappers",
+      "description": "Supernode module in pkg/lumera exposes PoolState, SNEligibility, and PayoutHistory wrappers around chain queries, including interface, implementation, mock, and testutil updates.",
+      "user_value": "Lets supernode runtime, operator tooling, and tests obtain payout-readiness data without re-implementing chain query plumbing.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Supernode query module compiles and is exercised via mocks/testutil in dependent packages.",
+          "evidence": [
+            "pkg/lumera/modules/supernode/interface.go",
+            "pkg/lumera/modules/supernode/impl.go",
+            "pkg/lumera/modules/supernode/supernode_mock.go",
+            "pkg/testutil/lumera.go",
+            "go test ./pkg/lumera/modules/supernode"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F03",
+      "name": "Everlight STORAGE_FULL P2P policy",
+      "description": "Kademlia eligibility policy treats ACTIVE, POSTPONED, and STORAGE_FULL as routing/read-eligible, but only ACTIVE as store/write-eligible. New-key STORE and BatchStore reject when self is not store-eligible while preserving existing-key replication/read behavior.",
+      "user_value": "Allows STORAGE_FULL nodes to remain useful for retrieval and routing without accepting new writes.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Eligibility helpers and store-rejection paths have executable tests.",
+          "evidence": [
+            "p2p/kademlia/supernode_state.go",
+            "p2p/kademlia/supernode_state_test.go",
+            "p2p/kademlia/peer_store_rejection_test.go",
+            "p2p/kademlia/prune_store_peers_test.go",
+            "p2p/kademlia/bootstrap.go",
+            "p2p/kademlia/dht.go",
+            "p2p/kademlia/network.go",
+            "go test ./p2p/kademlia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F04",
+      "name": "Verifier STORAGE_FULL allowance",
+      "description": "Supernode verifier accepts STORAGE_FULL as a valid state where intended, alongside ACTIVE/POSTPONED, without breaking other verification paths.",
+      "user_value": "Prevents spurious verification failures for nodes that legitimately moved to STORAGE_FULL after an audit epoch.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Verifier tests cover STORAGE_FULL acceptance.",
+          "evidence": [
+            "supernode/verifier/verifier.go",
+            "supernode/verifier/verifier_test.go",
+            "go test ./supernode/verifier"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F05",
+      "name": "Host reporter test/devnet disable affordance",
+      "description": "Setting LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1 (or true) at startup skips starting the on-chain host reporter, so externally driven devnet epoch-report flows do not race the supernode's own account sequence.",
+      "user_value": "Unblocks deterministic devnet/integration tests that drive epoch reports out-of-band.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Start command honours the env var and the package compiles/tests pass.",
+          "evidence": [
+            "supernode/cmd/start.go",
+            "go test ./supernode/cmd"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F06",
+      "name": "LEP-5 availability commitment support",
+      "description": "Cascadekit exposes commitment helpers and Merkle proof challenge primitives; SDK task evidence aligns its payload with the LEP-5 / no-map chain schema.",
+      "user_value": "Allows the audit pipeline and SDK clients to participate in LEP-5 availability challenges with verifiable Merkle proofs.",
+      "acceptance_tests": [
+        {
+          "id": "AT01",
+          "criterion": "Commitment helpers and SDK evidence path have executable tests.",
+          "evidence": [
+            "pkg/cascadekit/commitment.go",
+            "pkg/cascadekit/commitment_test.go",
+            "sdk/task/evidence.go",
+            "go test ./pkg/cascadekit"
+          ]
+        }
+      ]
+    }
+  ],
+  "user_flows": [
+    {
+      "id": "UF01",
+      "name": "Per-epoch host report submission",
+      "actor": "Supernode (host_reporter goroutine)",
+      "steps": [
+        "Detect new epoch via chain client",
+        "Collect disk_usage_percent and cascade_kademlia_db_bytes from local sources",
+        "If prober for this epoch, build StorageChallengeObservations from assigned targets; otherwise none",
+        "Submit MsgSubmitEpochReport via audit module"
+      ],
+      "features": ["F01", "F02"]
+    },
+    {
+      "id": "UF02",
+      "name": "P2P new-key store under STORAGE_FULL self-state",
+      "actor": "Local Kademlia DHT",
+      "steps": [
+        "Receive new-key STORE / BatchStore",
+        "Check self store-eligibility (ACTIVE only)",
+        "Reject when not store-eligible while remaining routable/readable for existing keys"
+      ],
+      "features": ["F03"]
+    },
+    {
+      "id": "UF03",
+      "name": "Devnet test driver disables on-chain host reporter",
+      "actor": "Devnet operator",
+      "steps": [
+        "Set LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1",
+        "Start supernode",
+        "Drive epoch reports externally without account-sequence collision"
+      ],
+      "features": ["F05"]
+    }
+  ],
+  "nfr": {
+    "performance_budgets": [],
+    "reliability": [
+      "Epoch report submission must be retried at the tx layer when transient errors (e.g. OOG) occur; gas_adjustment is configurable (see commit eae3929)."
+    ],
+    "security": [
+      "Identity / keyring mismatch at startup is a hard error",
+      "No PII or sensitive data in production logs"
+    ],
+    "observability": [
+      "Successful epoch report submission emits structured log fields. Today: epoch_id, storage_challenge_observations_count. Plan A3 also requested disk_usage_percent, cascade_kademlia_db_bytes, assigned_targets_count — see open_questions and discrepancy D02."
+    ],
+    "scalability": []
+  },
+  "interfaces": {
+    "apis": [
+      {
+        "name": "audit.v1 SubmitEpochReport",
+        "kind": "chain message",
+        "direction": "supernode -> chain",
+        "notes": "Built and submitted from supernode/host_reporter via pkg/lumera/modules/audit_msg."
+      },
+      {
+        "name": "supernode pool-state / sn-eligibility / payout-history",
+        "kind": "chain query",
+        "direction": "supernode -> chain",
+        "notes": "Wrapped by pkg/lumera/modules/supernode."
+      }
+    ],
+    "external_services": [
+      {
+        "name": "Lumera chain RPC",
+        "notes": "Source of truth for epoch state, supernode roster, and audit submissions."
+      }
+    ]
+  },
+  "workspace": {
+    "topology": "single-repo",
+    "control_repo": ".",
+    "repos": [],
+    "cross_repo_contracts": [],
+    "integration_acceptance_tests": [
+      {
+        "id": "IAT01",
+        "name": "Targeted Everlight test command",
+        "command": "go test ./supernode/host_reporter ./p2p/kademlia ./supernode/verifier ./pkg/lumera/modules/supernode",
+        "notes": "Smoke command for retrospective Everlight gate; passed on 2026-04-28."
+      }
+    ]
+  },
+  "quality_gates": {
+    "ci_required": true,
+    "tests": {
+      "unit": true,
+      "integration": "optional",
+      "e2e": "optional",
+      "coverage_target": "not enforced for retrospective Everlight scope"
+    },
+    "linters_typechecks": [
+      "go vet ./... (warns under environments missing system WebP headers)"
+    ],
+    "security_checks": [
+      "govulncheck ./... (warns under environments missing system WebP headers)"
+    ],
+    "performance_budgets": {
+      "bundle_size": "",
+      "api_response": "",
+      "page_load": ""
+    }
+  },
+  "execution": {
+    "recommended_slices": [
+      {
+        "id": "S01",
+        "goal": "Retrospectively backfill BRIDGE requirements and gate evidence for completed Everlight compatibility (F01-F06).",
+        "features": ["F01", "F02", "F03", "F04", "F05", "F06"],
+        "exit_criteria": [
+          "AT01/AT02 evidence collected per feature",
+          "Gate report records remaining discrepancies (D02, D03) without re-opening implementation"
+        ],
+        "status": "done"
+      },
+      {
+        "id": "S02",
+        "goal": "Decide and (if accepted) implement Everlight plan A3 structured log enrichment on host reporter success path.",
+        "features": ["F01"],
+        "exit_criteria": [
+          "Decision recorded: accept or scope-out the additional log fields",
+          "If accepted: success log includes disk_usage_percent, cascade_kademlia_db_bytes, observations_count, assigned_targets_count with a unit test"
+        ],
+        "status": "planned",
+        "notes": "Tracks discrepancy D02."
+      },
+      {
+        "id": "S03",
+        "goal": "Decide and (if accepted) implement Everlight plan B2 readiness diagnostics endpoint or CLI command.",
+        "features": [],
+        "exit_criteria": [
+          "Decision recorded: in-scope or non-goal for this release",
+          "If in-scope: new feature(s) added to requirements with their own ATs before any implementation"
+        ],
+        "status": "planned",
+        "notes": "Tracks discrepancy D03; if scoped out, move to non_goals."
+      }
+    ],
+    "specialists_recommended": [
+      {
+        "id": "testing-qa",
+        "applicable_features": ["F01", "F03", "F04", "F05"],
+        "rationale": "Future fix slices for these features benefit from explicit test design (role-aware observations, eligibility matrices, env-var gating)."
+      },
+      {
+        "id": "api-design",
+        "applicable_features": [],
+        "rationale": "Only relevant if S03 readiness diagnostics endpoint is taken in-scope."
+      },
+      {
+        "id": "security-auth",
+        "applicable_features": ["F06"],
+        "rationale": "LEP-5 commitment / Merkle proof correctness should be reviewed by a crypto-aware specialist if this area is changed again."
+      }
+    ],
+    "open_questions": [
+      "Should S02 implement the Everlight plan A3 log fields (disk_usage_percent, cascade_kademlia_db_bytes, observations_count, assigned_targets_count) or should requirements be revised to drop them?",
+      "Is the Everlight plan B2 readiness diagnostics endpoint/command in scope for this release? If not, it should be moved from execution.recommended_slices to scope.non_goals."
+    ],
+    "risks": [
+      "R1: Wrong units (MB vs bytes) for cascade_kademlia_db_bytes would distort payout — mitigated by F01 tests.",
+      "R2: Missing observations for prober epochs would cause rejected reports — mitigated by role-aware tests in F01.",
+      "R3: Query wrapper drift against chain proto updates — mitigated by F02 mock/testutil parity.",
+      "R4: Operator confusion if STORAGE_FULL nodes appear unreachable when they are actually still routable/readable — mitigated by F03 tests and code comments at selection points."
+    ]
+  }
+}

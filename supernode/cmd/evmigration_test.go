@@ -18,6 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	evmcryptocodec "github.com/cosmos/evm/crypto/codec"
 	evmhd "github.com/cosmos/evm/crypto/hd"
@@ -172,6 +173,18 @@ func (f *fakeSuperNodeModule) GetParams(ctx context.Context) (*supernodeTypes.Qu
 }
 
 func (f *fakeSuperNodeModule) ListSuperNodes(ctx context.Context) (*supernodeTypes.QueryListSuperNodesResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeSuperNodeModule) GetPoolState(ctx context.Context) (*supernodeTypes.QueryPoolStateResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeSuperNodeModule) GetSNEligibility(ctx context.Context, validatorAddress string) (*supernodeTypes.QuerySNEligibilityResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeSuperNodeModule) GetPayoutHistory(ctx context.Context, validatorAddress string, pagination *query.PageRequest) (*supernodeTypes.QueryPayoutHistoryResponse, error) {
 	return nil, nil
 }
 
@@ -903,7 +916,9 @@ func TestEnsureLegacyAccountMigrated_ValidatorFullHappyPath(t *testing.T) {
 	valMsg, isVal := mc.broadcastedMsg.(*evmigrationtypes.MsgMigrateValidator)
 	require.True(t, isVal, "should use MsgMigrateValidator for validator")
 	assert.Equal(t, newAddr, valMsg.NewAddress)
-	assert.NotEmpty(t, valMsg.NewSignature)
+	valNewSingle := valMsg.NewProof.GetSingle()
+	require.NotNil(t, valNewSingle, "expected single-key new proof")
+	assert.NotEmpty(t, valNewSingle.Signature)
 	valSingle := valMsg.LegacyProof.GetSingle()
 	require.NotNil(t, valSingle, "expected single-key legacy proof")
 	assert.NotEmpty(t, valSingle.Signature)
@@ -1110,7 +1125,9 @@ func TestEnsureLegacyAccountMigrated_MessageFieldsCorrect(t *testing.T) {
 
 	assert.Equal(t, legacyAddr.String(), claimMsg.LegacyAddress)
 	assert.Equal(t, newAddr, claimMsg.NewAddress)
-	assert.NotEmpty(t, claimMsg.NewSignature)
+	claimNewSingle := claimMsg.NewProof.GetSingle()
+	require.NotNil(t, claimNewSingle, "expected single-key new proof")
+	assert.NotEmpty(t, claimNewSingle.Signature)
 	claimSingle := claimMsg.LegacyProof.GetSingle()
 	require.NotNil(t, claimSingle, "expected single-key legacy proof")
 	assert.Equal(t, legacyPub.Bytes(), claimSingle.PubKey)

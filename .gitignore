@@ -14,7 +14,6 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-CLAUDE.md
 # Dependency directories (remove the comment below to include it)
 # vendor/
 # sn-manager binary
@@ -30,6 +29,12 @@ supernode/__debug*
 .env
 /data
 /release
-AGENTS.md
 analysis
+
+.agents/
+.claude/
+.codex/
+AGENTS.md
 .claude/settings.json
+CLAUDE.md
+.bridge-version

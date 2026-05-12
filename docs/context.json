@@ -1,0 +1,272 @@
+{
+  "schema_version": "context.v1",
+  "updated": "2026-04-28",
+  "project": {
+    "name": "supernode",
+    "actual_product": "Lumera Supernode",
+    "summary": "Go-based Lumera validator companion service providing Cascade storage/retrieval, P2P/Kademlia routing and replication, gRPC/HTTP gateway APIs, SDK adapters, host/audit reporting, status metrics, CLI helpers, and system/integration tests.",
+    "bridge_note": "Everlight compatibility work was completed outside the BRIDGE workflow. BRIDGE is being used retrospectively to capture requirements/context and gate evidence, not to plan unfinished Everlight implementation. As of this update, docs/requirements.json has been backfilled to capture F01-F06 and the S01 retrospective slice."
+  },
+  "workspace": {
+    "topology": "single-repo",
+    "control_repo": ".",
+    "repos": []
+  },
+  "feature_status": [
+    {
+      "feature_id": "F01",
+      "name": "Everlight host epoch report payload",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "Host reporter populates audit HostReport.CascadeKademliaDbBytes from local Kademlia SQLite data*.sqlite3* files, preserves disk usage reporting, and submits role-aware storage challenge observations. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "supernode/host_reporter/service.go",
+        "supernode/host_reporter/service_test.go",
+        "supernode/host_reporter/tick_behavior_test.go",
+        "git log: 2a97508 Everlight: supernode compatibility + p2p STORAGE_FULL eligibility gate (#284)"
+      ]
+    },
+    {
+      "feature_id": "F02",
+      "name": "Everlight supernode query wrappers",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "Supernode module exposes PoolState, SNEligibility, and PayoutHistory wrappers plus interface/mock/testutil updates. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "pkg/lumera/modules/supernode/interface.go",
+        "pkg/lumera/modules/supernode/impl.go",
+        "pkg/lumera/modules/supernode/supernode_mock.go",
+        "pkg/testutil/lumera.go"
+      ]
+    },
+    {
+      "feature_id": "F03",
+      "name": "Everlight STORAGE_FULL P2P policy",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "P2P policy treats ACTIVE, POSTPONED, and STORAGE_FULL as routing/read-eligible, but only ACTIVE as store/write-eligible. New-key STORE and BatchStore paths reject when self is not store-eligible while preserving existing-key replication/read behavior. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "p2p/kademlia/supernode_state.go",
+        "p2p/kademlia/supernode_state_test.go",
+        "p2p/kademlia/peer_store_rejection_test.go",
+        "p2p/kademlia/prune_store_peers_test.go",
+        "p2p/kademlia/bootstrap.go",
+        "p2p/kademlia/dht.go",
+        "p2p/kademlia/network.go",
+        "git log: 2a97508 Everlight: supernode compatibility + p2p STORAGE_FULL eligibility gate (#284)"
+      ]
+    },
+    {
+      "feature_id": "F04",
+      "name": "Verifier STORAGE_FULL allowance",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "Supernode verifier accepts STORAGE_FULL as a valid state where appropriate. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "supernode/verifier/verifier.go",
+        "supernode/verifier/verifier_test.go"
+      ]
+    },
+    {
+      "feature_id": "F05",
+      "name": "Host reporter test/devnet disable affordance",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "Setting LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1/true skips starting the on-chain host reporter so externally driven devnet epoch-report flows do not race account sequence. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "supernode/cmd/start.go",
+        "git log: e349971 feat(host_reporter): add LUMERA_SUPERNODE_DISABLE_HOST_REPORTER test affordance (#285)"
+      ]
+    },
+    {
+      "feature_id": "F06",
+      "name": "LEP-5 availability commitment support",
+      "status": "done",
+      "implementation_state": "done_outside_bridge",
+      "notes": "Cascade kit and SDK include availability commitment/Merkle proof challenge support. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "evidence": [
+        "pkg/cascadekit/commitment.go",
+        "pkg/cascadekit/commitment_test.go",
+        "sdk/task/evidence.go",
+        "git log: 3dd5fee feat: LEP-5 availability commitment support (Merkle proof challenge) (#274)"
+      ]
+    }
+  ],
+  "handoff": {
+    "stopped_at": "S01 retrospective Everlight gate and evaluation completed; F01-F06 marked done in BRIDGE after operator approval.",
+    "next_immediate": "No required Everlight S01 work remains. Optional follow-ups: decide D02/S02 host reporter A3 log enrichment and D03/S03 readiness diagnostics, or explicitly move them to non_goals.",
+    "watch_out": "Everlight implementation is done in code and now done in BRIDGE for F01-F06. D02 and D03 remain optional planned decisions, not blockers for S01 completion."
+  },
+  "next_slice": {
+    "slice_id": "S02",
+    "goal": "Optional decision: accept or scope out Everlight plan A3 structured log enrichment on host reporter success path.",
+    "features": ["F01"],
+    "acceptance_tests": [
+      "Decision recorded: accept or scope-out the additional log fields.",
+      "If accepted: success log includes disk_usage_percent, cascade_kademlia_db_bytes, observations_count, assigned_targets_count with a unit test."
+    ]
+  },
+  "commands_to_run": {
+    "test": "make test-unit",
+    "lint": "",
+    "typecheck": "go test ./...",
+    "dev": "go run ./supernode start --config supernode/config.yml",
+    "targeted_everlight": "go test ./supernode/host_reporter ./p2p/kademlia ./supernode/verifier ./pkg/lumera/modules/supernode"
+  },
+  "repo_commands": {
+    "build": "make build",
+    "build_sncli": "make build-sncli",
+    "build_sn_manager": "make build-sn-manager",
+    "integration": "make test-integration",
+    "system": "make test-system",
+    "cascade_e2e": "make test-cascade",
+    "sn_manager_e2e": "make test-sn-manager"
+  },
+  "repo_state": [
+    {
+      "observed": "2026-04-28",
+      "git_status": [
+        "M cmd/sncli/go.mod",
+        "M cmd/sncli/go.sum",
+        "M sn-manager/go.mod",
+        "M sn-manager/go.sum",
+        "?? .agents/",
+        "?? .bridge-version",
+        "?? .claude/",
+        "?? .codex/",
+        "?? docs/context.json",
+        "?? docs/decisions.md",
+        "?? docs/gates-evals/",
+        "?? docs/human-playbook.md",
+        "?? docs/requirements.json"
+      ],
+      "recent_commits": [
+        "e349971 feat(host_reporter): add LUMERA_SUPERNODE_DISABLE_HOST_REPORTER test affordance (#285)",
+        "2a97508 Everlight: supernode compatibility + p2p STORAGE_FULL eligibility gate (#284)",
+        "3dd5fee feat: LEP-5 availability commitment support (Merkle proof challenge) (#274)",
+        "eae3929 feat(tx): lower default gas_adjustment to 1.3, make tuning configurable, retry on OOG (#283)",
+        "8a285ba sdk: align cascade evidence payload with no-map chain schema (#280)"
+      ]
+    }
+  ],
+  "last_sync_validation": [
+    {
+      "command": "jq . docs/context.json >/dev/null",
+      "result": "passed"
+    },
+    {
+      "command": "jq . docs/requirements.json >/dev/null",
+      "result": "passed",
+      "notes": "Validated after retrospective backfill on 2026-04-28."
+    },
+    {
+      "command": "go test ./supernode/host_reporter",
+      "result": "passed",
+      "notes": "Recorded 2026-04-28; go-sqlite3 emitted a const qualifier compiler warning; tests passed."
+    },
+    {
+      "command": "go test ./p2p/kademlia",
+      "result": "passed",
+      "notes": "Recorded 2026-04-28."
+    },
+    {
+      "command": "go test ./pkg/lumera/modules/supernode",
+      "result": "passed",
+      "notes": "Recorded 2026-04-28; package has no test files; compile check passed."
+    },
+    {
+      "command": "go test ./supernode/verifier",
+      "result": "passed",
+      "notes": "Recorded 2026-04-28."
+    }
+  ],
+  "recent_decisions": [
+    {
+      "date": "2026-04-28",
+      "decision": "Backfilled docs/requirements.json with project/scope/features/user_flows/NFR/quality_gates/execution to capture the completed Everlight work (F01-F06) and the S01 retrospective slice, plus S02/S03 decision slices for D02/D03.",
+      "rationale": "S01 gate report (PASS) marked AT01 WAIVED because requirements.json was an empty placeholder. Backfilling resolves AT01 without re-opening implementation scope and addresses gate Recommended Action #3."
+    },
+    {
+      "date": "2026-04-28",
+      "decision": "Treat code and docs/plans/everlight-supernode-compat-implementation-plan.md as the source for context sync because docs/requirements.json had not been backfilled after outside-BRIDGE Everlight work.",
+      "rationale": "BRIDGE canonical requirements were empty while implementation and recent commits showed substantial shipped behavior."
+    },
+    {
+      "date": "2026-04-28",
+      "decision": "Represent Everlight as done in implementation but review in BRIDGE status until operator evaluation completes.",
+      "rationale": "The code work is complete outside BRIDGE; BRIDGE still requires operator-driven evaluation before moving features to done."
+    }
+  ],
+  "blockers": [],
+  "discrepancies": [
+    {
+      "id": "D02",
+      "type": "plan_vs_code",
+      "description": "Everlight plan A3 requests success log fields epoch_id, disk_usage_percent, cascade_kademlia_db_bytes, observations_count, and assigned_targets_count. Current host reporter success log includes epoch_id and storage_challenge_observations_count only (verified at supernode/host_reporter/service.go:167).",
+      "proposed_fix": "Decide via S02: either implement the missing structured log fields or revise requirements (NFR.observability) to drop them. Currently captured as an open question in requirements.json."
+    },
+    {
+      "id": "D03",
+      "type": "recommended_scope_not_found",
+      "description": "Everlight plan B2 recommends a compact runtime/admin diagnostics endpoint or command. Targeted inspection found query wrappers, but no dedicated Everlight readiness endpoint/command.",
+      "proposed_fix": "Decide via S03: take in-scope (add new feature with ATs) or move to scope.non_goals in requirements.json. Currently captured as an open question."
+    }
+  ],
+  "gate_history": [
+    {
+      "date": "2026-04-28T02:54:08Z",
+      "result": "pass",
+      "features": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06"
+      ],
+      "blocking_issues": 0,
+      "warnings": 5,
+      "coverage": "not collected",
+      "report": "docs/gates-evals/S01-gate-report.md",
+      "notes": "Retrospective gate for Everlight work completed outside BRIDGE. AT01 was WAIVED because requirements.json was a placeholder; that finding is now addressed by the 2026-04-28 requirements backfill. Re-running the gate would convert AT01 to VERIFIED."
+    },
+    {
+      "date": "2026-04-28T21:03:37Z",
+      "result": "pass",
+      "features": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06"
+      ],
+      "blocking_issues": 0,
+      "warnings": 5,
+      "coverage": "not collected",
+      "report": "docs/gates-evals/S01-gate-report.md",
+      "notes": "Re-run after docs/requirements.json backfill. AT01 (S01 exit criterion) converted from WAIVED to VERIFIED as expected. All other AT statuses, warnings (WebP env, D02, D03, sqlite3 const qualifier, make test-unit non-zero exit), and discrepancies unchanged. Targeted Everlight + LEP-5 + start-cmd Go tests pass; make build succeeds."
+    }
+  ],
+  "eval_history": [
+    {
+      "date": "2026-04-28T21:20:09Z",
+      "scenarios_generated": 5,
+      "e2e_tests_generated": 1,
+      "awaiting_feedback": false,
+      "feedback_result": "approved",
+      "feedback_notes": "Operator reported all is good and requested marking the evaluated work as done.",
+      "scenarios": "docs/gates-evals/S01-eval-scenarios.md",
+      "e2e_tests": [
+        "tests/e2e/everlight_eval_test.go"
+      ],
+      "command": "go test -tags=e2e ./tests/e2e"
+    }
+  ],
+  "execution": {
+    "open_questions": [
+      "Should S02 implement Everlight plan A3 log fields (disk_usage_percent, cascade_kademlia_db_bytes, observations_count, assigned_targets_count) or should requirements be revised to drop them?",
+      "Is the Everlight plan B2 readiness diagnostics endpoint/command in scope for this release? If not, it should be moved from execution.recommended_slices to scope.non_goals."
+    ]
+  }
+}

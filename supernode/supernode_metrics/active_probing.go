@@ -346,7 +346,7 @@ func buildProbeCandidates(supernodes []*sntypes.SuperNode) (senders []probeTarge
 		if state == sntypes.SuperNodeStateStopped {
 			continue
 		}
-		if state != sntypes.SuperNodeStateActive && state != sntypes.SuperNodeStatePostponed {
+		if state != sntypes.SuperNodeStateActive && state != sntypes.SuperNodeStateStorageFull && state != sntypes.SuperNodeStatePostponed {
 			continue
 		}
 
@@ -383,7 +383,7 @@ func buildProbeCandidates(supernodes []*sntypes.SuperNode) (senders []probeTarge
 		}
 		peersByID[peerID] = t
 		receivers = append(receivers, t)
-		if state == sntypes.SuperNodeStateActive {
+		if state == sntypes.SuperNodeStateActive || state == sntypes.SuperNodeStateStorageFull {
 			senders = append(senders, t)
 		}
 	}

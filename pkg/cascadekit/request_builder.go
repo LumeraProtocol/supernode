@@ -18,6 +18,6 @@ func BuildCascadeRequest(layout codec.Layout, fileBytes []byte, fileName string,
 	if err != nil {
 		return actiontypes.CascadeMetadata{}, nil, err
 	}
-	meta := NewCascadeMetadata(dataHashB64, fileName, uint64(ic), indexSignatureFormat, public)
+	meta := NewCascadeMetadata(dataHashB64, fileName, uint64(ic), indexSignatureFormat, public, nil)
 	return meta, indexIDs, nil
 }

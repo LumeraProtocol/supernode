@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	types "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
+	query "github.com/cosmos/cosmos-sdk/types/query"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -54,6 +55,51 @@ func (m *MockModule) GetParams(ctx context.Context) (*types.QueryParamsResponse,
 func (mr *MockModuleMockRecorder) GetParams(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParams", reflect.TypeOf((*MockModule)(nil).GetParams), ctx)
+}
+
+// GetPayoutHistory mocks base method.
+func (m *MockModule) GetPayoutHistory(ctx context.Context, validatorAddress string, pagination *query.PageRequest) (*types.QueryPayoutHistoryResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPayoutHistory", ctx, validatorAddress, pagination)
+	ret0, _ := ret[0].(*types.QueryPayoutHistoryResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPayoutHistory indicates an expected call of GetPayoutHistory.
+func (mr *MockModuleMockRecorder) GetPayoutHistory(ctx, validatorAddress, pagination any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPayoutHistory", reflect.TypeOf((*MockModule)(nil).GetPayoutHistory), ctx, validatorAddress, pagination)
+}
+
+// GetPoolState mocks base method.
+func (m *MockModule) GetPoolState(ctx context.Context) (*types.QueryPoolStateResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPoolState", ctx)
+	ret0, _ := ret[0].(*types.QueryPoolStateResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPoolState indicates an expected call of GetPoolState.
+func (mr *MockModuleMockRecorder) GetPoolState(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPoolState", reflect.TypeOf((*MockModule)(nil).GetPoolState), ctx)
+}
+
+// GetSNEligibility mocks base method.
+func (m *MockModule) GetSNEligibility(ctx context.Context, validatorAddress string) (*types.QuerySNEligibilityResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSNEligibility", ctx, validatorAddress)
+	ret0, _ := ret[0].(*types.QuerySNEligibilityResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSNEligibility indicates an expected call of GetSNEligibility.
+func (mr *MockModuleMockRecorder) GetSNEligibility(ctx, validatorAddress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSNEligibility", reflect.TypeOf((*MockModule)(nil).GetSNEligibility), ctx, validatorAddress)
 }
 
 // GetSuperNode mocks base method.

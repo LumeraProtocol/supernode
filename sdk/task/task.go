@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	sdkmath "cosmossdk.io/math"
 	txmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
+	snversion "github.com/LumeraProtocol/supernode/v2/pkg/version"
 	"github.com/LumeraProtocol/supernode/v2/sdk/adapters/lumera"
 	"github.com/LumeraProtocol/supernode/v2/sdk/config"
 	"github.com/LumeraProtocol/supernode/v2/sdk/event"
@@ -220,6 +222,29 @@ func (t *BaseTask) filterEligibleSupernodesParallel(parent context.Context, sns 
 					} else {
 						res.reason = fmt.Sprintf("insufficient peers: %d (need > 1)", st.Network.PeersCount)
 					}
+					_ = client.Close(context.Background())
+					cancel()
+					return
+				}
+
+				// (3) SDK-side version gate: refuse supernodes older than
+				// pkg/version.MinSupernodeVersion. This is the single lever
+				// available to the SDK to prevent a post-upgrade client from
+				// pairing with a pre-upgrade supernode during an asynchronous
+				// fleet rollout (e.g. v1.11.1 -> v1.12.0 + LEP-5). See
+				// pkg/version/min_supernode.go for rationale. The check is
+				// fail-closed: empty / unparseable / older versions are
+				// rejected. Pre-release tags on the floor version (e.g.
+				// 2.5.0-rc1) are intentionally accepted.
+				if !snversion.IsCompatibleSupernodeVersion(st.Version) {
+					reported := strings.TrimSpace(st.Version)
+					if reported == "" {
+						reported = "<unreported>"
+					}
+					res.reason = fmt.Sprintf(
+						"supernode version %s is below SDK minimum %s",
+						reported, snversion.MinSupernodeVersion,
+					)
 					_ = client.Close(context.Background())
 					cancel()
 					return

@@ -35,11 +35,11 @@ func (s *stubLumeraClient) GetActionFee(context.Context, string) (*actiontypes.Q
 	panic("unexpected call")
 }
 
-func (s *stubLumeraClient) SimulateFinalizeAction(context.Context, string, []string) (*sdktx.SimulateResponse, error) {
+func (s *stubLumeraClient) SimulateFinalizeAction(context.Context, string, []string, []*actiontypes.ChunkProof) (*sdktx.SimulateResponse, error) {
 	panic("unexpected call")
 }
 
-func (s *stubLumeraClient) FinalizeAction(context.Context, string, []string) (*sdktx.BroadcastTxResponse, error) {
+func (s *stubLumeraClient) FinalizeAction(context.Context, string, []string, []*actiontypes.ChunkProof) (*sdktx.BroadcastTxResponse, error) {
 	panic("unexpected call")
 }
 
