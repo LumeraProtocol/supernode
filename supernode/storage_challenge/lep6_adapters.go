@@ -1,4 +1,4 @@
-package cmd
+package storage_challenge
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/cascadekit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
+	"github.com/btcsuite/btcutil/base58"
 )
 
 // p2pArtifactReader is the recipient-side adapter that satisfies the
@@ -16,24 +18,33 @@ import (
 // the full artifact bytes from the local p2p store and slicing the
 // requested range. The PR3 path is correct-but-not-optimal: a future
 // iteration can replace this with a range-scoped reader.
-type p2pArtifactReader struct {
-	p2p p2p.P2P
+type artifactRetriever interface {
+	Retrieve(ctx context.Context, key string, localOnly ...bool) ([]byte, error)
 }
 
-func newP2PArtifactReader(p p2p.P2P) *p2pArtifactReader {
+type p2pArtifactReader struct {
+	p2p artifactRetriever
+}
+
+func NewP2PArtifactReader(p p2p.P2P) *p2pArtifactReader {
 	return &p2pArtifactReader{p2p: p}
 }
 
 // ReadArtifactRange returns bytes [start, end) for the given key. class is
 // currently informational; storage is content-addressed by key alone.
-func (r *p2pArtifactReader) ReadArtifactRange(ctx context.Context, _ audittypes.StorageProofArtifactClass, key string, start, end uint64) ([]byte, error) {
-	if r == nil || r.p2p == nil {
-		return nil, fmt.Errorf("p2pArtifactReader: nil p2p service")
+func (r *p2pArtifactReader) ArtifactSize(ctx context.Context, _ audittypes.StorageProofArtifactClass, key string) (uint64, error) {
+	data, err := r.retrieveVerifiedArtifact(ctx, key)
+	if err != nil {
+		return 0, err
 	}
+	return uint64(len(data)), nil
+}
+
+func (r *p2pArtifactReader) ReadArtifactRange(ctx context.Context, _ audittypes.StorageProofArtifactClass, key string, start, end uint64) ([]byte, error) {
 	if end <= start {
 		return nil, fmt.Errorf("p2pArtifactReader: invalid range [%d,%d)", start, end)
 	}
-	data, err := r.p2p.Retrieve(ctx, key, true)
+	data, err := r.retrieveVerifiedArtifact(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -45,15 +56,36 @@ func (r *p2pArtifactReader) ReadArtifactRange(ctx context.Context, _ audittypes.
 	return out, nil
 }
 
-// cascadeMetaProvider implements storage_challenge.CascadeMetaProvider via
-// the lumera Action module. It fetches the on-chain action, decodes its
-// CascadeMetadata, and returns it alongside the finalized action FileSizeKbs
-// needed for exact artifact-size derivation.
+func (r *p2pArtifactReader) retrieveVerifiedArtifact(ctx context.Context, key string) ([]byte, error) {
+	if r == nil || r.p2p == nil {
+		return nil, fmt.Errorf("p2pArtifactReader: nil p2p service")
+	}
+	data, err := r.p2p.Retrieve(ctx, key, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("p2pArtifactReader: empty artifact for key %s", key)
+	}
+	hash, err := utils.Blake3Hash(data)
+	if err != nil {
+		return nil, fmt.Errorf("p2pArtifactReader: hash artifact %s: %w", key, err)
+	}
+	if got := base58.Encode(hash); got != key {
+		return nil, fmt.Errorf("p2pArtifactReader: content hash mismatch for key %s", key)
+	}
+	return data, nil
+}
+
+// cascadeMetaProvider implements CascadeMetaProvider via the lumera Action
+// module. It fetches the on-chain action, decodes its CascadeMetadata, and
+// returns it alongside the finalized action FileSizeKbs needed for exact
+// artifact-size derivation.
 type cascadeMetaProvider struct {
 	client lumera.Client
 }
 
-func newCascadeMetaProvider(c lumera.Client) *cascadeMetaProvider {
+func NewCascadeMetaProvider(c lumera.Client) *cascadeMetaProvider {
 	return &cascadeMetaProvider{client: c}
 }
 

@@ -243,6 +243,12 @@ func requireFinalizedCascadeArtifactCounts(t *testing.T, ctx context.Context, cl
 
 func recoverChainKey(t *testing.T, binaryPath, homePath, keyName, mnemonic string) {
 	t.Helper()
+	// The system-test lumerad home is reused across package tests and local reruns.
+	// Ensure this helper is deterministic instead of silently reusing a stale key
+	// with the same name from an earlier test run.
+	deleteCmd := exec.Command(binaryPath, "keys", "delete", keyName, "--yes", "--keyring-backend=test", "--home", homePath)
+	_ = deleteCmd.Run()
+
 	cmd := exec.Command(binaryPath, "keys", "add", keyName, "--recover", "--keyring-backend=test", "--home", homePath)
 	cmd.Stdin = strings.NewReader(mnemonic + "\n")
 	out, err := cmd.CombinedOutput()

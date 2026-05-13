@@ -321,6 +321,66 @@ func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
 	}
 }
 
+func TestTick_SOFTModeWithAssignedTargetsWaitsForLEP6ProofResults(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	kr, keyName, identity := testKeyringAndIdentity(t)
+	auditMod := &stubAuditModule{
+		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 13},
+		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 13}},
+		epochReportErr: status.Error(codes.NotFound, "not found"),
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			TargetSupernodeAccounts: []string{"snA"},
+		},
+		params: audittypes.Params{StorageTruthEnforcementMode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SOFT},
+	}
+	auditMsg := auditmsgmod.NewMockModule(ctrl)
+	node := nodemod.NewMockModule(ctrl)
+	sn := supernodemod.NewMockModule(ctrl)
+	client := lumeraMock.NewMockClient(ctrl)
+	client.EXPECT().Audit().AnyTimes().Return(auditMod)
+	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
+	client.EXPECT().SuperNode().AnyTimes().Return(sn)
+	client.EXPECT().Node().AnyTimes().Return(node)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").AnyTimes().Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
+
+	provider := &stubProofResultProvider{}
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(13), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ uint64, _ audittypes.HostReport, _ []*audittypes.StorageChallengeObservation, proofs []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
+			if len(proofs) != 1 || proofs[0].TicketId != "ticket-13" {
+				t.Fatalf("expected delayed proof result to be submitted, got %+v", proofs)
+			}
+			return &sdktx.BroadcastTxResponse{}, nil
+		},
+	).Times(1)
+
+	svc, err := NewService(identity, client, kr, keyName, "", "")
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	svc.SetProofResultProvider(provider)
+
+	// First tick models the production race: host_reporter fires before the
+	// LEP-6 dispatcher appends same-epoch proof results. It must not submit an
+	// empty storage_proof_results report because that report is idempotent and
+	// would permanently block the later proof rows for this epoch.
+	svc.tick(context.Background())
+
+	provider.results = []*audittypes.StorageProofResult{{
+		TargetSupernodeAccount: "snA",
+		BucketType:             audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT,
+		TicketId:               "ticket-13",
+		TranscriptHash:         "hash-13",
+		ResultClass:            audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
+	}}
+	svc.tick(context.Background())
+
+	if len(provider.queriedEpochs) != 2 || provider.queriedEpochs[0] != 13 || provider.queriedEpochs[1] != 13 {
+		t.Fatalf("expected provider queried twice for epoch 13, got %v", provider.queriedEpochs)
+	}
+}
+
 func TestTick_FULLModeIncompleteStorageProofCoverageSkipsSubmitAndRequeues(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

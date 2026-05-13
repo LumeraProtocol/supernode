@@ -93,7 +93,7 @@ func TestLEP6HealClaimPendingLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, store.RecordPendingHealClaim(ctx, 101, "ticket-101", "manifest", "/tmp/stage"))
-	// Wave 2 / C5 fix: HasHealClaim returns SUBMITTED-only. A pending row
+	// LEP-6 C5 fix: HasHealClaim returns SUBMITTED-only. A pending row
 	// must not block fresh dispatch.
 	has, err := store.HasHealClaim(ctx, 101)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestLEP6HealVerificationPendingLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, store.RecordPendingHealVerification(ctx, 202, "verifier-a", true, "hash"))
-	// Wave 2 / C5 fix: pending must NOT count as submitted.
+	// LEP-6 C5 fix: pending must NOT count as submitted.
 	has, err := store.HasHealVerification(ctx, 202, "verifier-a")
 	require.NoError(t, err)
 	require.False(t, has, "pending row must NOT count as submitted (C5)")

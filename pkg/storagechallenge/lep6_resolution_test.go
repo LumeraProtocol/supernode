@@ -16,29 +16,46 @@ func TestMaxStorageProofResultsPerReportTracksChainConstant(t *testing.T) {
 
 func TestResolveArtifactCount_Index_Symbol_Unspecified(t *testing.T) {
 	meta := &actiontypes.CascadeMetadata{
-		RqIdsIc:  7,
-		RqIdsMax: 12,
-		RqIdsIds: []string{"a", "b", "c", "d"},
+		RqIdsIc:             7,
+		RqIdsMax:            12,
+		RqIdsIds:            []string{"a", "b", "c", "d"},
+		IndexArtifactCount:  50,
+		SymbolArtifactCount: 60,
 	}
 
 	gotIdx, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
 	if err != nil {
 		t.Fatalf("INDEX: unexpected error: %v", err)
 	}
-	if gotIdx != 7 {
-		t.Fatalf("INDEX count: want 7, got %d", gotIdx)
+	if gotIdx != 50 {
+		t.Fatalf("INDEX count: want chain-canonical 50, got %d", gotIdx)
 	}
 
 	gotSym, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL)
 	if err != nil {
 		t.Fatalf("SYMBOL: unexpected error: %v", err)
 	}
-	if gotSym != 4 {
-		t.Fatalf("SYMBOL count: want 4, got %d", gotSym)
+	if gotSym != 60 {
+		t.Fatalf("SYMBOL count: want chain-canonical 60, got %d", gotSym)
 	}
 
 	if _, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED); err == nil {
 		t.Fatalf("UNSPECIFIED: expected error, got nil")
+	}
+}
+
+func TestResolveArtifactCount_UsesLumeraCanonicalFallback(t *testing.T) {
+	meta := &actiontypes.CascadeMetadata{
+		RqIdsIc:  11,
+		RqIdsIds: make([]string, 50),
+	}
+
+	gotIdx, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
+	if err != nil {
+		t.Fatalf("INDEX: unexpected error: %v", err)
+	}
+	if gotIdx != 50 {
+		t.Fatalf("INDEX count must mirror Lumera CascadeArtifactCountsWithFallbackStrict fallback: want 50, got %d", gotIdx)
 	}
 }
 
@@ -49,11 +66,11 @@ func TestResolveArtifactCount_LegacyZero(t *testing.T) {
 		audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL,
 	} {
 		got, err := ResolveArtifactCount(meta, class)
-		if err != nil {
-			t.Fatalf("class=%v: legacy zero should not error, got: %v", class, err)
+		if err == nil {
+			t.Fatalf("class=%v: malformed empty metadata should error", class)
 		}
 		if got != 0 {
-			t.Fatalf("class=%v: want 0, got %d", class, got)
+			t.Fatalf("class=%v: errored metadata should return 0, got %d", class, got)
 		}
 	}
 }

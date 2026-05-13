@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAttestor_MultiTargetSameTicketBothPersist is the Wave 1 / C2
+// TestAttestor_MultiTargetSameTicketBothPersist is the LEP-6 C2
 // regression test Matee called out: two distinct targets within the same
 // (epoch, ticket) must each produce a persisted dedup row and a chain
 // submit. The previous PK collapsed both into one row and dropped the
@@ -83,7 +83,7 @@ func (staticTwoReporters) ReporterAccounts(_ context.Context) ([]string, error) 
 	return []string{"reporter-bad", "reporter-good"}, nil
 }
 
-// TestFinder_PerReporterErrorIsolation is the Wave 1 / L4 regression: a
+// TestFinder_PerReporterErrorIsolation is the LEP-6 L4 regression: a
 // single failing reporter RPC must NOT mask candidates from other
 // reporters.
 func TestFinder_PerReporterErrorIsolation(t *testing.T) {

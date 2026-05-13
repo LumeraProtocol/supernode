@@ -186,7 +186,16 @@ func (s *Service) tick(ctx context.Context) {
 	var storageProofResults []*audittypes.StorageProofResult
 	if proofResultProvider := s.getProofResultProvider(); proofResultProvider != nil {
 		storageProofResults = proofResultProvider.CollectResults(epochID)
-		if s.fullModeStorageProofCoverageRequired(tickCtx) {
+		mode, modeOK := s.storageTruthEnforcementMode(tickCtx)
+		if modeOK && mode != audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED && len(assignResp.TargetSupernodeAccounts) > 0 && len(storageProofResults) == 0 {
+			logtrace.Warn(tickCtx, "epoch report skipped: waiting for LEP-6 storage proof results", logtrace.Fields{
+				"epoch_id":         epochID,
+				"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+				"mode":             mode.String(),
+			})
+			return
+		}
+		if modeOK && mode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL {
 			complete, reason := storageProofCoverageComplete(storageProofResults, assignResp.TargetSupernodeAccounts)
 			if !complete {
 				if requeuer, ok := proofResultProvider.(ProofResultRequeuer); ok {
@@ -231,12 +240,12 @@ func (s *Service) tick(ctx context.Context) {
 	})
 }
 
-func (s *Service) fullModeStorageProofCoverageRequired(ctx context.Context) bool {
+func (s *Service) storageTruthEnforcementMode(ctx context.Context) (audittypes.StorageTruthEnforcementMode, bool) {
 	paramsResp, err := s.lumera.Audit().GetParams(ctx)
 	if err != nil || paramsResp == nil {
-		return false
+		return audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED, false
 	}
-	return paramsResp.Params.StorageTruthEnforcementMode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL
+	return paramsResp.Params.StorageTruthEnforcementMode, true
 }
 
 func storageProofCoverageComplete(results []*audittypes.StorageProofResult, targets []string) (bool, string) {

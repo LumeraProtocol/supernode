@@ -11,9 +11,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// Wave 3 — M10 regression. Pre-Wave-3 the eligibility filter required BOTH
+// LEP-6 M10 regression: the previous eligibility filter required BOTH
 // IndexArtifactCount AND SymbolArtifactCount > 0, silently hiding INDEX-only
-// or SYMBOL-only tickets from the dispatcher. Post-Wave-3 a ticket is
+// or SYMBOL-only tickets from the dispatcher. After the fix a ticket is
 // eligible if AT LEAST ONE class is non-zero. Both-zero remains invisible.
 func TestChainTicketProvider_M10_AcceptsAtLeastOneClass(t *testing.T) {
 	cases := []struct {

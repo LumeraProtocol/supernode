@@ -72,7 +72,7 @@ func (p *programmableAudit) GetHealOp(ctx context.Context, healOpID uint64) (*au
 		// surfaces as gRPC status.NotFound with the discriminating
 		// "heal op not found" message. The previous test used a bare
 		// errors.New("not found") which the broad legacy substring
-		// matcher accepted, but which Wave 0 narrowly rejects (so as not
+		// matcher accepted, but which LEP-6 review fix narrowly rejects (so as not
 		// to swallow transient "block N not found" errors).
 		return nil, status.Error(codes.NotFound, "heal op not found")
 	}
