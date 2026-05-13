@@ -22,6 +22,7 @@ const createRQSymbolsDir string = `
 type Store interface {
 	DeleteSymbolsByTxID(txid string) error
 	StoreSymbolDirectory(txid, dir string) error
+	UpsertSymbolDirectory(txid, dir string) error
 	GetDirectoryByTxID(txid string) (string, error)
 	GetToDoStoreSymbolDirs() ([]SymbolDir, error)
 	SetIsCompleted(txid string) error
@@ -116,6 +117,32 @@ func (s *SQLiteRQStore) StoreSymbolDirectory(txid, dir string) error {
 
 	if _, err := stmt.Exec(txid, dir); err != nil {
 		return fmt.Errorf("failed to execute insert statement for directory: %w", err)
+	}
+
+	return nil
+}
+
+// UpsertSymbolDirectory associates a txid with a directory path idempotently.
+//
+// LEP-6 heal finalization retries publish after transient P2P failures. A retry
+// for the same action must not get stuck behind the row inserted by the failed
+// attempt, so this path explicitly upserts instead of changing the legacy insert
+// semantics of StoreSymbolDirectory.
+func (s *SQLiteRQStore) UpsertSymbolDirectory(txid, dir string) error {
+	stmt, err := s.db.Prepare(`
+		INSERT INTO rq_symbols_dir (txid, dir, is_completed)
+		VALUES (?, ?, FALSE)
+		ON CONFLICT(txid) DO UPDATE SET
+			dir = excluded.dir,
+			is_completed = FALSE
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare upsert statement for directory: %w", err)
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(txid, dir); err != nil {
+		return fmt.Errorf("failed to execute upsert statement for directory: %w", err)
 	}
 
 	return nil

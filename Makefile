@@ -218,7 +218,7 @@ test-cascade:
 # SQLite history/dedup state is not shared with Cascade fixtures or other nodes.
 test-lep6: setup-lep6-supernodes
 	@echo "Running LEP-6 e2e tests..."
-	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -timeout=900s -v -run '^TestLEP6' .
+	@cd tests/system && ${GO} mod tidy && ${GO} test -tags=system_test -timeout=1500s -v -run '^TestLEP6' .
 
 # Validate LEP-6 local config/default/fixture coverage without starting a network.
 lep6-validate-config:

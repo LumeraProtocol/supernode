@@ -431,13 +431,26 @@ func downloadAndAssertCascadeBytes(t *testing.T, ctx context.Context, ac action.
 	t.Helper()
 	sig, err := ac.GenerateDownloadSignature(ctx, actionID, userAddress)
 	require.NoError(t, err)
-	_, err = ac.DownloadCascade(ctx, actionID, outputBaseDir, sig)
+	taskID, err := ac.DownloadCascade(ctx, actionID, outputBaseDir, sig)
 	require.NoError(t, err)
 	outDir := filepath.Join(outputBaseDir, actionID)
 	require.Eventually(t, func() bool {
+		entry, ok := ac.GetTask(ctx, taskID)
+		if !ok {
+			return false
+		}
+		switch string(entry.Status) {
+		case "COMPLETED":
+			return true
+		case "FAILED":
+			t.Fatalf("download task %s failed for action %s: %v; events=%+v", taskID, actionID, entry.Error, entry.Events)
+		}
+		return false
+	}, 90*time.Second, time.Second, "download task should complete")
+	require.Eventually(t, func() bool {
 		entries, err := os.ReadDir(outDir)
 		return err == nil && len(entries) > 0
-	}, 45*time.Second, time.Second, "download output directory should contain reconstructed file")
+	}, 15*time.Second, time.Second, "download output directory should contain reconstructed file after completed task")
 	entries, err := os.ReadDir(outDir)
 	require.NoError(t, err)
 	var downloadedPath string

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetToDoStoreSymbolDirs(t *testing.T) {
@@ -158,4 +159,25 @@ func TestStoreSymbolDirectory(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpsertSymbolDirectory(t *testing.T) {
+	store := SetupTestDB(t)
+	defer store.Close()
+
+	require.NoError(t, store.StoreSymbolDirectory("tx123", "dir123"))
+	require.NoError(t, store.UpdateIsFirstBatchStored("tx123"))
+	require.NoError(t, store.SetIsCompleted("tx123"))
+
+	require.NoError(t, store.UpsertSymbolDirectory("tx123", "dir456"))
+
+	var row struct {
+		Dir                string `db:"dir"`
+		IsFirstBatchStored bool   `db:"is_first_batch_stored"`
+		IsCompleted        bool   `db:"is_completed"`
+	}
+	require.NoError(t, store.db.Get(&row, "SELECT dir, is_first_batch_stored, is_completed FROM rq_symbols_dir WHERE txid = ?", "tx123"))
+	assert.Equal(t, "dir456", row.Dir)
+	assert.True(t, row.IsFirstBatchStored)
+	assert.False(t, row.IsCompleted)
 }
