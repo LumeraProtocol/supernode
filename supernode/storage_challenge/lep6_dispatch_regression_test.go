@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Wave 3 — LEP-6 PR286 review fix regression tests.
+// LEP-6 review regression: LEP-6 PR286 review fix regression tests.
 //
 // Coverage:
 //   - H6: SelectArtifactClass with empty rolled class emits NO_ELIGIBLE_TICKET
@@ -22,12 +22,12 @@ import (
 //     must NOT leak into the chain row's TicketId field (chain rejects).
 //
 // H4/H5 invariants are covered by lep6_dispatch_test.go +
-// result_buffer_test.go after the wave-3 rewrites; this file targets the
+// result_buffer_test.go after the LEP-6 dispatcher rewrites; this file targets the
 // behavioural regressions specific to H6/L5 that did not have a direct test
-// before this wave.
+// before this regression coverage.
 
 // TestDispatchEpoch_H6_NoSwapEmitsNoEligible_TicketIdEmpty exercises the
-// post-Wave-3 SelectArtifactClass behavior: with `tkt-T0` (rolls SYMBOL when
+// fixed SelectArtifactClass behavior: with `tkt-T0` (rolls SYMBOL when
 // both classes are present) and indexCount=0, the function must return
 // UNSPECIFIED — wait, that's only the indexCount=0 + INDEX-roll case. For
 // SYMBOL-roll + indexCount=0 we still return SYMBOL and the dispatcher hits
@@ -42,19 +42,21 @@ func TestDispatchEpoch_H6_RollEmptyEmitsNoEligibleNotSwap(t *testing.T) {
 		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
 	}
 	// `tkt-timeout` rolls INDEX under makeAnchor's seed (verified empirically;
-	// see find_symbol_roll.go probe). With indexCount=0 the post-Wave-3
-	// behaviour MUST be UNSPECIFIED → NO_ELIGIBLE_TICKET. Pre-Wave-3 code
+	// see find_symbol_roll.go probe). With indexCount=0 the fixed
+	// behaviour MUST be UNSPECIFIED → NO_ELIGIBLE_TICKET. The previous selection code
 	// would have swapped to SYMBOL and tried to dispatch.
 	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
 		"sn-target": {{TicketID: "tkt-timeout", AnchorBlock: 100}},
 	}}
-	// IndexArtifactCount derives from RqIdsIc, SymbolArtifactCount from len(RqIdsIds).
-	// RqIdsIc=0 → INDEX class empty.
+	// Under chain-canonical count resolution, len(RqIdsIds) is the fallback for
+	// both classes. Keep the fallback universe empty here so the INDEX roll has
+	// no chain-valid artifact universe and must emit NO_ELIGIBLE rather than
+	// swapping classes.
 	meta := stubMetaProvider{
 		meta: &actiontypes.CascadeMetadata{
 			RqIdsIc:  0,
 			RqIdsMax: 1,
-			RqIdsIds: []string{"sym-0"}, // SYMBOL count = 1
+			RqIdsIds: []string{},
 		},
 		size: 4 * 1024,
 	}

@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRecheckSubmissionDedupPerTarget asserts the Wave 1 / C2 fix: chain
+// TestRecheckSubmissionDedupPerTarget asserts the LEP-6 C2 fix: chain
 // dedup is per-(epoch, ticket, target_account), so two distinct targets
 // within the same (epoch, ticket) must produce two persisted rows. Before
-// Wave 1, the PK was (epoch, ticket) and the second target's row was
+// LEP-6 review fix, the PK was (epoch, ticket) and the second target's row was
 // silently dropped — masking that supernode from chain N/R/D math.
 func TestRecheckSubmissionDedupPerTarget(t *testing.T) {
 	db := sqlx.MustConnect("sqlite3", ":memory:")
@@ -63,7 +63,7 @@ func TestRecheckSubmissionDedupPerTarget(t *testing.T) {
 }
 
 // TestRecordPendingRecheckSubmission_DuplicateReturnsTypedError covers the
-// Wave 1 / L3 fix: duplicate-pending writes used to be silently swallowed
+// LEP-6 L3 fix: duplicate-pending writes used to be silently swallowed
 // by `INSERT OR IGNORE`; they now return ErrLEP6RecheckAlreadyRecorded so
 // the attestor can branch on it.
 func TestRecordPendingRecheckSubmission_DuplicateReturnsTypedError(t *testing.T) {

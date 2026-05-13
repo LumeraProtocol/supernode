@@ -234,19 +234,33 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			anchor := anchorResp.Anchor
 
+			if shouldRunLEP6Dispatch(params) && s.lep6 != nil {
+				if err := s.lep6.DispatchEpoch(ctx, epochID); err != nil {
+					logtrace.Warn(ctx, "lep6 dispatch error", logtrace.Fields{
+						"epoch_id": epochID,
+						"error":    err.Error(),
+					})
+					lastRunEpoch = epochID
+					lastRunOK = false
+					continue
+				}
+			}
+
 			challengers := deterministic.SelectChallengers(anchor.ActiveSupernodeAccounts, anchor.Seed, epochID, params.ScChallengersPerEpoch)
 			if !containsString(challengers, s.identity) {
 				if loggedNotSelectedEpoch != epochID {
-					logtrace.Debug(ctx, "storage challenge: not selected challenger; skipping", logtrace.Fields{
-						"epoch_id": epochID,
-						"identity": s.identity,
-						"selected": len(challengers),
-						"sc_param": params.ScChallengersPerEpoch,
+					logtrace.Debug(ctx, "storage challenge: not selected challenger; legacy storage challenge skipped", logtrace.Fields{
+						"epoch_id":           epochID,
+						"identity":           s.identity,
+						"selected":           len(challengers),
+						"sc_param":           params.ScChallengersPerEpoch,
+						"lep6_dispatch_mode": params.StorageTruthEnforcementMode.String(),
 					})
 					loggedNotSelectedEpoch = epochID
 				}
 				lastRunEpoch = epochID
 				lastRunOK = true
+				s.persistLastRunEpoch(ctx, epochID)
 				continue
 			}
 
@@ -283,20 +297,6 @@ func (s *Service) Run(ctx context.Context) error {
 				lastRunEpoch = epochID
 				lastRunOK = false
 				continue
-			}
-
-			// LEP-6 compound dispatch runs alongside the legacy single-range
-			// challenge for forward compatibility. The dispatcher gates
-			// internally on StorageTruthEnforcementMode (UNSPECIFIED skips),
-			// so it is dormant under chains that have not enabled storage
-			// truth enforcement and a no-op cost otherwise.
-			if s.lep6 != nil {
-				if err := s.lep6.DispatchEpoch(ctx, epochID); err != nil {
-					logtrace.Warn(ctx, "lep6 dispatch error", logtrace.Fields{
-						"epoch_id": epochID,
-						"error":    err.Error(),
-					})
-				}
 			}
 
 			lastRunEpoch = epochID
@@ -367,6 +367,10 @@ func (s *Service) auditParams(ctx context.Context) (audittypes.Params, bool) {
 		return audittypes.Params{}, false
 	}
 	return p, true
+}
+
+func shouldRunLEP6Dispatch(params audittypes.Params) bool {
+	return params.StorageTruthEnforcementMode != audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED
 }
 
 func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, lookbackEpochs uint32, respTimeout time.Duration, affirmTimeout time.Duration) error {

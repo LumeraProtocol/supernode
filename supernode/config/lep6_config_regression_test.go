@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Wave 4 — LEP-6 PR286 review fix regression tests.
+// LEP-6 review regression: LEP-6 PR286 review fix regression tests.
 //
 // Coverage:
 //   - C1: missing-block default for LEP-6 toggles is FALSE (no silent
@@ -16,7 +16,7 @@ import (
 //     cases (wrong-direction default would cause auto-opt-in) and the
 //     advisory helper.
 //   - L6: structural validator rejects recheck=true with disabled parents.
-//     Pre-Wave-4, fixtures could carry recheck.enabled=true while
+//     Before this fix, fixtures could carry recheck.enabled=true while
 //     storage_challenge.enabled=false, silently no-op'd at runtime.
 
 func TestLoadConfig_C1_MissingBlocksDefaultDisabled(t *testing.T) {

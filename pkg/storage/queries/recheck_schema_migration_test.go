@@ -61,7 +61,7 @@ func TestMigrateStorageRecheckSubmissionsPK(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	// Seed the OLD schema (pre-Wave-1 PK).
+	// Seed the OLD schema (before this fix PK).
 	const oldSchema = `
 CREATE TABLE storage_recheck_submissions (
   epoch_id INTEGER NOT NULL,

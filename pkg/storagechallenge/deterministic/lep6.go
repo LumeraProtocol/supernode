@@ -494,8 +494,10 @@ func SelectArtifactOrdinal(seed []byte, target, ticketID string, class audittype
 // passed explicitly so a future param change at the chain level can be
 // surfaced cleanly. The returned slice has length exactly k.
 //
-// Returns an error if rangeLen >= artifactSize (would yield negative modulus
-// space) or if any input is degenerate (k=0, empty class).
+// Returns an error if rangeLen > artifactSize (out-of-bounds range),
+// artifactSize is zero, or any input is degenerate (k=0, empty class). When
+// rangeLen == artifactSize, the whole artifact is challenged and every offset
+// is deterministically 0.
 //
 // IMPORTANT: u32be(ordinal) and u32be(i) are written as raw 4-byte
 // big-endian integers, not as decimal-string forms — this keeps the byte
@@ -505,18 +507,24 @@ func ComputeMultiRangeOffsets(seed []byte, target, ticketID string, class auditt
 	if k <= 0 {
 		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: k must be > 0")
 	}
+	if artifactSize == 0 {
+		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: artifactSize must be > 0")
+	}
 	if rangeLen == 0 {
 		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: rangeLen must be > 0")
 	}
-	if artifactSize <= rangeLen {
-		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: artifactSize (%d) must be > rangeLen (%d)", artifactSize, rangeLen)
+	if rangeLen > artifactSize {
+		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: rangeLen (%d) must be <= artifactSize (%d)", rangeLen, artifactSize)
 	}
 	classDomain := ArtifactClassDomain(class)
 	if classDomain == "" {
 		return nil, fmt.Errorf("deterministic.ComputeMultiRangeOffsets: unsupported class %v", class)
 	}
-	span := artifactSize - rangeLen
 	offsets := make([]uint64, k)
+	if rangeLen == artifactSize {
+		return offsets, nil
+	}
+	span := artifactSize - rangeLen
 	var ordBuf, idxBuf [4]byte
 	binary.BigEndian.PutUint32(ordBuf[:], ordinal)
 	for i := 0; i < k; i++ {

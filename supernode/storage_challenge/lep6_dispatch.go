@@ -74,6 +74,14 @@ type CascadeMetaProvider interface {
 	GetCascadeMetadata(ctx context.Context, ticketID string) (*actiontypes.CascadeMetadata, uint64, error)
 }
 
+// ArtifactSizeProvider optionally returns the byte size of the exact artifact
+// blob served by the recipient-side storage/proof reader. Runtime LEP-6 range
+// selection must operate on those bytes; metadata-derived sizes are only a
+// deterministic fallback when the local store cannot report a size.
+type ArtifactSizeProvider interface {
+	ArtifactSize(ctx context.Context, class audittypes.StorageProofArtifactClass, key string) (uint64, error)
+}
+
 // TicketProvider enumerates the cascade tickets that the given target
 // supernode is a participant on. Returns the action_id and the action's
 // register-time block height (for ClassifyTicketBucket).
@@ -108,6 +116,7 @@ type LEP6Dispatcher struct {
 	supernodeClient SupernodeClientFactory
 	tickets         TicketProvider
 	meta            CascadeMetaProvider
+	sizes           ArtifactSizeProvider
 	buffer          *Buffer
 	mu              sync.Mutex
 }
@@ -158,6 +167,18 @@ func NewLEP6Dispatcher(
 		meta:            meta,
 		buffer:          buffer,
 	}, nil
+}
+
+// SetArtifactSizeProvider attaches an optional runtime artifact-size source.
+// Production wires this to the same local P2P store used by the recipient
+// ArtifactReader so challenger range derivation matches the bytes actually
+// served by storage. Tests and non-runtime callers may leave it nil, in which
+// case ResolveArtifactSize remains the deterministic fallback.
+func (d *LEP6Dispatcher) SetArtifactSizeProvider(p ArtifactSizeProvider) {
+	if d == nil {
+		return
+	}
+	d.sizes = p
 }
 
 // DispatchEpoch runs the challenger flow for epochID. The flow gates on
@@ -461,10 +482,42 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		lep6metrics.IncDispatchInternalFailure("resolve_size")
 		return fmt.Errorf("resolve artifact size: %w", err)
 	}
+	// Prefer the stored blob size when available. SYMBOL artifacts in runtime
+	// are compressed/content-addressed RaptorQ blobs, so FileSizeKbs/RqIdsMax
+	// is only a logical fallback estimate and can exceed the bytes that the
+	// target ArtifactReader will serve. Range derivation must use the served
+	// blob size to avoid healthy artifacts becoming INVALID_TRANSCRIPT.
+	if d.sizes != nil {
+		storedSize, sizeErr := d.sizes.ArtifactSize(ctx, class, artifactKey)
+		if sizeErr != nil {
+			logtrace.Warn(ctx, "lep6 dispatch: stored artifact size unavailable; using metadata fallback", logtrace.Fields{
+				"ticket": ticketID, "artifact_class": class.String(), "artifact_key": artifactKey, "fallback_size": artifactSize, "error": sizeErr.Error(),
+			})
+		} else if storedSize == 0 {
+			logtrace.Warn(ctx, "lep6 dispatch: stored artifact size is zero; using metadata fallback", logtrace.Fields{
+				"ticket": ticketID, "artifact_class": class.String(), "artifact_key": artifactKey, "fallback_size": artifactSize,
+			})
+		} else {
+			if storedSize != artifactSize {
+				logtrace.Debug(ctx, "lep6 dispatch: using stored artifact size instead of metadata fallback", logtrace.Fields{
+					"ticket": ticketID, "artifact_class": class.String(), "artifact_key": artifactKey, "metadata_size": artifactSize, "stored_size": storedSize,
+				})
+			}
+			artifactSize = storedSize
+		}
+	}
 
 	rangeLen := uint64(params.StorageTruthCompoundRangeLenBytes)
 	if rangeLen == 0 {
 		rangeLen = uint64(deterministic.LEP6CompoundRangeLenBytes)
+	}
+	// Small artifacts are valid CASCADE artifacts and must still produce a
+	// chain-acceptable proof row. Use a per-artifact effective range length so
+	// the requested byte ranges stay in bounds while preserving the chain param
+	// as the cap for normal-sized artifacts. The derivation hash below uses the
+	// same effective value, and the recipient signs the same request shape.
+	if artifactSize > 0 && artifactSize < rangeLen {
+		rangeLen = artifactSize
 	}
 	k := int(params.StorageTruthCompoundRangesPerArtifact)
 	if k == 0 {

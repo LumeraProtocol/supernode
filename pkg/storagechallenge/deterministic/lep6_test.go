@@ -384,6 +384,37 @@ func TestComputeMultiRangeOffsets_AllInBounds(t *testing.T) {
 	}
 }
 
+func TestComputeMultiRangeOffsets_WholeArtifactWhenRangeEqualsSize(t *testing.T) {
+	const size = uint64(103)
+	offsets, err := ComputeMultiRangeOffsets(chainSeed, "sn-target", "ticket-small",
+		audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL, 0, size, size, 4)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(offsets) != 4 {
+		t.Fatalf("expected 4 offsets, got %d", len(offsets))
+	}
+	for i, off := range offsets {
+		if off != 0 {
+			t.Fatalf("offset %d = %d, want 0 for whole-artifact challenge", i, off)
+		}
+	}
+}
+
+func TestComputeMultiRangeOffsets_RejectsOutOfBoundsRangeLen(t *testing.T) {
+	cls := audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
+	if _, err := ComputeMultiRangeOffsets(chainSeed, "x", "t", cls, 0, 100, 256, 4); err == nil {
+		t.Fatal("expected error when rangeLen exceeds artifactSize")
+	}
+}
+
+func TestComputeMultiRangeOffsets_RejectsZeroArtifactSize(t *testing.T) {
+	cls := audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
+	if _, err := ComputeMultiRangeOffsets(chainSeed, "x", "t", cls, 0, 0, 0, 4); err == nil {
+		t.Fatal("expected error for zero artifactSize")
+	}
+}
+
 func TestComputeMultiRangeOffsets_OffsetsDistinctOnDifferentInputs(t *testing.T) {
 	const size, rl = uint64(10000), uint64(256)
 	a, _ := ComputeMultiRangeOffsets(chainSeed, "sn-target", "ticket-1",

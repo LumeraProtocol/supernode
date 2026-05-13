@@ -10,7 +10,7 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 )
 
-// Wave 4 — LEP-6 review M6 (Matee, 2026-05-06). probeTCP must distinguish
+// LEP-6 review regression: LEP-6 review M6 (Matee, 2026-05-06). probeTCP must distinguish
 // canonical CLOSED (ECONNREFUSED) from operator-side faults (DNS, host
 // unreach, ctx errors, timeouts) which now report UNKNOWN.
 
@@ -64,7 +64,7 @@ func TestProbeTCP_M6_RefusedReturnsClosed(t *testing.T) {
 	}
 }
 
-// TestProbeTCP_M6_DNSFailureReturnsUnknown — pre-Wave-4 a DNS resolution
+// TestProbeTCP_M6_DNSFailureReturnsUnknown — before this fix a DNS resolution
 // failure mapped to CLOSED, falsely accusing the peer's port of being shut.
 // Now must map to UNKNOWN.
 func TestProbeTCP_M6_DNSFailureReturnsUnknown(t *testing.T) {

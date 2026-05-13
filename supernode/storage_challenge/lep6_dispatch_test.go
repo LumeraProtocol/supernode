@@ -110,13 +110,30 @@ func (s stubMetaProvider) GetCascadeMetadata(_ context.Context, _ string) (*acti
 	return s.meta, s.size, nil
 }
 
-// stubCompoundClient implements SupernodeCompoundClient.
-type stubCompoundClient struct {
-	resp *supernodepb.GetCompoundProofResponse
-	err  error
+// stubArtifactSizeProvider returns stored artifact sizes keyed by artifact key.
+type stubArtifactSizeProvider struct {
+	sizes map[string]uint64
+	err   error
 }
 
-func (s *stubCompoundClient) GetCompoundProof(_ context.Context, _ *supernodepb.GetCompoundProofRequest) (*supernodepb.GetCompoundProofResponse, error) {
+func (s stubArtifactSizeProvider) ArtifactSize(_ context.Context, _ audittypes.StorageProofArtifactClass, key string) (uint64, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	return s.sizes[key], nil
+}
+
+// stubCompoundClient implements SupernodeCompoundClient.
+type stubCompoundClient struct {
+	resp     *supernodepb.GetCompoundProofResponse
+	err      error
+	requests []*supernodepb.GetCompoundProofRequest
+}
+
+func (s *stubCompoundClient) GetCompoundProof(_ context.Context, req *supernodepb.GetCompoundProofRequest) (*supernodepb.GetCompoundProofResponse, error) {
+	if req != nil {
+		s.requests = append(s.requests, req)
+	}
 	return s.resp, s.err
 }
 func (s *stubCompoundClient) Close() error { return nil }
@@ -494,6 +511,160 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 		}
 	}
 	require.True(t, sawPass, "expected a PASS-class result on happy path")
+}
+
+func TestDispatchEpoch_SmallArtifactUsesWholeArtifactRange(t *testing.T) {
+	const epochID uint64 = 20
+	const target = "sn-target"
+	anchor := makeAnchor(epochID, 200, target)
+	params := defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)
+	params.StorageTruthCompoundRangeLenBytes = uint32(deterministic.LEP6CompoundRangeLenBytes)
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: params},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{target}},
+	}
+
+	// Choose a ticket whose deterministic class roll selects SYMBOL so the
+	// artifact size is derived from FileSizeKbs/RqIdsMax. With FileSizeKbs=1 and
+	// RqIdsMax=10 the selected symbol is 103 bytes, below the 256-byte chain cap.
+	var ticketID string
+	for i := 0; i < 100; i++ {
+		candidate := "tkt-small-symbol"
+		if i > 0 {
+			candidate = candidate + string(rune('a'+i))
+		}
+		if deterministic.SelectArtifactClass(anchor.Seed, target, candidate, 1, 1) == audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL {
+			ticketID = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, ticketID)
+
+	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
+		target: {{TicketID: ticketID, AnchorBlock: 100}},
+	}}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 10, RqIdsIds: []string{"sym-0"}},
+		size: 1,
+	}
+
+	const smallArtifactSize = 103
+	rangeBytes := make([][]byte, deterministic.LEP6CompoundRangesPerArtifact)
+	hasher := blake3.New(32, nil)
+	for i := range rangeBytes {
+		buf := make([]byte, smallArtifactSize)
+		for j := range buf {
+			buf[j] = byte((i*11 + j) & 0xFF)
+		}
+		rangeBytes[i] = buf
+		_, _ = hasher.Write(buf)
+	}
+	client := &stubCompoundClient{resp: &supernodepb.GetCompoundProofResponse{
+		Ok:           true,
+		RangeBytes:   rangeBytes,
+		ProofHashHex: hex.EncodeToString(hasher.Sum(nil)),
+	}}
+	d, buf := newDispatcher(t, audit, &stubFactory{client: client}, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	results := buf.CollectResults(epochID)
+	require.NotEmpty(t, results)
+	require.NotEmpty(t, client.requests)
+	for _, rng := range client.requests[0].Ranges {
+		require.NotNil(t, rng)
+		require.Equal(t, uint64(0), rng.Start)
+		require.Equal(t, uint64(smallArtifactSize), rng.End)
+	}
+
+	var sawPass bool
+	for _, r := range results {
+		if r.TicketId == ticketID {
+			sawPass = true
+			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, r.ResultClass)
+			require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL, r.ArtifactClass)
+			require.NotEmpty(t, r.DerivationInputHash)
+			require.NotEmpty(t, r.ChallengerSignature)
+		}
+	}
+	require.True(t, sawPass, "expected small artifact to produce a chain-valid PASS row")
+}
+
+func TestDispatchEpoch_StoredSymbolSizeOverridesMetadataEstimate(t *testing.T) {
+	const epochID uint64 = 21
+	const target = "sn-target"
+	anchor := makeAnchor(epochID, 200, target)
+	params := defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)
+	params.StorageTruthCompoundRangeLenBytes = uint32(deterministic.LEP6CompoundRangeLenBytes)
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: params},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{target}},
+	}
+
+	var ticketID string
+	for i := 0; i < 100; i++ {
+		candidate := "tkt-stored-symbol"
+		if i > 0 {
+			candidate = candidate + string(rune('a'+i))
+		}
+		if deterministic.SelectArtifactClass(anchor.Seed, target, candidate, 1, 1) == audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL {
+			ticketID = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, ticketID)
+
+	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
+		target: {{TicketID: ticketID, AnchorBlock: 100}},
+	}}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		// Metadata fallback would be 1025*1024 bytes, much larger than the
+		// compressed SYMBOL blob stored and served by runtime CASCADE.
+		size: 1025,
+	}
+
+	rangeBytes := make([][]byte, deterministic.LEP6CompoundRangesPerArtifact)
+	hasher := blake3.New(32, nil)
+	for i := range rangeBytes {
+		buf := make([]byte, deterministic.LEP6CompoundRangeLenBytes)
+		for j := range buf {
+			buf[j] = byte((i*13 + j) & 0xFF)
+		}
+		rangeBytes[i] = buf
+		_, _ = hasher.Write(buf)
+	}
+	client := &stubCompoundClient{resp: &supernodepb.GetCompoundProofResponse{
+		Ok:           true,
+		RangeBytes:   rangeBytes,
+		ProofHashHex: hex.EncodeToString(hasher.Sum(nil)),
+	}}
+	d, buf := newDispatcher(t, audit, &stubFactory{client: client}, tickets, meta)
+	d.SetArtifactSizeProvider(stubArtifactSizeProvider{sizes: map[string]uint64{"sym-0": 2439}})
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	results := buf.CollectResults(epochID)
+	require.NotEmpty(t, results)
+	require.NotEmpty(t, client.requests)
+	req := client.requests[0]
+	require.Equal(t, uint64(2439), req.ArtifactSize)
+	require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL, audittypes.StorageProofArtifactClass(req.ArtifactClass))
+	for _, rng := range req.Ranges {
+		require.NotNil(t, rng)
+		require.LessOrEqual(t, rng.End, uint64(2439))
+		require.Equal(t, uint64(deterministic.LEP6CompoundRangeLenBytes), rng.End-rng.Start)
+	}
+
+	var sawPass bool
+	for _, r := range results {
+		if r.TicketId == ticketID {
+			sawPass = true
+			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, r.ResultClass)
+			require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL, r.ArtifactClass)
+		}
+	}
+	require.True(t, sawPass, "expected stored-size override to produce in-bounds PASS row")
 }
 
 func TestRecheck_GetParamsNilResponseIsClearAndDoesNotHoldDispatcherLock(t *testing.T) {

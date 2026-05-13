@@ -183,7 +183,7 @@ INSTALL_MODE ?= $(if $(LUMERA_DEFAULT_VERSION),$(LUMERA_DEFAULT_VERSION),latest-
 install-lumera:
 	@echo "Installing Lumera..."
 	@chmod +x tests/scripts/install-lumera.sh
-	@sudo LUMERAD_BINARY="$(LUMERAD_BINARY)" tests/scripts/install-lumera.sh $(INSTALL_MODE)
+	@LUMERAD_BINARY="$(LUMERAD_BINARY)" tests/scripts/install-lumera.sh $(INSTALL_MODE)
 	@echo "PtTDUHythfRfXHh63yzyiGDid4TZj2P76Zd,18749999981413" > ~/claims.csv
 	
 # Setup supernode environments

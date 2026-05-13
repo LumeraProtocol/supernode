@@ -14,7 +14,7 @@ import (
 
 // abciErr re-creates an error with typed sentinel preserved across %w wrap,
 // matching the production wrap path in pkg/lumera/modules/tx/impl.go after
-// the Wave 0 boundary fix.
+// the LEP-6 review fix boundary fix.
 func abciErr(sentinel *errorsmod.Error, rawLog string) error {
 	return fmt.Errorf("tx failed: code=%d codespace=%s height=0 gas_wanted=0 gas_used=0 raw_log=%s: %w",
 		sentinel.ABCICode(), sentinel.Codespace(), rawLog, sentinel)

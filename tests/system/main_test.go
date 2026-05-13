@@ -96,6 +96,11 @@ func requireEnoughFileHandlers(nodesCount int) {
 
 func initSDKConfig(bech32Prefix string) {
 	config := sdk.GetConfig()
+	if config.GetBech32AccountAddrPrefix() == bech32Prefix &&
+		config.GetBech32ValidatorAddrPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator &&
+		config.GetBech32ConsensusAddrPrefix() == bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus {
+		return
+	}
 	config.SetBech32PrefixForAccount(bech32Prefix, bech32Prefix+sdk.PrefixPublic)
 	config.SetBech32PrefixForValidator(bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator, bech32Prefix+sdk.PrefixValidator+sdk.PrefixOperator+sdk.PrefixPublic)
 	config.SetBech32PrefixForConsensusNode(bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus, bech32Prefix+sdk.PrefixValidator+sdk.PrefixConsensus+sdk.PrefixPublic)

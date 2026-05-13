@@ -34,26 +34,32 @@ var ErrUnspecifiedArtifactClass = errors.New("storagechallenge: artifact class i
 // replaces a chain GetTicketArtifactCount RPC that does not exist (LEP-6 v2
 // plan §9, Resolved Decision 8).
 //
-// Semantics:
-//   - INDEX  -> uint32(meta.RqIdsIc)
-//   - SYMBOL -> uint32(len(meta.RqIdsIds))
+// Semantics mirror Lumera chain action metadata exactly via
+// actiontypes.CascadeArtifactCountsWithFallbackStrict:
+//   - INDEX  -> meta.IndexArtifactCount, falling back to len(meta.RqIdsIds)
+//   - SYMBOL -> meta.SymbolArtifactCount, falling back to len(meta.RqIdsIds)
 //   - UNSPECIFIED -> error
 //
-// If both counts are zero (legacy / malformed ticket), this returns (0, nil)
-// because the chain accepts that case via its TicketArtifactCountState fallback
-// path (x/audit/v1/keeper/msg_submit_epoch_report_storage_proofs.go). Callers
-// decide whether to skip such a ticket.
+// The strict Lumera helper rejects malformed metadata where explicit counts are
+// missing and the fallback universe is empty. This keeps supernode proof rows
+// aligned with chain validation instead of maintaining duplicate count logic.
 func ResolveArtifactCount(meta *actiontypes.CascadeMetadata, class audittypes.StorageProofArtifactClass) (uint32, error) {
 	if meta == nil {
 		return 0, errors.New("storagechallenge: nil cascade metadata")
 	}
 	switch class {
-	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX:
-		return uint32(meta.RqIdsIc), nil
-	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
-		return uint32(len(meta.RqIdsIds)), nil
 	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED:
 		return 0, ErrUnspecifiedArtifactClass
+	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX,
+		audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
+		idx, sym, err := actiontypes.CascadeArtifactCountsWithFallbackStrict(meta)
+		if err != nil {
+			return 0, fmt.Errorf("storagechallenge: resolve canonical cascade artifact counts: %w", err)
+		}
+		if class == audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX {
+			return idx, nil
+		}
+		return sym, nil
 	default:
 		return 0, fmt.Errorf("storagechallenge: unknown artifact class %v", class)
 	}
@@ -102,17 +108,19 @@ func ResolveArtifactKey(meta *actiontypes.CascadeMetadata, class audittypes.Stor
 	}
 }
 
-// ResolveArtifactSize returns the exact byte size used to derive LEP-6
-// multi-range offsets for a selected artifact.
+// ResolveArtifactSize returns the deterministic metadata-derived byte-size
+// fallback used to derive LEP-6 multi-range offsets for a selected artifact.
 //
-// SYMBOL artifacts are RaptorQ symbols. The exact symbol size is derived from
-// the finalized Action.FileSizeKbs and meta.RqIdsMax:
-//
-//	symbolSize = ceil(fileSizeKbs*1024 / meta.RqIdsMax)
+// Production dispatch should prefer the stored blob size returned by the same
+// storage layer used by the recipient ArtifactReader. SYMBOL artifacts are
+// compressed/content-addressed RaptorQ blobs, and their served byte length can
+// differ from the logical ceil(fileSizeKbs*1024 / meta.RqIdsMax) estimate.
+// This fallback remains useful for tests and for deployments where the local
+// store cannot report the selected artifact size.
 //
 // INDEX artifacts are generated deterministically from meta.Signatures,
-// meta.RqIdsIc, and meta.RqIdsMax; their exact compressed byte length is the
-// length of the selected generated index file.
+// meta.RqIdsIc, and meta.RqIdsMax; their fallback byte length is the length of
+// the selected generated index file.
 func ResolveArtifactSize(act *actiontypes.Action, meta *actiontypes.CascadeMetadata, class audittypes.StorageProofArtifactClass, ordinal uint32) (uint64, error) {
 	if act == nil {
 		return 0, errors.New("storagechallenge: nil action")

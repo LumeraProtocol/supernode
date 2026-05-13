@@ -229,8 +229,9 @@ The supernode will connect to the Lumera network and begin participating in the 
 			hostReporter.SetProofResultProvider(resultBuffer)
 		}
 
+		artifactReader := storageChallengeService.NewP2PArtifactReader(p2pService)
 		storageChallengeServer := storageChallengeRPC.NewServer(appConfig.SupernodeConfig.Identity, p2pService, historyStore).
-			WithArtifactReader(newP2PArtifactReader(p2pService)).
+			WithArtifactReader(artifactReader).
 			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName).
 			WithAuditParams(lumeraClient.Audit())
 		var storageChallengeRunner *storageChallengeService.Service
@@ -263,12 +264,13 @@ The supernode will connect to the Lumera network and begin participating in the 
 					appConfig.SupernodeConfig.Identity,
 					storageChallengeService.NewSecureSupernodeClientFactory(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port),
 					storageChallengeService.NewChainTicketProvider(lumeraClient),
-					newCascadeMetaProvider(lumeraClient),
+					storageChallengeService.NewCascadeMetaProvider(lumeraClient),
 					resultBuffer,
 				)
 				if derr != nil {
 					logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
 				}
+				dispatcher.SetArtifactSizeProvider(artifactReader)
 				storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
 
 				if appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled {
