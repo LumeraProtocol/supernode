@@ -22,6 +22,14 @@ import (
 //  4. clean PASS proofs reduce suspicion below watch and satisfy clean-pass recovery;
 //  5. epoch-end enforcement recovers the supernode to ACTIVE.
 func TestLEP6StorageTruthEnforcementLifecycle(t *testing.T) {
+	runLEP6StorageTruthEnforcementLifecycle(t, false)
+}
+
+func TestLEP6PostponedTargetReassignmentAfterRecovery(t *testing.T) {
+	runLEP6StorageTruthEnforcementLifecycle(t, true)
+}
+
+func runLEP6StorageTruthEnforcementLifecycle(t *testing.T, assertPostRecoveryReassignment bool) {
 	os.Setenv("INTEGRATION_TEST", "true")
 	defer os.Unsetenv("INTEGRATION_TEST")
 
@@ -129,6 +137,30 @@ func TestLEP6StorageTruthEnforcementLifecycle(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return querySupernodeLatestState(t, cli, target.valAddr) == "SUPERNODE_STATE_ACTIVE"
 	}, 45*time.Second, time.Second, "clean target must recover to ACTIVE after score and clean-pass predicates are satisfied")
+
+	if !assertPostRecoveryReassignment {
+		return
+	}
+
+	t.Log("Storage-truth enforcement Step 6: recovered target is assigned again and accepts normal proof reporting")
+	reassignmentEpochID, reassignmentEpochEnd := nextEpochWithAssignedStorageTruthTarget(t, originHeight, epochLengthBlocks, passCandidates, target.accAddr)
+	seedProofTranscriptsWithClass(
+		t,
+		cli,
+		reassignmentEpochID,
+		passCandidates,
+		target.accAddr,
+		[]transcriptSeed{{ticketID: ticketID + "-post-recovery", transcriptHash: "storage-truth-post-recovery-pass"}},
+		true,
+		"STORAGE_PROOF_RESULT_CLASS_PASS",
+	)
+
+	postRecoveryState, found := auditQueryNodeSuspicionStateST(t, target.accAddr)
+	require.True(t, found)
+	require.GreaterOrEqual(t, postRecoveryState.CleanPassCount, uint32(2), "post-recovery assignment must accept another clean PASS proof for the recovered target")
+	awaitAtLeastHeight(t, reassignmentEpochEnd)
+	sut.AwaitNextBlock(t)
+	require.Equal(t, "SUPERNODE_STATE_ACTIVE", querySupernodeLatestState(t, cli, target.valAddr), "post-recovery proof reporting must not re-postpone the recovered target")
 }
 
 func nextUsableEpoch(t *testing.T, originHeight int64, epochLengthBlocks uint64) (uint64, int64) {

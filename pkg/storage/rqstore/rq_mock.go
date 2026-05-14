@@ -111,6 +111,20 @@ func (mr *MockStoreMockRecorder) StoreSymbolDirectory(txid, dir any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreSymbolDirectory", reflect.TypeOf((*MockStore)(nil).StoreSymbolDirectory), txid, dir)
 }
 
+// UpsertSymbolDirectory mocks base method.
+func (m *MockStore) UpsertSymbolDirectory(txid, dir string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertSymbolDirectory", txid, dir)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpsertSymbolDirectory indicates an expected call of UpsertSymbolDirectory.
+func (mr *MockStoreMockRecorder) UpsertSymbolDirectory(txid, dir any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertSymbolDirectory", reflect.TypeOf((*MockStore)(nil).UpsertSymbolDirectory), txid, dir)
+}
+
 // UpdateIsFirstBatchStored mocks base method.
 func (m *MockStore) UpdateIsFirstBatchStored(txid string) error {
 	m.ctrl.T.Helper()
