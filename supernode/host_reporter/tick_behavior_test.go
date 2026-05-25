@@ -26,11 +26,15 @@ import (
 type stubAuditModule struct {
 	currentEpoch   *audittypes.QueryCurrentEpochResponse
 	anchor         *audittypes.QueryEpochAnchorResponse
+	params         *audittypes.QueryParamsResponse
 	epochReportErr error
 	assigned       *audittypes.QueryAssignedTargetsResponse
 }
 
 func (s *stubAuditModule) GetParams(ctx context.Context) (*audittypes.QueryParamsResponse, error) {
+	if s.params != nil {
+		return s.params, nil
+	}
 	return &audittypes.QueryParamsResponse{}, nil
 }
 func (s *stubAuditModule) GetEpochAnchor(ctx context.Context, epochID uint64) (*audittypes.QueryEpochAnchorResponse, error) {
