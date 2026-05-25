@@ -13,12 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRecheckSubmissionDedupPerTarget asserts the LEP-6 C2 fix: chain
-// dedup is per-(epoch, ticket, target_account), so two distinct targets
-// within the same (epoch, ticket) must produce two persisted rows. Before
-// LEP-6 review fix, the PK was (epoch, ticket) and the second target's row was
-// silently dropped — masking that supernode from chain N/R/D math.
-func TestRecheckSubmissionDedupPerTarget(t *testing.T) {
+// TestRecheckSubmissionDedupMatchesChainPerTicket is the PR286 F3
+// regression: chain replay protection in
+// lumera x/audit/v1/keeper/msg_storage_truth.go:88-90 is keyed by
+// (epoch, ticket, creator), NOT target. The local supernode is the
+// implicit creator, so (epoch, ticket) is the right local dedup key.
+//
+// Two different targets within the same (epoch, ticket) must collapse to
+// ONE persisted row; the second insert is silently ignored. The previous
+// (epoch, ticket, target) PK was rejected by chain on every secondary
+// target submit and confused local state.
+func TestRecheckSubmissionDedupMatchesChainPerTicket(t *testing.T) {
 	db := sqlx.MustConnect("sqlite3", ":memory:")
 	defer db.Close()
 	_, err := db.Exec(createStorageRecheckSubmissions)
@@ -26,40 +31,46 @@ func TestRecheckSubmissionDedupPerTarget(t *testing.T) {
 	store := &SQLiteStore{db: db}
 	ctx := context.Background()
 
-	// Initially nothing is recorded for either target.
+	// Initially nothing is recorded.
 	exists, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-a")
 	require.NoError(t, err)
 	require.False(t, exists)
 
-	// First target gets recorded.
+	// First target gets recorded. HasRecheckSubmission now returns true
+	// regardless of the target argument because chain dedup is per
+	// (epoch, ticket, creator).
 	require.NoError(t, store.RecordRecheckSubmission(ctx, 7, "ticket-1", "target-a", "orig", "rh1", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS))
 	exists, err = store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-a")
 	require.NoError(t, err)
 	require.True(t, exists)
-
-	// Second target in the SAME (epoch, ticket) must also be recorded
-	// (this is the C2 fix — old behaviour silently dropped this row).
-	require.NoError(t, store.RecordRecheckSubmission(ctx, 7, "ticket-1", "target-b", "orig2", "rh2", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL))
 	exists, err = store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-b")
-	require.NoError(t, err)
+	require.NoError(t, err, "any target on the same (epoch, ticket) must read as already recorded — chain replay key is per (epoch, ticket, creator)")
 	require.True(t, exists)
 
-	// Confirm both rows landed.
+	// Second target on the SAME (epoch, ticket) is silently ignored by
+	// the ON CONFLICT(epoch_id, ticket_id) DO NOTHING. RecordRecheckSubmission
+	// is back-compat idempotent so this returns nil.
+	require.NoError(t, store.RecordRecheckSubmission(ctx, 7, "ticket-1", "target-b", "orig2", "rh2", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_RECHECK_CONFIRMED_FAIL))
+
+	// Confirm only the first-recorded row landed.
 	var n int
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM storage_recheck_submissions WHERE epoch_id=? AND ticket_id=?`, 7, "ticket-1").Scan(&n))
-	require.Equal(t, 2, n)
+	require.Equal(t, 1, n, "exactly one row per (epoch, ticket) to match chain replay semantics")
+	var retainedTarget, retainedRh string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT target_account, recheck_transcript_hash FROM storage_recheck_submissions WHERE epoch_id=? AND ticket_id=?`, 7, "ticket-1").Scan(&retainedTarget, &retainedRh))
+	require.Equal(t, "target-a", retainedTarget, "first-recorded target wins")
+	require.Equal(t, "rh1", retainedRh, "first-recorded transcript wins")
 
 	// Same ticket in a different epoch is intentionally a different replay key.
 	exists, err = store.HasRecheckSubmission(ctx, 8, "ticket-1", "target-a")
 	require.NoError(t, err)
 	require.False(t, exists)
 
-	// Idempotent second-call on the same (epoch, ticket, target) is a no-op
-	// (ON CONFLICT DO NOTHING) — preserves first row.
-	require.NoError(t, store.RecordRecheckSubmission(ctx, 7, "ticket-1", "target-a", "orig", "rh1-DIFFERENT", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS))
-	var rh string
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT recheck_transcript_hash FROM storage_recheck_submissions WHERE epoch_id=? AND ticket_id=? AND target_account=?`, 7, "ticket-1", "target-a").Scan(&rh))
-	require.Equal(t, "rh1", rh)
+	// RecordPendingRecheckSubmission on a (epoch, ticket) that already
+	// has a row surfaces the typed dedup error.
+	err = store.RecordPendingRecheckSubmission(ctx, 7, "ticket-1", "target-c", "orig3", "rh3", audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrLEP6RecheckAlreadyRecorded), "second target on same (epoch, ticket) must surface ErrLEP6RecheckAlreadyRecorded")
 }
 
 // TestRecordPendingRecheckSubmission_DuplicateReturnsTypedError covers the

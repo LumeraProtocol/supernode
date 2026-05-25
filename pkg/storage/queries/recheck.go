@@ -22,16 +22,16 @@ type RecheckSubmissionRecord struct {
 }
 
 // ErrLEP6RecheckAlreadyRecorded is returned by RecordPendingRecheckSubmission
-// when a row already exists for (epoch_id, ticket_id, target_account). The
-// caller (recheck attestor) treats this as "another tick already pre-staged
-// this candidate" — same idempotency semantics as
-// ErrLEP6ClaimAlreadyRecorded / ErrLEP6VerificationAlreadyRecorded.
+// when a row already exists for (epoch_id, ticket_id). The caller (recheck
+// attestor) treats this as "another tick already pre-staged this candidate"
+// — same idempotency semantics as ErrLEP6ClaimAlreadyRecorded /
+// ErrLEP6VerificationAlreadyRecorded.
 //
-// Wave 1 fix for L3: previous code used `INSERT OR IGNORE` which silently
-// hid duplicates AND any real INSERT error (constraint violation, locked
-// DB), then the caller submitted to chain anyway — the chain rejected and
-// we deleted the row. Now duplicates are surfaced as a typed error and
-// real INSERT failures propagate.
+// PR286 F3 fix: dedup is keyed by (epoch_id, ticket_id) to match the chain
+// replay key in lumera x/audit/v1/keeper/msg_storage_truth.go:88-90
+// (HasRecheckEvidence(epoch, ticket, creator)). The local supernode is the
+// implicit creator, so (epoch, ticket) suffices. target_account is recorded
+// as metadata of the selected candidate but does NOT participate in dedup.
 var ErrLEP6RecheckAlreadyRecorded = errors.New("lep6: recheck submission already recorded")
 
 const createStorageRecheckSubmissions = `
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS storage_recheck_submissions (
   result_class INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'submitted',
   submitted_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch_id, ticket_id, target_account)
+  PRIMARY KEY (epoch_id, ticket_id)
 );`
 
 const createStorageRecheckSubmissionStatusIndex = `CREATE INDEX IF NOT EXISTS idx_storage_recheck_submissions_status ON storage_recheck_submissions(status);`
@@ -58,11 +58,21 @@ CREATE TABLE IF NOT EXISTS recheck_attempt_failures (
   attempts INTEGER NOT NULL DEFAULT 1,
   last_error TEXT,
   expires_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch_id, ticket_id, target_account)
+  PRIMARY KEY (epoch_id, ticket_id)
 );`
 
 const createRecheckAttemptFailuresExpiresIndex = `CREATE INDEX IF NOT EXISTS idx_recheck_attempt_failures_expires ON recheck_attempt_failures(expires_at);`
 
+// migrateRecheckAttemptFailuresPK collapses the per-target PK
+// (epoch_id, ticket_id, target_account) back to (epoch_id, ticket_id) —
+// PR286 F3 fix. Failure budget aligns with the chain replay key, so retries
+// for any target within the same (epoch, ticket) share one budget.
+//
+// Collapse rule: SUM attempts across target rows and MAX expires_at so the
+// resulting row reflects the most aggressive prior retry pressure. Keep
+// lex-smallest target_account as metadata for observability.
+//
+// Idempotent: returns nil if already on the (epoch, ticket) PK.
 func migrateRecheckAttemptFailuresPK(ctx context.Context, db sqliteExecQuerier) error {
 	pkCols, err := primaryKeyColumns(ctx, db, "recheck_attempt_failures")
 	if err != nil {
@@ -75,7 +85,7 @@ func migrateRecheckAttemptFailuresPK(ctx context.Context, db sqliteExecQuerier) 
 			break
 		}
 	}
-	if hasTarget {
+	if !hasTarget {
 		return nil
 	}
 	if len(pkCols) == 0 {
@@ -108,7 +118,7 @@ CREATE TABLE recheck_attempt_failures_new (
   attempts INTEGER NOT NULL DEFAULT 1,
   last_error TEXT,
   expires_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch_id, ticket_id, target_account)
+  PRIMARY KEY (epoch_id, ticket_id)
 );`
 	if _, err := tx.ExecContext(ctx, createNew); err != nil {
 		return fmt.Errorf("create new recheck failure table: %w", err)
@@ -116,8 +126,15 @@ CREATE TABLE recheck_attempt_failures_new (
 	const copyData = `
 INSERT INTO recheck_attempt_failures_new
   (epoch_id, ticket_id, target_account, attempts, last_error, expires_at)
-SELECT epoch_id, ticket_id, target_account, attempts, last_error, expires_at
-FROM recheck_attempt_failures;`
+SELECT
+  epoch_id,
+  ticket_id,
+  MIN(target_account) AS target_account,
+  SUM(attempts) AS attempts,
+  COALESCE(MAX(last_error), '') AS last_error,
+  MAX(expires_at) AS expires_at
+FROM recheck_attempt_failures
+GROUP BY epoch_id, ticket_id;`
 	if _, err := tx.ExecContext(ctx, copyData); err != nil {
 		return fmt.Errorf("copy recheck failure rows: %w", err)
 	}
@@ -135,17 +152,25 @@ FROM recheck_attempt_failures;`
 }
 
 // migrateStorageRecheckSubmissionsPK migrates an old DB whose
-// storage_recheck_submissions table has PK (epoch_id, ticket_id) up to the
-// Wave 1 schema with PK (epoch_id, ticket_id, target_account).
+// storage_recheck_submissions table has PK
+// (epoch_id, ticket_id, target_account) down to (epoch_id, ticket_id) —
+// PR286 F3 fix. The per-target PK never matched chain replay semantics:
+// chain accepts one recheck per (epoch, ticket, creator), so a second
+// target row was always going to be chain-rejected.
+//
+// Collapse rule: per (epoch, ticket) prefer 'submitted' over 'pending'
+// (so we don't roll back already-confirmed local state), then tie-break by
+// lex-smallest target_account for determinism. Dropped rows correspond to
+// target candidates that the chain would never have accepted anyway; the
+// next finder tick will rediscover any still-eligible candidates from
+// chain epoch reports.
 //
 // SQLite cannot ALTER PRIMARY KEY in place; we rebuild via the canonical
-// "create _new, copy, drop, rename" pattern inside a single transaction so
-// a crash mid-migration leaves the DB consistent.
+// "create _new, copy, drop, rename" pattern inside a single transaction
+// so a crash mid-migration leaves the DB consistent.
 //
 // Idempotent: if the table is already on the new PK shape, this returns
 // nil after the PRAGMA introspection check (no DDL run).
-//
-// Wave 1 fix for C2.
 func migrateStorageRecheckSubmissionsPK(ctx context.Context, db sqliteExecQuerier) error {
 	pkCols, err := primaryKeyColumns(ctx, db, "storage_recheck_submissions")
 	if err != nil {
@@ -158,18 +183,13 @@ func migrateStorageRecheckSubmissionsPK(ctx context.Context, db sqliteExecQuerie
 			break
 		}
 	}
-	if hasTarget {
-		return nil // already migrated
+	if !hasTarget {
+		return nil // already migrated to (epoch, ticket)
 	}
 	if len(pkCols) == 0 {
-		// Defensive: PRAGMA returned no PK columns. The CREATE TABLE
-		// above always sets a PK so this would only happen on a bizarre
-		// custom build; bail rather than silently rebuild.
 		return fmt.Errorf("storage_recheck_submissions has no detectable primary key")
 	}
 
-	// Run inside a transaction so we don't end up with the new table but
-	// the old data partially copied.
 	exec, ok := db.(interface {
 		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 	})
@@ -187,6 +207,9 @@ func migrateStorageRecheckSubmissionsPK(ctx context.Context, db sqliteExecQuerie
 		}
 	}()
 
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS storage_recheck_submissions_new;`); err != nil {
+		return fmt.Errorf("drop stale recheck migration table: %w", err)
+	}
 	const createNew = `
 CREATE TABLE storage_recheck_submissions_new (
   epoch_id INTEGER NOT NULL,
@@ -197,18 +220,26 @@ CREATE TABLE storage_recheck_submissions_new (
   result_class INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'submitted',
   submitted_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch_id, ticket_id, target_account)
+  PRIMARY KEY (epoch_id, ticket_id)
 );`
 	if _, err := tx.ExecContext(ctx, createNew); err != nil {
 		return fmt.Errorf("create new recheck table: %w", err)
 	}
+	// Deterministic collapse: ORDER BY prefers 'submitted' over 'pending'
+	// (via CASE so case sensitivity / future status values are explicit),
+	// tie-break by target_account ascending. INSERT OR IGNORE keeps only
+	// the first row per (epoch, ticket) — which is the preferred one
+	// given the ORDER BY above.
 	const copyData = `
-INSERT INTO storage_recheck_submissions_new
+INSERT OR IGNORE INTO storage_recheck_submissions_new
   (epoch_id, ticket_id, target_account, challenged_transcript_hash, recheck_transcript_hash, result_class, status, submitted_at)
 SELECT
   epoch_id, ticket_id, target_account, challenged_transcript_hash, recheck_transcript_hash, result_class,
-  COALESCE(status, 'submitted'), submitted_at
-FROM storage_recheck_submissions;`
+  COALESCE(status, 'submitted') AS status, submitted_at
+FROM storage_recheck_submissions
+ORDER BY epoch_id, ticket_id,
+  CASE COALESCE(status, 'submitted') WHEN 'submitted' THEN 0 ELSE 1 END,
+  target_account;`
 	if _, err := tx.ExecContext(ctx, copyData); err != nil {
 		return fmt.Errorf("copy recheck rows: %w", err)
 	}
@@ -226,13 +257,18 @@ FROM storage_recheck_submissions;`
 }
 
 // HasRecheckSubmission reports whether a row exists for the
-// (epoch_id, ticket_id, target_account) tuple — Wave 1 fix for C2 (chain
-// dedup is per-target, so multiple targets in one (epoch, ticket) must
-// each be tracked separately).
+// (epoch_id, ticket_id) tuple — PR286 F3 fix. targetAccount is retained in
+// the signature for API stability (and is the selected candidate's target,
+// recorded as metadata at INSERT time) but does NOT participate in dedup
+// because chain replay protection in lumera
+// x/audit/v1/keeper/msg_storage_truth.go:88-90 is keyed by
+// (epoch, ticket, creator) — the creator is implicit (this supernode),
+// leaving (epoch, ticket) as the local dedup key.
 func (s *SQLiteStore) HasRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount string) (bool, error) {
-	const stmt = `SELECT 1 FROM storage_recheck_submissions WHERE epoch_id = ? AND ticket_id = ? AND target_account = ? LIMIT 1`
+	_ = targetAccount // intentionally unused: chain replay key is (epoch, ticket, creator)
+	const stmt = `SELECT 1 FROM storage_recheck_submissions WHERE epoch_id = ? AND ticket_id = ? LIMIT 1`
 	var one int
-	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID, targetAccount).Scan(&one)
+	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID).Scan(&one)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -244,8 +280,10 @@ func (s *SQLiteStore) HasRecheckSubmission(ctx context.Context, epochID uint64, 
 
 // RecordPendingRecheckSubmission pre-stages a recheck submission row before
 // chain submit. Returns ErrLEP6RecheckAlreadyRecorded when a row already
-// exists for the (epoch, ticket, target) tuple — Wave 1 fix for L3 (no
-// more silent INSERT-OR-IGNORE).
+// exists for (epoch, ticket) — PR286 F3 fix. targetAccount is stored as
+// metadata of the selected candidate; another target for the same
+// (epoch, ticket) would be rejected as already-recorded because chain
+// accepts only one recheck per (epoch, ticket, creator).
 func (s *SQLiteStore) RecordPendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
 	return s.recordRecheckSubmissionWithStatus(ctx, epochID, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash, resultClass, "pending", true)
 }
@@ -264,7 +302,7 @@ func (s *SQLiteStore) recordRecheckSubmissionWithStatus(ctx context.Context, epo
 	const stmt = `INSERT INTO storage_recheck_submissions
   (epoch_id, ticket_id, target_account, challenged_transcript_hash, recheck_transcript_hash, result_class, status, submitted_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(epoch_id, ticket_id, target_account) DO NOTHING`
+ON CONFLICT(epoch_id, ticket_id) DO NOTHING`
 	res, err := s.db.ExecContext(ctx, stmt, epochID, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash, int32(resultClass), status, time.Now().Unix())
 	if err != nil {
 		return fmt.Errorf("insert recheck submission: %w", err)
@@ -278,22 +316,27 @@ ON CONFLICT(epoch_id, ticket_id, target_account) DO NOTHING`
 	return nil
 }
 
-// MarkRecheckSubmissionSubmitted flips a (epoch, ticket, target) row from
-// 'pending' to 'submitted'. Threading target_account is the C2 fix:
-// without it, two pending rows for the same (epoch, ticket) would both
-// be marked when only one was actually submitted.
+// MarkRecheckSubmissionSubmitted flips a (epoch, ticket) row from
+// 'pending' to 'submitted' — PR286 F3 fix. targetAccount is accepted for
+// API stability but ignored in the WHERE clause: chain dedup is per
+// (epoch, ticket, creator), so the single local row is the only one.
 func (s *SQLiteStore) MarkRecheckSubmissionSubmitted(ctx context.Context, epochID uint64, ticketID, targetAccount string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE storage_recheck_submissions SET status = 'submitted', submitted_at = ? WHERE epoch_id = ? AND ticket_id = ? AND target_account = ?`, time.Now().Unix(), epochID, ticketID, targetAccount)
+	_ = targetAccount
+	_, err := s.db.ExecContext(ctx, `UPDATE storage_recheck_submissions SET status = 'submitted', submitted_at = ? WHERE epoch_id = ? AND ticket_id = ?`, time.Now().Unix(), epochID, ticketID)
 	return err
 }
 
-// DeletePendingRecheckSubmission deletes a single (epoch, ticket, target)
-// pending row after a hard tx failure — Wave 1 C2 fix.
+// DeletePendingRecheckSubmission deletes a (epoch, ticket) pending row
+// after a hard tx failure — PR286 F3 fix.
 func (s *SQLiteStore) DeletePendingRecheckSubmission(ctx context.Context, epochID uint64, ticketID, targetAccount string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM storage_recheck_submissions WHERE epoch_id = ? AND ticket_id = ? AND target_account = ? AND status = 'pending'`, epochID, ticketID, targetAccount)
+	_ = targetAccount
+	_, err := s.db.ExecContext(ctx, `DELETE FROM storage_recheck_submissions WHERE epoch_id = ? AND ticket_id = ? AND status = 'pending'`, epochID, ticketID)
 	return err
 }
 
+// RecordRecheckAttemptFailure records / increments the per-(epoch, ticket)
+// failure counter — PR286 F3 fix. targetAccount is preserved as metadata
+// of the most recent attempt but does NOT participate in the PK.
 func (s *SQLiteStore) RecordRecheckAttemptFailure(ctx context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error {
 	if epochID == 0 || ticketID == "" {
 		return fmt.Errorf("epoch_id and ticket_id are required")
@@ -305,19 +348,23 @@ func (s *SQLiteStore) RecordRecheckAttemptFailure(ctx context.Context, epochID u
 	expiresAt := time.Now().Add(ttl).Unix()
 	const stmt = `INSERT INTO recheck_attempt_failures (epoch_id, ticket_id, target_account, attempts, last_error, expires_at)
 VALUES (?, ?, ?, 1, ?, ?)
-ON CONFLICT(epoch_id, ticket_id, target_account) DO UPDATE SET attempts = attempts + 1, last_error = excluded.last_error, expires_at = excluded.expires_at`
+ON CONFLICT(epoch_id, ticket_id) DO UPDATE SET attempts = attempts + 1, last_error = excluded.last_error, expires_at = excluded.expires_at, target_account = excluded.target_account`
 	_, execErr := s.db.ExecContext(ctx, stmt, epochID, ticketID, targetAccount, msg, expiresAt)
 	return execErr
 }
 
+// HasRecheckAttemptFailureBudgetExceeded reads the per-(epoch, ticket)
+// failure counter — PR286 F3 fix. targetAccount accepted for API stability
+// but does not participate in the lookup.
 func (s *SQLiteStore) HasRecheckAttemptFailureBudgetExceeded(ctx context.Context, epochID uint64, ticketID, targetAccount string, maxAttempts int) (bool, error) {
+	_ = targetAccount
 	if maxAttempts <= 0 {
 		return false, nil
 	}
-	const stmt = `SELECT attempts, expires_at FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? AND target_account = ? LIMIT 1`
+	const stmt = `SELECT attempts, expires_at FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? LIMIT 1`
 	var attempts int
 	var expiresAt int64
-	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID, targetAccount).Scan(&attempts, &expiresAt)
+	err := s.db.QueryRowContext(ctx, stmt, epochID, ticketID).Scan(&attempts, &expiresAt)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -325,7 +372,7 @@ func (s *SQLiteStore) HasRecheckAttemptFailureBudgetExceeded(ctx context.Context
 		return false, err
 	}
 	if expiresAt <= time.Now().Unix() {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ? AND target_account = ?`, epochID, ticketID, targetAccount)
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM recheck_attempt_failures WHERE epoch_id = ? AND ticket_id = ?`, epochID, ticketID)
 		return false, nil
 	}
 	return attempts >= maxAttempts, nil

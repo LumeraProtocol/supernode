@@ -9,12 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAttestor_MultiTargetSameTicketBothPersist is the LEP-6 C2
-// regression test Matee called out: two distinct targets within the same
-// (epoch, ticket) must each produce a persisted dedup row and a chain
-// submit. The previous PK collapsed both into one row and dropped the
-// second submit.
-func TestAttestor_MultiTargetSameTicketBothPersist(t *testing.T) {
+// TestAttestor_MultiTargetSameTicketCollapsesToOne is the PR286 F3
+// regression: chain replay protection is per (epoch, ticket, creator),
+// NOT target. Two distinct target candidates within the same
+// (epoch, ticket) submitted by the same local creator must collapse —
+// the first lands, the second is rejected by the local dedup (mirroring
+// what chain would do) and produces no second chain submit.
+//
+// This replaces the pre-F3 TestAttestor_MultiTargetSameTicketBothPersist,
+// which asserted the buggy per-target behavior.
+func TestAttestor_MultiTargetSameTicketCollapsesToOne(t *testing.T) {
 	callSeq = 0
 	ctx := context.Background()
 	store := newMemoryStore()
@@ -33,20 +37,26 @@ func TestAttestor_MultiTargetSameTicketBothPersist(t *testing.T) {
 	}
 	result := RecheckResult{TranscriptHash: "recheck-hash", ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, Details: "ok"}
 
+	// First target lands; second target on same (epoch, ticket) collides
+	// with the existing local dedup row. The attestor treats the
+	// ErrLEP6RecheckAlreadyRecorded surface as "another tick already
+	// handled this candidate", emits a stage_dedup metric, and returns
+	// nil — no second chain submit.
 	require.NoError(t, a.Submit(ctx, mk("target-a"), result))
-	require.NoError(t, a.Submit(ctx, mk("target-b"), result))
+	require.NoError(t, a.Submit(ctx, mk("target-b"), result), "second target must be a no-op via stage_dedup")
 
-	// Both targets must be persisted in the dedup store.
-	exA, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-a")
+	// Local dedup row exists; checking via either target returns true
+	// because the key is (epoch, ticket).
+	ex, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-a")
 	require.NoError(t, err)
-	require.True(t, exA, "target-a must be persisted")
-	exB, err := store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-b")
+	require.True(t, ex, "(epoch, ticket) row must be persisted")
+	ex, err = store.HasRecheckSubmission(ctx, 7, "ticket-1", "target-b")
 	require.NoError(t, err)
-	require.True(t, exB, "target-b must be persisted (C2 regression)")
+	require.True(t, ex, "HasRecheckSubmission must read positive for any target on same (epoch, ticket) — chain replay key is per (epoch, ticket, creator)")
 
-	// Both must have produced a chain submit.
-	require.Len(t, msg.calls, 2)
-	require.NotEqual(t, msg.calls[0].target, msg.calls[1].target)
+	// Exactly one chain submit fired — the first one.
+	require.Len(t, msg.calls, 1, "PR286 F3: chain accepts one recheck per (epoch, ticket, creator); only one local submit must fire")
+	require.Equal(t, "target-a", msg.calls[0].target)
 }
 
 // fakeReporterErrAudit is a stub that fails for "reporter-bad" and returns

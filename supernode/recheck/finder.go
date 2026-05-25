@@ -105,11 +105,15 @@ func (f *Finder) Find(ctx context.Context) ([]Candidate, error) {
 			if !c.Valid() || c.TargetAccount == f.self || c.OriginalReporter == f.self {
 				continue
 			}
-			// C2 fix: chain dedup is per-(epoch, ticket, target) — multi-
-			// target candidates within the same (epoch, ticket) must each
-			// produce a separate recheck. Key the seen map and the
-			// HasRecheckSubmission lookup on the full triple.
-			key := fmt.Sprintf("%d/%s/%s", c.EpochID, c.TicketID, c.TargetAccount)
+			// PR286 F3 fix: chain dedup is per (epoch, ticket, creator) —
+			// see lumera x/audit/v1/keeper/msg_storage_truth.go:88-90.
+			// Multiple target candidates within the same (epoch, ticket)
+			// can only produce ONE chain-accepted recheck per local
+			// creator (this supernode). Collapse to a deterministic
+			// choice using the existing (TicketID, TargetAccount) sort
+			// above — the first target wins lex-smallest, the rest are
+			// silently dropped by the seen-key dedup below.
+			key := fmt.Sprintf("%d/%s", c.EpochID, c.TicketID)
 			if _, ok := seen[key]; ok {
 				continue
 			}

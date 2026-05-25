@@ -7,6 +7,7 @@ import (
 	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
 
@@ -27,46 +28,60 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{seen: map[string]bool{}, failures: map[string]int{}}
 }
 func (m *memoryStore) HasRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount string) (bool, error) {
-	return m.seen[key(epochID, ticketID, targetAccount)], nil
+	_ = targetAccount
+	return m.seen[key(epochID, ticketID)], nil
 }
 func (m *memoryStore) RecordPendingRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
+	_ = targetAccount
 	callSeq++
 	m.recordCallIndex = callSeq
-	k := key(epochID, ticketID, targetAccount)
+	k := key(epochID, ticketID)
 	if m.seen[k] {
-		// Match production SQLite ON CONFLICT DO NOTHING semantics.
-		return nil
+		// Match production SQLite ON CONFLICT(epoch_id, ticket_id) DO NOTHING.
+		// PR286 F3: a second target on the same (epoch, ticket) collides
+		// with the existing row; the caller treats this as
+		// ErrLEP6RecheckAlreadyRecorded.
+		return queries.ErrLEP6RecheckAlreadyRecorded
 	}
 	m.seen[k] = true
 	return nil
 }
 func (m *memoryStore) MarkRecheckSubmissionSubmitted(_ context.Context, epochID uint64, ticketID, targetAccount string) error {
-	m.seen[key(epochID, ticketID, targetAccount)] = true
+	_ = targetAccount
+	m.seen[key(epochID, ticketID)] = true
 	return nil
 }
 func (m *memoryStore) DeletePendingRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount string) error {
-	delete(m.seen, key(epochID, ticketID, targetAccount))
+	_ = targetAccount
+	delete(m.seen, key(epochID, ticketID))
 	return nil
 }
 func (m *memoryStore) RecordRecheckSubmission(_ context.Context, epochID uint64, ticketID, targetAccount, challengedTranscriptHash, recheckTranscriptHash string, resultClass audittypes.StorageProofResultClass) error {
+	_ = targetAccount
 	callSeq++
 	m.recordCallIndex = callSeq
-	m.seen[key(epochID, ticketID, targetAccount)] = true
+	m.seen[key(epochID, ticketID)] = true
 	return nil
 }
 func (m *memoryStore) RecordRecheckAttemptFailure(_ context.Context, epochID uint64, ticketID, targetAccount string, err error, ttl time.Duration) error {
-	m.failures[failureKey(epochID, ticketID, targetAccount)]++
+	_ = targetAccount
+	m.failures[failureKey(epochID, ticketID)]++
 	return nil
 }
 func (m *memoryStore) HasRecheckAttemptFailureBudgetExceeded(_ context.Context, epochID uint64, ticketID, targetAccount string, maxAttempts int) (bool, error) {
-	return maxAttempts > 0 && m.failures[failureKey(epochID, ticketID, targetAccount)] >= maxAttempts, nil
+	_ = targetAccount
+	return maxAttempts > 0 && m.failures[failureKey(epochID, ticketID)] >= maxAttempts, nil
 }
 func (m *memoryStore) PurgeExpiredRecheckAttemptFailures(_ context.Context) error { return nil }
-func key(epochID uint64, ticketID, targetAccount string) string {
-	return fmt.Sprintf("%d/%s/%s", epochID, ticketID, targetAccount)
+
+// PR286 F3: dedup keys are (epoch, ticket) to match chain replay
+// protection (epoch, ticket, creator), with creator implicit (this
+// supernode).
+func key(epochID uint64, ticketID string) string {
+	return fmt.Sprintf("%d/%s", epochID, ticketID)
 }
-func failureKey(epochID uint64, ticketID, targetAccount string) string {
-	return fmt.Sprintf("%d/%s/%s", epochID, ticketID, targetAccount)
+func failureKey(epochID uint64, ticketID string) string {
+	return fmt.Sprintf("%d/%s", epochID, ticketID)
 }
 
 type recordingAuditMsg struct {

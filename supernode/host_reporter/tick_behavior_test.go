@@ -321,7 +321,24 @@ func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
 	}
 }
 
-func TestTick_SOFTModeWithAssignedTargetsWaitsForLEP6ProofResults(t *testing.T) {
+// TestTick_SHADOWModeSubmitsEmptyProofs is the LEP-6 PR286 F1 regression:
+// in SHADOW the chain only enforces compound proof coverage in FULL mode
+// (see lumera x/audit/v1/keeper/msg_submit_epoch_report.go:143). The host
+// reporter MUST submit the epoch report even when local LEP-6 proof rows
+// are empty, otherwise it stops sending host/peer observations entirely
+// and feeds the audit_missing_reports postponement path.
+func TestTick_SHADOWModeSubmitsEmptyProofs(t *testing.T) {
+	testTickSubmitsEmptyProofsForMode(t, audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)
+}
+
+// TestTick_SOFTModeSubmitsEmptyProofs covers the same F1 fix as SHADOW —
+// SOFT is also an observational mode and chain accepts empty proof rows.
+func TestTick_SOFTModeSubmitsEmptyProofs(t *testing.T) {
+	testTickSubmitsEmptyProofsForMode(t, audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SOFT)
+}
+
+func testTickSubmitsEmptyProofsForMode(t *testing.T, mode audittypes.StorageTruthEnforcementMode) {
+	t.Helper()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -333,7 +350,7 @@ func TestTick_SOFTModeWithAssignedTargetsWaitsForLEP6ProofResults(t *testing.T) 
 		assigned: &audittypes.QueryAssignedTargetsResponse{
 			TargetSupernodeAccounts: []string{"snA"},
 		},
-		params: audittypes.Params{StorageTruthEnforcementMode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SOFT},
+		params: audittypes.Params{StorageTruthEnforcementMode: mode},
 	}
 	auditMsg := auditmsgmod.NewMockModule(ctrl)
 	node := nodemod.NewMockModule(ctrl)
@@ -348,8 +365,8 @@ func TestTick_SOFTModeWithAssignedTargetsWaitsForLEP6ProofResults(t *testing.T) 
 	provider := &stubProofResultProvider{}
 	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(13), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ uint64, _ audittypes.HostReport, _ []*audittypes.StorageChallengeObservation, proofs []*audittypes.StorageProofResult) (*sdktx.BroadcastTxResponse, error) {
-			if len(proofs) != 1 || proofs[0].TicketId != "ticket-13" {
-				t.Fatalf("expected delayed proof result to be submitted, got %+v", proofs)
+			if len(proofs) != 0 {
+				t.Fatalf("expected empty proof results in mode %s, got %d", mode, len(proofs))
 			}
 			return &sdktx.BroadcastTxResponse{}, nil
 		},
@@ -360,24 +377,122 @@ func TestTick_SOFTModeWithAssignedTargetsWaitsForLEP6ProofResults(t *testing.T) 
 		t.Fatalf("new service: %v", err)
 	}
 	svc.SetProofResultProvider(provider)
-
-	// First tick models the production race: host_reporter fires before the
-	// LEP-6 dispatcher appends same-epoch proof results. It must not submit an
-	// empty storage_proof_results report because that report is idempotent and
-	// would permanently block the later proof rows for this epoch.
+	svc.dialTimeout = 10 * time.Millisecond
 	svc.tick(context.Background())
 
-	provider.results = []*audittypes.StorageProofResult{{
+	if len(provider.requeuedEpochs) != 0 {
+		t.Fatalf("expected no requeue when proofs were submitted (empty is fine in %s mode), got %v", mode, provider.requeuedEpochs)
+	}
+}
+
+// TestTick_SubmitFailureRequeuesProofResults covers the LEP-6 PR286 F2
+// regression: CollectResults destructively drains the proof buffer; if
+// SubmitEpochReport then fails with anything other than a chain duplicate,
+// the drained rows MUST be requeued so the next tick can retry them.
+func TestTick_SubmitFailureRequeuesProofResults(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	kr, keyName, identity := testKeyringAndIdentity(t)
+	auditMod := &stubAuditModule{
+		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 14},
+		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 14}},
+		epochReportErr: status.Error(codes.NotFound, "not found"),
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			TargetSupernodeAccounts: []string{"snA"},
+		},
+		// SHADOW so an empty-coverage drain still reaches Submit (FULL would
+		// short-circuit on the coverage gate).
+		params: audittypes.Params{StorageTruthEnforcementMode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW},
+	}
+	auditMsg := auditmsgmod.NewMockModule(ctrl)
+	node := nodemod.NewMockModule(ctrl)
+	sn := supernodemod.NewMockModule(ctrl)
+	client := lumeraMock.NewMockClient(ctrl)
+	client.EXPECT().Audit().AnyTimes().Return(auditMod)
+	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
+	client.EXPECT().SuperNode().AnyTimes().Return(sn)
+	client.EXPECT().Node().AnyTimes().Return(node)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").AnyTimes().Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
+
+	drained := []*audittypes.StorageProofResult{{
 		TargetSupernodeAccount: "snA",
-		BucketType:             audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT,
-		TicketId:               "ticket-13",
-		TranscriptHash:         "hash-13",
-		ResultClass:            audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
+		TicketId:               "ticket-14",
+		TranscriptHash:         "hash-14",
 	}}
+	provider := &stubProofResultProvider{results: drained}
+
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(14), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("rpc unavailable: connect: connection refused")).
+		Times(1)
+
+	svc, err := NewService(identity, client, kr, keyName, "", "")
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	svc.SetProofResultProvider(provider)
+	svc.dialTimeout = 10 * time.Millisecond
 	svc.tick(context.Background())
 
-	if len(provider.queriedEpochs) != 2 || provider.queriedEpochs[0] != 13 || provider.queriedEpochs[1] != 13 {
-		t.Fatalf("expected provider queried twice for epoch 13, got %v", provider.queriedEpochs)
+	if len(provider.requeuedEpochs) != 1 || provider.requeuedEpochs[0] != 14 {
+		t.Fatalf("expected drained proofs requeued on submit failure for epoch 14, got %v", provider.requeuedEpochs)
+	}
+	if len(provider.results) != 1 || provider.results[0].TicketId != "ticket-14" {
+		t.Fatalf("expected requeued proof rows preserved verbatim, got %+v", provider.results)
+	}
+}
+
+// TestTick_DuplicateReportErrorDoesNotRequeue ensures that when chain
+// returns ErrDuplicateReport (report already submitted for this epoch),
+// the drained proof rows are NOT requeued — they are stale and another
+// submit would just be rejected again. This is the "do not requeue stale
+// rows" branch of the F2 fix.
+func TestTick_DuplicateReportErrorDoesNotRequeue(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	kr, keyName, identity := testKeyringAndIdentity(t)
+	auditMod := &stubAuditModule{
+		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 15},
+		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 15}},
+		epochReportErr: status.Error(codes.NotFound, "not found"),
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			TargetSupernodeAccounts: []string{"snA"},
+		},
+		params: audittypes.Params{StorageTruthEnforcementMode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW},
+	}
+	auditMsg := auditmsgmod.NewMockModule(ctrl)
+	node := nodemod.NewMockModule(ctrl)
+	sn := supernodemod.NewMockModule(ctrl)
+	client := lumeraMock.NewMockClient(ctrl)
+	client.EXPECT().Audit().AnyTimes().Return(auditMod)
+	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
+	client.EXPECT().SuperNode().AnyTimes().Return(sn)
+	client.EXPECT().Node().AnyTimes().Return(node)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").AnyTimes().Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
+
+	provider := &stubProofResultProvider{results: []*audittypes.StorageProofResult{{
+		TargetSupernodeAccount: "snA",
+		TicketId:               "ticket-15",
+		TranscriptHash:         "hash-15",
+	}}}
+
+	// Match the chain phrase from lumera x/audit/v1/keeper/msg_submit_epoch_report.go:142.
+	dupErr := errors.New("report already submitted for this epoch")
+	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), uint64(15), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, dupErr).
+		Times(1)
+
+	svc, err := NewService(identity, client, kr, keyName, "", "")
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	svc.SetProofResultProvider(provider)
+	svc.dialTimeout = 10 * time.Millisecond
+	svc.tick(context.Background())
+
+	if len(provider.requeuedEpochs) != 0 {
+		t.Fatalf("expected NO requeue on chain-duplicate response, got %v", provider.requeuedEpochs)
 	}
 }
 

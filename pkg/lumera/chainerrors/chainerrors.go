@@ -120,6 +120,28 @@ func IsHealVerificationAlreadySubmitted(err error) bool {
 	return strings.Contains(err.Error(), "verification already submitted by creator")
 }
 
+// IsEpochReportDuplicate reports whether err corresponds to the chain
+// rejecting MsgSubmitEpochReport because a report for the same
+// (epoch, reporter) tuple has already been accepted. Chain wraps
+// audittypes.ErrDuplicateReport (registered code 4) with the discriminating
+// phrase "report already submitted for this epoch" at
+// msg_submit_epoch_report.go:142.
+//
+// Callers in the host-reporter submit path use this to distinguish
+// "chain has our report already (drained proof rows are stale; do NOT
+// requeue)" from "transient submit failure (must requeue drained rows
+// so the next tick can retry)".
+func IsEpochReportDuplicate(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, audittypes.ErrDuplicateReport) {
+		return true
+	}
+	// Substring fallback — chain phrase from msg_submit_epoch_report.go:142.
+	return strings.Contains(strings.ToLower(err.Error()), "report already submitted for this epoch")
+}
+
 // IsRecheckEvidenceAlreadySubmitted reports whether err corresponds to the
 // chain rejecting a duplicate recheck-evidence submission. Chain wraps
 // audittypes.ErrInvalidRecheckEvidence (a generic envelope for ALL recheck
