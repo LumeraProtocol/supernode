@@ -353,11 +353,40 @@ func (s *Network) handleReplicateRequest(ctx context.Context, req *ReplicateData
 	return nil
 }
 
-func (s *Network) handlePing(ctx context.Context, message *Message) ([]byte, error) {
-	// new a response message
-	resMsg := s.dht.newMessage(Ping, message.Sender, nil)
+func (s *Network) handlePing(ctx context.Context, message *Message) (res []byte, err error) {
+	// Recover any panic in the request path so a single malformed Ping cannot
+	// crash the supernode process. See SuperNode RCA (kademlia handlePing nil
+	// sender panic): without this guard, gob.Encode walks a peer-supplied nil
+	// *Node and SIGSEGVs inside encUint8Array, killing the goroutine and (since
+	// there is no upstream recover()) the entire process.
+	defer func() {
+		if r := recover(); r != nil {
+			logtrace.Error(ctx, "handlePing panic recovered", logtrace.Fields{
+				logtrace.FieldModule: "p2p",
+				"panic":              fmt.Sprintf("%v", r),
+			})
+			res, err = nil, errors.New("handlePing: recovered panic")
+		}
+	}()
 
-	go s.dht.addNode(context.Background(), message.Sender)
+	if message == nil || message.Sender == nil || len(message.Sender.ID) == 0 {
+		return nil, errors.New("handlePing: invalid sender")
+	}
+
+	// Sanitize: build our own *Node from the peer-supplied fields so we do not
+	// reflect attacker-controlled HashedID (or any other future field) back on
+	// the wire when we encode the response.
+	sender := &Node{
+		ID:      message.Sender.ID,
+		IP:      message.Sender.IP,
+		Port:    message.Sender.Port,
+		Version: message.Sender.Version,
+	}
+	sender.SetHashedID()
+
+	resMsg := s.dht.newMessage(Ping, sender, nil)
+
+	go s.dht.addNode(context.Background(), sender)
 
 	return s.encodeMesage(resMsg)
 }
@@ -591,8 +620,23 @@ func (s *Network) serve(ctx context.Context) {
 			return
 		}
 
-		// handle the connection requests
-		go s.handleConn(ctx, conn)
+		// handle the connection requests with a top-level recover so a single
+		// malformed peer cannot crash the supernode process. Per-handler
+		// recovers (e.g. handlePing's, handleFindNode's) catch most cases, but
+		// this outer guard is defense-in-depth for any future code path that
+		// forgets to install its own.
+		go func(c net.Conn) {
+			defer func() {
+				if r := recover(); r != nil {
+					logtrace.Error(ctx, "handleConn panic recovered", logtrace.Fields{
+						logtrace.FieldModule: "p2p",
+						"panic":              fmt.Sprintf("%v", r),
+					})
+					_ = c.Close()
+				}
+			}()
+			s.handleConn(ctx, c)
+		}(conn)
 	}
 }
 
