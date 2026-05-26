@@ -16,6 +16,7 @@ import (
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	statussvc "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -184,23 +185,21 @@ func (s *Service) tick(ctx context.Context) {
 	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
 
 	var storageProofResults []*audittypes.StorageProofResult
-	if proofResultProvider := s.getProofResultProvider(); proofResultProvider != nil {
+	proofResultProvider := s.getProofResultProvider()
+	if proofResultProvider != nil {
 		storageProofResults = proofResultProvider.CollectResults(epochID)
 		mode, modeOK := s.storageTruthEnforcementMode(tickCtx)
-		if modeOK && mode != audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED && len(assignResp.TargetSupernodeAccounts) > 0 && len(storageProofResults) == 0 {
-			logtrace.Warn(tickCtx, "epoch report skipped: waiting for LEP-6 storage proof results", logtrace.Fields{
-				"epoch_id":         epochID,
-				"assigned_targets": len(assignResp.TargetSupernodeAccounts),
-				"mode":             mode.String(),
-			})
-			return
-		}
 		if modeOK && mode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL {
+			// FULL mode is the only mode where the chain enforces compound
+			// storage-proof coverage (one RECENT + one OLD per assigned target).
+			// See lumera x/audit/v1/keeper/msg_submit_epoch_report.go:143
+			// (enforceCompoundStorageProofs := mode == FULL). If our local
+			// drain doesn't satisfy that, we MUST skip this epoch and
+			// requeue the partial rows so the next tick can try again with
+			// a complete set.
 			complete, reason := storageProofCoverageComplete(storageProofResults, assignResp.TargetSupernodeAccounts)
 			if !complete {
-				if requeuer, ok := proofResultProvider.(ProofResultRequeuer); ok {
-					requeuer.RequeueResults(epochID, storageProofResults)
-				}
+				requeueProofResults(proofResultProvider, epochID, storageProofResults)
 				logtrace.Warn(tickCtx, "epoch report skipped: incomplete FULL-mode storage proof coverage", logtrace.Fields{
 					"epoch_id":         epochID,
 					"assigned_targets": len(assignResp.TargetSupernodeAccounts),
@@ -209,6 +208,21 @@ func (s *Service) tick(ctx context.Context) {
 				})
 				return
 			}
+		} else if modeOK && len(assignResp.TargetSupernodeAccounts) > 0 && len(storageProofResults) == 0 {
+			// SHADOW / SOFT / UNSPECIFIED: chain accepts empty StorageProofResults
+			// (only FULL enforces compound coverage). Submitting the host /
+			// peer-observation report is mandatory regardless — withholding it
+			// would feed audit_missing_reports and risk self-postponement
+			// (ConsecutiveEpochsToPostpone defaults to 1). The trade-off is
+			// that a same-epoch idempotency window can cause late-arriving
+			// proof rows to be rejected as duplicate; that is acceptable in
+			// observational modes because SHADOW/SOFT proofs do not affect
+			// scoring (LEP-6 PR286 review F1).
+			logtrace.Info(tickCtx, "epoch report: submitting in non-FULL mode with empty LEP-6 proof rows", logtrace.Fields{
+				"epoch_id":         epochID,
+				"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+				"mode":             mode.String(),
+			})
 		}
 	}
 
@@ -226,9 +240,25 @@ func (s *Service) tick(ctx context.Context) {
 	// for existing diagnostics/tests.
 
 	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations, storageProofResults); err != nil {
-		logtrace.Warn(tickCtx, "epoch report submit failed", logtrace.Fields{
-			"epoch_id": epochID,
-			"error":    err.Error(),
+		// LEP-6 PR286 review F2: CollectResults destructively drained the
+		// proof buffer. On submit failure we MUST decide whether those rows
+		// can ever be re-submitted:
+		//   - chain duplicate (report for this epoch already accepted) →
+		//     drained rows are stale; do not requeue, just log;
+		//   - any other error (transient RPC / sequence / validation) →
+		//     requeue so next tick can retry with the same proofs.
+		if chainerrors.IsEpochReportDuplicate(err) {
+			logtrace.Info(tickCtx, "epoch report submit returned chain duplicate; drained proof rows discarded", logtrace.Fields{
+				"epoch_id":      epochID,
+				"proof_results": len(storageProofResults),
+			})
+			return
+		}
+		requeueProofResults(proofResultProvider, epochID, storageProofResults)
+		logtrace.Warn(tickCtx, "epoch report submit failed; drained proof rows requeued for next tick", logtrace.Fields{
+			"epoch_id":      epochID,
+			"proof_results": len(storageProofResults),
+			"error":         err.Error(),
 		})
 		return
 	}
@@ -246,6 +276,20 @@ func (s *Service) storageTruthEnforcementMode(ctx context.Context) (audittypes.S
 		return audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED, false
 	}
 	return paramsResp.Params.StorageTruthEnforcementMode, true
+}
+
+// requeueProofResults returns the drained proof rows to the provider's
+// buffer when the host reporter has decided not to ship them this tick
+// (e.g. FULL-mode incomplete coverage or submit failure). Providers that
+// don't implement ProofResultRequeuer silently drop the rows — same
+// semantics as before requeueing was added.
+func requeueProofResults(provider ProofResultProvider, epochID uint64, results []*audittypes.StorageProofResult) {
+	if provider == nil || len(results) == 0 {
+		return
+	}
+	if requeuer, ok := provider.(ProofResultRequeuer); ok {
+		requeuer.RequeueResults(epochID, results)
+	}
 }
 
 func storageProofCoverageComplete(results []*audittypes.StorageProofResult, targets []string) (bool, string) {
