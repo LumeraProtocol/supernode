@@ -3,6 +3,7 @@ package host_reporter
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
@@ -26,6 +28,8 @@ const (
 	defaultTickTimeout  = 30 * time.Second
 
 	maxConcurrentTargets = 8
+
+	postponeReasonAuditHostRequirements = "audit_host_requirements"
 )
 
 // Service submits one MsgSubmitEpochReport per epoch for the local supernode.
@@ -150,7 +154,16 @@ func (s *Service) tick(ctx context.Context) {
 		MemUsagePercent: 0,
 	}
 	if diskUsagePercent, ok := s.diskUsagePercent(tickCtx); ok {
-		hostReport.DiskUsagePercent = diskUsagePercent
+		reportedDiskUsagePercent, compatReason := s.auditDiskUsagePercent(tickCtx, diskUsagePercent)
+		hostReport.DiskUsagePercent = reportedDiskUsagePercent
+		if compatReason != "" {
+			logtrace.Warn(tickCtx, "audit disk usage compatibility override applied", logtrace.Fields{
+				"epoch_id":                    epochID,
+				"actual_disk_usage_percent":   diskUsagePercent,
+				"reported_disk_usage_percent": reportedDiskUsagePercent,
+				"reason":                      compatReason,
+			})
+		}
 	}
 
 	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations); err != nil {
@@ -176,6 +189,66 @@ func (s *Service) diskUsagePercent(ctx context.Context) (float64, bool) {
 		return 0, false
 	}
 	return infos[0].UsagePercent, true
+}
+
+func (s *Service) auditDiskUsagePercent(ctx context.Context, actual float64) (float64, string) {
+	if actual <= 0 || actual > 100 {
+		return actual, ""
+	}
+
+	auditParamsResp, err := s.lumera.Audit().GetParams(ctx)
+	if err != nil || auditParamsResp == nil {
+		return actual, ""
+	}
+	auditMinDiskFree := auditParamsResp.Params.MinDiskFreePercent
+	if auditMinDiskFree == 0 || auditMinDiskFree > 100 {
+		return actual, ""
+	}
+
+	supernodeParamsResp, err := s.lumera.SuperNode().GetParams(ctx)
+	if err != nil || supernodeParamsResp == nil {
+		return actual, ""
+	}
+
+	maxStorageUsage := supernodeParamsResp.Params.MaxStorageUsagePercent
+	if maxStorageUsage == 0 || maxStorageUsage >= 100 {
+		return actual, ""
+	}
+
+	auditPostponeUsage := 100 - float64(auditMinDiskFree)
+	storageFullUsage := float64(maxStorageUsage)
+	if auditPostponeUsage > storageFullUsage || actual < auditPostponeUsage {
+		return actual, ""
+	}
+
+	sn, err := s.lumera.SuperNode().GetSupernodeBySupernodeAddress(ctx, s.identity)
+	if err != nil || sn == nil {
+		return actual, ""
+	}
+
+	latestState, latestReason := latestSupernodeState(sn)
+	switch latestState {
+	case sntypes.SuperNodeStatePostponed:
+		if latestReason == "" || latestReason == postponeReasonAuditHostRequirements {
+			return auditPostponeUsage, "postponed_recovery_compat"
+		}
+	case sntypes.SuperNodeStateActive, sntypes.SuperNodeStateStorageFull:
+		return math.Nextafter(storageFullUsage, 100), "storage_full_compat"
+	}
+
+	return actual, ""
+}
+
+func latestSupernodeState(sn *sntypes.SuperNode) (sntypes.SuperNodeState, string) {
+	if sn == nil || len(sn.States) == 0 {
+		return sntypes.SuperNodeStateUnspecified, ""
+	}
+	for i := len(sn.States) - 1; i >= 0; i-- {
+		if sn.States[i] != nil {
+			return sn.States[i].State, sn.States[i].Reason
+		}
+	}
+	return sntypes.SuperNodeStateUnspecified, ""
 }
 
 func (s *Service) cascadeKademliaDBBytes(_ context.Context) (uint64, bool) {
