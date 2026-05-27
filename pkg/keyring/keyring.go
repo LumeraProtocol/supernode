@@ -228,6 +228,12 @@ func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
 		return nil, err
 	}
 	sig, _, err := kr.SignByAddress(addr, bz, signing.SignMode_SIGN_MODE_DIRECT)
+	if err != nil {
+		return nil, err
+	}
+	if len(sig) == 65 {
+		sig = sig[:64]
+	}
 	return sig, err
 }
 

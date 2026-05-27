@@ -182,13 +182,18 @@ func TestLegacyAndEVMKeys_ProduceDifferentAddresses(t *testing.T) {
 
 func TestSignBytes_WithEVMKey(t *testing.T) {
 	kr := newEVMKeyring(t)
-	_, _, err := CreateNewAccount(kr, "signer")
+	_, rec, err := CreateNewAccount(kr, "signer")
 	require.NoError(t, err)
 
 	msg := []byte("hello world")
 	sig, err := SignBytes(kr, "signer", msg)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sig, "signature should not be empty")
+	assert.Len(t, sig, 64, "EVM signatures should be normalized to r||s")
+
+	pubKey, err := rec.GetPubKey()
+	require.NoError(t, err)
+	require.True(t, pubKey.VerifySignature(msg, sig), "signature should verify with the signer pubkey")
 }
 
 func TestGetAddress_WithEVMKey(t *testing.T) {
