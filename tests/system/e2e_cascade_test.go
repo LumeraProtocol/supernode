@@ -67,7 +67,7 @@ func TestCascadeE2E(t *testing.T) {
 	defer os.Unsetenv("INTEGRATION_TEST")
 	// Test account credentials - these values are consistent across test runs
 	const testMnemonic = "odor kiss switch swarm spell make planet bundle skate ozone path planet exclude butter atom ahead angle royal shuffle door prevent merry alter robust"
-	const expectedAddress = "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4"
+	const expectedAddress = "lumera1jcus5g9v6r080rg7dljvvpr4cm8k7psqwg7tj8"
 	const testKeyName = "testkey1"
 	const userKeyName = "user"
 	const userMnemonic = "little tone alley oval festival gloom sting asthma crime select swap auto when trip luxury pact risk sister pencil about crisp upon opera timber"
@@ -127,15 +127,15 @@ func TestCascadeE2E(t *testing.T) {
 	}
 
 	// Register three supernodes with different ports
-	registerSupernode("node0", "4444", "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "4445")
-	registerSupernode("node1", "4446", "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "4447")
-	registerSupernode("node2", "4448", "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "4449")
+	registerSupernode("node0", "4444", "lumera1jcus5g9v6r080rg7dljvvpr4cm8k7psqwg7tj8", "4445")
+	registerSupernode("node1", "4446", "lumera19x8cqj4nqmvmnzu75n3jalzhjc3mt643m738qn", "4447")
+	registerSupernode("node2", "4448", "lumera1kfkqz3w5rd9qfgzmvc6pzfle0wt8dqyeh7rmgu", "4449")
 	t.Log("Successfully registered three supernodes")
 
 	// Fund Lume
-	cli.FundAddress("lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4", "100000ulume")
-	cli.FundAddressWithNode("lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c", "100000ulume", "node1")
-	cli.FundAddressWithNode("lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp", "100000ulume", "node2")
+	cli.FundAddress("lumera1jcus5g9v6r080rg7dljvvpr4cm8k7psqwg7tj8", "100000ulume")
+	cli.FundAddressWithNode("lumera19x8cqj4nqmvmnzu75n3jalzhjc3mt643m738qn", "100000ulume", "node1")
+	cli.FundAddressWithNode("lumera1kfkqz3w5rd9qfgzmvc6pzfle0wt8dqyeh7rmgu", "100000ulume", "node2")
 
 	queryHeight := sut.AwaitNextBlock(t)
 	args := []string{
@@ -704,7 +704,7 @@ waitLoop:
 
 	t.Logf("File verification successful: downloaded file content matches original file")
 
-	status, err := actionClient.GetSupernodeStatus(ctx, "lumera1cjyc4ruq739e2lakuhargejjkr0q5vg6x3d7kp")
+	status, err := actionClient.GetSupernodeStatus(ctx, "lumera1kfkqz3w5rd9qfgzmvc6pzfle0wt8dqyeh7rmgu")
 	t.Logf("Supernode status: %+v", status)
 	require.NoError(t, err, "Failed to get supernode status")
 
