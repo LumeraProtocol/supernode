@@ -47,14 +47,22 @@ setup_primary() {
     # Check if binary already exists
    if [ ! -f "$DATA_DIR/supernode" ]; then
     info "Building supernode binary from $SUPERNODE_SRC..."
+    # Inject a real semver into cmd.Version so the SDK-side version gate
+    # (pkg/version.MinSupernodeVersion) accepts the test binary. Default
+    # "dev" parses to 2.0.0 via supernode/supernode_metrics/metrics_collection.go::parseVersion,
+    # which is below the gate floor and causes filterEligibleSupernodesParallel
+    # to reject every candidate (`no eligible supernodes to register`).
+    # SUPERNODE_TEST_VERSION can be overridden by the caller (defaults to
+    # a non-rc 2.5.0 so the gate sees the harness as a current build).
+    : "${SUPERNODE_TEST_VERSION:=2.5.0-test}"
     CGO_ENABLED=1 \
     GOOS=linux \
     GOARCH=amd64 \
     "${GO:-go}" build \
     -trimpath \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/LumeraProtocol/supernode/v2/supernode/cmd.Version=${SUPERNODE_TEST_VERSION}" \
     -o "$DATA_DIR/supernode" "$SUPERNODE_SRC" || error "Failed to build supernode binary"
-    success "Supernode binary built successfully"
+    success "Supernode binary built successfully (version=${SUPERNODE_TEST_VERSION})"
 else
     info "Supernode binary already exists, skipping build..."
 fi
