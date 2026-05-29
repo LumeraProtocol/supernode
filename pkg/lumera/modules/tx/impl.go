@@ -10,6 +10,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	lumeracodec "github.com/LumeraProtocol/supernode/v2/pkg/lumera/codec"
 
+	errorsmod "cosmossdk.io/errors"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/types"
@@ -203,16 +204,26 @@ func (m *module) BroadcastTransaction(ctx context.Context, txBytes []byte) (*sdk
 		return nil, fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
-	// If the chain returns a non-zero code, surface it as an error with context
+	// If the chain returns a non-zero code, surface it as an error with context.
+	// We wrap with errorsmod.ABCIError so that callers can use errors.Is
+	// against typed sentinels (e.g. audittypes.ErrHealOpInvalidState) — the
+	// raw string-prefixed shape is preserved so existing OOG / sequence-
+	// mismatch substring matchers continue to work.
 	if resp != nil && resp.TxResponse != nil && resp.TxResponse.Code != 0 {
+		typed := errorsmod.ABCIError(
+			resp.TxResponse.Codespace,
+			resp.TxResponse.Code,
+			resp.TxResponse.RawLog,
+		)
 		return resp, fmt.Errorf(
-			"tx failed: code=%d codespace=%s height=%d gas_wanted=%d gas_used=%d raw_log=%s",
+			"tx failed: code=%d codespace=%s height=%d gas_wanted=%d gas_used=%d raw_log=%s: %w",
 			resp.TxResponse.Code,
 			resp.TxResponse.Codespace,
 			resp.TxResponse.Height,
 			resp.TxResponse.GasWanted,
 			resp.TxResponse.GasUsed,
 			resp.TxResponse.RawLog,
+			typed,
 		)
 	}
 

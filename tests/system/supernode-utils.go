@@ -11,17 +11,23 @@ import (
 )
 
 func StartAllSupernodes(t *testing.T) []*exec.Cmd {
+	return StartSupernodesFromDirs(t, []string{"supernode-data1", "supernode-data2", "supernode-data3"}, "supernode")
+}
+
+func StartLEP6Supernodes(t *testing.T) []*exec.Cmd {
+	return StartSupernodesFromDirs(t, []string{"supernode-lep6-data1", "supernode-lep6-data2", "supernode-lep6-data3"}, "supernode-lep6")
+}
+
+func StartSupernodesFromDirs(t *testing.T, relDataDirs []string, logPrefix string) []*exec.Cmd {
 	// Determine the project root (assumes tests run from project root)
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("unable to get working directory: %v", err)
 	}
 
-	// Data directories for all three supernodes
-	dataDirs := []string{
-		filepath.Join(wd, "supernode-data1"),
-		filepath.Join(wd, "supernode-data2"),
-		filepath.Join(wd, "supernode-data3"),
+	dataDirs := make([]string, 0, len(relDataDirs))
+	for _, rel := range relDataDirs {
+		dataDirs = append(dataDirs, filepath.Join(wd, rel))
 	}
 
 	cmds := make([]*exec.Cmd, len(dataDirs))
@@ -47,7 +53,7 @@ func StartAllSupernodes(t *testing.T) []*exec.Cmd {
 			"--basedir", dataDir,
 		)
 
-		logPath := filepath.Join(wd, fmt.Sprintf("supernode%d.out", i))
+		logPath := filepath.Join(wd, fmt.Sprintf("%s%d.out", logPrefix, i))
 		logFile, err := os.Create(logPath)
 		if err != nil {
 			t.Fatalf("failed to create supernode log file %s: %v", logPath, err)

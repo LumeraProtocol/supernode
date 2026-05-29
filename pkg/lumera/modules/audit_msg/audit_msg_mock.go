@@ -42,19 +42,34 @@ func (m *MockModule) EXPECT() *MockModuleMockRecorder {
 	return m.recorder
 }
 
-// SubmitEpochReport mocks base method.
-func (m *MockModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport types.HostReport, storageChallengeObservations []*types.StorageChallengeObservation) (*tx.BroadcastTxResponse, error) {
+// ClaimHealComplete mocks base method.
+func (m *MockModule) ClaimHealComplete(ctx context.Context, healOpID uint64, ticketID, healManifestHash, details string) (*tx.BroadcastTxResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SubmitEpochReport", ctx, epochID, hostReport, storageChallengeObservations)
+	ret := m.ctrl.Call(m, "ClaimHealComplete", ctx, healOpID, ticketID, healManifestHash, details)
+	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClaimHealComplete indicates an expected call of ClaimHealComplete.
+func (mr *MockModuleMockRecorder) ClaimHealComplete(ctx, healOpID, ticketID, healManifestHash, details any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimHealComplete", reflect.TypeOf((*MockModule)(nil).ClaimHealComplete), ctx, healOpID, ticketID, healManifestHash, details)
+}
+
+// SubmitEpochReport mocks base method.
+func (m *MockModule) SubmitEpochReport(ctx context.Context, epochID uint64, hostReport types.HostReport, storageChallengeObservations []*types.StorageChallengeObservation, storageProofResults []*types.StorageProofResult) (*tx.BroadcastTxResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubmitEpochReport", ctx, epochID, hostReport, storageChallengeObservations, storageProofResults)
 	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SubmitEpochReport indicates an expected call of SubmitEpochReport.
-func (mr *MockModuleMockRecorder) SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations any) *gomock.Call {
+func (mr *MockModuleMockRecorder) SubmitEpochReport(ctx, epochID, hostReport, storageChallengeObservations, storageProofResults any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEpochReport", reflect.TypeOf((*MockModule)(nil).SubmitEpochReport), ctx, epochID, hostReport, storageChallengeObservations)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEpochReport", reflect.TypeOf((*MockModule)(nil).SubmitEpochReport), ctx, epochID, hostReport, storageChallengeObservations, storageProofResults)
 }
 
 // SubmitEvidence mocks base method.
@@ -70,4 +85,34 @@ func (m *MockModule) SubmitEvidence(ctx context.Context, subjectAddress string, 
 func (mr *MockModuleMockRecorder) SubmitEvidence(ctx, subjectAddress, evidenceType, actionID, metadataJSON any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitEvidence", reflect.TypeOf((*MockModule)(nil).SubmitEvidence), ctx, subjectAddress, evidenceType, actionID, metadataJSON)
+}
+
+// SubmitHealVerification mocks base method.
+func (m *MockModule) SubmitHealVerification(ctx context.Context, healOpID uint64, verified bool, verificationHash, details string) (*tx.BroadcastTxResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubmitHealVerification", ctx, healOpID, verified, verificationHash, details)
+	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SubmitHealVerification indicates an expected call of SubmitHealVerification.
+func (mr *MockModuleMockRecorder) SubmitHealVerification(ctx, healOpID, verified, verificationHash, details any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitHealVerification", reflect.TypeOf((*MockModule)(nil).SubmitHealVerification), ctx, healOpID, verified, verificationHash, details)
+}
+
+// SubmitStorageRecheckEvidence mocks base method.
+func (m *MockModule) SubmitStorageRecheckEvidence(ctx context.Context, epochID uint64, challengedSupernodeAccount, ticketID, challengedResultTranscriptHash, recheckTranscriptHash string, recheckResultClass types.StorageProofResultClass, details string) (*tx.BroadcastTxResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubmitStorageRecheckEvidence", ctx, epochID, challengedSupernodeAccount, ticketID, challengedResultTranscriptHash, recheckTranscriptHash, recheckResultClass, details)
+	ret0, _ := ret[0].(*tx.BroadcastTxResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SubmitStorageRecheckEvidence indicates an expected call of SubmitStorageRecheckEvidence.
+func (mr *MockModuleMockRecorder) SubmitStorageRecheckEvidence(ctx, epochID, challengedSupernodeAccount, ticketID, challengedResultTranscriptHash, recheckTranscriptHash, recheckResultClass, details any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitStorageRecheckEvidence", reflect.TypeOf((*MockModule)(nil).SubmitStorageRecheckEvidence), ctx, epochID, challengedSupernodeAccount, ticketID, challengedResultTranscriptHash, recheckTranscriptHash, recheckResultClass, details)
 }

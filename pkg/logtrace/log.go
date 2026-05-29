@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -20,9 +21,13 @@ const CorrelationIDKey ContextKey = "correlation_id"
 const OriginKey ContextKey = "origin"
 
 var (
-	logger   *zap.Logger
-	minLevel zapcore.Level = zapcore.InfoLevel // effective minimum log level
+	loggerPtr atomic.Pointer[zap.Logger]
+	minLevel  atomic.Int32 // effective minimum log level as zapcore.Level
 )
+
+func init() {
+	minLevel.Store(int32(zapcore.InfoLevel))
+}
 
 // Setup initializes the logger for readable output in all modes.
 func Setup(serviceName string) {
@@ -42,19 +47,23 @@ func Setup(serviceName string) {
 	// Always respect the LOG_LEVEL environment variable.
 	lvl := getLogLevel()
 	config.Level = zap.NewAtomicLevelAt(lvl)
-	// Persist the effective minimum so non-core sinks (e.g., Datadog) can
-	// filter entries consistently with the console logger.
-	minLevel = lvl
-
 	// Build the logger from the customized config.
+	var built *zap.Logger
 	if tracingEnabled {
-		logger, err = config.Build(zap.AddCallerSkip(1), zap.AddStacktrace(zapcore.ErrorLevel))
+		built, err = config.Build(zap.AddCallerSkip(1), zap.AddStacktrace(zapcore.ErrorLevel))
 	} else {
-		logger, err = config.Build()
+		built, err = config.Build()
 	}
 	if err != nil {
 		panic(err)
 	}
+
+	// Publish atomically so concurrent Setup/log calls cannot race on package
+	// globals. The effective minimum is stored after the logger so a racing log
+	// call always sees either the old complete pair or a conservative new logger
+	// with the previous Datadog gate for one call.
+	loggerPtr.Store(built)
+	minLevel.Store(int32(lvl))
 
 	// Initialize Datadog forwarding (minimal integration in separate file)
 	SetupDatadog(serviceName)
@@ -120,12 +129,17 @@ func extractCorrelationID(ctx context.Context) string {
 
 // logWithLevel logs a message with structured fields.
 func logWithLevel(level zapcore.Level, ctx context.Context, message string, fields Fields) {
-	if logger == nil {
+	lg := loggerPtr.Load()
+	if lg == nil {
 		Setup("unknown-service") // Fallback if Setup wasn't called
+		lg = loggerPtr.Load()
+		if lg == nil {
+			return
+		}
 	}
 
 	// Drop early if below the configured level (keeps Datadog in sync)
-	if !logger.Core().Enabled(level) {
+	if !lg.Core().Enabled(level) {
 		return
 	}
 
@@ -149,7 +163,7 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 	}
 
 	// Log with the structured fields using a level check/write
-	if ce := logger.Check(level, message); ce != nil {
+	if ce := lg.Check(level, message); ce != nil {
 		ce.Write(zapFields...)
 	} else {
 		// Should not happen due to early Enabled check, but guard anyway
@@ -159,7 +173,7 @@ func logWithLevel(level zapcore.Level, ctx context.Context, message string, fiel
 	// Forward to Datadog (non-blocking, best-effort) only if level is enabled
 	// for the current configuration. This prevents forwarding debug entries
 	// when the logger is configured for info and above.
-	if level >= minLevel {
+	if int32(level) >= minLevel.Load() {
 		ForwardDatadog(level, ctx, message, fields)
 	}
 }

@@ -22,6 +22,8 @@ go.work
 go.work.sum
 tests/system/testnet
 tests/system/**/supernode-data*
+tests/system/supernode-lep6-data*/
+.lep6-wip-backup/
 tests/system/data
 tests/system/1
 # env file

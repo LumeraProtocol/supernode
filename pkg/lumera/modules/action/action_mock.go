@@ -85,3 +85,18 @@ func (mr *MockModuleMockRecorder) GetParams(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetParams", reflect.TypeOf((*MockModule)(nil).GetParams), ctx)
 }
+
+// ListActionsBySuperNode mocks base method.
+func (m *MockModule) ListActionsBySuperNode(ctx context.Context, superNodeAddress string) (*types.QueryListActionsBySuperNodeResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListActionsBySuperNode", ctx, superNodeAddress)
+	ret0, _ := ret[0].(*types.QueryListActionsBySuperNodeResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListActionsBySuperNode indicates an expected call of ListActionsBySuperNode.
+func (mr *MockModuleMockRecorder) ListActionsBySuperNode(ctx, superNodeAddress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActionsBySuperNode", reflect.TypeOf((*MockModule)(nil).ListActionsBySuperNode), ctx, superNodeAddress)
+}

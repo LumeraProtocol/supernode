@@ -13,4 +13,7 @@ type LocalStoreInterface interface {
 	StorageChallengeQueries
 	PingHistoryQueries
 	HealthCheckChallengeQueries
+	LEP6HealQueries
+	RecheckQueries
+	StorageChallengeStateQueries
 }
