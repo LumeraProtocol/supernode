@@ -13,6 +13,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
 	"github.com/LumeraProtocol/supernode/v2/pkg/testutil"
+	"google.golang.org/grpc"
 )
 
 // fakeLumera satisfies lumera.Client by composing per-test programmable
@@ -43,4 +44,5 @@ func (f *fakeLumera) SuperNodeMsg() supernode_msg.Module { return f.other.SuperN
 func (f *fakeLumera) Bank() bankmod.Module               { return f.other.Bank() }
 func (f *fakeLumera) Tx() tx.Module                      { return f.other.Tx() }
 func (f *fakeLumera) Node() node.Module                  { return f.other.Node() }
+func (f *fakeLumera) Conn() *grpc.ClientConn             { return f.other.Conn() }
 func (f *fakeLumera) Close() error                       { return nil }

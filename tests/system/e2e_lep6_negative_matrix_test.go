@@ -409,4 +409,5 @@ func (p *lep6StoreBackedP2P) EnableKey(context.Context, string) error  { return 
 func (p *lep6StoreBackedP2P) GetLocalKeys(context.Context, *time.Time, time.Time) ([]string, error) {
 	return nil, fmt.Errorf("not implemented in LEP-6 matrix test fake")
 }
+func (p *lep6StoreBackedP2P) NotifyEVMMigration()       {}
 func (p *lep6StoreBackedP2P) Run(context.Context) error { return nil }

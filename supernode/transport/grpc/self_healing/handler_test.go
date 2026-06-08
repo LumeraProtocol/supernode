@@ -220,6 +220,10 @@ func (h *handlerLumera) Node() node.Module {
 	h.ensureStubs()
 	return h.stubsRef.Node()
 }
+func (h *handlerLumera) Conn() *grpc.ClientConn {
+	h.ensureStubs()
+	return h.stubsRef.Conn()
+}
 func (h *handlerLumera) Close() error { return nil }
 
 func (h *handlerLumera) ensureStubs() {
