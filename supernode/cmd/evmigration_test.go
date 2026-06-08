@@ -221,6 +221,15 @@ type fakeMigrationClient struct {
 	broadcastedMsg sdk.Msg // captures the message passed to BroadcastMigrationTx
 }
 
+type failingDeleteKeyring struct {
+	sdkkeyring.Keyring
+	err error
+}
+
+func (f failingDeleteKeyring) Delete(_ string) error {
+	return f.err
+}
+
 func (f *fakeMigrationClient) MigrationRecord(_ context.Context, _ string) (*evmigrationtypes.QueryMigrationRecordResponse, error) {
 	return f.recordResp, f.recordErr
 }
@@ -637,6 +646,46 @@ func TestEnsureLegacyAccountMigrated_ConfigSaveFailsBeforeKeyDelete(t *testing.T
 	// from the on-chain migration record.
 	_, err = kr.Key("mykey")
 	assert.NoError(t, err, "legacy key should remain when config save fails")
+}
+
+func TestEnsureLegacyAccountMigrated_DeleteFailureRestoresRetryableConfig(t *testing.T) {
+	baseKR := newTestKeyring(t)
+	addLegacyKey(t, baseKR, "mykey")
+	addEVMKey(t, baseKR, "evm-key")
+
+	cfg := newMigrationCfg(t, "mykey", "evm-key")
+	cfg.SupernodeConfig.Identity = "lumera1original"
+
+	mc := &fakeMigrationClient{
+		recordResp: &evmigrationtypes.QueryMigrationRecordResponse{},
+		estimateResp: &evmigrationtypes.QueryMigrationEstimateResponse{
+			WouldSucceed: true,
+		},
+	}
+
+	kr := failingDeleteKeyring{
+		Keyring: baseKR,
+		err:     fmt.Errorf("delete denied"),
+	}
+
+	err := ensureLegacyAccountMigrated(context.Background(), kr, cfg, mc, &fakeSuperNodeModule{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to delete legacy key")
+	assert.Contains(t, err.Error(), "retry")
+
+	assert.Equal(t, "mykey", cfg.SupernodeConfig.KeyName)
+	assert.Equal(t, "lumera1original", cfg.SupernodeConfig.Identity)
+	assert.Equal(t, "evm-key", cfg.SupernodeConfig.EVMKeyName)
+
+	cfgFile := filepath.Join(cfg.BaseDir, DefaultConfigFile)
+	loaded, loadErr := snConfig.LoadConfig(cfgFile, cfg.BaseDir)
+	require.NoError(t, loadErr)
+	assert.Equal(t, "mykey", loaded.SupernodeConfig.KeyName)
+	assert.Equal(t, "lumera1original", loaded.SupernodeConfig.Identity)
+	assert.Equal(t, "evm-key", loaded.SupernodeConfig.EVMKeyName)
+
+	_, err = baseKR.Key("mykey")
+	assert.NoError(t, err, "legacy key should remain so the next startup can retry cleanup")
 }
 
 // --- full happy-path end-to-end test ---

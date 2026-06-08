@@ -224,6 +224,7 @@ func ensureLegacyAccountMigrated(
 ) error {
 	keyName := cfg.SupernodeConfig.KeyName
 	evmKeyName := cfg.SupernodeConfig.EVMKeyName
+	originalIdentity := cfg.SupernodeConfig.Identity
 
 	legacy, err := validateLegacyMigrationSetup(kr, keyName, evmKeyName)
 	if err != nil {
@@ -472,9 +473,20 @@ func ensureLegacyAccountMigrated(
 	// If config persistence fails, keeping the legacy key allows the next startup
 	// to resume from the on-chain migration record and complete local cleanup.
 	if err := kr.Delete(keyName); err != nil {
+		cfg.SupernodeConfig.KeyName = keyName
+		cfg.SupernodeConfig.Identity = originalIdentity
+		cfg.SupernodeConfig.EVMKeyName = evmKeyName
+		if restoreErr := snConfig.SaveConfig(cfg, cfgFile); restoreErr != nil {
+			return fmt.Errorf(
+				"migration complete and config updated, but failed to delete legacy key %q: %w\n"+
+					"Also failed to restore the pre-migration config for retry: %v\n"+
+					"Please manually remove the old key or restore config.yml with key_name=%s, identity=%s, evm_key_name=%s.",
+				keyName, err, restoreErr, keyName, originalIdentity, evmKeyName,
+			)
+		}
 		return fmt.Errorf(
-			"migration complete and config updated, but failed to delete legacy key %q: %w\n"+
-				"Please manually remove the old key.\n"+
+			"migration complete, but failed to delete legacy key %q: %w\n"+
+				"Restored the pre-migration config so the next startup can retry local cleanup from the on-chain migration record.\n"+
 				"Safe to retry — just restart the supernode.",
 			keyName, err,
 		)
