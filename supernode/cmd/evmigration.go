@@ -20,6 +20,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	ethsecp256k1 "github.com/cosmos/evm/crypto/ethsecp256k1"
 	"google.golang.org/grpc"
 )
 
@@ -149,14 +150,23 @@ func isLegacyKey(kr cKeyring.Keyring, keyName string) (bool, error) {
 	return isSecp, nil
 }
 
-// isEthSecp256k1Key returns true if the key stored in the keyring under keyName
-// uses the EVM-compatible eth_secp256k1 algorithm.
+// isEthSecp256k1Key returns true only if the key stored in the keyring under
+// keyName uses the EVM-compatible eth_secp256k1 algorithm. It explicitly
+// type-asserts the public key rather than treating "anything that is not legacy
+// secp256k1" as EVM, so multisig/offline/ledger or any other non-EVM key type is
+// rejected at this pre-flight gate instead of failing later during signing or
+// proof validation.
 func isEthSecp256k1Key(kr cKeyring.Keyring, keyName string) (bool, error) {
-	legacy, err := isLegacyKey(kr, keyName)
+	rec, err := kr.Key(keyName)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("key %q not found in keyring: %w", keyName, err)
 	}
-	return !legacy, nil
+	pubKey, err := rec.GetPubKey()
+	if err != nil {
+		return false, fmt.Errorf("failed to get public key for %q: %w", keyName, err)
+	}
+	_, isEth := pubKey.(*ethsecp256k1.PubKey)
+	return isEth, nil
 }
 
 // migrationChainClient abstracts chain interactions needed by the migration

@@ -428,7 +428,7 @@ func (c *fakeLumeraClient) SuperNodeMsg() supernode_msg.Module { return nil }
 func (c *fakeLumeraClient) Bank() bank.Module                  { return nil }
 func (c *fakeLumeraClient) Tx() tx.Module                      { return nil }
 func (c *fakeLumeraClient) Node() node.Module                  { return c.nodeModule }
-func (c *fakeLumeraClient) Conn() *grpc.ClientConn              { return nil }
+func (c *fakeLumeraClient) Conn() *grpc.ClientConn             { return nil }
 func (c *fakeLumeraClient) Close() error                       { return nil }
 
 type fakeNodeModule struct {

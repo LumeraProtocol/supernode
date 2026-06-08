@@ -15,7 +15,7 @@ address derived from the same mnemonic under the EVM HD path.
 
 The migration is:
 
-- **One-time**: runs automatically at superno0de startup when a legacy key is detected
+- **One-time**: runs automatically at supernode startup when a legacy key is detected
 - **Rerunnable**: safe to retry if interrupted at any point
 - **Self-authenticating**: uses dual signatures (legacy + new key) embedded in the
   message, so no Cosmos-level tx signing is needed
@@ -33,7 +33,7 @@ The migration is:
 1. **Derive your new EVM key** from the same mnemonic:
 
    ```bash
-   supernode keys recover --name evm-key --mnemonic "your twelve or twenty four words ..."
+   supernode keys recover evm-key --mnemonic "your twelve or twenty four words ..."
    ```
 
    This creates an `eth_secp256k1` key under the name `evm-key` using HD path

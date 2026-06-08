@@ -3,7 +3,6 @@ module github.com/LumeraProtocol/supernode/v2/sn-manager
 go 1.26.2
 
 replace (
-	github.com/LumeraProtocol/lumera => ../../lumera
 	github.com/LumeraProtocol/supernode/v2 => ../
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	github.com/lyft/protoc-gen-validate => github.com/envoyproxy/protoc-gen-validate v1.3.0

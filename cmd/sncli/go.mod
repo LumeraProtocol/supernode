@@ -3,8 +3,6 @@ module github.com/LumeraProtocol/supernode/v2/cmd/sncli
 go 1.26.2
 
 replace (
-	// Use local Lumera with EVM support (evmigration, erc20policy, etc.)
-	github.com/LumeraProtocol/lumera => ../../../lumera
 	github.com/LumeraProtocol/supernode/v2 => ../..
 	github.com/envoyproxy/protoc-gen-validate => github.com/bufbuild/protoc-gen-validate v1.3.0
 	// cosmos/evm requires a forked go-ethereum with custom EVM operation methods

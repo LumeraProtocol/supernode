@@ -114,8 +114,8 @@ func hasMinimumSpendableBalance(ctx context.Context, client lumera.Client, addre
 		return false, "spendable balance info unavailable"
 	}
 	if bal.Balance.Amount.LT(min) {
-		actualLUME := bal.Balance.Amount.Quo(sdkmath.NewInt(1_000_000))
-		return false, fmt.Sprintf("insufficient spendable balance: %s LUME (need >= 1 LUME)", actualLUME.String())
+		return false, fmt.Sprintf("insufficient spendable balance: have %s%s, need >= %s%s",
+			bal.Balance.Amount.String(), denom, min.String(), denom)
 	}
 	return true, ""
 }

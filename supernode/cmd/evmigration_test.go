@@ -17,6 +17,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
@@ -106,6 +107,28 @@ func TestIsEthSecp256k1Key_WithLegacyKey(t *testing.T) {
 	isEVM, err := isEthSecp256k1Key(kr, "legacy")
 	require.NoError(t, err)
 	assert.False(t, isEVM)
+}
+
+// TestIsEthSecp256k1Key_WithNonEVMNonLegacyKey guards the pre-flight gate
+// against keys that are neither legacy secp256k1 nor eth_secp256k1 (e.g.
+// ed25519/offline/multisig). The previous implementation returned !isLegacyKey,
+// which incorrectly classified any non-legacy key as EVM and let it pass setup
+// validation only to fail later during signing/proof validation.
+func TestIsEthSecp256k1Key_WithNonEVMNonLegacyKey(t *testing.T) {
+	kr := newTestKeyring(t)
+	// An offline ed25519 key: not legacy secp256k1, not eth_secp256k1.
+	priv := ed25519.GenPrivKey()
+	_, err := kr.SaveOfflineKey("ed25519-key", priv.PubKey())
+	require.NoError(t, err)
+
+	isEVM, err := isEthSecp256k1Key(kr, "ed25519-key")
+	require.NoError(t, err)
+	assert.False(t, isEVM, "ed25519 key must not be classified as eth_secp256k1")
+
+	// It must also not be mistaken for a legacy secp256k1 key.
+	legacy, err := isLegacyKey(kr, "ed25519-key")
+	require.NoError(t, err)
+	assert.False(t, legacy, "ed25519 key must not be classified as legacy secp256k1")
 }
 
 func TestValidateLegacyMigrationSetup_NoMigrationNeeded(t *testing.T) {
@@ -292,7 +315,12 @@ func TestEnsureLegacyAccountMigrated_AddressCollision(t *testing.T) {
 	evmPubKey, err := evmRec.GetPubKey()
 	require.NoError(t, err)
 
-	assert.NotEqual(t, legacyAddr.String(), fmt.Sprintf("%x", evmPubKey.Address()),
+	// Compare both addresses in the same (bech32) encoding so the assertion can
+	// actually catch a regression where the two coin types collide. A previous
+	// version compared a bech32 string against a hex byte dump, which could
+	// never be equal and so always passed.
+	evmAddr := sdk.AccAddress(evmPubKey.Address()).String()
+	assert.NotEqual(t, legacyAddr.String(), evmAddr,
 		"keys with different coin types should produce different addresses")
 }
 
