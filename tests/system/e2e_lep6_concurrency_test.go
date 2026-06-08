@@ -15,8 +15,8 @@ import (
 	"time"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
-	sdkhd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	evmhd "github.com/cosmos/evm/crypto/hd"
 
 	"github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
@@ -197,7 +197,12 @@ func generateLEP6UploadUsers(t *testing.T, count int) []lep6UploadUser {
 	users := make([]lep6UploadUser, 0, count)
 	for i := 0; i < count; i++ {
 		keyName := fmt.Sprintf("phase3-upload-user-%d", i+1)
-		record, mnemonic, err := kr.NewMnemonic(keyName, sdkkeyring.English, keyring.DefaultHDPath, keyring.DefaultBIP39Passphrase, sdkhd.Secp256k1)
+		// Derive with eth_secp256k1 (coin type 60) so the funded userAddress
+		// matches the address newLEP6ActionClientsForKey signs with via
+		// keyring.RecoverAccountFromMnemonic (also eth_secp256k1). Using legacy
+		// secp256k1 here funded a different address, so RequestAction failed with
+		// "account not found".
+		record, mnemonic, err := kr.NewMnemonic(keyName, sdkkeyring.English, keyring.DefaultHDPath, keyring.DefaultBIP39Passphrase, evmhd.EthSecp256k1)
 		require.NoError(t, err)
 		addr, err := record.GetAddress()
 		require.NoError(t, err)
