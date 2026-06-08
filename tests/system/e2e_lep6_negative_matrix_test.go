@@ -96,7 +96,7 @@ func setupLEP6RuntimeCascadeFixture(t *testing.T) lep6RuntimeCascadeFixture {
 		testMnemonic      = "odor kiss switch swarm spell make planet bundle skate ozone path planet exclude butter atom ahead angle royal shuffle door prevent merry alter robust"
 		testKey2Mnemonic  = "club party current length duck agent love into slide extend spawn sentence kangaroo chunk festival order plate rare public good include situate liar miss"
 		testKey3Mnemonic  = "young envelope urban crucial denial zone toward mansion protect bonus exotic puppy resource pistol expand tell cupboard radio hurry world radio trust explain million"
-		expectedAddress   = "lumera1em87kgrvgttrkvuamtetyaagjrhnu3vjy44at4"
+		expectedAddress   = "lumera1jcus5g9v6r080rg7dljvvpr4cm8k7psqwg7tj8"
 		userKeyName       = "user"
 		userMnemonic      = "little tone alley oval festival gloom sting asthma crime select swap auto when trip luxury pact risk sister pencil about crisp upon opera timber"
 		fundAmount        = "1000000ulume"
