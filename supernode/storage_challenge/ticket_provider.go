@@ -1,0 +1,118 @@
+package storage_challenge
+
+import (
+	"context"
+	"sort"
+	"strings"
+
+	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
+	"github.com/cosmos/gogoproto/proto"
+)
+
+// ChainTicketProvider discovers finalized cascade actions assigned to a target
+// supernode via the final Lumera action query API. It is intentionally small:
+// the dispatcher only needs ticket/action IDs and their register-time block
+// heights for LEP-6 bucket classification.
+type ChainTicketProvider struct {
+	client lumera.Client
+}
+
+// NewChainTicketProvider constructs a production TicketProvider backed by
+// x/action ListActionsBySuperNode.
+func NewChainTicketProvider(client lumera.Client) *ChainTicketProvider {
+	return &ChainTicketProvider{client: client}
+}
+
+// TicketsForTarget returns finalized cascade actions that include the target
+// supernode in their action.SuperNodes assignment list.
+func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupernodeAccount string) ([]TicketDescriptor, error) {
+	if p == nil || p.client == nil || p.client.Action() == nil {
+		return nil, nil
+	}
+	target := strings.TrimSpace(targetSupernodeAccount)
+	if target == "" {
+		return nil, nil
+	}
+
+	resp, err := p.client.Action().ListActionsBySuperNode(ctx, target)
+	if err != nil || resp == nil {
+		return nil, err
+	}
+
+	out := make([]TicketDescriptor, 0, len(resp.Actions))
+	seen := make(map[string]struct{}, len(resp.Actions))
+	for _, act := range resp.Actions {
+		if !isEligibleCascadeAction(act, target) {
+			lep6metrics.IncTicketDiscovery("ineligible")
+			continue
+		}
+		id := strings.TrimSpace(act.ActionID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		lep6metrics.IncTicketDiscovery("eligible")
+		out = append(out, TicketDescriptor{TicketID: id, AnchorBlock: act.BlockHeight})
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].TicketID < out[j].TicketID })
+	return out, nil
+}
+
+func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
+	if act == nil {
+		return false
+	}
+	if act.ActionType != actiontypes.ActionTypeCascade {
+		return false
+	}
+	// LEP-6 challenges storage only after cascade finalization. Lumera marks
+	// finalized/approved actions as DONE/APPROVED depending on the workflow
+	// phase; reject pending/processing/rejected/failed/expired actions.
+	if act.State != actiontypes.ActionStateDone && act.State != actiontypes.ActionStateApproved {
+		return false
+	}
+	if act.BlockHeight <= 0 {
+		return false
+	}
+	if !hasValidCascadeMetadata(act.Metadata) {
+		return false
+	}
+	for _, sn := range act.SuperNodes {
+		if strings.TrimSpace(sn) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasValidCascadeMetadata(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var meta actiontypes.CascadeMetadata
+	if err := proto.Unmarshal(raw, &meta); err != nil {
+		return false
+	}
+	if strings.TrimSpace(meta.DataHash) == "" {
+		return false
+	}
+	if meta.RqIdsMax == 0 || len(meta.RqIdsIds) == 0 {
+		return false
+	}
+	// LEP-6 review M10 (Matee, 2026-05-06): a ticket is eligible if AT LEAST
+	// ONE artifact class has a non-zero count. Previously we required BOTH
+	// counts to be > 0, which silently hid INDEX-only or SYMBOL-only tickets
+	// from the dispatcher. The class roll handles per-class emptiness via
+	// SelectArtifactClass returning UNSPECIFIED → caller emits NO_ELIGIBLE
+	// (post-H6 fix). Both zero remains invisible (legacy preserve).
+	if meta.IndexArtifactCount == 0 && meta.SymbolArtifactCount == 0 {
+		return false
+	}
+	return true
+}

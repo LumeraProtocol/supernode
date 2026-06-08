@@ -98,7 +98,7 @@ func TestAuditDiskUsagePercentCompat(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			auditMod := &stubAuditModule{params: &audittypes.QueryParamsResponse{Params: audittypes.Params{MinDiskFreePercent: 15}}}
+			auditMod := &stubAuditModule{params: audittypes.Params{MinDiskFreePercent: 15}}
 			snMod := supernodemod.NewMockModule(ctrl)
 			client := lumeraMock.NewMockClient(ctrl)
 			client.EXPECT().Audit().Return(auditMod)
@@ -131,7 +131,7 @@ func TestAuditDiskUsagePercentCompatFailsClosedWhenParamsUnavailable(t *testing.
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	auditMod := &stubAuditModule{params: &audittypes.QueryParamsResponse{Params: audittypes.Params{MinDiskFreePercent: 0}}}
+	auditMod := &stubAuditModule{params: audittypes.Params{MinDiskFreePercent: 0}}
 	client := lumeraMock.NewMockClient(ctrl)
 	client.EXPECT().Audit().Return(auditMod)
 

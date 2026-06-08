@@ -37,3 +37,23 @@ func TestBuildStorageChallengeFailureEvidenceMetadata_NoMapPayload(t *testing.T)
 	require.NoError(t, json.Unmarshal(bz, &roundtrip))
 	require.Equal(t, meta, roundtrip)
 }
+
+func TestLEP6DispatchShouldRunForActiveStorageTruthModes(t *testing.T) {
+	tests := []struct {
+		name string
+		mode audittypes.StorageTruthEnforcementMode
+		want bool
+	}{
+		{name: "unspecified", mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED, want: false},
+		{name: "shadow", mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW, want: true},
+		{name: "soft", mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SOFT, want: true},
+		{name: "full", mode: audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL, want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			params := audittypes.Params{StorageTruthEnforcementMode: tc.mode}
+			require.Equal(t, tc.want, shouldRunLEP6Dispatch(params))
+		})
+	}
+}

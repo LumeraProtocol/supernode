@@ -65,3 +65,25 @@ func SetDefaultDenoms(t *testing.T, denom string) GenesisMutator {
 		return state
 	}
 }
+
+func SetAuditParams(t *testing.T) GenesisMutator {
+	return func(genesis []byte) []byte {
+		t.Helper()
+		updates := map[string]any{
+			"app_state.audit.params.epoch_length_blocks":                       uint64(5),
+			"app_state.audit.params.sc_enabled":                                true,
+			"app_state.audit.params.sc_challengers_per_epoch":                  uint32(3),
+			"app_state.audit.params.storage_truth_enforcement_mode":            "STORAGE_TRUTH_ENFORCEMENT_MODE_FULL",
+			"app_state.audit.params.storage_truth_max_self_heal_ops_per_epoch": uint32(3),
+			"app_state.audit.params.storage_truth_heal_deadline_epochs":        uint32(2),
+			"app_state.audit.params.storage_truth_heal_verifier_count":         uint32(2),
+		}
+		state := genesis
+		var err error
+		for path, value := range updates {
+			state, err = sjson.SetBytes(state, path, value)
+			require.NoError(t, err)
+		}
+		return state
+	}
+}

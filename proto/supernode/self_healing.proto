@@ -1,0 +1,50 @@
+syntax = "proto3";
+package supernode;
+option go_package = "github.com/LumeraProtocol/supernode/v2/gen/supernode";
+
+// SelfHealingService — LEP-6 §19 healer-served path.
+//
+// LEP-6 prescribes a strict three-phase heal flow:
+//   Phase 1 (RECONSTRUCT) — assigned healer reconstructs the file locally and
+//     submits MsgClaimHealComplete{HealManifestHash}. Artefacts are STAGED
+//     locally; they are NOT yet published to KAD.
+//   Phase 2 (VERIFY) — assigned verifiers MUST fetch the reconstructed bytes
+//     directly from the assigned healer (this RPC), not from KAD, because the
+//     healer-served path is the only authority before chain VERIFIED.
+//   Phase 3 (PUBLISH) — only after chain reaches VERIFIED quorum the healer's
+//     finalizer publishes staged artefacts to KAD via the same store path
+//     register/upload uses.
+//
+// This service exposes only the verifier-side fetch — chain coordinates role
+// assignment and quorum, so the legacy peer Request/Verify/Commit RPCs are
+// gone in the LEP-6 model.
+service SelfHealingService {
+  // ServeReconstructedArtefacts streams the reconstructed file bytes to an
+  // authorized verifier. The handler MUST verify caller ∈
+  // op.VerifierSupernodeAccounts before serving any bytes.
+  rpc ServeReconstructedArtefacts(ServeReconstructedArtefactsRequest)
+      returns (stream ServeReconstructedArtefactsResponse) {}
+}
+
+message ServeReconstructedArtefactsRequest {
+  // heal_op_id identifies the heal-op the caller is verifying. Server uses it
+  // to look up the staging dir and authorize the caller against
+  // op.VerifierSupernodeAccounts.
+  uint64 heal_op_id = 1;
+  // verifier_account is the caller's chain-side supernode account address.
+  // Server cross-checks against authenticated grpc identity AND against
+  // op.VerifierSupernodeAccounts.
+  string verifier_account = 2;
+}
+
+message ServeReconstructedArtefactsResponse {
+  // chunk is a contiguous slice of the reconstructed file bytes. Chunks are
+  // ordered; concatenating chunks across the stream yields the original file
+  // whose BLAKE3 must equal op.ResultHash (= action.DataHash recipe).
+  bytes chunk = 1;
+  // total_size is the full file size; populated on the first message and
+  // optionally repeated. Allows clients to pre-allocate buffers.
+  uint64 total_size = 2;
+  // is_last indicates this message carries the final chunk.
+  bool is_last = 3;
+}

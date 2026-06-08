@@ -37,11 +37,12 @@ func NewP2PService(client p2p.Client, store rqstore.Store) P2PService {
 }
 
 type StoreArtefactsRequest struct {
-	TaskID     string
-	ActionID   string
-	IDFiles    [][]byte
-	SymbolsDir string
-	Layout     codec.Layout
+	TaskID                    string
+	ActionID                  string
+	IDFiles                   [][]byte
+	SymbolsDir                string
+	Layout                    codec.Layout
+	IdempotentDirectoryRecord bool
 }
 
 func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest, f logtrace.Fields) error {
@@ -67,7 +68,7 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 		"symbols_dir":     req.SymbolsDir,
 	})
 	start := time.Now()
-	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles, req.Layout)
+	firstPassSymbols, totalSymbols, err := p.storeCascadeSymbolsAndData(ctx, req.TaskID, req.ActionID, req.SymbolsDir, req.IDFiles, req.Layout, req.IdempotentDirectoryRecord)
 	if err != nil {
 		return fmt.Errorf("error storing artefacts: %w", err)
 	}
@@ -89,8 +90,14 @@ func (p *p2pImpl) StoreArtefacts(ctx context.Context, req StoreArtefactsRequest,
 	return nil
 }
 
-func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, actionID string, symbolsDir string, metadataFiles [][]byte, layout codec.Layout) (int, int, error) {
-	if err := p.rqStore.StoreSymbolDirectory(taskID, symbolsDir); err != nil {
+func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, actionID string, symbolsDir string, metadataFiles [][]byte, layout codec.Layout, idempotentDirectoryRecord bool) (int, int, error) {
+	var err error
+	if idempotentDirectoryRecord {
+		err = p.rqStore.UpsertSymbolDirectory(taskID, symbolsDir)
+	} else {
+		err = p.rqStore.StoreSymbolDirectory(taskID, symbolsDir)
+	}
+	if err != nil {
 		return 0, 0, fmt.Errorf("store symbol dir: %w", err)
 	}
 	metadataBytes := totalBytes(metadataFiles)
@@ -202,6 +209,11 @@ func (p *p2pImpl) storeCascadeSymbolsAndData(ctx context.Context, taskID, action
 	}
 	if err := p.rqStore.UpdateIsFirstBatchStored(taskID); err != nil {
 		return totalSymbols, totalAvailable, fmt.Errorf("update first-batch flag: %w", err)
+	}
+	if totalSymbols >= totalAvailable {
+		if err := p.rqStore.SetIsCompleted(taskID); err != nil {
+			return totalSymbols, totalAvailable, fmt.Errorf("mark symbols completed: %w", err)
+		}
 	}
 	logtrace.Info(ctx, "store: first-pass bytes summary", logtrace.Fields{
 		"taskID":               taskID,

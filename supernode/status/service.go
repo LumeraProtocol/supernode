@@ -9,6 +9,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/p2p"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/task"
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
 )
@@ -56,6 +57,42 @@ func (s *SupernodeStatusService) GetChainID() string {
 		return s.config.LumeraClientConfig.ChainID
 	}
 	return ""
+}
+
+func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Metrics {
+	return &pb.StatusResponse_LEP6Metrics{
+		DispatchResultsTotal:                 cloneUint64Map(s.DispatchResultsTotal),
+		DispatchThrottledTotal:               cloneUint64Map(s.DispatchThrottledTotal),
+		DispatchEpochDurationMillisTotal:     cloneUint64Map(s.DispatchEpochDurationMillisTotal),
+		DispatchEpochDurationMillisMax:       cloneUint64Map(s.DispatchEpochDurationMillisMax),
+		DispatchEpochDurationCount:           cloneUint64Map(s.DispatchEpochDurationCount),
+		TicketDiscoveryTotal:                 cloneUint64Map(s.TicketDiscoveryTotal),
+		NoTicketProviderActive:               s.NoTicketProviderActive,
+		HealClaimsSubmittedTotal:             cloneUint64Map(s.HealClaimsSubmittedTotal),
+		HealClaimsReconciledTotal:            s.HealClaimsReconciledTotal,
+		HealVerificationsSubmittedTotal:      cloneUint64Map(s.HealVerificationsSubmittedTotal),
+		HealVerificationsAlreadyExistsTotal:  s.HealVerificationsAlreadyExistsTotal,
+		HealFinalizePublishesTotal:           s.HealFinalizePublishesTotal,
+		HealFinalizeCleanupsTotal:            cloneUint64Map(s.HealFinalizeCleanupsTotal),
+		SelfHealingPendingClaims:             s.SelfHealingPendingClaims,
+		SelfHealingStagingBytes:              s.SelfHealingStagingBytes,
+		RecheckCandidatesFoundTotal:          s.RecheckCandidatesFoundTotal,
+		RecheckEvidenceSubmittedTotal:        cloneUint64Map(s.RecheckEvidenceSubmittedTotal),
+		RecheckEvidenceAlreadySubmittedTotal: s.RecheckEvidenceAlreadySubmittedTotal,
+		RecheckExecutionFailuresTotal:        cloneUint64Map(s.RecheckExecutionFailuresTotal),
+		RecheckPendingCandidates:             s.RecheckPendingCandidates,
+	}
+}
+
+func cloneUint64Map(in map[string]uint64) map[string]uint64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]uint64, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // GetStatus returns the current system status including optional P2P info
@@ -129,6 +166,11 @@ func (s *SupernodeStatusService) GetStatus(ctx context.Context, includeP2PMetric
 			}
 		}
 	}
+
+	// LEP-6 metrics are cheap in-memory counters/gauges. Include them on every
+	// status response so operators can inspect storage-truth runtime state through
+	// the existing status endpoint instead of a LEP-6-only metrics endpoint.
+	resp.Lep6Metrics = lep6StatusMetrics(lep6metrics.Snapshot())
 
 	if includeP2PMetrics && s.p2pService != nil {
 		// Prepare optional P2P metrics container (only when requested).

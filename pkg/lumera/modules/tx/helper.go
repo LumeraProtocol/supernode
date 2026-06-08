@@ -16,8 +16,14 @@ import (
 )
 
 const (
-	sequenceMismatchMaxAttempts = 3
-	sequenceMismatchRetryStep   = 500 * time.Millisecond
+	// DefaultSequenceMismatchMaxAttempts is the historic default cap on
+	// the per-tx sequence-mismatch retry loop.
+	DefaultSequenceMismatchMaxAttempts = 3
+	// MaxSequenceMismatchAttemptsCap is the hard safety cap operators
+	// cannot exceed via config (mirrors MaxGasAdjustmentAttemptsCap).
+	// Wave 1 M12 fix.
+	MaxSequenceMismatchAttemptsCap = 10
+	sequenceMismatchRetryStep      = 500 * time.Millisecond
 )
 
 func sleepSequenceMismatchBackoff(ctx context.Context, attempt int) {
@@ -58,6 +64,11 @@ type TxHelperConfig struct {
 	GasPadding               uint64
 	FeeDenom                 string
 	GasPrice                 string
+	// SequenceMismatchMaxAttempts caps the per-tx sequence-mismatch retry
+	// loop. 0 → DefaultSequenceMismatchMaxAttempts. Hard ceiling
+	// MaxSequenceMismatchAttemptsCap mirrored in applyTxHelperDefaults
+	// AND UpdateConfig (M12 fix).
+	SequenceMismatchMaxAttempts int
 }
 
 // NewTxHelper creates a new transaction helper with the given configuration.
@@ -67,16 +78,17 @@ func NewTxHelper(authmod auth.Module, txmod Module, config *TxHelperConfig) *TxH
 	applied := applyTxHelperDefaults(config)
 
 	txConfig := &TxConfig{
-		ChainID:                  applied.ChainID,
-		Keyring:                  applied.Keyring,
-		KeyName:                  applied.KeyName,
-		GasLimit:                 applied.GasLimit,
-		GasAdjustment:            applied.GasAdjustment,
-		GasAdjustmentMultiplier:  applied.GasAdjustmentMultiplier,
-		GasAdjustmentMaxAttempts: applied.GasAdjustmentMaxAttempts,
-		GasPadding:               applied.GasPadding,
-		FeeDenom:                 applied.FeeDenom,
-		GasPrice:                 applied.GasPrice,
+		ChainID:                     applied.ChainID,
+		Keyring:                     applied.Keyring,
+		KeyName:                     applied.KeyName,
+		GasLimit:                    applied.GasLimit,
+		GasAdjustment:               applied.GasAdjustment,
+		GasAdjustmentMultiplier:     applied.GasAdjustmentMultiplier,
+		GasAdjustmentMaxAttempts:    applied.GasAdjustmentMaxAttempts,
+		GasPadding:                  applied.GasPadding,
+		FeeDenom:                    applied.FeeDenom,
+		GasPrice:                    applied.GasPrice,
+		SequenceMismatchMaxAttempts: applied.SequenceMismatchMaxAttempts,
 	}
 
 	return &TxHelper{
@@ -119,6 +131,15 @@ func applyTxHelperDefaults(cfg *TxHelperConfig) TxHelperConfig {
 	if out.GasAdjustmentMaxAttempts > MaxGasAdjustmentAttemptsCap {
 		// hard cap as a safety net to prevent runaway fee spend.
 		out.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
+	}
+	if out.SequenceMismatchMaxAttempts <= 0 {
+		out.SequenceMismatchMaxAttempts = DefaultSequenceMismatchMaxAttempts
+	}
+	if out.SequenceMismatchMaxAttempts > MaxSequenceMismatchAttemptsCap {
+		// hard cap mirrors GasAdjustmentMaxAttempts pattern — prevents
+		// operator-tunable retry from running away under chain
+		// congestion (M12 fix).
+		out.SequenceMismatchMaxAttempts = MaxSequenceMismatchAttemptsCap
 	}
 	if out.GasPadding == 0 {
 		out.GasPadding = DefaultGasPadding
@@ -180,7 +201,14 @@ func (h *TxHelper) ExecuteTransaction(
 		h.seqInit = true
 	}
 
-	for attempt := 1; attempt <= sequenceMismatchMaxAttempts; attempt++ {
+	maxAttempts := h.config.SequenceMismatchMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultSequenceMismatchMaxAttempts
+	}
+	if maxAttempts > MaxSequenceMismatchAttemptsCap {
+		maxAttempts = MaxSequenceMismatchAttemptsCap
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		usedSequence := h.nextSequence
 
 		accountInfo := &authtypes.BaseAccount{
@@ -223,7 +251,7 @@ func (h *TxHelper) ExecuteTransaction(
 		}
 
 		// If retry unavailable, bubble error
-		if attempt == sequenceMismatchMaxAttempts {
+		if attempt == maxAttempts {
 			fields := logtrace.Fields{
 				"attempt":       attempt,
 				"used_sequence": usedSequence,
@@ -234,7 +262,7 @@ func (h *TxHelper) ExecuteTransaction(
 			}
 			logtrace.Warn(ctx, "transaction sequence mismatch", fields)
 
-			return resp, fmt.Errorf("sequence mismatch after retry (%d attempts): %w", sequenceMismatchMaxAttempts, err)
+			return resp, fmt.Errorf("sequence mismatch after retry (%d attempts): %w", maxAttempts, err)
 		}
 
 		sleepSequenceMismatchBackoff(ctx, attempt)
@@ -443,6 +471,14 @@ func (h *TxHelper) UpdateConfig(config *TxHelperConfig) {
 			config.GasAdjustmentMaxAttempts = MaxGasAdjustmentAttemptsCap
 		}
 		h.config.GasAdjustmentMaxAttempts = config.GasAdjustmentMaxAttempts
+	}
+	if config.SequenceMismatchMaxAttempts > 0 {
+		if config.SequenceMismatchMaxAttempts > MaxSequenceMismatchAttemptsCap {
+			// hard cap mirrors applyTxHelperDefaults (M12 fix) — operators
+			// cannot bypass the sequence-retry safety cap via reconfig.
+			config.SequenceMismatchMaxAttempts = MaxSequenceMismatchAttemptsCap
+		}
+		h.config.SequenceMismatchMaxAttempts = config.SequenceMismatchMaxAttempts
 	}
 	if config.GasPadding != 0 {
 		h.config.GasPadding = config.GasPadding

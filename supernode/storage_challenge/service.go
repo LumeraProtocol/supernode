@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/net/credentials"
 	grpcclient "github.com/LumeraProtocol/supernode/v2/pkg/net/grpc/client"
+	"github.com/LumeraProtocol/supernode/v2/pkg/netutil"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storage/queries"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -69,6 +69,20 @@ type Service struct {
 
 	grpcClient *grpcclient.Client
 	grpcOpts   *grpcclient.ClientOptions
+
+	// lep6 is the LEP-6 compound storage challenge dispatcher. Optional:
+	// if nil the legacy fixed-range path is the only active flow. When
+	// non-nil, the dispatcher runs once per new epoch in addition to the
+	// legacy loop. Mode gating (UNSPECIFIED skips) lives inside
+	// LEP6Dispatcher.DispatchEpoch.
+	lep6 *LEP6Dispatcher
+}
+
+// SetLEP6Dispatcher attaches the LEP-6 compound-challenge dispatcher.
+// May be called once before Run; nil-safe at the call site (Run skips
+// LEP-6 work when the field is nil).
+func (s *Service) SetLEP6Dispatcher(d *LEP6Dispatcher) {
+	s.lep6 = d
 }
 
 type Config struct {
@@ -153,8 +167,26 @@ func (s *Service) Run(ctx context.Context) error {
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
 
+	// LEP-6 review M9 (Matee, 2026-05-06): seed lastRunEpoch from persisted
+	// state so a restart does not re-dispatch / re-submit the most-recent
+	// epoch. A read failure is logged and treated as a fresh start (the
+	// dispatcher loop will re-derive epoch eligibility from the current
+	// chain height before submitting).
 	var lastRunEpoch uint64
 	var lastRunOK bool
+	if s.store != nil {
+		if persisted, ok, err := s.store.GetStorageChallengeState(ctx, queries.LEP6LastSubmittedEpochKey); err != nil {
+			logtrace.Warn(ctx, "storage challenge: failed to read persisted last-submitted-epoch; starting fresh", logtrace.Fields{
+				logtrace.FieldError: err.Error(),
+			})
+		} else if ok {
+			lastRunEpoch = persisted
+			lastRunOK = true
+			logtrace.Info(ctx, "storage challenge: resumed from persisted last-submitted-epoch", logtrace.Fields{
+				"epoch_id": persisted,
+			})
+		}
+	}
 	var loggedAlreadyRanEpoch uint64
 	var loggedNotSelectedEpoch uint64
 	var loggedDisabledEpoch uint64
@@ -202,19 +234,33 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			anchor := anchorResp.Anchor
 
+			if shouldRunLEP6Dispatch(params) && s.lep6 != nil {
+				if err := s.lep6.DispatchEpoch(ctx, epochID); err != nil {
+					logtrace.Warn(ctx, "lep6 dispatch error", logtrace.Fields{
+						"epoch_id": epochID,
+						"error":    err.Error(),
+					})
+					lastRunEpoch = epochID
+					lastRunOK = false
+					continue
+				}
+			}
+
 			challengers := deterministic.SelectChallengers(anchor.ActiveSupernodeAccounts, anchor.Seed, epochID, params.ScChallengersPerEpoch)
 			if !containsString(challengers, s.identity) {
 				if loggedNotSelectedEpoch != epochID {
-					logtrace.Debug(ctx, "storage challenge: not selected challenger; skipping", logtrace.Fields{
-						"epoch_id": epochID,
-						"identity": s.identity,
-						"selected": len(challengers),
-						"sc_param": params.ScChallengersPerEpoch,
+					logtrace.Debug(ctx, "storage challenge: not selected challenger; legacy storage challenge skipped", logtrace.Fields{
+						"epoch_id":           epochID,
+						"identity":           s.identity,
+						"selected":           len(challengers),
+						"sc_param":           params.ScChallengersPerEpoch,
+						"lep6_dispatch_mode": params.StorageTruthEnforcementMode.String(),
 					})
 					loggedNotSelectedEpoch = epochID
 				}
 				lastRunEpoch = epochID
 				lastRunOK = true
+				s.persistLastRunEpoch(ctx, epochID)
 				continue
 			}
 
@@ -255,7 +301,24 @@ func (s *Service) Run(ctx context.Context) error {
 
 			lastRunEpoch = epochID
 			lastRunOK = true
+			s.persistLastRunEpoch(ctx, epochID)
 		}
+	}
+}
+
+// persistLastRunEpoch writes the dispatcher's last-completed epoch to the
+// supernode SQLite store so that a restart does not re-dispatch the same
+// epoch (LEP-6 review M9). Best-effort: a write failure is logged but does
+// not fail the tick — worst case we re-dispatch one epoch on the next start.
+func (s *Service) persistLastRunEpoch(ctx context.Context, epochID uint64) {
+	if s.store == nil {
+		return
+	}
+	if err := s.store.SetStorageChallengeState(ctx, queries.LEP6LastSubmittedEpochKey, epochID); err != nil {
+		logtrace.Warn(ctx, "storage challenge: failed to persist last-submitted-epoch", logtrace.Fields{
+			"epoch_id":          epochID,
+			logtrace.FieldError: err.Error(),
+		})
 	}
 }
 
@@ -304,6 +367,10 @@ func (s *Service) auditParams(ctx context.Context) (audittypes.Params, bool) {
 		return audittypes.Params{}, false
 	}
 	return p, true
+}
+
+func shouldRunLEP6Dispatch(params audittypes.Params) bool {
+	return params.StorageTruthEnforcementMode != audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_UNSPECIFIED
 }
 
 func (s *Service) runEpoch(ctx context.Context, anchor audittypes.EpochAnchor, params audittypes.Params, lookbackEpochs uint32, respTimeout time.Duration, affirmTimeout time.Duration) error {
@@ -486,69 +553,11 @@ func (s *Service) supernodeGRPCAddr(ctx context.Context, supernodeAccount string
 	// both forms:
 	// - "host" -> use our configured default gRPC port
 	// - "host:port" -> use the stored port as the dial target
-	host, port, ok := parseHostAndPort(raw, int(s.grpcPort))
+	host, port, ok := netutil.ParseHostAndPort(raw, int(s.grpcPort))
 	if !ok || strings.TrimSpace(host) == "" {
 		return "", fmt.Errorf("invalid supernode address for %s: %q", supernodeAccount, raw)
 	}
 	return net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(port)), nil
-}
-
-// parseHostAndPort parses a "host" or "host:port" string and returns a host and port.
-// If a port is not present, defaultPort is returned. If a port is present but invalid,
-func parseHostAndPort(address string, defaultPort int) (host string, port int, ok bool) {
-	address = strings.TrimSpace(address)
-	if address == "" {
-		return "", 0, false
-	}
-
-	// If it looks like a URL, parse and use the host[:port] portion.
-	if u, err := url.Parse(address); err == nil && u.Host != "" {
-		address = u.Host
-	}
-
-	if h, p, err := net.SplitHostPort(address); err == nil {
-		h = strings.TrimSpace(h)
-		if h == "" {
-			return "", 0, false
-		}
-		if n, err := strconv.Atoi(p); err == nil && n > 0 && n <= 65535 {
-			return h, n, true
-		}
-		return h, defaultPort, true
-	}
-
-	// No port present. Treat it as a raw host if it is plausibly valid; otherwise fail.
-	host = strings.TrimSpace(address)
-	if host == "" {
-		return "", 0, false
-	}
-
-	// Accept bracketed IPv6 literal without a port (e.g. "[2001:db8::1]") by stripping brackets.
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && strings.Count(host, "]") == 1 {
-		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-		host = strings.TrimSpace(host)
-		if host == "" {
-			return "", 0, false
-		}
-	}
-
-	// Reject obviously malformed inputs (paths, fragments, userinfo, whitespace, or stray brackets).
-	if strings.ContainsAny(host, " \t\r\n/\\?#@[]") {
-		return "", 0, false
-	}
-
-	// If it contains ':' it must be a valid IPv6 literal (optionally with a zone, e.g. "fe80::1%eth0").
-	if strings.Contains(host, ":") {
-		ipPart := host
-		if i := strings.IndexByte(ipPart, '%'); i >= 0 {
-			ipPart = ipPart[:i]
-		}
-		if net.ParseIP(ipPart) == nil {
-			return "", 0, false
-		}
-	}
-
-	return host, defaultPort, true
 }
 
 func (s *Service) callGetSliceProof(ctx context.Context, remoteIdentity string, address string, req *supernode.GetSliceProofRequest, timeout time.Duration) (*supernode.GetSliceProofResponse, error) {

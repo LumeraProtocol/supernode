@@ -96,7 +96,6 @@ func requireEnoughFileHandlers(nodesCount int) {
 
 func initSDKConfig(bech32Prefix string) {
 	config := sdk.GetConfig()
-
 	if sdkConfigMatches(config, bech32Prefix) {
 		return
 	}

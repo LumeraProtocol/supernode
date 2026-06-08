@@ -63,9 +63,10 @@ func isValidBIP39WordCount(wordCount int) bool {
 // createP2PConfig creates a P2P config from the app config and address
 func createP2PConfig(config *config.Config, address string) *p2p.Config {
 	return &p2p.Config{
-		ListenAddress: config.SupernodeConfig.Host,
-		Port:          config.P2PConfig.Port,
-		DataDir:       config.GetP2PDataDir(),
-		ID:            address,
+		ListenAddress:  config.SupernodeConfig.Host,
+		Port:           config.P2PConfig.Port,
+		DataDir:        config.GetP2PDataDir(),
+		BootstrapNodes: config.P2PConfig.BootstrapNodes,
+		ID:             address,
 	}
 }
