@@ -16,7 +16,7 @@ require (
 	cosmossdk.io/x/upgrade v0.2.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/DataDog/zstd v1.5.7
-	github.com/LumeraProtocol/lumera v1.20.0-rc2
+	github.com/LumeraProtocol/lumera v1.20.0-rc3
 	github.com/LumeraProtocol/rq-go v0.2.1
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce

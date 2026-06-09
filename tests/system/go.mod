@@ -13,11 +13,12 @@ replace (
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/LumeraProtocol/lumera v1.20.0-rc2
+	github.com/LumeraProtocol/lumera v1.20.0-rc3
 	github.com/LumeraProtocol/supernode/v2 v2.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/cosmos-sdk v0.53.6
+	github.com/cosmos/evm v0.6.0
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/cosmos/ibc-go/v10 v10.5.0
 	github.com/mattn/go-sqlite3 v1.14.24
@@ -75,7 +76,6 @@ require (
 	github.com/cosmos/btcutil v1.0.5 // indirect
 	github.com/cosmos/cosmos-db v1.1.3 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
-	github.com/cosmos/evm v0.6.0 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
 	github.com/cosmos/gogogateway v1.2.0 // indirect
 	github.com/cosmos/iavl v1.2.6 // indirect

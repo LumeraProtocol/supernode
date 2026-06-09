@@ -22,7 +22,7 @@ This release adds end-to-end support for Lumera's EVM-enabled chain (Cosmos EVM 
 - **SDK ICA / signing updates** (`sdk/task`):
   - Cascade signing path now produces signatures compatible with EVM-style accounts (eth_secp256k1) in addition to the legacy ADR-36 path.
   - `spendable_balance` checks correctly handle EVM-derived addresses.
-- **Module dependencies bumped to EVM-enabled Lumera** (`v1.20.0-rc2`), which provides the `evmigration` module, `erc20policy`, Cosmos EVM integration, and forked `go-ethereum` (`cosmos/go-ethereum v1.16.2-cosmos-1`). Aligned across `supernode`, `sn-manager`, `cmd/sncli`, and `tests/system` go.mod files; Go toolchain bumped to **1.26.2**.
+- **Module dependencies bumped to EVM-enabled Lumera** (`v1.20.0-rc3`), which provides the `evmigration` module, `erc20policy`, Cosmos EVM integration, and forked `go-ethereum` (`cosmos/go-ethereum v1.16.2-cosmos-1`). Aligned across `supernode`, `sn-manager`, `cmd/sncli`, and `tests/system` go.mod files; Go toolchain bumped to **1.26.2**.
 - **Integration tests** for the full EVM migration flow (`tests/integration/evmigration`): legacy → EVM migration of plain accounts, validators, and rejection of multisig accounts; verifies on-chain state, keyring state, and config rewrites.
 - **Build & release** workflow updated to produce artifacts against the EVM-enabled toolchain.
 - **Operator documentation:** `docs/evm-migration.md` describes the migration model, supported account types, the automatic startup flow, manual multisig procedure, and recovery scenarios.
