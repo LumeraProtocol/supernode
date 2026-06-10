@@ -27,6 +27,16 @@ This release adds end-to-end support for Lumera's EVM-enabled chain (Cosmos EVM 
 - **Build & release** workflow updated to produce artifacts against the EVM-enabled toolchain.
 - **Operator documentation:** `docs/evm-migration.md` describes the migration model, supported account types, the automatic startup flow, manual multisig procedure, and recovery scenarios.
 
+### Reliability & concurrency hardening (post-merge)
+
+- **Storage-truth recovery restored.** The `v1.20.0-rc3` bump pulls in lumera audit fixes (#139/#143) so **POSTPONED** SuperNodes remain storage-truth target candidates and can recover to ACTIVE via clean PASS proofs. `rc2` had excluded them, which broke the postpone→recover lifecycle (and the LEP-6 enforcement/heal e2e tests).
+- **Concurrent cascade uploads hardened** (real-binary contention path):
+  - **Finalize simulation** now retries a transient `account sequence mismatch` by re-fetching account info, bounded by the same cap as the broadcast path. Previously the simulate pre-check failed the whole upload on a stale-sequence false negative even though the subsequent broadcast (which already retries) would have succeeded — surfaced when one SuperNode finalizes several actions at once.
+  - **Artefact storage** retries transient P2P conditions — `no eligible store peers` (routing not yet converged), `0.00% successful` (store RPCs failing under load), and momentary `zero peers` — with bounded backoff, forcing the idempotent symbol-directory upsert on retries (symbol/data key stores are already idempotent by key). Deterministic errors are not retried.
+- **SQLite P2P store shutdown fixed.** `Store.Close` now broadcasts the stop signal to *all* background goroutines (DB worker, WAL checkpoint worker, replication writer) and waits for them to exit before closing the database; the checkpoint worker is interruptible and bails out of its retry loop on shutdown. Fixes a goroutine leak and a WAL-write-after-close race that intermittently corrupted teardown (and flaked unit tests).
+- **EVM-chain startup gate is crash-loop safe.** `requireEVMChain` distinguishes a transient module-version query failure (chain momentarily unreachable / gRPC blip → retried with backoff) from a definitive "EVM module absent" answer (fail fast), so a brief network blip at boot no longer hard-crashes the daemon.
+- **Stricter EVM key validation.** The migration pre-flight gate now explicitly type-asserts `*ethsecp256k1.PubKey` instead of treating "anything that is not legacy `secp256k1`" as EVM, so multisig/offline/ledger or other non-EVM key types are rejected up front rather than failing later during signing/proof validation.
+
 (Will be finalized on release.)
 
 ## Upcoming Release: v2.4.9
