@@ -63,6 +63,11 @@ type scenarioTxModule struct {
 
 	// Optional: fail with a non-OOG error instead of an OOG one.
 	nonOOGError error
+
+	// If non-zero, SimulateTransaction returns an account-sequence-mismatch
+	// error for this many calls before succeeding.
+	seqMismatchSims int
+	simCalls        int
 }
 
 func (s *scenarioTxModule) ProcessTransaction(_ context.Context, _ []types.Msg, _ *authtypes.BaseAccount, cfg *TxConfig) (*sdktx.BroadcastTxResponse, error) {
@@ -88,6 +93,12 @@ func (s *scenarioTxModule) ProcessTransaction(_ context.Context, _ []types.Msg, 
 }
 
 func (s *scenarioTxModule) SimulateTransaction(_ context.Context, _ []types.Msg, _ *authtypes.BaseAccount, _ *TxConfig) (*sdktx.SimulateResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.simCalls++
+	if s.simCalls <= s.seqMismatchSims {
+		return nil, fmt.Errorf("rpc error: code = Unknown desc = account sequence mismatch, expected 1, got 0: incorrect account sequence [cosmos/cosmos-sdk@v0.53.6/x/auth/ante/sigverify.go:364]")
+	}
 	return &sdktx.SimulateResponse{}, nil
 }
 
