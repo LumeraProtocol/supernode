@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
@@ -28,6 +29,10 @@ var (
 	dbName                 = "data001.sqlite3"
 	storeBatchRetryTimeout = 5 * time.Second
 )
+
+// errStoreClosing is returned (wrapped via backoff.Permanent) by the checkpoint
+// worker's retry loop to stop retrying once the store is shutting down.
+var errStoreClosing = errors.New("sqlite store is closing")
 
 // Job represents the job to be run
 type Job struct {
@@ -49,6 +54,7 @@ type Job struct {
 type Worker struct {
 	JobQueue chan Job
 	quit     chan bool
+	stopOnce sync.Once
 }
 
 // Store is the main struct
@@ -59,6 +65,12 @@ type Store struct {
 	migrationStore *MigrationMetaStore
 	repWriter      *RepWriter
 	dbFilePath     string
+
+	// workersWG tracks the long-lived background goroutines (DB worker,
+	// checkpoint worker, replication writer) so Close can wait for them to
+	// exit before closing the database. closeOnce makes Close idempotent.
+	workersWG sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // Record is a data record
@@ -163,6 +175,9 @@ func NewStore(ctx context.Context, dataDir string, cloud cloud.Storage, mst *Mig
 	s.db = db
 	s.dbFilePath = dbFile
 
+	// Track the long-lived background goroutines so Close can wait for them
+	// to exit before closing the database (prevents WAL writes racing teardown).
+	s.workersWG.Add(3)
 	go s.start(ctx)
 	// Run WAL checkpoint worker every 60 seconds
 	go s.startCheckpointWorker(ctx)
@@ -274,28 +289,43 @@ func (s *Store) migrate() error {
 }
 
 func (s *Store) startCheckpointWorker(ctx context.Context) {
+	defer s.workersWG.Done()
+
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = 1 * time.Minute
 	b.InitialInterval = 100 * time.Millisecond
 
 	for {
+		// Stop promptly if shutdown was already signalled, before doing any work.
+		if s.shuttingDown(ctx) {
+			logtrace.Debug(ctx, "Stopping checkpoint worker because of shutdown signal", logtrace.Fields{})
+			return
+		}
+
 		err := backoff.RetryNotify(func() error {
-			err := s.checkpoint()
-			if err == nil {
-				// If no error, delay for 5 seconds.
-				time.Sleep(checkpointInterval)
+			// Don't keep retrying a checkpoint once the store is closing — the DB
+			// is about to be (or already) closed, so further attempts only spin.
+			if s.shuttingDown(ctx) {
+				return backoff.Permanent(errStoreClosing)
 			}
-			return err
+			return s.checkpoint()
 		}, b, func(err error, duration time.Duration) {
 			logtrace.Error(ctx, "Failed to perform checkpoint, retrying...", logtrace.Fields{logtrace.FieldError: err.Error(), "duration": duration})
 		})
 
+		if errors.Is(err, errStoreClosing) {
+			return
+		}
 		if err == nil {
 			b.Reset()
 			b.MaxElapsedTime = 1 * time.Minute
 			b.InitialInterval = 100 * time.Millisecond
 		}
 
+		// Interruptible inter-checkpoint wait: a closed quit channel or a
+		// cancelled context releases the worker immediately instead of after the
+		// full checkpoint interval, so Close does not block (and the goroutine
+		// cannot touch WAL files after teardown begins).
 		select {
 		case <-ctx.Done():
 			logtrace.Debug(ctx, "Stopping checkpoint worker because of context cancel", logtrace.Fields{})
@@ -303,13 +333,27 @@ func (s *Store) startCheckpointWorker(ctx context.Context) {
 		case <-s.worker.quit:
 			logtrace.Debug(ctx, "Stopping checkpoint worker because of quit signal", logtrace.Fields{})
 			return
-		default:
+		case <-time.After(checkpointInterval):
 		}
+	}
+}
+
+// shuttingDown reports whether the store is being torn down, either via context
+// cancellation or the worker quit signal.
+func (s *Store) shuttingDown(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-s.worker.quit:
+		return true
+	default:
+		return false
 	}
 }
 
 // Start method starts the run loop for the worker
 func (s *Store) start(ctx context.Context) {
+	defer s.workersWG.Done()
 	for {
 		select {
 		case job := <-s.worker.JobQueue:
@@ -335,11 +379,14 @@ func (s *Store) start(ctx context.Context) {
 	}
 }
 
-// Stop signals the worker to stop listening for work requests.
+// Stop signals the worker to stop listening for work requests. It closes the
+// quit channel (rather than sending a single value) so that every goroutine
+// selecting on it — the DB worker and the checkpoint worker — is released, not
+// just whichever happens to receive first. Safe to call multiple times.
 func (w *Worker) Stop() {
-	go func() {
-		w.quit <- true
-	}()
+	w.stopOnce.Do(func() {
+		close(w.quit)
+	})
 }
 
 // Store function creates a new job and pushes it into the JobQueue
@@ -749,18 +796,25 @@ func (s *Store) Stats(ctx context.Context) (kademlia.DatabaseStats, error) {
 
 // Close the store
 func (s *Store) Close(ctx context.Context) {
-	s.worker.Stop()
-
-	if s.repWriter != nil {
-		s.repWriter.Stop()
-	}
-
-	if s.db != nil {
-		if err := s.db.Close(); err != nil {
-			logtrace.Error(ctx, "Failed to close database", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
+	s.closeOnce.Do(func() {
+		// Signal the background goroutines to stop...
+		s.worker.Stop()
+		if s.repWriter != nil {
+			s.repWriter.Stop()
 		}
-	}
 
+		// ...and wait for them to actually exit before closing the DB. This
+		// guarantees no checkpoint/replication goroutine touches the database or
+		// its WAL/-shm files after Close returns, which previously raced test
+		// TempDir cleanup and could corrupt teardown ordering in production.
+		s.workersWG.Wait()
+
+		if s.db != nil {
+			if err := s.db.Close(); err != nil {
+				logtrace.Error(ctx, "Failed to close database", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err.Error()})
+			}
+		}
+	})
 }
 
 // GetOwnCreatedAt func
