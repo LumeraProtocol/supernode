@@ -4,13 +4,16 @@ import (
 	"sync"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	evmigrationtypes "github.com/LumeraProtocol/lumera/x/evmigration/types"
 	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	evmcryptocodec "github.com/cosmos/evm/crypto/codec"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	vestingtypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 )
 
 // EncodingConfig specifies the concrete encoding types to use for Lumera client
@@ -48,8 +51,11 @@ func NewEncodingConfig() EncodingConfig {
 // RegisterInterfaces registers all interface types with the interface registry
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	cryptocodec.RegisterInterfaces(registry)
+	evmcryptocodec.RegisterInterfaces(registry)
 	authtypes.RegisterInterfaces(registry)
+	vestingtypes.RegisterInterfaces(registry)
 	actiontypes.RegisterInterfaces(registry)
+	evmigrationtypes.RegisterInterfaces(registry)
 	sntypes.RegisterInterfaces(registry)
 }
 

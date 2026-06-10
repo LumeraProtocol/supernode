@@ -26,6 +26,7 @@ tests/system/supernode-lep6-data*/
 .lep6-wip-backup/
 tests/system/data
 tests/system/1
+supernode/__debug*
 # env file
 .env
 /data
@@ -36,5 +37,6 @@ analysis
 .claude/
 .codex/
 AGENTS.md
+.claude/settings.json
 CLAUDE.md
 .bridge-version

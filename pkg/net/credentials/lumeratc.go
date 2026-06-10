@@ -23,6 +23,15 @@ var (
 	keyExMutex    sync.Mutex
 )
 
+// ClearKeyExchangerCache removes all cached KeyExchanger instances so that the
+// next handshake creates fresh ones with the current local identity. Must be
+// called when the local address changes (e.g., after EVM migration).
+func ClearKeyExchangerCache() {
+	keyExMutex.Lock()
+	defer keyExMutex.Unlock()
+	keyExchangers = map[string]*securekeyx.SecureKeyExchange{}
+}
+
 // CommonOptions contains the shared configuration for both client and server
 type CommonOptions struct {
 	Keyring       keyring.Keyring

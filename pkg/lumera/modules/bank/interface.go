@@ -12,6 +12,8 @@ import (
 type Module interface {
 	// Balance returns the balance for a specific denom at an address.
 	Balance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error)
+	// SpendableBalanceByDenom returns the spendable balance for a specific denom at an address.
+	SpendableBalanceByDenom(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error)
 }
 
 // NewModule constructs a bank Module backed by the given gRPC connection.

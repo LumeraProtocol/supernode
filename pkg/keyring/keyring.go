@@ -7,15 +7,17 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdkkeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	evmcryptocodec "github.com/cosmos/evm/crypto/codec"
+	"github.com/cosmos/evm/crypto/ethsecp256k1"
+	evmhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/cosmos/go-bip39"
 
 	"github.com/LumeraProtocol/supernode/v2/supernode/config"
@@ -23,18 +25,35 @@ import (
 
 const (
 	DefaultBIP39Passphrase = ""
-	DefaultHDPath          = "m/44'/118'/0'/0/0"
+	DefaultHDPath          = "m/44'/60'/0'/0/0"
 	AccountAddressPrefix   = "lumera"
 	KeyringServiceName     = "supernode-keyring"
 	defaultEntropySize     = 256
 )
 
+var initSDKConfigOnce sync.Once
+
 func InitSDKConfig() {
-	cfg := types.GetConfig()
-	cfg.SetBech32PrefixForAccount(AccountAddressPrefix, AccountAddressPrefix+"pub")
-	cfg.SetBech32PrefixForValidator(AccountAddressPrefix+"valoper", AccountAddressPrefix+"valoperpub")
-	cfg.SetBech32PrefixForConsensusNode(AccountAddressPrefix+"valcons", AccountAddressPrefix+"valconspub")
-	cfg.Seal()
+	initSDKConfigOnce.Do(func() {
+		cfg := types.GetConfig()
+
+		// Cosmos SDK config is process-global and may already be sealed by another
+		// package during startup. In that case there is nothing left to mutate, so
+		// avoid crashing paths like `supernode --help`.
+		defer func() {
+			if r := recover(); r != nil {
+				if fmt.Sprint(r) == "Config is sealed" {
+					return
+				}
+				panic(r)
+			}
+		}()
+
+		cfg.SetBech32PrefixForAccount(AccountAddressPrefix, AccountAddressPrefix+"pub")
+		cfg.SetBech32PrefixForValidator(AccountAddressPrefix+"valoper", AccountAddressPrefix+"valoperpub")
+		cfg.SetBech32PrefixForConsensusNode(AccountAddressPrefix+"valcons", AccountAddressPrefix+"valconspub")
+		cfg.Seal()
+	})
 }
 
 func InitKeyring(cfg config.KeyringConfig) (sdkkeyring.Keyring, error) {
@@ -57,9 +76,10 @@ func InitKeyring(cfg config.KeyringConfig) (sdkkeyring.Keyring, error) {
 
 	reg := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(reg)
+	evmcryptocodec.RegisterInterfaces(reg)
 	cdc := codec.NewProtoCodec(reg)
 
-	return sdkkeyring.New(KeyringServiceName, backend, dir, reader, cdc)
+	return sdkkeyring.New(KeyringServiceName, backend, dir, reader, cdc, evmhd.EthSecp256k1Option())
 }
 
 // buildReaderAndPossiblySwapStdin returns the reader handed to Cosmos-SDK.
@@ -178,25 +198,24 @@ func CreateNewAccount(kr sdkkeyring.Keyring, name string) (string, *sdkkeyring.R
 	if err != nil {
 		return "", nil, err
 	}
-	info, err := kr.NewAccount(name, mn, DefaultBIP39Passphrase, DefaultHDPath, hd.Secp256k1)
+	info, err := kr.NewAccount(name, mn, DefaultBIP39Passphrase, DefaultHDPath, evmhd.EthSecp256k1)
 	return mn, info, err
 }
 
 func RecoverAccountFromMnemonic(kr sdkkeyring.Keyring, name, mnemonic string) (*sdkkeyring.Record, error) {
-	return kr.NewAccount(name, mnemonic, DefaultBIP39Passphrase, DefaultHDPath, hd.Secp256k1)
+	return kr.NewAccount(name, mnemonic, DefaultBIP39Passphrase, DefaultHDPath, evmhd.EthSecp256k1)
 }
 
-func DerivePrivKeyFromMnemonic(mnemonic, hdPath string) (*secp256k1.PrivKey, error) {
+func DerivePrivKeyFromMnemonic(mnemonic, hdPath string) (*ethsecp256k1.PrivKey, error) {
 	if hdPath == "" {
 		hdPath = DefaultHDPath
 	}
-	seed := bip39.NewSeed(mnemonic, DefaultBIP39Passphrase)
-	master, ch := hd.ComputeMastersFromSeed(seed)
-	derived, err := hd.DerivePrivateKeyForPath(master, ch, hdPath)
+	deriveFn := evmhd.EthSecp256k1.Derive()
+	privKeyBytes, err := deriveFn(mnemonic, DefaultBIP39Passphrase, hdPath)
 	if err != nil {
 		return nil, err
 	}
-	return &secp256k1.PrivKey{Key: derived}, nil
+	return &ethsecp256k1.PrivKey{Key: privKeyBytes}, nil
 }
 
 func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
@@ -209,7 +228,23 @@ func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
 		return nil, err
 	}
 	sig, _, err := kr.SignByAddress(addr, bz, signing.SignMode_SIGN_MODE_DIRECT)
-	return sig, err
+	if err != nil {
+		return nil, err
+	}
+	// eth_secp256k1 signs as 65 bytes (R||S||V); drop the trailing recovery byte
+	// so the result is the 64-byte (R||S) cosmos form expected by the verifiers of
+	// SignBytes callers (action/cascade ADR-036, storage-challenge, audit proofs).
+	// Legacy secp256k1 sigs are already 64 bytes and unaffected.
+	//
+	// This does NOT affect the P2P/secure-channel handshake: securekeyx signs and
+	// verifies via its own path (SecureKeyExchange + ethsecp256k1.VerifySignature,
+	// which strips V internally), not through SignBytes. The migration proof path
+	// (supernode/cmd/evmigration.go) likewise keeps the full 65-byte sig because
+	// the chain's evmigration verifier requires R||S||V.
+	if len(sig) == 65 {
+		sig = sig[:64]
+	}
+	return sig, nil
 }
 
 func GetAddress(kr sdkkeyring.Keyring, name string) (types.AccAddress, error) {

@@ -499,5 +499,41 @@ func (h *TxHelper) GetConfig() *TxConfig {
 // Simulate runs an offline simulation for the provided messages using the
 // configured tx settings and given account info. Useful for pre-flight checks.
 func (h *TxHelper) Simulate(ctx context.Context, msgs []types.Msg, accountInfo *authtypes.BaseAccount) (*sdktx.SimulateResponse, error) {
-	return h.txmod.SimulateTransaction(ctx, msgs, accountInfo, h.config)
+	// Retry on sequence mismatch. Simulation reads the signer's committed
+	// sequence into accountInfo, but under concurrent transactions from the same
+	// signer (e.g. one supernode finalizing several cascade actions at once) that
+	// value can go stale between the read and the simulate ante check, yielding
+	// "account sequence mismatch, expected N, got M". This is transient: the
+	// broadcast path (ExecuteTransaction) already retries the same way, so a
+	// simulate-only mismatch is a false negative that should not fail the caller.
+	// Re-fetch fresh account info and retry, bounded by the same cap as broadcast.
+	maxAttempts := h.config.SequenceMismatchMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultSequenceMismatchMaxAttempts
+	}
+	if maxAttempts > MaxSequenceMismatchAttemptsCap {
+		maxAttempts = MaxSequenceMismatchAttemptsCap
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		resp, err := h.txmod.SimulateTransaction(ctx, msgs, accountInfo, h.config)
+		if err == nil {
+			return resp, nil
+		}
+		if !isSequenceMismatch(err) {
+			return nil, err
+		}
+		lastErr = err
+
+		// Refresh the signer's account info so the next attempt uses the settled
+		// sequence; if that fails, return the original mismatch error.
+		fresh, refreshErr := h.GetAccountInfo(ctx)
+		if refreshErr != nil {
+			return nil, err
+		}
+		accountInfo = fresh
+		sleepSequenceMismatchBackoff(ctx, attempt+1)
+	}
+	return nil, lastErr
 }

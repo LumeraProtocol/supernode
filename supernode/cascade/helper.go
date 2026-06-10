@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"cosmossdk.io/math"
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
@@ -146,6 +147,32 @@ func (task *CascadeRegistrationTask) generateRQIDFiles(ctx context.Context, meta
 	return indexIDs, allFiles, nil
 }
 
+// storeArtefactsMaxAttempts / storeArtefactsRetryBackoff bound the retry on
+// transient P2P store failures (see isTransientStoreErr). The base backoff is
+// multiplied by the attempt number, so total added latency is bounded at a few
+// seconds.
+const storeArtefactsMaxAttempts = 4
+
+// storeArtefactsRetryBackoff is the base inter-attempt delay (multiplied by the
+// attempt number). It is a var so tests can shrink it.
+var storeArtefactsRetryBackoff = 2 * time.Second
+
+// isTransientStoreErr reports whether a StoreArtefacts failure is a transient
+// P2P condition worth retrying — typically the routing table not yet having
+// converged on store-eligible peers, momentary disconnection, or store RPCs to
+// peers failing under concurrent load. These recover on their own given a short
+// backoff. Deterministic failures (e.g. layout/encoding errors) are not retried.
+func isTransientStoreErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no eligible store peers") ||
+		strings.Contains(msg, "desired success rate") ||
+		strings.Contains(msg, "zero peers") ||
+		strings.Contains(msg, "iterate batch store")
+}
+
 func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionID string, idFiles [][]byte, symbolsDir string, layout codec.Layout, f logtrace.Fields) error {
 	if f == nil {
 		f = logtrace.Fields{}
@@ -156,11 +183,49 @@ func (task *CascadeRegistrationTask) storeArtefacts(ctx context.Context, actionI
 	}
 	ctx = logtrace.CtxWithOrigin(ctx, "first_pass")
 	logtrace.Info(ctx, "store: first-pass begin", lf)
-	if err := task.P2P.StoreArtefacts(ctx, adaptors.StoreArtefactsRequest{IDFiles: idFiles, SymbolsDir: symbolsDir, Layout: layout, TaskID: task.taskID, ActionID: actionID, IdempotentDirectoryRecord: f[logtrace.FieldMethod] == "PublishStagedArtefacts"}, f); err != nil {
-		return task.wrapErr(ctx, "failed to store artefacts", err, lf)
+
+	req := adaptors.StoreArtefactsRequest{
+		IDFiles:                   idFiles,
+		SymbolsDir:                symbolsDir,
+		Layout:                    layout,
+		TaskID:                    task.taskID,
+		ActionID:                  actionID,
+		IdempotentDirectoryRecord: f[logtrace.FieldMethod] == "PublishStagedArtefacts",
 	}
-	logtrace.Info(ctx, "store: first-pass ok", lf)
-	return nil
+
+	var lastErr error
+	for attempt := 1; attempt <= storeArtefactsMaxAttempts; attempt++ {
+		err := task.P2P.StoreArtefacts(ctx, req, f)
+		if err == nil {
+			if attempt > 1 {
+				logtrace.Info(ctx, "store: first-pass ok after retry", logtrace.Fields{logtrace.FieldActionID: actionID, logtrace.FieldTaskID: task.taskID, "attempt": attempt})
+			} else {
+				logtrace.Info(ctx, "store: first-pass ok", lf)
+			}
+			return nil
+		}
+		lastErr = err
+		if attempt >= storeArtefactsMaxAttempts || !isTransientStoreErr(err) {
+			break
+		}
+		// The symbol-directory row may already have been written on a prior
+		// attempt, so subsequent attempts must use the idempotent upsert path
+		// (the symbol/data key stores are idempotent by key).
+		req.IdempotentDirectoryRecord = true
+		logtrace.Warn(ctx, "store: artefact store failed; retrying", logtrace.Fields{
+			logtrace.FieldActionID: actionID,
+			logtrace.FieldTaskID:   task.taskID,
+			"attempt":              attempt,
+			"max_attempts":         storeArtefactsMaxAttempts,
+			logtrace.FieldError:    err.Error(),
+		})
+		select {
+		case <-ctx.Done():
+			return task.wrapErr(ctx, "failed to store artefacts", ctx.Err(), lf)
+		case <-time.After(time.Duration(attempt) * storeArtefactsRetryBackoff):
+		}
+	}
+	return task.wrapErr(ctx, "failed to store artefacts", lastErr, lf)
 }
 
 func (task *CascadeRegistrationTask) wrapErr(ctx context.Context, msg string, err error, f logtrace.Fields) error {

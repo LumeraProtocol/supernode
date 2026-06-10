@@ -14,6 +14,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode_msg"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/tx"
+	"google.golang.org/grpc"
 )
 
 // Client defines the main interface for interacting with Lumera blockchain
@@ -28,6 +29,9 @@ type Client interface {
 	Bank() bank.Module
 	Tx() tx.Module
 	Node() node.Module
+
+	// Conn returns the underlying gRPC connection for direct queries.
+	Conn() *grpc.ClientConn
 
 	Close() error
 }

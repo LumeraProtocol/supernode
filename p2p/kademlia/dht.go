@@ -101,6 +101,11 @@ type DHT struct {
 	// reject in that case to avoid lockout during bootstrap.
 	selfState      atomic.Int32
 	selfStateReady atomic.Bool
+
+	// migrationNotify is signalled by NotifyEVMMigration to trigger an
+	// immediate bootstrap refresh and temporarily accelerate the refresh
+	// interval (1 min for the first 5 cycles after migration).
+	migrationNotify chan struct{}
 }
 
 // bootstrapIgnoreList seeds the in-memory ignore list with nodes that are
@@ -399,15 +404,16 @@ func NewDHT(ctx context.Context, store Store, metaStore MetaStore, options *Opti
 	}
 
 	s := &DHT{
-		metaStore:      metaStore,
-		store:          store,
-		options:        options,
-		done:           make(chan struct{}),
-		cache:          memory.NewKeyValue(),
-		bsConnected:    &sync.Map{},
-		ignorelist:     NewBanList(ctx),
-		replicationMtx: sync.RWMutex{},
-		rqstore:        rqstore,
+		metaStore:       metaStore,
+		store:           store,
+		options:         options,
+		done:            make(chan struct{}),
+		cache:           memory.NewKeyValue(),
+		bsConnected:     &sync.Map{},
+		ignorelist:      NewBanList(ctx),
+		replicationMtx:  sync.RWMutex{},
+		rqstore:         rqstore,
+		migrationNotify: make(chan struct{}, 1),
 	}
 
 	// Check that keyring is provided

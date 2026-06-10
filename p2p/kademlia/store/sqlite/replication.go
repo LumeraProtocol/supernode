@@ -481,12 +481,12 @@ func (s *Store) RetrieveBatchNotExist(ctx context.Context, keys []string, batchS
 	return nonExistingKeys, nil
 }
 
-func (s Store) RetrieveBatchValues(ctx context.Context, keys []string, getFromCloud bool) ([][]byte, int, error) {
+func (s *Store) RetrieveBatchValues(ctx context.Context, keys []string, getFromCloud bool) ([][]byte, int, error) {
 	return retrieveBatchValues(ctx, s.db, keys, getFromCloud, s)
 }
 
 // RetrieveBatchValues returns a list of values for the given keys (hex-encoded).
-func retrieveBatchValues(ctx context.Context, db *sqlx.DB, keys []string, getFromCloud bool, s Store) ([][]byte, int, error) {
+func retrieveBatchValues(ctx context.Context, db *sqlx.DB, keys []string, getFromCloud bool, s *Store) ([][]byte, int, error) {
 	// Early return
 	if len(keys) == 0 {
 		return nil, 0, nil
@@ -702,49 +702,51 @@ func NewRepWriter(buf int) *RepWriter {
 func (w *RepWriter) Stop() { close(w.quit) }
 
 // startRepWriter runs a single serialized loop for replication_info updates.
+// It is launched with `go s.startRepWriter(ctx)`, so the loop runs directly in
+// that goroutine; it is tracked by s.workersWG and exits on ctx cancel or the
+// repWriter quit signal.
 func (s *Store) startRepWriter(ctx context.Context) {
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.repWriter.quit:
-				return
-			case j := <-s.repWriter.ch:
-				var err error
-				// pick a context for DB ops (prefer job ctx if non-nil)
-				dbctx := j.ctx
-				if dbctx == nil {
-					dbctx = context.Background()
-				}
-				switch j.kind {
-				case repJobLastSeen:
-					_, err = s.db.ExecContext(dbctx,
-						`UPDATE replication_info SET last_seen = ? WHERE id = ?`,
-						time.Now().UTC(), j.id)
+	defer s.workersWG.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.repWriter.quit:
+			return
+		case j := <-s.repWriter.ch:
+			var err error
+			// pick a context for DB ops (prefer job ctx if non-nil)
+			dbctx := j.ctx
+			if dbctx == nil {
+				dbctx = context.Background()
+			}
+			switch j.kind {
+			case repJobLastSeen:
+				_, err = s.db.ExecContext(dbctx,
+					`UPDATE replication_info SET last_seen = ? WHERE id = ?`,
+					time.Now().UTC(), j.id)
 
-				case repJobIsActive:
-					_, err = s.db.ExecContext(dbctx,
-						`UPDATE replication_info SET is_active = ?, is_adjusted = ?, updatedAt = ? WHERE id = ?`,
-						j.isActive, j.isAdjusted, time.Now().UTC(), j.id)
+			case repJobIsActive:
+				_, err = s.db.ExecContext(dbctx,
+					`UPDATE replication_info SET is_active = ?, is_adjusted = ?, updatedAt = ? WHERE id = ?`,
+					j.isActive, j.isAdjusted, time.Now().UTC(), j.id)
 
-				case repJobIsAdjusted:
-					_, err = s.db.ExecContext(dbctx,
-						`UPDATE replication_info SET is_adjusted = ?, updatedAt = ? WHERE id = ?`,
-						j.isAdjusted, time.Now().UTC(), j.id)
+			case repJobIsAdjusted:
+				_, err = s.db.ExecContext(dbctx,
+					`UPDATE replication_info SET is_adjusted = ?, updatedAt = ? WHERE id = ?`,
+					j.isAdjusted, time.Now().UTC(), j.id)
 
-				case repJobLastReplicated:
-					_, err = s.db.ExecContext(dbctx,
-						`UPDATE replication_info SET lastReplicatedAt = ?, updatedAt = ? WHERE id = ?`,
-						j.t, time.Now().UTC(), j.id)
-				}
-				// deliver result
-				if j.done != nil {
-					j.done <- err
-				}
+			case repJobLastReplicated:
+				_, err = s.db.ExecContext(dbctx,
+					`UPDATE replication_info SET lastReplicatedAt = ?, updatedAt = ? WHERE id = ?`,
+					j.t, time.Now().UTC(), j.id)
+			}
+			// deliver result
+			if j.done != nil {
+				j.done <- err
 			}
 		}
-	}()
+	}
 }
 
 // UpdateLastSeen updates last_seen for a node (serialized via writer)

@@ -26,6 +26,7 @@ import (
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"google.golang.org/grpc"
 )
 
 // MockLumeraClient implements the lumera.Client interface for testing purposes
@@ -120,6 +121,11 @@ func (c *MockLumeraClient) Node() node.Module {
 	return c.nodeMod
 }
 
+// Conn returns nil for the mock (no real gRPC connection in tests).
+func (c *MockLumeraClient) Conn() *grpc.ClientConn {
+	return nil
+}
+
 // Close closes all connections
 func (c *MockLumeraClient) Close() error {
 	return nil
@@ -132,6 +138,12 @@ type MockBankModule struct{}
 func (m *MockBankModule) Balance(ctx context.Context, address string, denom string) (*banktypes.QueryBalanceResponse, error) {
 	// Return >= 1 LUME in micro units to satisfy threshold checks
 	return &banktypes.QueryBalanceResponse{Balance: &sdktypes.Coin{Denom: denom, Amount: sdkmath.NewInt(1_000_000)}}, nil
+}
+
+func (m *MockBankModule) SpendableBalanceByDenom(ctx context.Context, address string, denom string) (*banktypes.QuerySpendableBalanceByDenomResponse, error) {
+	return &banktypes.QuerySpendableBalanceByDenomResponse{
+		Balance: &sdktypes.Coin{Denom: denom, Amount: sdkmath.NewInt(1_000_000)},
+	}, nil
 }
 
 // MockAuthModule implements the auth.Module interface for testing

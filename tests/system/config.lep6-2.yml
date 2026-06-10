@@ -4,7 +4,7 @@
 # Supernode Configuration
 supernode:
   key_name: "testkey2"
-  identity: "lumera1cf0ms9ttgdvz6zwlqfty4tjcawhuaq69p40w0c"
+  identity: "lumera19x8cqj4nqmvmnzu75n3jalzhjc3mt643m738qn"
   host: "0.0.0.0"
   port: 4446
   gateway_port: 8003

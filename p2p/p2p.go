@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LumeraProtocol/supernode/v2/p2p/kademlia"
@@ -37,20 +38,27 @@ type P2P interface {
 
 	// Run the node of distributed hash table
 	Run(ctx context.Context) error
+
+	// NotifyEVMMigration signals the P2P layer that an EVM account migration
+	// has completed. This triggers an immediate bootstrap refresh from the
+	// chain and temporarily accelerates the refresh interval so that stale
+	// peer addresses are replaced with post-migration addresses promptly.
+	NotifyEVMMigration()
 }
 
 // p2p structure to implements interface
 type p2p struct {
-	store        kademlia.Store // the store for kademlia network
-	metaStore    kademlia.MetaStore
-	dht          *kademlia.DHT // the kademlia network
-	config       *Config       // the service configuration
-	running      bool          // if the kademlia network is ready
-	lumeraClient lumera.Client
-	keyring      keyring.Keyring // Add the keyring field
-	rqstore      rqstore.Store
-	stats        *p2pStatsManager
-	statsOnce    sync.Once
+	store            kademlia.Store // the store for kademlia network
+	metaStore        kademlia.MetaStore
+	dht              *kademlia.DHT // the kademlia network
+	config           *Config       // the service configuration
+	running          bool          // if the kademlia network is ready
+	lumeraClient     lumera.Client
+	keyring          keyring.Keyring // Add the keyring field
+	rqstore          rqstore.Store
+	stats            *p2pStatsManager
+	statsOnce        sync.Once
+	migrationPending atomic.Bool
 }
 
 // Run the kademlia network
@@ -95,6 +103,9 @@ func (s *p2p) run(ctx context.Context) error {
 	if err := s.dht.ConfigureBootstrapNodes(ctx, s.config.BootstrapNodes); err != nil {
 		logtrace.Error(ctx, "failed to configure bootstrap nodes", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
 		logtrace.Error(ctx, "failed to get bootstap ip", logtrace.Fields{logtrace.FieldModule: "p2p", logtrace.FieldError: err})
+	}
+	if s.migrationPending.Swap(false) {
+		s.dht.NotifyEVMMigration()
 	}
 	s.running = true
 
@@ -230,6 +241,15 @@ func (s *p2p) NClosestNodesWithIncludingNodeList(ctx context.Context, n int, key
 
 	logtrace.Debug(ctx, "closest nodes retrieved", logtrace.Fields{"no_of_closest_nodes": n, "file_hash": key, "closest_nodes": ret})
 	return ret
+}
+
+// NotifyEVMMigration forwards the migration signal to the underlying DHT.
+func (s *p2p) NotifyEVMMigration() {
+	if s.dht == nil {
+		s.migrationPending.Store(true)
+		return
+	}
+	s.dht.NotifyEVMMigration()
 }
 
 // configure the distributed hash table for p2p service
