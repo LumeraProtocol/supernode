@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	evmigrationtypes "github.com/LumeraProtocol/lumera/x/evmigration/types"
 	supernodeTypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
@@ -1230,4 +1233,89 @@ func TestEnsureLegacyAccountMigrated_BothQueriesFail_FailsClosed(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to query migration estimate")
 	assert.Nil(t, mc.broadcastedMsg, "should not broadcast when both migration queries are unavailable")
+}
+
+// --- requireEVMChain retry / classification tests ---
+
+// fakeModuleVersionQuerier returns a scripted sequence of results, one per call,
+// so tests can model transient failures, eventual success, and the module-absent
+// case. If more calls happen than scripted entries, the last entry is reused.
+type fakeModuleVersionQuerier struct {
+	resps []*upgradetypes.QueryModuleVersionsResponse
+	errs  []error
+	calls int
+}
+
+func (f *fakeModuleVersionQuerier) ModuleVersions(_ context.Context, _ *upgradetypes.QueryModuleVersionsRequest, _ ...grpc.CallOption) (*upgradetypes.QueryModuleVersionsResponse, error) {
+	i := f.calls
+	f.calls++
+	if i >= len(f.errs) {
+		i = len(f.errs) - 1
+	}
+	return f.resps[min(i, len(f.resps)-1)], f.errs[i]
+}
+
+func withFastEVMChainBackoff(t *testing.T) {
+	t.Helper()
+	orig := requireEVMChainRetryBackoff
+	requireEVMChainRetryBackoff = func(int) time.Duration { return time.Millisecond }
+	t.Cleanup(func() { requireEVMChainRetryBackoff = orig })
+}
+
+func evmPresentResp() *upgradetypes.QueryModuleVersionsResponse {
+	return &upgradetypes.QueryModuleVersionsResponse{
+		ModuleVersions: []*upgradetypes.ModuleVersion{{Name: evmModuleName, Version: 1}},
+	}
+}
+
+func TestRequireEVMChain_ModulePresent(t *testing.T) {
+	q := &fakeModuleVersionQuerier{resps: []*upgradetypes.QueryModuleVersionsResponse{evmPresentResp()}, errs: []error{nil}}
+	require.NoError(t, requireEVMChainWithQuerier(context.Background(), q))
+	assert.Equal(t, 1, q.calls, "a successful query must not retry")
+}
+
+func TestRequireEVMChain_ModuleAbsent_NoRetry(t *testing.T) {
+	withFastEVMChainBackoff(t)
+	q := &fakeModuleVersionQuerier{
+		resps: []*upgradetypes.QueryModuleVersionsResponse{{ModuleVersions: nil}},
+		errs:  []error{nil},
+	}
+	err := requireEVMChainWithQuerier(context.Background(), q)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not have EVM support")
+	assert.Equal(t, 1, q.calls, "a definitive module-absent answer must not retry")
+}
+
+func TestRequireEVMChain_TransientThenSuccess(t *testing.T) {
+	withFastEVMChainBackoff(t)
+	q := &fakeModuleVersionQuerier{
+		resps: []*upgradetypes.QueryModuleVersionsResponse{nil, nil, evmPresentResp()},
+		errs:  []error{errors.New("connection refused"), errors.New("connection refused"), nil},
+	}
+	require.NoError(t, requireEVMChainWithQuerier(context.Background(), q))
+	assert.Equal(t, 3, q.calls, "should retry transient failures until the query succeeds")
+}
+
+func TestRequireEVMChain_PersistentFailure(t *testing.T) {
+	withFastEVMChainBackoff(t)
+	q := &fakeModuleVersionQuerier{
+		resps: []*upgradetypes.QueryModuleVersionsResponse{nil},
+		errs:  []error{errors.New("unreachable")},
+	}
+	err := requireEVMChainWithQuerier(context.Background(), q)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "after 5 attempts")
+	assert.Equal(t, requireEVMChainQueryRetries, q.calls, "should exhaust all retries on persistent failure")
+}
+
+func TestRequireEVMChain_ContextCancelledDuringBackoff(t *testing.T) {
+	withFastEVMChainBackoff(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	q := &fakeModuleVersionQuerier{
+		resps: []*upgradetypes.QueryModuleVersionsResponse{nil},
+		errs:  []error{errors.New("unreachable")},
+	}
+	err := requireEVMChainWithQuerier(ctx, q)
+	require.ErrorIs(t, err, context.Canceled)
 }

@@ -20,13 +20,13 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
-	"google.golang.org/grpc"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"google.golang.org/grpc"
 )
 
 // MockLumeraClient implements the lumera.Client interface for testing purposes

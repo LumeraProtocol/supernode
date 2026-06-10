@@ -107,31 +107,76 @@ func validateLegacyMigrationSetup(kr cKeyring.Keyring, keyName, evmKeyName strin
 	return true, nil
 }
 
+// moduleVersionQuerier is the subset of upgradetypes.QueryClient that
+// requireEVMChain needs. It is an interface so the retry/classification logic
+// can be unit-tested without a live gRPC connection.
+type moduleVersionQuerier interface {
+	ModuleVersions(ctx context.Context, req *upgradetypes.QueryModuleVersionsRequest, opts ...grpc.CallOption) (*upgradetypes.QueryModuleVersionsResponse, error)
+}
+
+// requireEVMChainQueryRetries is the number of attempts requireEVMChain makes
+// against a transiently-failing chain before giving up. requireEVMChainRetryBackoff
+// returns the delay before the given (1-based) attempt; it is a var so tests can
+// shrink it.
+const requireEVMChainQueryRetries = 5
+
+var requireEVMChainRetryBackoff = func(attempt int) time.Duration {
+	return time.Duration(attempt) * time.Second
+}
+
 // requireEVMChain verifies that the connected Lumera chain has the EVM module
 // active. If the module is absent, this supernode binary is incompatible and
 // must not proceed.
+//
+// A transient query failure (chain momentarily unreachable / gRPC blip at boot)
+// is retried with backoff so a brief network hiccup does not turn into a hard
+// crash loop. Only a query that *succeeds* and reports the EVM module absent is
+// treated as a definitive incompatibility and returned immediately.
 func requireEVMChain(ctx context.Context, conn *grpc.ClientConn) error {
-	client := upgradetypes.NewQueryClient(conn)
-	resp, err := client.ModuleVersions(ctx, &upgradetypes.QueryModuleVersionsRequest{
-		ModuleName: evmModuleName,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to query chain module versions: %w", err)
-	}
-	if len(resp.ModuleVersions) == 0 {
-		return fmt.Errorf(
-			"connected Lumera chain does not have EVM support (module %q not found). "+
-				"This supernode binary requires an EVM-enabled Lumera chain. "+
-				"Please upgrade your Lumera node or connect to an EVM-enabled chain",
-			evmModuleName,
-		)
-	}
+	return requireEVMChainWithQuerier(ctx, upgradetypes.NewQueryClient(conn))
+}
 
-	logtrace.Info(ctx, "EVM module detected on chain", logtrace.Fields{
-		"module":  evmModuleName,
-		"version": resp.ModuleVersions[0].Version,
-	})
-	return nil
+func requireEVMChainWithQuerier(ctx context.Context, client moduleVersionQuerier) error {
+	var lastErr error
+	for attempt := 1; attempt <= requireEVMChainQueryRetries; attempt++ {
+		resp, err := client.ModuleVersions(ctx, &upgradetypes.QueryModuleVersionsRequest{
+			ModuleName: evmModuleName,
+		})
+		if err != nil {
+			// Transient: chain unreachable / gRPC error. Retry with backoff.
+			lastErr = err
+			logtrace.Warn(ctx, "EVM module-version query failed; will retry", logtrace.Fields{
+				"attempt":      attempt,
+				"max_attempts": requireEVMChainQueryRetries,
+				"error":        err.Error(),
+			})
+			if attempt == requireEVMChainQueryRetries {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(requireEVMChainRetryBackoff(attempt)):
+			}
+			continue
+		}
+		if len(resp.ModuleVersions) == 0 {
+			// Definitive: chain answered, EVM module is absent. Do not retry.
+			return fmt.Errorf(
+				"connected Lumera chain does not have EVM support (module %q not found). "+
+					"This supernode binary requires an EVM-enabled Lumera chain. "+
+					"Please upgrade your Lumera node or connect to an EVM-enabled chain",
+				evmModuleName,
+			)
+		}
+
+		logtrace.Info(ctx, "EVM module detected on chain", logtrace.Fields{
+			"module":  evmModuleName,
+			"version": resp.ModuleVersions[0].Version,
+		})
+		return nil
+	}
+	return fmt.Errorf("failed to query chain module versions after %d attempts: %w", requireEVMChainQueryRetries, lastErr)
 }
 
 // isLegacyKey returns true if the key stored in the keyring under keyName uses
@@ -361,6 +406,13 @@ func ensureLegacyAccountMigrated(
 
 		// Sign with new EVM key from keyring (eth_secp256k1 signs raw payload;
 		// internally uses Keccak-256).
+		//
+		// The 65-byte signature (R||S||V) is embedded into SingleKeyProof as-is —
+		// the trailing recovery byte is intentionally retained here. The chain's
+		// proof verifier (x/evmigration VerifyEthSecp256k1) requires exactly 65
+		// bytes and strips V itself before VerifySignature. This deliberately
+		// differs from keyring.SignBytes, which truncates eth sigs to 64 bytes for
+		// the cosmos-form (ADR-036/action) verifiers used elsewhere.
 		newSig, _, err := kr.Sign(evmKeyName, payload, signingtypes.SignMode_SIGN_MODE_DIRECT)
 		if err != nil {
 			return fmt.Errorf("failed to sign migration payload with EVM key: %w", err)
@@ -518,6 +570,14 @@ func broadcastMigrationTx(ctx context.Context, conn *grpc.ClientConn, msg sdk.Ms
 	if err := txBuilder.SetMsgs(msg); err != nil {
 		return fmt.Errorf("failed to set message on tx builder: %w", err)
 	}
+
+	// NOTE: this tx is broadcast deliberately UNSIGNED — no signer info, sequence,
+	// or fee is set. evmigration messages are self-authenticating via the dual
+	// MigrationProof signatures inside the message, and the chain's evmigration
+	// ante decorator waives signature/fee verification for them. Do not "fix" this
+	// by adding signer setup: that would break the self-authenticating design.
+	// requireEVMChain gates module presence at startup, but not the ante config, so
+	// on a chain lacking that decorator this broadcast will fail at CheckTx.
 
 	// Simulate to get gas estimate. Migration txs are fee-exempt on chain, but
 	// we still need a valid gas limit.

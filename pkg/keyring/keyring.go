@@ -231,10 +231,20 @@ func SignBytes(kr sdkkeyring.Keyring, name string, bz []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// eth_secp256k1 signs as 65 bytes (R||S||V); drop the trailing recovery byte
+	// so the result is the 64-byte (R||S) cosmos form expected by the verifiers of
+	// SignBytes callers (action/cascade ADR-036, storage-challenge, audit proofs).
+	// Legacy secp256k1 sigs are already 64 bytes and unaffected.
+	//
+	// This does NOT affect the P2P/secure-channel handshake: securekeyx signs and
+	// verifies via its own path (SecureKeyExchange + ethsecp256k1.VerifySignature,
+	// which strips V internally), not through SignBytes. The migration proof path
+	// (supernode/cmd/evmigration.go) likewise keeps the full 65-byte sig because
+	// the chain's evmigration verifier requires R||S||V.
 	if len(sig) == 65 {
 		sig = sig[:64]
 	}
-	return sig, err
+	return sig, nil
 }
 
 func GetAddress(kr sdkkeyring.Keyring, name string) (types.AccAddress, error) {
