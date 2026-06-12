@@ -27,10 +27,6 @@ func EpochID(height int64, epochZeroHeight uint64, epochLengthBlocks uint64) (ui
 	return uint64(height-int64(epochZeroHeight)) / epochLengthBlocks, true
 }
 
-func EpochStartHeight(epochID uint64, epochZeroHeight uint64, epochLengthBlocks uint64) int64 {
-	return int64(epochZeroHeight) + int64(epochID)*int64(epochLengthBlocks)
-}
-
 func ComparisonTargetForChallengers(seed []byte, epochID uint64) string {
 	return "sc:challengers:" + hex.EncodeToString(seed) + ":" + strconv.FormatUint(epochID, 10)
 }

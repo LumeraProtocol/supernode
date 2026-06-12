@@ -1,11 +1,7 @@
 package types
 
 import (
-	"encoding/json"
 	"time"
-
-	"github.com/LumeraProtocol/supernode/v2/pkg/errors"
-	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // MessageType represents the type of message
@@ -37,22 +33,6 @@ func (m MessageType) String() string {
 		return "affirmation"
 	default:
 		return "unknown"
-	}
-}
-
-// MessageTypeFromString returns the message type from string
-func MessageTypeFromString(str string) (MessageType, error) {
-	switch str {
-	case "challenge":
-		return ChallengeMessageType, nil
-	case "response":
-		return ResponseMessageType, nil
-	case "evaluation":
-		return EvaluationMessageType, nil
-	case "affirmation":
-		return AffirmationMessageType, nil
-	default:
-		return 0, errors.New("invalid message type string")
 	}
 }
 
@@ -185,16 +165,6 @@ type ProcessBroadcastChallengeMetricsRequest struct {
 	SenderID string `json:"sender_id"`
 }
 
-type StorageChallengeMessages []Message
-
-// Hash returns the hash of the storage-challenge challenge log data
-func (mdl StorageChallengeMessages) Hash() string {
-	data, _ := json.Marshal(mdl)
-	hash, _ := utils.Blake3Hash(data)
-
-	return string(hash)
-}
-
 // NScMetric gets the latest challenge IDs from the DB
 type NScMetric struct {
 	Count       int
@@ -230,15 +200,6 @@ type AggregatedScore struct {
 	HealthCheckChallengeScore float64
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
-}
-
-type AggregatedScoreList []AggregatedScore
-
-func (asl AggregatedScoreList) Hash() string {
-	data, _ := json.Marshal(asl)
-	hash, _ := utils.Blake3Hash(data)
-
-	return string(hash)
 }
 
 type ScoreAggregationEvent struct {

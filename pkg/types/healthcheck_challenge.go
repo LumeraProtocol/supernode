@@ -1,10 +1,7 @@
 package types
 
 import (
-	"encoding/json"
 	"time"
-
-	"github.com/LumeraProtocol/supernode/v2/pkg/utils"
 )
 
 // HealthCheckMessageType represents the type of message sent in the health-check process
@@ -150,15 +147,4 @@ type BroadcastHealthCheckMessageMetrics struct {
 type ProcessBroadcastHealthCheckChallengeMetricsRequest struct {
 	Data     []byte `json:"data"`
 	SenderID string `json:"sender_id"`
-}
-
-// HealthCheckChallengeMessages represents an array of health-check message
-type HealthCheckChallengeMessages []HealthCheckMessage
-
-// Hash returns the hash of the health-check-challenge challenge log data
-func (mdl HealthCheckChallengeMessages) Hash() string {
-	data, _ := json.Marshal(mdl)
-	hash, _ := utils.Blake3Hash(data)
-
-	return string(hash)
 }
