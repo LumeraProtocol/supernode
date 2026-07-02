@@ -74,13 +74,19 @@ jobs:
 
       - name: Check deploy intent
         id: deploy_check
+        env:
+          TAG_MSG: ${{ steps.tag_info.outputs.tag_message }}
         run: |
-          TAG_MSG="${{ steps.tag_info.outputs.tag_message }}"
-          if echo "$TAG_MSG" | grep -qi '\[no-deploy\]'; then
-            echo "draft=true" >> $GITHUB_OUTPUT
+          # NOTE: TAG_MSG is passed via env: (not ${{ }} inlined into the script)
+          # because the tag/commit message is multi-line and may contain shell
+          # metacharacters or command names (e.g. "deadcode"). Inlining it would
+          # let those lines execute as bash and abort the release job with exit
+          # 127. See build&release.yml history / v2.6.0-testnet post-mortem.
+          if printf '%s' "$TAG_MSG" | grep -qi '\[no-deploy\]'; then
+            echo "draft=true" >> "$GITHUB_OUTPUT"
             echo "⚠️  [no-deploy] detected — release will be created as DRAFT"
           else
-            echo "draft=false" >> $GITHUB_OUTPUT
+            echo "draft=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Go and dependencies
