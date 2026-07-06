@@ -41,6 +41,49 @@ func TestReadSupernodeChainID(t *testing.T) {
 	}
 }
 
+func TestReadSupernodeEVMKeyName(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	cfgDir := filepath.Join(tmp, ".supernode")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yml")
+
+	// missing → empty, no error
+	if err := os.WriteFile(cfgPath, []byte("lumera:\n  chain_id: lumera-testnet-2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadSupernodeEVMKeyName(); err != nil || got != "" {
+		t.Fatalf("expected empty, got %q err=%v", got, err)
+	}
+
+	// present
+	if err := os.WriteFile(cfgPath, []byte("supernode:\n  evm_key_name: my-evm-key\nlumera:\n  chain_id: lumera-testnet-2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadSupernodeEVMKeyName(); err != nil || got != "my-evm-key" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+}
+
+func TestReadSupernodeGRPCAddr(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	cfgDir := filepath.Join(tmp, ".supernode")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yml")
+	if err := os.WriteFile(cfgPath, []byte("lumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: grpc.testnet.lumera.io:443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadSupernodeGRPCAddr()
+	if err != nil || got != "grpc.testnet.lumera.io:443" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+}
+
 func TestReadSupernodeChainID_MissingOrEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)

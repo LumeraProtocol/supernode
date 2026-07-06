@@ -85,6 +85,43 @@ func CompareVersions(v1, v2 string) int {
 	return 0
 }
 
+// CompareCoreVersions compares two SemVer versions ignoring any prerelease
+// suffix. It returns -1, 0, or 1 per the usual convention. This exists so
+// range-gates like "target >= v2.6.0" can be evaluated against tags like
+// "v2.6.0-testnet" — under strict SemVer the prerelease has LOWER precedence
+// than the same core release, but for our forward-block gate we want the
+// prerelease to satisfy the >= v2.6.0 threshold.
+func CompareCoreVersions(v1, v2 string) int {
+	p1 := parseSemver(v1)
+	p2 := parseSemver(v2)
+	if p1.major != p2.major {
+		if p1.major < p2.major {
+			return -1
+		}
+		return 1
+	}
+	if p1.minor != p2.minor {
+		if p1.minor < p2.minor {
+			return -1
+		}
+		return 1
+	}
+	if p1.patch != p2.patch {
+		if p1.patch < p2.patch {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
+// IsV260OrAbove reports whether tag's core version is >= v2.6.0, ignoring
+// prerelease suffixes. Used by the EVM preflight to decide whether a target
+// requires a migrated evm_key_name.
+func IsV260OrAbove(tag string) bool {
+	return CompareCoreVersions(tag, "v2.6.0") >= 0
+}
+
 // SameMajor reports whether two versions have the same major component.
 // It ignores leading 'v', build metadata, and pre-release suffixes when
 // determining the major version.

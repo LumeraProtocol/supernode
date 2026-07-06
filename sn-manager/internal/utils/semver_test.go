@@ -66,3 +66,23 @@ func TestSameMajor(t *testing.T) {
 		}
 	}
 }
+
+func TestIsV260OrAbove(t *testing.T) {
+	cases := []struct {
+		tag  string
+		want bool
+	}{
+		{"v2.6.0", true},
+		{"v2.6.0-testnet", true},
+		{"v2.6.1-testnet", true},
+		{"v2.5.0-testnet", false},
+		{"v2.5.99", false},
+		{"v3.0.0", true},
+		{"v1.0.0", false},
+	}
+	for _, tc := range cases {
+		if got := IsV260OrAbove(tc.tag); got != tc.want {
+			t.Fatalf("IsV260OrAbove(%q) = %v, want %v", tc.tag, got, tc.want)
+		}
+	}
+}
