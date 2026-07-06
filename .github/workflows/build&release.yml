@@ -78,9 +78,10 @@ jobs:
           # failure (0 jobs, run_attempt=1 completed instantly). Doing the
           # check inline keeps the raw message inside a bash variable and
           # only exports the single-line `draft` boolean to downstream steps.
-          # Prior implementation inlined the message via ${{ }} interpolation,
-          # which let commit-body tokens (e.g. "deadcode") execute as bash
-          # and killed v2.6.0-testnet with exit 127. See PR history.
+          # Prior implementation inlined the message via GitHub Actions
+          # expression interpolation, which let commit-body tokens (e.g.
+          # "deadcode") execute as bash and killed v2.6.0-testnet with
+          # exit 127. See PR history (#303 / #307).
           if printf '%s' "$TAG_MESSAGE" | grep -qi '\[no-deploy\]'; then
             echo "draft=true" >> "$GITHUB_OUTPUT"
             echo "⚠️  [no-deploy] detected — release will be created as DRAFT"
