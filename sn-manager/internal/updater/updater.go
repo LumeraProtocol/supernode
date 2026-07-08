@@ -222,6 +222,59 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
+	// EVM preflight (post-fetch, pre-install). This has two branches:
+	//
+	//   (1) rollback: the currently-installed supernode is EVM-required and
+	//       the config has no evm_key_name — the node is in a crash loop and
+	//       must be reverted to the pre-EVM release (see rollback.go).
+	//   (2) block: forward-update would install an EVM-required target on a
+	//       node that has no evm_key_name — refuse the install and drop a
+	//       sticky marker until the operator remediates.
+	//
+	// Both branches only fire when the chain has the evm module active.
+	// A chain-query failure fails OPEN (allow) so a transient outage cannot
+	// itself trigger a block or a rollback. See preflight.go.
+	//
+	// The forward-block branch is the ONLY auto-update forward path this
+	// preflight gates. Operator-explicit code paths in cmd/{start,init,use,get}.go
+	// intentionally bypass the preflight — the operator is asking for a
+	// specific version and has accepted the consequences.
+	pfCtx, pfCancel := context.WithTimeout(context.Background(), chainEVMProbeTimeout+2*time.Second)
+	decision, reason := u.preflightCheck(pfCtx, latest)
+	pfCancel()
+
+	if decision == preflightRollback {
+		from := u.config.Updates.CurrentVersion
+		if err := u.performRollback(from, reason); err != nil {
+			log.Printf("rollback failed: %v", err)
+		}
+		return
+	}
+
+	if decision == preflightBlock {
+		// Sticky: don't retry until the operator changes ~/.supernode/config.yml.
+		snCfgMTime, _ := utils.SupernodeConfigMTime()
+		if prevMTime, ok := readBlockLogMTime(u.homeDir); ok {
+			if snCfgMTime.Equal(prevMTime) {
+				log.Printf("update to %s blocked (config unchanged since previous block): %s", latest, reason)
+				return
+			}
+			// mtime advanced — operator has touched the config; clear the
+			// sticky marker and re-evaluate on this pass. The current
+			// decision was made against the CURRENT config state, so if
+			// we're still in block state now, re-record.
+		}
+		if err := writeBlockLog(u.homeDir, reason, latest, snCfgMTime); err != nil {
+			log.Printf("failed to write block log: %v", err)
+		}
+		log.Printf("update to %s blocked: %s", latest, reason)
+		return
+	}
+
+	// decision == preflightAllow: if a stale block-log exists from a
+	// previous cycle, clear it so `sn-manager status` reflects reality.
+	clearBlockLog(u.homeDir)
+
 	// Determine if sn-manager should update (same criteria: stable, same major)
 	managerNeedsUpdate := false
 	ver := strings.TrimSpace(u.managerVersion)
