@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/configlock"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,6 +17,12 @@ func SaveConfig(config *Config, filename string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory for config file: %w", err)
 	}
+
+	release, err := configlock.Acquire(filename)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release() }()
 
 	// Marshal config to YAML
 	data, err := yaml.Marshal(config)

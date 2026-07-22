@@ -62,6 +62,18 @@ func readBlockLogMTime(homeDir string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// shouldPreserveBlockOnUnknown returns true whenever a previously confirmed
+// block exists. A config change triggers re-evaluation, but an inconclusive
+// result is not evidence of remediation; only a definitive allow clears it.
+func confirmedBlockWins(homeDir string, allowWasUnknown bool) bool {
+	return allowWasUnknown && shouldPreserveBlockOnUnknown(homeDir)
+}
+
+func shouldPreserveBlockOnUnknown(homeDir string) bool {
+	_, err := os.Stat(BlockLogPath(homeDir))
+	return err == nil || !os.IsNotExist(err)
+}
+
 func splitLines(s string) []string {
 	var out []string
 	start := 0

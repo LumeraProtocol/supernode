@@ -25,6 +25,26 @@ jobs:
       - name: Run unit tests
         run: go test $(go list ./... | grep -v '/tests') -v
 
+  sn-manager-tests:
+    name: sn-manager-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.1
+      - name: Setup Go and system deps
+        uses: ./.github/actions/setup-env
+        with:
+          bust_lumera_retag: 'true'
+      - name: Verify nested module
+        working-directory: sn-manager
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go vet ./...
+          go test ./...
+          go test -race ./internal/updater ./internal/utils ./internal/version
+
   integration-tests:
     name: integration-tests
     runs-on: ubuntu-latest

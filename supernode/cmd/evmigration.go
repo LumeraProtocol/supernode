@@ -79,6 +79,9 @@ func legacyKeyMigrationInstructions(keyName string) string {
 }
 
 func validateLegacyMigrationSetup(kr cKeyring.Keyring, keyName, evmKeyName string) (bool, error) {
+	if err := requireLocalSigningKey(kr, keyName); err != nil {
+		return false, err
+	}
 	legacy, err := isLegacyKey(kr, keyName)
 	if err != nil {
 		return false, err
@@ -100,6 +103,9 @@ func validateLegacyMigrationSetup(kr cKeyring.Keyring, keyName, evmKeyName strin
 	evmKeyName = strings.TrimSpace(evmKeyName)
 	if evmKeyName == "" {
 		return true, fmt.Errorf("%s", legacyKeyMigrationInstructions(keyName))
+	}
+	if err := requireLocalSigningKey(kr, evmKeyName); err != nil {
+		return true, fmt.Errorf("evm_key_name %q: %w\n\n%s", evmKeyName, err, legacyKeyMigrationInstructions(keyName))
 	}
 
 	isEVM, err := isEthSecp256k1Key(kr, evmKeyName)
@@ -189,6 +195,20 @@ func requireEVMChainWithQuerier(ctx context.Context, client moduleVersionQuerier
 	return fmt.Errorf("failed to query chain module versions after %d attempts: %w", requireEVMChainQueryRetries, lastErr)
 }
 
+// requireLocalSigningKey rejects public-only, multisig, and hardware-backed
+// records before startup accepts a key for the daemon's in-process signing
+// flow. Algorithm classification remains separate so its helpers stay pure.
+func requireLocalSigningKey(kr cKeyring.Keyring, keyName string) error {
+	rec, err := kr.Key(keyName)
+	if err != nil {
+		return fmt.Errorf("key %q not found in keyring: %w", keyName, err)
+	}
+	if rec.GetType() != cKeyring.TypeLocal {
+		return fmt.Errorf("key %q must be a local signing key, got %s", keyName, rec.GetType())
+	}
+	return nil
+}
+
 // isLegacyKey returns true if the key stored in the keyring under keyName uses
 // the pre-EVM secp256k1 algorithm (coin type 118) rather than the EVM-compatible
 // eth_secp256k1 (coin type 60).
@@ -208,9 +228,8 @@ func isLegacyKey(kr cKeyring.Keyring, keyName string) (bool, error) {
 // isEthSecp256k1Key returns true only if the key stored in the keyring under
 // keyName uses the EVM-compatible eth_secp256k1 algorithm. It explicitly
 // type-asserts the public key rather than treating "anything that is not legacy
-// secp256k1" as EVM, so multisig/offline/ledger or any other non-EVM key type is
-// rejected at this pre-flight gate instead of failing later during signing or
-// proof validation.
+// secp256k1" as EVM. Record capability (local/offline/ledger/multisig) is
+// enforced separately by requireLocalSigningKey at the migration preflight.
 func isEthSecp256k1Key(kr cKeyring.Keyring, keyName string) (bool, error) {
 	rec, err := kr.Key(keyName)
 	if err != nil {

@@ -1,6 +1,7 @@
 package version
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -8,8 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/configlock"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 )
+
+var ErrNoCurrentVersion = errors.New("no version currently set")
 
 // Manager handles version storage and symlink management
 type Manager struct {
@@ -50,8 +54,27 @@ func (m *Manager) IsVersionInstalled(version string) bool {
 	return err == nil
 }
 
+// AcquireInstallLock serializes release download, extraction, and installation
+// across sn-manager processes that share this home directory.
+func (m *Manager) AcquireInstallLock() (func() error, error) {
+	return configlock.Acquire(filepath.Join(m.homeDir, "install"))
+}
+
 // InstallVersion installs a binary to the version directory atomically
 func (m *Manager) InstallVersion(version string, binaryPath string) error {
+	if err := os.MkdirAll(m.GetBinariesDir(), 0o755); err != nil {
+		return fmt.Errorf("failed to create binaries directory: %w", err)
+	}
+	release, err := configlock.Acquire(filepath.Join(m.GetBinariesDir(), "."+version))
+	if err != nil {
+		return fmt.Errorf("failed to lock version installation: %w", err)
+	}
+	defer func() {
+		if releaseErr := release(); releaseErr != nil {
+			log.Printf("Warning: failed to release version install lock: %v", releaseErr)
+		}
+	}()
+
 	// Create version directory
 	versionDir := m.GetVersionDir(version)
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
@@ -99,8 +122,50 @@ func (m *Manager) InstallVersion(version string, binaryPath string) error {
 	return nil
 }
 
-// SetCurrentVersion updates the current symlink to point to a version atomically
+// SetCurrentVersion updates the current symlink to point to a version atomically.
+// It is operator-explicit and therefore permits selecting any installed version.
 func (m *Manager) SetCurrentVersion(version string) error {
+	release, err := configlock.Acquire(m.GetCurrentLink())
+	if err != nil {
+		return err
+	}
+	if err := m.setCurrentVersionUnlocked(version); err != nil {
+		_ = release()
+		return err
+	}
+	return release()
+}
+
+// SetCurrentVersionIfNewer atomically compares the active symlink and advances
+// it only when version has higher semantic precedence. Automatic update paths
+// use this method so a concurrent explicit `use` cannot turn into a downgrade.
+func (m *Manager) SetCurrentVersionIfNewer(version string) (bool, error) {
+	release, err := configlock.Acquire(m.GetCurrentLink())
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = release() }()
+
+	current, err := m.GetCurrentVersion()
+	if err != nil {
+		if !errors.Is(err, ErrNoCurrentVersion) {
+			return false, err
+		}
+		if err := m.setCurrentVersionUnlocked(version); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if utils.CompareVersions(current, version) >= 0 {
+		return false, nil
+	}
+	if err := m.setCurrentVersionUnlocked(version); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (m *Manager) setCurrentVersionUnlocked(version string) error {
 	// Verify version exists
 	if !m.IsVersionInstalled(version) {
 		return fmt.Errorf("version %s is not installed", version)
@@ -138,7 +203,7 @@ func (m *Manager) GetCurrentVersion() (string, error) {
 	target, err := os.Readlink(currentLink)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no version currently set")
+			return "", ErrNoCurrentVersion
 		}
 		return "", fmt.Errorf("failed to read current version: %w", err)
 	}

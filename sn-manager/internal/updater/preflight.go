@@ -25,6 +25,9 @@ const (
 	// preflightBlock: the target version requires evm_key_name but the node
 	// is not prepared to migrate. Refuse to install; keep the current binary.
 	preflightBlock
+	// preflightUnknown: the chain/config probe was inconclusive. The updater
+	// may fail open only when no unchanged, previously confirmed block exists.
+	preflightUnknown
 )
 
 func (d preflightDecision) String() string {
@@ -33,6 +36,8 @@ func (d preflightDecision) String() string {
 		return "allow"
 	case preflightBlock:
 		return "block"
+	case preflightUnknown:
+		return "unknown"
 	}
 	return "unknown"
 }
@@ -82,8 +87,8 @@ const chainEVMProbeTimeout = 15 * time.Second
 //	(false, nil)  — chain answered and EVM module is absent
 //	(false, err)  — query failed (dial error, timeout, gRPC error)
 //
-// The caller MUST treat the error case as "unknown" and fail-open (allow) —
-// a transient chain outage must never block an update.
+// The caller treats the error case as "unknown". Unknown may fail open only
+// when no confirmed compatibility block exists; confirmed unsafe evidence wins.
 func queryEVMModuleActive(ctx context.Context, grpcAddr string) (bool, error) {
 	if strings.TrimSpace(grpcAddr) == "" {
 		return false, fmt.Errorf("empty grpc_addr")
@@ -151,25 +156,20 @@ func parseGRPCAddr(raw string) (host string, useTLS bool, err error) {
 	return host, useTLS, nil
 }
 
-// preflightCheck loads the current runtime state (chain evm status, supernode
-// evm_key_name, current installed version) and returns a decision for the
-// proposed target version. On chain-query failure it FAILS OPEN (returns
-// allow) — a transient chain outage must never block an update.
-func (u *AutoUpdater) preflightCheck(ctx context.Context, targetVersion string) (preflightDecision, string) {
-	grpcAddr, _ := utils.ReadSupernodeGRPCAddr()
-	hasEVM, err := queryEVMModuleActive(ctx, grpcAddr)
+// preflightCheck evaluates a coherent SuperNode config snapshot captured before
+// release-channel selection. On chain-query failure it returns unknown so the
+// caller can preserve a previously confirmed block; otherwise the existing
+// fail-open policy still applies when no prior block exists.
+func (u *AutoUpdater) preflightCheck(ctx context.Context, targetVersion, currentVersion string, snapshot utils.SupernodeUpdateSnapshot) (preflightDecision, string) {
+	hasEVM, err := queryEVMModuleActive(ctx, snapshot.GRPCAddr)
 	if err != nil {
-		log.Printf("preflight: chain evm probe failed (fail-open): %v", err)
-		return preflightAllow, "chain unreachable; fail-open"
+		log.Printf("preflight: chain evm probe failed (inconclusive): %v", err)
+		return preflightUnknown, "chain unreachable; compatibility unknown"
 	}
-	evmKey, _ := utils.ReadSupernodeEVMKeyName()
-
-	in := preflightInputs{
+	return decidePreflight(preflightInputs{
 		chainHasEVM:    hasEVM,
-		evmKeyName:     evmKey,
-		currentVersion: u.config.Updates.CurrentVersion,
+		evmKeyName:     snapshot.EVMKeyName,
+		currentVersion: currentVersion,
 		targetVersion:  targetVersion,
-	}
-	decision, reason := decidePreflight(in)
-	return decision, reason
+	})
 }

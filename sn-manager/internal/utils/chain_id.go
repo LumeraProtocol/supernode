@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,51 @@ type supernodeYAML struct {
 		ChainID  string `yaml:"chain_id"`
 		GRPCAddr string `yaml:"grpc_addr"`
 	} `yaml:"lumera"`
+}
+
+// SupernodeUpdateSnapshot is one coherent read of every SuperNode config field
+// used to select and preflight an automatic update. Its digest lets the updater
+// reject a decision if config changed while a release was downloaded.
+type SupernodeUpdateSnapshot struct {
+	ChainID    string
+	GRPCAddr   string
+	EVMKeyName string
+	digest     [sha256.Size]byte
+}
+
+// ReadSupernodeUpdateSnapshot reads and validates update inputs from one file
+// image. In particular, an unreadable or missing chain ID cannot silently
+// select the mainnet/stable release channel.
+func ReadSupernodeUpdateSnapshot() (SupernodeUpdateSnapshot, error) {
+	path := SupernodeConfigPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return SupernodeUpdateSnapshot{}, err
+	}
+	var cfg supernodeYAML
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return SupernodeUpdateSnapshot{}, fmt.Errorf("failed to parse supernode config %s: %w", path, err)
+	}
+	chainID := strings.TrimSpace(cfg.Lumera.ChainID)
+	if chainID == "" {
+		return SupernodeUpdateSnapshot{}, fmt.Errorf("chain_id not set in %s", path)
+	}
+	return SupernodeUpdateSnapshot{
+		ChainID:    chainID,
+		GRPCAddr:   strings.TrimSpace(cfg.Lumera.GRPCAddr),
+		EVMKeyName: strings.TrimSpace(cfg.Supernode.EVMKeyName),
+		digest:     sha256.Sum256(data),
+	}, nil
+}
+
+// IsCurrentSupernodeConfig reports whether the config bytes still match the
+// snapshot used for release-channel selection and compatibility preflight.
+func IsCurrentSupernodeConfig(snapshot SupernodeUpdateSnapshot) (bool, error) {
+	data, err := os.ReadFile(SupernodeConfigPath())
+	if err != nil {
+		return false, err
+	}
+	return sha256.Sum256(data) == snapshot.digest, nil
 }
 
 func readSupernodeYAML() (*supernodeYAML, string, error) {
