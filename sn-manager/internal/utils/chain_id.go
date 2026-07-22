@@ -24,7 +24,7 @@ func SupernodeConfigPath() string {
 }
 
 // supernodeYAML captures the fields sn-manager reads from ~/.supernode/config.yml.
-// Keep this struct in sync with new preflight/rollback readers below.
+// Keep this struct in sync with new preflight readers below.
 type supernodeYAML struct {
 	Supernode struct {
 		EVMKeyName string `yaml:"evm_key_name"`
@@ -63,8 +63,8 @@ func ReadSupernodeChainID() (string, error) {
 
 // ReadSupernodeEVMKeyName returns supernode.evm_key_name (trimmed). An empty
 // string is returned if the field is absent or empty. It is NOT an error for
-// the field to be missing — an unmigrated node is the exact condition the
-// preflight/rollback logic looks for.
+// the field to be missing — an unprepared pre-EVM node is the condition the
+// forward-update preflight looks for.
 func ReadSupernodeEVMKeyName() (string, error) {
 	cfg, _, err := readSupernodeYAML()
 	if err != nil {

@@ -23,12 +23,8 @@ const (
 	// preflightAllow: proceed with the normal update flow.
 	preflightAllow preflightDecision = iota
 	// preflightBlock: the target version requires evm_key_name but the node
-	// has not migrated. Refuse to install; keep the current binary in place.
+	// is not prepared to migrate. Refuse to install; keep the current binary.
 	preflightBlock
-	// preflightRollback: the currently-installed version is already
-	// EVM-required but the node has not migrated — this node is stuck and
-	// must be reverted to the last pre-EVM release.
-	preflightRollback
 )
 
 func (d preflightDecision) String() string {
@@ -37,8 +33,6 @@ func (d preflightDecision) String() string {
 		return "allow"
 	case preflightBlock:
 		return "block"
-	case preflightRollback:
-		return "rollback"
 	}
 	return "unknown"
 }
@@ -54,12 +48,8 @@ type preflightInputs struct {
 }
 
 // decidePreflight is a pure function: no I/O, no logging. Given the four
-// axes of the invariant table, it returns one of allow/block/rollback plus a
+// axes of the invariant table, it returns allow or block plus a
 // human-readable reason.
-//
-// Rollback fires BEFORE block: a stuck node (currently on an EVM-required
-// binary with no evm_key_name) is by definition also a would-block condition
-// for any forward target, but rollback is the correct remediation.
 func decidePreflight(in preflightInputs) (preflightDecision, string) {
 	if !in.chainHasEVM {
 		return preflightAllow, "chain has no evm module active"
@@ -68,8 +58,8 @@ func decidePreflight(in preflightInputs) (preflightDecision, string) {
 		return preflightAllow, "supernode config has evm_key_name set"
 	}
 	if utils.IsV260OrAbove(in.currentVersion) {
-		return preflightRollback, fmt.Sprintf(
-			"chain has evm module active, current supernode %s requires evm_key_name but config has none",
+		return preflightAllow, fmt.Sprintf(
+			"current supernode %s is evm-capable; startup owns migration validation",
 			in.currentVersion,
 		)
 	}
@@ -93,7 +83,7 @@ const chainEVMProbeTimeout = 15 * time.Second
 //	(false, err)  — query failed (dial error, timeout, gRPC error)
 //
 // The caller MUST treat the error case as "unknown" and fail-open (allow) —
-// a transient chain outage must never trigger a block or a rollback.
+// a transient chain outage must never block an update.
 func queryEVMModuleActive(ctx context.Context, grpcAddr string) (bool, error) {
 	if strings.TrimSpace(grpcAddr) == "" {
 		return false, fmt.Errorf("empty grpc_addr")
@@ -164,7 +154,7 @@ func parseGRPCAddr(raw string) (host string, useTLS bool, err error) {
 // preflightCheck loads the current runtime state (chain evm status, supernode
 // evm_key_name, current installed version) and returns a decision for the
 // proposed target version. On chain-query failure it FAILS OPEN (returns
-// allow) — a transient chain outage must never cause a block or rollback.
+// allow) — a transient chain outage must never block an update.
 func (u *AutoUpdater) preflightCheck(ctx context.Context, targetVersion string) (preflightDecision, string) {
 	grpcAddr, _ := utils.ReadSupernodeGRPCAddr()
 	hasEVM, err := queryEVMModuleActive(ctx, grpcAddr)

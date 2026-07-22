@@ -84,6 +84,16 @@ func validateLegacyMigrationSetup(kr cKeyring.Keyring, keyName, evmKeyName strin
 		return false, err
 	}
 	if !legacy {
+		isEVM, err := isEthSecp256k1Key(kr, keyName)
+		if err != nil {
+			return false, err
+		}
+		if !isEVM {
+			return false, fmt.Errorf(
+				"supernode.key_name %q is not an eth_secp256k1 key; only legacy secp256k1 keys awaiting migration or active eth_secp256k1 keys are supported",
+				keyName,
+			)
+		}
 		return false, nil
 	}
 

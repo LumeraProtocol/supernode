@@ -143,6 +143,18 @@ func TestValidateLegacyMigrationSetup_NoMigrationNeeded(t *testing.T) {
 	assert.False(t, legacy)
 }
 
+func TestValidateLegacyMigrationSetup_RejectsUnsupportedActiveKeyType(t *testing.T) {
+	kr := newTestKeyring(t)
+	priv := ed25519.GenPrivKey()
+	_, err := kr.SaveOfflineKey("unsupported", priv.PubKey())
+	require.NoError(t, err)
+
+	legacy, err := validateLegacyMigrationSetup(kr, "unsupported", "")
+	require.Error(t, err)
+	assert.False(t, legacy)
+	assert.Contains(t, err.Error(), "supernode.key_name \"unsupported\" is not an eth_secp256k1 key")
+}
+
 func TestValidateLegacyMigrationSetup_LegacyKeyWithoutEVMKeyName(t *testing.T) {
 	kr := newTestKeyring(t)
 	addLegacyKey(t, kr, "mykey")

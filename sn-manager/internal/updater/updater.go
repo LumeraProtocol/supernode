@@ -222,18 +222,15 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
-	// EVM preflight (post-fetch, pre-install). This has two branches:
+	// EVM preflight (post-fetch, pre-install). Forward-update would install an
+	// EVM-required target on a pre-EVM node that has no evm_key_name, so
+	// refuse the install and drop a sticky marker until the operator remediates.
+	// Already-EVM-capable versions proceed normally: the supernode startup path
+	// is the authority for active-key type and migration validation.
 	//
-	//   (1) rollback: the currently-installed supernode is EVM-required and
-	//       the config has no evm_key_name — the node is in a crash loop and
-	//       must be reverted to the pre-EVM release (see rollback.go).
-	//   (2) block: forward-update would install an EVM-required target on a
-	//       node that has no evm_key_name — refuse the install and drop a
-	//       sticky marker until the operator remediates.
-	//
-	// Both branches only fire when the chain has the evm module active.
+	// The branch only fires when the chain has the evm module active.
 	// A chain-query failure fails OPEN (allow) so a transient outage cannot
-	// itself trigger a block or a rollback. See preflight.go.
+	// itself block an update. See preflight.go.
 	//
 	// The forward-block branch is the ONLY auto-update forward path this
 	// preflight gates. Operator-explicit code paths in cmd/{start,init,use,get}.go
@@ -242,14 +239,6 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	pfCtx, pfCancel := context.WithTimeout(context.Background(), chainEVMProbeTimeout+2*time.Second)
 	decision, reason := u.preflightCheck(pfCtx, latest)
 	pfCancel()
-
-	if decision == preflightRollback {
-		from := u.config.Updates.CurrentVersion
-		if err := u.performRollback(from, reason); err != nil {
-			log.Printf("rollback failed: %v", err)
-		}
-		return
-	}
 
 	if decision == preflightBlock {
 		// Sticky: don't retry until the operator changes ~/.supernode/config.yml.
