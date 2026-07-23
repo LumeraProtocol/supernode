@@ -14,10 +14,11 @@ func TestDecidePreflight_Table(t *testing.T) {
 		{"no-evm chain forward", preflightInputs{false, "", "v2.5.0-testnet", "v2.6.0-testnet"}, preflightAllow},
 		{"no-evm chain already 2.6", preflightInputs{false, "", "v2.6.0-testnet", "v2.6.0-testnet"}, preflightAllow},
 		{"evm no-key forward to 2.6", preflightInputs{true, "", "v2.5.0-testnet", "v2.6.0-testnet"}, preflightBlock},
-		{"evm no-key stuck at 2.6", preflightInputs{true, "", "v2.6.0-testnet", "v2.6.0-testnet"}, preflightRollback},
-		{"evm no-key stuck target 2.6.1", preflightInputs{true, "", "v2.6.0-testnet", "v2.6.1-testnet"}, preflightRollback},
-		{"evm migrated forward to 2.6", preflightInputs{true, "evm-key", "v2.5.0-testnet", "v2.6.0-testnet"}, preflightAllow},
-		{"evm migrated at 2.6", preflightInputs{true, "evm-key", "v2.6.0-testnet", "v2.6.0-testnet"}, preflightAllow},
+		{"evm migrated config at 2.6 omits transitional key", preflightInputs{true, "", "v2.6.0-testnet", "v2.6.0-testnet"}, preflightAllow},
+		{"evm migrated config can update beyond 2.6", preflightInputs{true, "", "v2.6.0-testnet", "v2.6.1-testnet"}, preflightAllow},
+		{"evm-capable current with older target is not an update decision", preflightInputs{true, "", "v2.6.1-testnet", "v2.5.0-testnet"}, preflightAllow},
+		{"evm prepared forward to 2.6", preflightInputs{true, "evm-key", "v2.5.0-testnet", "v2.6.0-testnet"}, preflightAllow},
+		{"evm prepared at 2.6", preflightInputs{true, "evm-key", "v2.6.0-testnet", "v2.6.0-testnet"}, preflightAllow},
 		{"evm no-key below threshold 2.5.1", preflightInputs{true, "", "v2.5.0-testnet", "v2.5.1-testnet"}, preflightAllow},
 		{"evm no-key below threshold 2.5.0", preflightInputs{true, "", "v2.4.5-testnet", "v2.5.0-testnet"}, preflightAllow},
 	}
@@ -67,5 +68,14 @@ func TestQueryEVMModuleActive_FailOpenOnEmpty(t *testing.T) {
 	_, err := queryEVMModuleActive(ctx, "")
 	if err == nil {
 		t.Fatalf("expected error for empty grpc_addr")
+	}
+}
+
+func TestPreflightUnknownIsDistinctFromAllow(t *testing.T) {
+	if preflightUnknown == preflightAllow {
+		t.Fatal("inconclusive chain probes must not be represented as allow")
+	}
+	if got := preflightUnknown.String(); got != "unknown" {
+		t.Fatalf("preflightUnknown.String() = %q, want unknown", got)
 	}
 }

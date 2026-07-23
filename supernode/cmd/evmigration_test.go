@@ -143,6 +143,68 @@ func TestValidateLegacyMigrationSetup_NoMigrationNeeded(t *testing.T) {
 	assert.False(t, legacy)
 }
 
+func TestValidateLegacyMigrationSetup_RejectsUnsupportedActiveKeyType(t *testing.T) {
+	kr := newTestKeyring(t)
+	priv := ed25519.GenPrivKey()
+	_, err := kr.SaveOfflineKey("unsupported", priv.PubKey())
+	require.NoError(t, err)
+
+	legacy, err := validateLegacyMigrationSetup(kr, "unsupported", "")
+	require.Error(t, err)
+	assert.False(t, legacy)
+	assert.Contains(t, err.Error(), "must be a local signing key")
+}
+
+func TestValidateLegacyMigrationSetup_RejectsOfflineActiveEVMKey(t *testing.T) {
+	kr := newTestKeyring(t)
+	addEVMKey(t, kr, "source")
+	rec, err := kr.Key("source")
+	require.NoError(t, err)
+	pubKey, err := rec.GetPubKey()
+	require.NoError(t, err)
+	_, err = kr.SaveOfflineKey("offline-evm", pubKey)
+	require.NoError(t, err)
+
+	legacy, err := validateLegacyMigrationSetup(kr, "offline-evm", "")
+	require.Error(t, err)
+	assert.False(t, legacy)
+	assert.Contains(t, err.Error(), "must be a local signing key")
+}
+
+func TestValidateLegacyMigrationSetup_RejectsOfflineLegacySource(t *testing.T) {
+	kr := newTestKeyring(t)
+	addLegacyKey(t, kr, "source")
+	rec, err := kr.Key("source")
+	require.NoError(t, err)
+	pubKey, err := rec.GetPubKey()
+	require.NoError(t, err)
+	_, err = kr.SaveOfflineKey("offline-legacy", pubKey)
+	require.NoError(t, err)
+	addEVMKey(t, kr, "evm")
+
+	legacy, err := validateLegacyMigrationSetup(kr, "offline-legacy", "evm")
+	require.Error(t, err)
+	assert.False(t, legacy)
+	assert.Contains(t, err.Error(), "must be a local signing key")
+}
+
+func TestValidateLegacyMigrationSetup_RejectsOfflineEVMTarget(t *testing.T) {
+	kr := newTestKeyring(t)
+	addLegacyKey(t, kr, "legacy")
+	addEVMKey(t, kr, "source")
+	rec, err := kr.Key("source")
+	require.NoError(t, err)
+	pubKey, err := rec.GetPubKey()
+	require.NoError(t, err)
+	_, err = kr.SaveOfflineKey("offline-evm", pubKey)
+	require.NoError(t, err)
+
+	legacy, err := validateLegacyMigrationSetup(kr, "legacy", "offline-evm")
+	require.Error(t, err)
+	assert.True(t, legacy)
+	assert.Contains(t, err.Error(), "must be a local signing key")
+}
+
 func TestValidateLegacyMigrationSetup_LegacyKeyWithoutEVMKeyName(t *testing.T) {
 	kr := newTestKeyring(t)
 	addLegacyKey(t, kr, "mykey")

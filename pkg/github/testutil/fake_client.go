@@ -18,6 +18,7 @@ type FakeClient struct {
 
 	CallsLatestStable int
 	CallsListReleases int
+	CallsTarballURL   int
 }
 
 func (f *FakeClient) GetLatestRelease() (*github.Release, error) {
@@ -48,5 +49,6 @@ func (f *FakeClient) GetRelease(tag string) (*github.Release, error) {
 }
 
 func (f *FakeClient) GetReleaseTarballURL(version string) (string, error) {
+	f.CallsTarballURL++
 	return "", errors.New("not implemented")
 }

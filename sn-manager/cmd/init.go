@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/version"
+	snconfig "github.com/LumeraProtocol/supernode/v2/supernode/config"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +36,42 @@ type initFlags struct {
 	force          bool
 	autoUpgrade    bool
 	nonInteractive bool
+	chainID        string
 	supernodeArgs  []string
+}
+
+func chainIDFromInitArgs(args []string) string {
+	var chainID string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--chain-id" && i+1 < len(args) {
+			chainID = strings.TrimSpace(args[i+1])
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "--chain-id=") {
+			chainID = strings.TrimSpace(strings.TrimPrefix(args[i], "--chain-id="))
+		}
+	}
+	return chainID
+}
+
+func resolveInitChainID(flags *initFlags) error {
+	explicitChainID := flags.chainID
+	snapshot, err := utils.ReadSupernodeUpdateSnapshot()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("cannot determine release channel from existing SuperNode config: %w", err)
+	}
+	if explicitChainID != "" && explicitChainID != snapshot.ChainID {
+		return fmt.Errorf("--chain-id %q conflicts with existing SuperNode config chain_id %q", explicitChainID, snapshot.ChainID)
+	}
+	flags.chainID = snapshot.ChainID
+	if explicitChainID == "" {
+		flags.supernodeArgs = append(flags.supernodeArgs, "--chain-id", flags.chainID)
+	}
+	return nil
 }
 
 func parseInitFlags(args []string) *initFlags {
@@ -66,11 +103,16 @@ func parseInitFlags(args []string) *initFlags {
 		}
 	}
 
+	flags.chainID = chainIDFromInitArgs(flags.supernodeArgs)
 	return flags
 }
 
 func promptForManagerConfig(flags *initFlags) error {
 	if flags.nonInteractive {
+		if flags.chainID == "" {
+			flags.chainID = snconfig.DefaultChainID
+			flags.supernodeArgs = append(flags.supernodeArgs, "--chain-id", flags.chainID)
+		}
 		return nil
 	}
 
@@ -90,6 +132,18 @@ func promptForManagerConfig(flags *initFlags) error {
 	}
 	flags.autoUpgrade = (autoUpgradeChoice == autoUpgradeOptions[0])
 
+	if flags.chainID == "" {
+		chainID := snconfig.DefaultChainID
+		if err := survey.AskOne(&survey.Input{
+			Message: "Lumera chain ID:",
+			Default: snconfig.DefaultChainID,
+		}, &chainID, survey.WithValidator(survey.Required)); err != nil {
+			return err
+		}
+		flags.chainID = strings.TrimSpace(chainID)
+		flags.supernodeArgs = append(flags.supernodeArgs, "--chain-id", flags.chainID)
+	}
+
 	// No interval prompt; check interval is fixed at 10 minutes.
 
 	return nil
@@ -104,8 +158,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse flags
+	// Parse flags and reconcile the requested channel with any existing
+	// SuperNode configuration before selecting a release.
 	flags := parseInitFlags(args)
+	if err := resolveInitChainID(flags); err != nil {
+		return err
+	}
 
 	// Step 1: Initialize sn-manager
 	fmt.Println("Step 1: Initializing sn-manager...")
@@ -166,14 +224,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 	versionMgr := version.NewManager(managerHome)
 	client := github.NewClient(config.GitHubRepo)
 
-	// Get latest stable release
-	release, err := client.GetLatestStableRelease()
+	// Select the release channel from the same chain ID forwarded to
+	// `supernode init`; testnet initialization must never bootstrap stable.
+	release, err := utils.LatestReleaseForChainID(client, flags.chainID)
 	if err != nil {
-		return fmt.Errorf("failed to get latest stable release: %w", err)
+		return fmt.Errorf("failed to get latest release for chain %q: %w", flags.chainID, err)
 	}
 
 	targetVersion := release.TagName
 	fmt.Printf("Latest version: %s\n", targetVersion)
+
+	releaseInstallLock, err := versionMgr.AcquireInstallLock()
+	if err != nil {
+		return fmt.Errorf("failed to lock release installation: %w", err)
+	}
+	installLockReleased := false
+	defer func() {
+		if !installLockReleased {
+			if releaseErr := releaseInstallLock(); releaseErr != nil {
+				log.Printf("Warning: failed to release installation lock: %v", releaseErr)
+			}
+		}
+	}()
 
 	// Check if already installed
 	if versionMgr.IsVersionInstalled(targetVersion) {
@@ -224,6 +296,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	cfg.Updates.CurrentVersion = targetVersion
 	if err := config.Save(cfg, configPath); err != nil {
 		return fmt.Errorf("failed to update config: %w", err)
+	}
+	installLockReleased = true
+	if err := releaseInstallLock(); err != nil {
+		return fmt.Errorf("failed to release installation lock: %w", err)
 	}
 
 	fmt.Printf("✓ SuperNode %s ready\n", targetVersion)

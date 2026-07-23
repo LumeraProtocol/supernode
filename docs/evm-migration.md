@@ -80,6 +80,46 @@ The migration is:
 | `migration tx was not confirmed`                    | Tx was not included in a block within 60s                                             | Restart to retry; the check is idempotent                                                 |
 | `failed to save updated config`                     | Config file write error after successful migration                                    | Manually update config as instructed in the error message                                 |
 
+### Recovery from the v2.6.1 automatic rollback
+
+A v2.6.1 sn-manager can mistake the intentionally removed `evm_key_name` field
+for an incomplete migration and select v2.5.0. The old manager evaluates that
+preflight before self-update, so a normal combined release cannot reliably
+self-deliver the fix. Do not run v2.5.x against a migrated EVM keyring.
+
+Recover one node at a time:
+
+1. Stop the sn-manager service so the old process cannot change the selected
+   version while recovery is in progress.
+2. Replace the **sn-manager binary itself** out of band with the corrected
+   release (package/configuration management or a controlled manual binary
+   swap). Replacing only the managed SuperNode binary is insufficient.
+3. Confirm the post-migration SuperNode config is canonical: `key_name` names a
+   local `eth_secp256k1` signing key, `identity` is that key's Lumera address,
+   and `evm_key_name` is absent. Do not recreate the transitional field after a
+   completed migration.
+4. Confirm that the network-approved recovery release is also the **current
+   latest release in that network's channel** (`-testnet` for testnet, stable
+   for mainnet). Startup performs mandatory monotonic synchronization even when
+   periodic auto-upgrade is disabled; it may advance to a newer channel release
+   but will never downgrade. Then explicitly install and select the approved
+   EVM-capable release:
+
+   ```bash
+   sn-manager get <v2.6-or-newer-network-tag>
+   sn-manager use <v2.6-or-newer-network-tag>
+   ```
+
+   These are operator-explicit commands; automatic update paths never
+   downgrade and continue to block unprepared legacy nodes.
+5. Start sn-manager and verify both axes independently:
+   - process: selected version, SuperNode startup/status endpoint, EVM-module
+     detection, and epoch-report submission;
+   - chain: expected SuperNode state after the normal epoch recovery predicate.
+
+A historical `rolled-back.log` marker is diagnostic only. It is not proof that
+key migration succeeded and is never used to bypass runtime key validation.
+
 ### Multisig legacy accounts
 
 A supernode daemon holds a single signing key and cannot run the K-of-N signing

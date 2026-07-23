@@ -84,6 +84,42 @@ func TestReadSupernodeGRPCAddr(t *testing.T) {
 	}
 }
 
+func TestReadSupernodeUpdateSnapshotAndDetectReplacement(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	cfgDir := filepath.Join(tmp, ".supernode")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yml")
+	original := []byte("supernode:\n  evm_key_name: evm-key\nlumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: grpc.testnet.lumera.io:443\n")
+	if err := os.WriteFile(cfgPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := ReadSupernodeUpdateSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ChainID != "lumera-testnet-2" || snapshot.GRPCAddr != "grpc.testnet.lumera.io:443" || snapshot.EVMKeyName != "evm-key" {
+		t.Fatalf("unexpected snapshot: %+v", snapshot)
+	}
+	if current, err := IsCurrentSupernodeConfig(snapshot); err != nil || !current {
+		t.Fatalf("expected current snapshot, current=%v err=%v", current, err)
+	}
+
+	replacement := filepath.Join(cfgDir, "config.yml.new")
+	if err := os.WriteFile(replacement, []byte("lumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: other:443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := IsCurrentSupernodeConfig(snapshot); err != nil || current {
+		t.Fatalf("expected replacement to invalidate snapshot, current=%v err=%v", current, err)
+	}
+}
+
 func TestReadSupernodeChainID_MissingOrEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)

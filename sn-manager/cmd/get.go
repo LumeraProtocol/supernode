@@ -31,9 +31,13 @@ func runGet(cmd *cobra.Command, args []string) error {
 
 	var targetVersion string
 	if len(args) == 0 {
-		release, err := client.GetLatestStableRelease()
+		snapshot, err := utils.ReadSupernodeUpdateSnapshot()
 		if err != nil {
-			return fmt.Errorf("failed to get latest release: %w", err)
+			return fmt.Errorf("failed to read SuperNode update configuration: %w", err)
+		}
+		release, err := utils.LatestReleaseForChainID(client, snapshot.ChainID)
+		if err != nil {
+			return fmt.Errorf("failed to get latest release for chain %q: %w", snapshot.ChainID, err)
 		}
 		targetVersion = release.TagName
 	} else {
@@ -41,6 +45,16 @@ func runGet(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Target version: %s\n", targetVersion)
+
+	releaseInstallLock, err := versionMgr.AcquireInstallLock()
+	if err != nil {
+		return fmt.Errorf("failed to lock release installation: %w", err)
+	}
+	defer func() {
+		if releaseErr := releaseInstallLock(); releaseErr != nil {
+			log.Printf("Warning: failed to release installation lock: %v", releaseErr)
+		}
+	}()
 
 	if versionMgr.IsVersionInstalled(targetVersion) {
 		fmt.Printf("Already installed\n")

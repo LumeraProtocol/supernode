@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/LumeraProtocol/supernode/v2/pkg/configlock"
 	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/manager"
@@ -216,11 +217,15 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 		// We have versions, make sure current is set
 		current, err := versionMgr.GetCurrentVersion()
 		if err != nil || current == "" {
-			// Set the first available version as current
-			if err := versionMgr.SetCurrentVersion(versions[0]); err != nil {
+			// Automatic startup may initialize a missing symlink, but must not
+			// overwrite a concurrently selected newer version.
+			if _, err := versionMgr.SetCurrentVersionIfNewer(versions[0]); err != nil {
 				return fmt.Errorf("failed to set current version: %w", err)
 			}
-			current = versions[0]
+			current, err = versionMgr.GetCurrentVersion()
+			if err != nil {
+				return fmt.Errorf("failed to read current version after activation: %w", err)
+			}
 		}
 
 		// Update config if current version is not set or different
@@ -234,13 +239,37 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 		return nil
 	}
 
-	// No versions installed, download latest tarball and extract supernode
+	// No versions installed. Serialize release staging before taking the config
+	// lock; all update paths use install -> config -> version -> symlink order.
+	releaseInstallLock, err := versionMgr.AcquireInstallLock()
+	if err != nil {
+		return fmt.Errorf("failed to lock release installation: %w", err)
+	}
+	defer func() {
+		if releaseErr := releaseInstallLock(); releaseErr != nil {
+			log.Printf("Warning: failed to release installation lock: %v", releaseErr)
+		}
+	}()
+
+	// Hold the shared SuperNode config lock while selecting the network channel
+	// and installing the first binary.
+	releaseConfigLock, err := configlock.Acquire(utils.SupernodeConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed to lock SuperNode config: %w", err)
+	}
+	defer func() { _ = releaseConfigLock() }()
+
+	snapshot, err := utils.ReadSupernodeUpdateSnapshot()
+	if err != nil {
+		return fmt.Errorf("failed to read SuperNode update configuration: %w", err)
+	}
+
 	fmt.Println("No SuperNode binary found. Downloading latest version...")
 
 	client := github.NewClient(config.GitHubRepo)
-	release, err := client.GetLatestStableRelease()
+	release, err := utils.LatestReleaseForChainID(client, snapshot.ChainID)
 	if err != nil {
-		return fmt.Errorf("failed to get latest stable release: %w", err)
+		return fmt.Errorf("failed to get latest release for chain %q: %w", snapshot.ChainID, err)
 	}
 
 	targetVersion := release.TagName
@@ -284,13 +313,18 @@ func ensureBinaryExists(home string, cfg *config.Config) error {
 		log.Printf("Warning: failed to remove temp file: %v", err)
 	}
 
-	// Set as current version
-	if err := versionMgr.SetCurrentVersion(targetVersion); err != nil {
+	// Automatic startup initializes a missing current symlink but never
+	// overwrites an equal or newer version selected concurrently.
+	if _, err := versionMgr.SetCurrentVersionIfNewer(targetVersion); err != nil {
 		return fmt.Errorf("failed to set current version: %w", err)
 	}
+	currentVersion, err := versionMgr.GetCurrentVersion()
+	if err != nil {
+		return fmt.Errorf("failed to read current version after activation: %w", err)
+	}
 
-	// Update config
-	cfg.Updates.CurrentVersion = targetVersion
+	// Update config from the authoritative active symlink.
+	cfg.Updates.CurrentVersion = currentVersion
 	configPath := filepath.Join(home, "config.yml")
 	if err := config.Save(cfg, configPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
