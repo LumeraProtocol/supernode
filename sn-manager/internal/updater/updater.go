@@ -31,7 +31,30 @@ const (
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
 	forceUpdateAfter = 10 * time.Minute
+	// evmUpgradeMinVersion is the first SuperNode line that requires migration
+	// preparation before a pre-EVM node may update automatically.
+	evmUpgradeMinVersion = "v2.6.0"
 )
+
+func versionCore(version string) string {
+	version = strings.TrimSpace(version)
+	if i := strings.IndexByte(version, '-'); i >= 0 {
+		return version[:i]
+	}
+	return version
+}
+
+func crossesEVMUpgradeBoundary(currentVersion, targetVersion string) bool {
+	return utils.CompareVersions(versionCore(currentVersion), evmUpgradeMinVersion) < 0 &&
+		utils.CompareVersions(versionCore(targetVersion), evmUpgradeMinVersion) >= 0
+}
+
+func shouldBlockEVMUpgrade(currentVersion, targetVersion, evmKeyName string, configErr error) bool {
+	if !crossesEVMUpgradeBoundary(currentVersion, targetVersion) {
+		return false
+	}
+	return configErr != nil || strings.TrimSpace(evmKeyName) == ""
+}
 
 type AutoUpdater struct {
 	config         *config.Config
@@ -246,6 +269,21 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 
 	if !managerNeedsUpdate && !supernodeNeedsUpdate {
 		return
+	}
+
+	// A pre-v2.6 SuperNode must not cross the EVM boundary automatically until
+	// its transitional evm_key_name is configured. Already-v2.6 nodes are not
+	// gated because successful migration intentionally clears this field.
+	if crossesEVMUpgradeBoundary(currentSN, latest) {
+		evmKeyName, configErr := utils.ReadSupernodeEVMKeyName()
+		if shouldBlockEVMUpgrade(currentSN, latest, evmKeyName, configErr) {
+			if configErr != nil {
+				log.Printf("Automatic update to %s blocked: cannot read SuperNode evm_key_name: %v", latest, configErr)
+			} else {
+				log.Printf("Automatic update to %s blocked: supernode.evm_key_name is missing or empty", latest)
+			}
+			return
+		}
 	}
 
 	// Gate all updates (manager + SuperNode) on gateway idleness
