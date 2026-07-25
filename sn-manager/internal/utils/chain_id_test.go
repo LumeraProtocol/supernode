@@ -65,6 +65,41 @@ func TestReadSupernodeChainID_MissingOrEmpty(t *testing.T) {
 	}
 }
 
+func TestReadSupernodeEVMKeyName(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "missing", yaml: "supernode:\n  key_name: legacy\n"},
+		{name: "empty", yaml: "supernode:\n  evm_key_name: \"\"\n"},
+		{name: "whitespace", yaml: "supernode:\n  evm_key_name: \"  \"\n"},
+		{name: "present", yaml: "supernode:\n  evm_key_name: evm-key\n", want: "evm-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			cfgDir := filepath.Join(home, ".supernode")
+			if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte(tt.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := ReadSupernodeEVMKeyName()
+			if err != nil {
+				t.Fatalf("ReadSupernodeEVMKeyName: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ReadSupernodeEVMKeyName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLatestTestnetRelease_IgnoresDrafts(t *testing.T) {
 	client := &githubtestutil.FakeClient{
 		Releases: []*github.Release{

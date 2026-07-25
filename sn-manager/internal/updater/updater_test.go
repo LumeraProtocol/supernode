@@ -1,6 +1,35 @@
 package updater
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+func TestShouldBlockEVMUpgrade(t *testing.T) {
+	tests := []struct {
+		name       string
+		current    string
+		target     string
+		evmKeyName string
+		configErr  error
+		want       bool
+	}{
+		{name: "missing key blocks 2.6 boundary", current: "v2.5.2", target: "v2.6.0", want: true},
+		{name: "empty testnet key blocks 2.6 boundary", current: "v2.5.2-testnet", target: "v2.6.0-testnet", evmKeyName: "  ", want: true},
+		{name: "config read failure blocks 2.6 boundary", current: "v2.5.2", target: "v2.6.0", configErr: errors.New("read failed"), want: true},
+		{name: "configured key allows 2.6 boundary", current: "v2.5.2", target: "v2.6.0", evmKeyName: "evm-key", want: false},
+		{name: "missing key does not block 2.5 update", current: "v2.5.1", target: "v2.5.2", want: false},
+		{name: "post-migration missing key does not roll back or block", current: "v2.6.0", target: "v2.6.1", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldBlockEVMUpgrade(tt.current, tt.target, tt.evmKeyName, tt.configErr); got != tt.want {
+				t.Fatalf("shouldBlockEVMUpgrade(%q, %q, %q, %v) = %v, want %v", tt.current, tt.target, tt.evmKeyName, tt.configErr, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestShouldUpdate_TestnetTagAdvances(t *testing.T) {
 	u := &AutoUpdater{}
