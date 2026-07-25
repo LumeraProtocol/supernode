@@ -46,6 +46,26 @@ func ReadSupernodeChainID() (string, error) {
 	return chainID, nil
 }
 
+// ReadSupernodeEVMKeyName returns the transitional migration key configured in
+// ~/.supernode/config.yml. Missing and blank values return an empty string.
+func ReadSupernodeEVMKeyName() (string, error) {
+	path := SupernodeConfigPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	var cfg struct {
+		Supernode struct {
+			EVMKeyName string `yaml:"evm_key_name"`
+		} `yaml:"supernode"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return "", fmt.Errorf("failed to parse supernode config %s: %w", path, err)
+	}
+	return strings.TrimSpace(cfg.Supernode.EVMKeyName), nil
+}
+
 func IsTestnetChainID(chainID string) bool {
 	return strings.Contains(strings.ToLower(chainID), "testnet")
 }
