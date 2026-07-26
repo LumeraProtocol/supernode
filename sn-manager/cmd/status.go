@@ -17,8 +17,9 @@ var statusCmd = &cobra.Command{
 	RunE:  runStatus,
 }
 
-// printPreflightStatus prints current update-blocked state and any historical
-// rolled-back marker left by v2.6.1.
+// printPreflightStatus prints update-blocked / rolled-back state, if any.
+// Both markers live in the manager home directory and are written by the
+// auto-updater's EVM preflight/rollback code path (see internal/updater/).
 func printPreflightStatus(home string) {
 	if data, err := os.ReadFile(updater.BlockLogPath(home)); err == nil && len(data) > 0 {
 		fmt.Println("  Update Blocked: true")
@@ -30,7 +31,7 @@ func printPreflightStatus(home string) {
 		}
 	}
 	if data, err := os.ReadFile(updater.RollbackLogPath(home)); err == nil && len(data) > 0 {
-		fmt.Println("  Historical Rollback Marker (v2.6.1): present")
+		fmt.Println("  Rolled Back: true")
 		for _, line := range splitStatusLines(string(data)) {
 			if line == "" {
 				continue

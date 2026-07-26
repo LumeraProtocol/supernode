@@ -23,11 +23,12 @@ const (
 	// preflightAllow: proceed with the normal update flow.
 	preflightAllow preflightDecision = iota
 	// preflightBlock: the target version requires evm_key_name but the node
-	// is not prepared to migrate. Refuse to install; keep the current binary.
+	// has not migrated. Refuse to install; keep the current binary in place.
 	preflightBlock
-	// preflightUnknown: the chain/config probe was inconclusive. The updater
-	// may fail open only when no unchanged, previously confirmed block exists.
-	preflightUnknown
+	// preflightRollback: the currently-installed version is already
+	// EVM-required but the node has not migrated — this node is stuck and
+	// must be reverted to the last pre-EVM release.
+	preflightRollback
 )
 
 func (d preflightDecision) String() string {
@@ -36,8 +37,8 @@ func (d preflightDecision) String() string {
 		return "allow"
 	case preflightBlock:
 		return "block"
-	case preflightUnknown:
-		return "unknown"
+	case preflightRollback:
+		return "rollback"
 	}
 	return "unknown"
 }
@@ -53,8 +54,12 @@ type preflightInputs struct {
 }
 
 // decidePreflight is a pure function: no I/O, no logging. Given the four
-// axes of the invariant table, it returns allow or block plus a
+// axes of the invariant table, it returns one of allow/block/rollback plus a
 // human-readable reason.
+//
+// Rollback fires BEFORE block: a stuck node (currently on an EVM-required
+// binary with no evm_key_name) is by definition also a would-block condition
+// for any forward target, but rollback is the correct remediation.
 func decidePreflight(in preflightInputs) (preflightDecision, string) {
 	if !in.chainHasEVM {
 		return preflightAllow, "chain has no evm module active"
@@ -63,8 +68,8 @@ func decidePreflight(in preflightInputs) (preflightDecision, string) {
 		return preflightAllow, "supernode config has evm_key_name set"
 	}
 	if utils.IsV260OrAbove(in.currentVersion) {
-		return preflightAllow, fmt.Sprintf(
-			"current supernode %s is evm-capable; startup owns migration validation",
+		return preflightRollback, fmt.Sprintf(
+			"chain has evm module active, current supernode %s requires evm_key_name but config has none",
 			in.currentVersion,
 		)
 	}
@@ -87,8 +92,8 @@ const chainEVMProbeTimeout = 15 * time.Second
 //	(false, nil)  — chain answered and EVM module is absent
 //	(false, err)  — query failed (dial error, timeout, gRPC error)
 //
-// The caller treats the error case as "unknown". Unknown may fail open only
-// when no confirmed compatibility block exists; confirmed unsafe evidence wins.
+// The caller MUST treat the error case as "unknown" and fail-open (allow) —
+// a transient chain outage must never trigger a block or a rollback.
 func queryEVMModuleActive(ctx context.Context, grpcAddr string) (bool, error) {
 	if strings.TrimSpace(grpcAddr) == "" {
 		return false, fmt.Errorf("empty grpc_addr")
@@ -156,20 +161,25 @@ func parseGRPCAddr(raw string) (host string, useTLS bool, err error) {
 	return host, useTLS, nil
 }
 
-// preflightCheck evaluates a coherent SuperNode config snapshot captured before
-// release-channel selection. On chain-query failure it returns unknown so the
-// caller can preserve a previously confirmed block; otherwise the existing
-// fail-open policy still applies when no prior block exists.
-func (u *AutoUpdater) preflightCheck(ctx context.Context, targetVersion, currentVersion string, snapshot utils.SupernodeUpdateSnapshot) (preflightDecision, string) {
-	hasEVM, err := queryEVMModuleActive(ctx, snapshot.GRPCAddr)
+// preflightCheck loads the current runtime state (chain evm status, supernode
+// evm_key_name, current installed version) and returns a decision for the
+// proposed target version. On chain-query failure it FAILS OPEN (returns
+// allow) — a transient chain outage must never cause a block or rollback.
+func (u *AutoUpdater) preflightCheck(ctx context.Context, targetVersion string) (preflightDecision, string) {
+	grpcAddr, _ := utils.ReadSupernodeGRPCAddr()
+	hasEVM, err := queryEVMModuleActive(ctx, grpcAddr)
 	if err != nil {
-		log.Printf("preflight: chain evm probe failed (inconclusive): %v", err)
-		return preflightUnknown, "chain unreachable; compatibility unknown"
+		log.Printf("preflight: chain evm probe failed (fail-open): %v", err)
+		return preflightAllow, "chain unreachable; fail-open"
 	}
-	return decidePreflight(preflightInputs{
+	evmKey, _ := utils.ReadSupernodeEVMKeyName()
+
+	in := preflightInputs{
 		chainHasEVM:    hasEVM,
-		evmKeyName:     snapshot.EVMKeyName,
-		currentVersion: currentVersion,
+		evmKeyName:     evmKey,
+		currentVersion: u.config.Updates.CurrentVersion,
 		targetVersion:  targetVersion,
-	})
+	}
+	decision, reason := decidePreflight(in)
+	return decision, reason
 }
