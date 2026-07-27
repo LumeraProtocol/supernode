@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -15,44 +14,6 @@ var statusCmd = &cobra.Command{
 	Short: "Show SuperNode status",
 	Long:  `Display the current status of the managed SuperNode process.`,
 	RunE:  runStatus,
-}
-
-// printPreflightStatus prints current update-blocked state and any historical
-// rolled-back marker left by v2.6.1.
-func printPreflightStatus(home string) {
-	if data, err := os.ReadFile(updater.BlockLogPath(home)); err == nil && len(data) > 0 {
-		fmt.Println("  Update Blocked: true")
-		for _, line := range splitStatusLines(string(data)) {
-			if line == "" {
-				continue
-			}
-			fmt.Printf("    %s\n", line)
-		}
-	}
-	if data, err := os.ReadFile(updater.RollbackLogPath(home)); err == nil && len(data) > 0 {
-		fmt.Println("  Historical Rollback Marker (v2.6.1): present")
-		for _, line := range splitStatusLines(string(data)) {
-			if line == "" {
-				continue
-			}
-			fmt.Printf("    %s\n", line)
-		}
-	}
-}
-
-func splitStatusLines(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
@@ -79,7 +40,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Current Version: %s\n", cfg.Updates.CurrentVersion)
 		fmt.Printf("  Manager Version: %s\n", appVersion)
 		fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
-		printPreflightStatus(home)
 		return nil
 	}
 
@@ -90,7 +50,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Current Version: %s\n", cfg.Updates.CurrentVersion)
 		fmt.Printf("  Manager Version: %s\n", appVersion)
 		fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
-		printPreflightStatus(home)
 		// Clean up stale PID file
 		if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
 			log.Printf("Warning: failed to remove stale PID file: %v", err)
@@ -103,7 +62,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Current Version: %s\n", cfg.Updates.CurrentVersion)
 	fmt.Printf("  Manager Version: %s\n", appVersion)
 	fmt.Printf("  Auto-upgrade: %v\n", cfg.Updates.AutoUpgrade)
-	printPreflightStatus(home)
 
 	return nil
 }

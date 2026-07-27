@@ -12,7 +12,6 @@ import (
 	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
-	"github.com/LumeraProtocol/supernode/v2/pkg/configlock"
 	"github.com/LumeraProtocol/supernode/v2/pkg/github"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/config"
 	"github.com/LumeraProtocol/supernode/v2/sn-manager/internal/utils"
@@ -32,7 +31,30 @@ const (
 	// forceUpdateAfter is the age threshold after a release is published
 	// beyond which updates are applied regardless of normal gates (idle, policy)
 	forceUpdateAfter = 10 * time.Minute
+	// evmUpgradeMinVersion is the first SuperNode line that requires migration
+	// preparation before a pre-EVM node may update automatically.
+	evmUpgradeMinVersion = "v2.6.0"
 )
+
+func versionCore(version string) string {
+	version = strings.TrimSpace(version)
+	if i := strings.IndexByte(version, '-'); i >= 0 {
+		return version[:i]
+	}
+	return version
+}
+
+func crossesEVMUpgradeBoundary(currentVersion, targetVersion string) bool {
+	return utils.CompareVersions(versionCore(currentVersion), evmUpgradeMinVersion) < 0 &&
+		utils.CompareVersions(versionCore(targetVersion), evmUpgradeMinVersion) >= 0
+}
+
+func shouldBlockEVMUpgrade(currentVersion, targetVersion, evmKeyName string, configErr error) bool {
+	if !crossesEVMUpgradeBoundary(currentVersion, targetVersion) {
+		return false
+	}
+	return configErr != nil || strings.TrimSpace(evmKeyName) == ""
+}
 
 type AutoUpdater struct {
 	config         *config.Config
@@ -197,27 +219,15 @@ func (u *AutoUpdater) ForceSyncToLatest(_ context.Context) {
 	u.checkAndUpdateCombined(true)
 }
 
-// shouldForceUpdate keeps forced/startup synchronization monotonic. Force may
-// bypass idleness and same-major policy, but it is never authorization to
-// replace a binary with an equal or older release. Explicit `get`/`use` remain
-// the operator-controlled version-selection path.
-func shouldForceUpdate(current, target string) bool {
-	return utils.CompareVersions(current, target) < 0
-}
-
 // checkAndUpdateCombined performs a single release check and, if needed,
 // downloads the release tarball once to update sn-manager and SuperNode.
 // If force is true, bypass gateway idleness and version policy checks.
 func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 
-	snapshot, err := utils.ReadSupernodeUpdateSnapshot()
-	if err != nil {
-		log.Printf("Cannot read SuperNode update configuration; automatic update aborted: %v", err)
-		return
-	}
+	chainID, _ := utils.ReadSupernodeChainID()
 
 	// Fetch latest release once (testnet prefers "-testnet" tags, otherwise stable)
-	release, err := utils.LatestReleaseForChainID(u.githubClient, snapshot.ChainID)
+	release, err := utils.LatestReleaseForChainID(u.githubClient, chainID)
 	if err != nil {
 		log.Printf("Failed to check releases: %v", err)
 		return
@@ -235,74 +245,12 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
-	// EVM preflight (post-fetch, pre-install). Forward-update would install an
-	// EVM-required target on a pre-EVM node that has no evm_key_name, so
-	// refuse the install and drop a sticky marker until the operator remediates.
-	// Already-EVM-capable versions proceed normally: the supernode startup path
-	// is the authority for active-key type and migration validation.
-	//
-	// A chain-query failure is inconclusive. It fails open only when there is no
-	// previously confirmed compatibility block; known unsafe evidence wins over
-	// unknown evidence until a definitive allow clears the marker.
-	//
-	// Automatic updates (including cmd/start.go's forced startup sync) pass this
-	// gate. Only operator-explicit init/use/get version-selection paths bypass it.
-	// Use the active symlink, not the cached manager config, for compatibility
-	// and version-order decisions.
-	currentSN, err := u.versionMgr.GetCurrentVersion()
-	if err != nil {
-		log.Printf("Cannot determine active SuperNode version; automatic update aborted: %v", err)
-		return
-	}
-
-	pfCtx, pfCancel := context.WithTimeout(context.Background(), chainEVMProbeTimeout+2*time.Second)
-	decision, reason := u.preflightCheck(pfCtx, latest, currentSN, snapshot)
-	pfCancel()
-
-	allowWasUnknown := false
-	if decision == preflightUnknown {
-		// Unknown evidence can never erase a previously confirmed block. Config
-		// changes trigger a new probe, but only a definitive allow may clear it.
-		if shouldPreserveBlockOnUnknown(u.homeDir) {
-			log.Printf("update to %s remains blocked (compatibility probe inconclusive): %s", latest, reason)
-			return
-		}
-		log.Printf("preflight compatibility unknown for %s; no prior block, applying fail-open policy", latest)
-		allowWasUnknown = true
-		decision = preflightAllow
-	}
-
-	if decision == preflightBlock {
-		// Persist confirmed unsafe evidence while coordinated with config writers.
-		// Even if the config changed after the probe, retain a sticky block until
-		// a later definitive allow is validated against a current snapshot.
-		releaseConfigLock, lockErr := configlock.Acquire(utils.SupernodeConfigPath())
-		if lockErr != nil {
-			log.Printf("Cannot lock SuperNode config to persist update block: %v", lockErr)
-			return
-		}
-		snCfgMTime, _ := utils.SupernodeConfigMTime()
-		if prevMTime, ok := readBlockLogMTime(u.homeDir); ok && snCfgMTime.Equal(prevMTime) {
-			_ = releaseConfigLock()
-			log.Printf("update to %s blocked (config unchanged since previous block): %s", latest, reason)
-			return
-		}
-		if err := writeBlockLog(u.homeDir, reason, latest, snCfgMTime); err != nil {
-			log.Printf("failed to write block log: %v", err)
-		}
-		if err := releaseConfigLock(); err != nil {
-			log.Printf("Failed to release SuperNode config lock: %v", err)
-		}
-		log.Printf("update to %s blocked: %s", latest, reason)
-		return
-	}
-
 	// Determine if sn-manager should update (same criteria: stable, same major)
 	managerNeedsUpdate := false
 	ver := strings.TrimSpace(u.managerVersion)
 	if ver != "" && ver != "dev" && !strings.EqualFold(ver, "unknown") {
 		if force {
-			managerNeedsUpdate = shouldForceUpdate(ver, latest)
+			managerNeedsUpdate = !strings.EqualFold(ver, latest)
 		} else {
 			if utils.SameMajor(ver, latest) && utils.CompareVersions(ver, latest) < 0 {
 				managerNeedsUpdate = true
@@ -310,44 +258,32 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 		}
 	}
 
-	// Determine whether the active SuperNode symlink should update. The manager
-	// config is only a cache and may be stale after an explicit `sn-manager use`.
-	currentSN, err = u.versionMgr.GetCurrentVersion()
-	if err != nil {
-		log.Printf("Cannot determine active SuperNode version; automatic update aborted: %v", err)
-		return
-	}
+	// Determine if SuperNode should update using existing policy
+	currentSN := u.config.Updates.CurrentVersion
 	supernodeNeedsUpdate := false
 	if force {
-		supernodeNeedsUpdate = shouldForceUpdate(currentSN, latest)
+		supernodeNeedsUpdate = !strings.EqualFold(strings.TrimPrefix(currentSN, "v"), strings.TrimPrefix(latest, "v"))
 	} else {
 		supernodeNeedsUpdate = u.ShouldUpdate(currentSN, latest)
 	}
 
 	if !managerNeedsUpdate && !supernodeNeedsUpdate {
-		// A definitive allow may clear prior blocked evidence only after proving
-		// that the config used by the probe is still current under the writer lock.
-		releaseConfigLock, lockErr := configlock.Acquire(utils.SupernodeConfigPath())
-		if lockErr != nil {
-			log.Printf("Cannot lock SuperNode config to clear update block: %v", lockErr)
+		return
+	}
+
+	// A pre-v2.6 SuperNode must not cross the EVM boundary automatically until
+	// its transitional evm_key_name is configured. Already-v2.6 nodes are not
+	// gated because successful migration intentionally clears this field.
+	if crossesEVMUpgradeBoundary(currentSN, latest) {
+		evmKeyName, configErr := utils.ReadSupernodeEVMKeyName()
+		if shouldBlockEVMUpgrade(currentSN, latest, evmKeyName, configErr) {
+			if configErr != nil {
+				log.Printf("Automatic update to %s blocked: cannot read SuperNode evm_key_name: %v", latest, configErr)
+			} else {
+				log.Printf("Automatic update to %s blocked: supernode.evm_key_name is missing or empty", latest)
+			}
 			return
 		}
-		configCurrent, currentErr := utils.IsCurrentSupernodeConfig(snapshot)
-		newBlockWon := confirmedBlockWins(u.homeDir, allowWasUnknown)
-		if currentErr == nil && configCurrent && !newBlockWon {
-			clearBlockLog(u.homeDir)
-		}
-		if err := releaseConfigLock(); err != nil {
-			log.Printf("Failed to release SuperNode config lock: %v", err)
-		}
-		if newBlockWon {
-			log.Printf("compatibility probe was inconclusive; retaining concurrently confirmed update block")
-		} else if currentErr != nil {
-			log.Printf("Cannot revalidate SuperNode config; retaining update block: %v", currentErr)
-		} else if !configCurrent {
-			log.Printf("SuperNode config changed during update check; retaining update block for re-evaluation")
-		}
-		return
 	}
 
 	// Gate all updates (manager + SuperNode) on gateway idleness
@@ -363,19 +299,6 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 			return
 		}
 	}
-
-	// Serialize all release staging paths across sn-manager processes. Lock order
-	// is install -> SuperNode config -> per-version install -> active symlink.
-	releaseInstallLock, err := u.versionMgr.AcquireInstallLock()
-	if err != nil {
-		log.Printf("Cannot lock release installation; automatic update aborted: %v", err)
-		return
-	}
-	defer func() {
-		if err := releaseInstallLock(); err != nil {
-			log.Printf("Failed to release installation lock: %v", err)
-		}
-	}()
 
 	// Download the combined release tarball once
 	tarURL, err := u.githubClient.GetReleaseTarballURL(latest)
@@ -429,51 +352,6 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 	extractedManager := managerNeedsUpdate && found["sn-manager"]
 	extractedSN := supernodeNeedsUpdate && found["supernode"]
 
-	// Coordinate with SuperNode's config writer, then revalidate the snapshot.
-	// Holding this lock through both binary mutations closes the check/use race
-	// with migration's post-DeliverTx config rewrite.
-	releaseConfigLock, err := configlock.Acquire(utils.SupernodeConfigPath())
-	if err != nil {
-		_ = os.Remove(tmpManager)
-		_ = os.Remove(tmpSN)
-		log.Printf("Cannot lock SuperNode config; automatic update aborted: %v", err)
-		return
-	}
-	defer func() {
-		if err := releaseConfigLock(); err != nil {
-			log.Printf("Failed to release SuperNode config lock: %v", err)
-		}
-	}()
-
-	// Release selection and compatibility preflight were made from snapshot.
-	// Abort before either binary is mutated if an operator/process rewrote the
-	// SuperNode config while the release was downloading.
-	configCurrent, err := utils.IsCurrentSupernodeConfig(snapshot)
-	if err != nil || !configCurrent {
-		_ = os.Remove(tmpManager)
-		_ = os.Remove(tmpSN)
-		if err != nil {
-			log.Printf("Cannot revalidate SuperNode config; automatic update aborted: %v", err)
-		} else {
-			log.Printf("SuperNode config changed during update check; automatic update aborted for re-evaluation")
-		}
-		return
-	}
-
-	// Unknown evidence cannot override a definitive block published by another
-	// process after this process's initial marker check. The config lock makes
-	// this marker check atomic with the following clear and binary mutations.
-	if confirmedBlockWins(u.homeDir, allowWasUnknown) {
-		_ = os.Remove(tmpManager)
-		_ = os.Remove(tmpSN)
-		log.Printf("compatibility probe was inconclusive; concurrently confirmed update block wins")
-		return
-	}
-
-	// The definitive allow and release selection are still based on the locked,
-	// current snapshot; it is now safe to clear previously blocked evidence.
-	clearBlockLog(u.homeDir)
-
 	// Apply sn-manager update first
 	managerUpdated := false
 	if managerNeedsUpdate {
@@ -500,11 +378,8 @@ func (u *AutoUpdater) checkAndUpdateCombined(force bool) {
 			if err := u.versionMgr.InstallVersion(latest, tmpSN); err != nil {
 				log.Printf("Failed to install SuperNode: %v", err)
 			} else {
-				activated, err := u.versionMgr.SetCurrentVersionIfNewer(latest)
-				if err != nil {
+				if err := u.versionMgr.SetCurrentVersion(latest); err != nil {
 					log.Printf("Failed to activate SuperNode %s: %v", latest, err)
-				} else if !activated {
-					log.Printf("Skipped activating SuperNode %s because the active version is equal or newer", latest)
 				} else {
 					u.config.Updates.CurrentVersion = latest
 					if err := config.Save(u.config, filepath.Join(u.homeDir, "config.yml")); err != nil {

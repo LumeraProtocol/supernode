@@ -41,85 +41,6 @@ func TestReadSupernodeChainID(t *testing.T) {
 	}
 }
 
-func TestReadSupernodeEVMKeyName(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	cfgDir := filepath.Join(tmp, ".supernode")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(cfgDir, "config.yml")
-
-	// missing → empty, no error
-	if err := os.WriteFile(cfgPath, []byte("lumera:\n  chain_id: lumera-testnet-2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := ReadSupernodeEVMKeyName(); err != nil || got != "" {
-		t.Fatalf("expected empty, got %q err=%v", got, err)
-	}
-
-	// present
-	if err := os.WriteFile(cfgPath, []byte("supernode:\n  evm_key_name: my-evm-key\nlumera:\n  chain_id: lumera-testnet-2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := ReadSupernodeEVMKeyName(); err != nil || got != "my-evm-key" {
-		t.Fatalf("got %q err=%v", got, err)
-	}
-}
-
-func TestReadSupernodeGRPCAddr(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	cfgDir := filepath.Join(tmp, ".supernode")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(cfgDir, "config.yml")
-	if err := os.WriteFile(cfgPath, []byte("lumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: grpc.testnet.lumera.io:443\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadSupernodeGRPCAddr()
-	if err != nil || got != "grpc.testnet.lumera.io:443" {
-		t.Fatalf("got %q err=%v", got, err)
-	}
-}
-
-func TestReadSupernodeUpdateSnapshotAndDetectReplacement(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	cfgDir := filepath.Join(tmp, ".supernode")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(cfgDir, "config.yml")
-	original := []byte("supernode:\n  evm_key_name: evm-key\nlumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: grpc.testnet.lumera.io:443\n")
-	if err := os.WriteFile(cfgPath, original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	snapshot, err := ReadSupernodeUpdateSnapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snapshot.ChainID != "lumera-testnet-2" || snapshot.GRPCAddr != "grpc.testnet.lumera.io:443" || snapshot.EVMKeyName != "evm-key" {
-		t.Fatalf("unexpected snapshot: %+v", snapshot)
-	}
-	if current, err := IsCurrentSupernodeConfig(snapshot); err != nil || !current {
-		t.Fatalf("expected current snapshot, current=%v err=%v", current, err)
-	}
-
-	replacement := filepath.Join(cfgDir, "config.yml.new")
-	if err := os.WriteFile(replacement, []byte("lumera:\n  chain_id: lumera-testnet-2\n  grpc_addr: other:443\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(replacement, cfgPath); err != nil {
-		t.Fatal(err)
-	}
-	if current, err := IsCurrentSupernodeConfig(snapshot); err != nil || current {
-		t.Fatalf("expected replacement to invalidate snapshot, current=%v err=%v", current, err)
-	}
-}
-
 func TestReadSupernodeChainID_MissingOrEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -141,6 +62,41 @@ func TestReadSupernodeChainID_MissingOrEmpty(t *testing.T) {
 	}
 	if _, err := ReadSupernodeChainID(); err == nil {
 		t.Fatalf("expected error when chain_id is missing")
+	}
+}
+
+func TestReadSupernodeEVMKeyName(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{name: "missing", yaml: "supernode:\n  key_name: legacy\n"},
+		{name: "empty", yaml: "supernode:\n  evm_key_name: \"\"\n"},
+		{name: "whitespace", yaml: "supernode:\n  evm_key_name: \"  \"\n"},
+		{name: "present", yaml: "supernode:\n  evm_key_name: evm-key\n", want: "evm-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			cfgDir := filepath.Join(home, ".supernode")
+			if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte(tt.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := ReadSupernodeEVMKeyName()
+			if err != nil {
+				t.Fatalf("ReadSupernodeEVMKeyName: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ReadSupernodeEVMKeyName() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
