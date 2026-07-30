@@ -74,26 +74,33 @@ func (f *secureSupernodeClientFactory) ensureClient() error {
 // Dial resolves the peer's chain-registered address and opens a secure
 // gRPC connection. The returned SupernodeCompoundClient holds onto the
 // underlying *grpc.ClientConn and closes it on Close().
-func (f *secureSupernodeClientFactory) Dial(ctx context.Context, target string) (SupernodeCompoundClient, error) {
+func (f *secureSupernodeClientFactory) Dial(ctx context.Context, logicalTarget, currentTarget string) (SupernodeCompoundClient, error) {
 	if err := f.ensureClient(); err != nil {
 		return nil, err
 	}
-	info, err := f.lumera.SuperNode().GetSupernodeWithLatestAddress(ctx, target)
+	logicalTarget = strings.TrimSpace(logicalTarget)
+	currentTarget = strings.TrimSpace(currentTarget)
+	if logicalTarget == "" || currentTarget == "" {
+		return nil, fmt.Errorf("logical and current target accounts are required")
+	}
+	info, err := f.lumera.SuperNode().GetSupernodeWithLatestAddress(ctx, currentTarget)
 	if err != nil || info == nil {
-		return nil, fmt.Errorf("resolve target %q: %w", target, err)
+		return nil, fmt.Errorf("resolve current target %q (logical %q): %w", currentTarget, logicalTarget, err)
 	}
 	raw := strings.TrimSpace(info.LatestAddress)
 	if raw == "" {
-		return nil, fmt.Errorf("no address for target %q", target)
+		return nil, fmt.Errorf("no address for current target %q", currentTarget)
 	}
 	host, port, ok := netutil.ParseHostAndPort(raw, int(f.defaultPort))
 	if !ok || strings.TrimSpace(host) == "" {
-		return nil, fmt.Errorf("invalid address %q for target %q", raw, target)
+		return nil, fmt.Errorf("invalid address %q for current target %q", raw, currentTarget)
 	}
 	addr := net.JoinHostPort(strings.TrimSpace(host), strconv.Itoa(port))
-	conn, err := f.grpcClient.Connect(ctx, fmt.Sprintf("%s@%s", strings.TrimSpace(target), addr), f.grpcOpts)
+	// ALTS authenticates the live owner. The logical target remains confined to
+	// the challenge/transcript payload.
+	conn, err := f.grpcClient.Connect(ctx, fmt.Sprintf("%s@%s", currentTarget, addr), f.grpcOpts)
 	if err != nil {
-		return nil, fmt.Errorf("dial target %q: %w", target, err)
+		return nil, fmt.Errorf("dial current target %q (logical %q): %w", currentTarget, logicalTarget, err)
 	}
 	return &secureCompoundClient{conn: conn, client: supernode.NewStorageChallengeServiceClient(conn)}, nil
 }

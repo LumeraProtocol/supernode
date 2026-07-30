@@ -46,6 +46,16 @@ func (s *stubAuditModule) GetCurrentEpochAnchor(ctx context.Context) (*audittype
 	return &audittypes.QueryCurrentEpochAnchorResponse{}, nil
 }
 func (s *stubAuditModule) GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*audittypes.QueryAssignedTargetsResponse, error) {
+	// Keep pre-continuity fixtures concise; migration-specific tests populate
+	// these fields explicitly.
+	if s.assigned != nil && s.assigned.ReporterSupernodeAccount == "" {
+		s.assigned.EpochId = epochID
+		s.assigned.ReporterSupernodeAccount = supernodeAccount
+		s.assigned.TargetAccountMappings = make([]audittypes.AccountIdentityMapping, len(s.assigned.TargetSupernodeAccounts))
+		for i, target := range s.assigned.TargetSupernodeAccounts {
+			s.assigned.TargetAccountMappings[i] = audittypes.AccountIdentityMapping{LogicalAccount: target, CurrentAccount: target}
+		}
+	}
 	return s.assigned, nil
 }
 func (s *stubAuditModule) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
@@ -279,7 +289,9 @@ func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
 		currentEpoch:   &audittypes.QueryCurrentEpochResponse{EpochId: 11},
 		anchor:         &audittypes.QueryEpochAnchorResponse{Anchor: audittypes.EpochAnchor{EpochId: 11}},
 		epochReportErr: status.Error(codes.NotFound, "not found"),
-		assigned:       &audittypes.QueryAssignedTargetsResponse{},
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			TargetSupernodeAccounts: []string{"snA", "snB"},
+		},
 	}
 	auditMsg := auditmsgmod.NewMockModule(ctrl)
 	node := nodemod.NewMockModule(ctrl)
@@ -289,11 +301,13 @@ func TestTick_AttachedProofResultProviderIsDrainedAndForwarded(t *testing.T) {
 	client.EXPECT().AuditMsg().AnyTimes().Return(auditMsg)
 	client.EXPECT().SuperNode().AnyTimes().Return(sn)
 	client.EXPECT().Node().AnyTimes().Return(node)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1"}, nil)
+	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snB").Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1"}, nil)
 
 	provider := &stubProofResultProvider{
 		results: []*audittypes.StorageProofResult{
-			{TargetSupernodeAccount: "snA", TicketId: "ticket-1", TranscriptHash: "hash-1"},
-			{TargetSupernodeAccount: "snB", TicketId: "ticket-2", TranscriptHash: "hash-2"},
+			{ChallengerSupernodeAccount: identity, TargetSupernodeAccount: "snA", TicketId: "ticket-1", TranscriptHash: "hash-1"},
+			{ChallengerSupernodeAccount: identity, TargetSupernodeAccount: "snB", TicketId: "ticket-2", TranscriptHash: "hash-2"},
 		},
 	}
 
@@ -416,9 +430,10 @@ func TestTick_SubmitFailureRequeuesProofResults(t *testing.T) {
 	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").AnyTimes().Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
 
 	drained := []*audittypes.StorageProofResult{{
-		TargetSupernodeAccount: "snA",
-		TicketId:               "ticket-14",
-		TranscriptHash:         "hash-14",
+		ChallengerSupernodeAccount: identity,
+		TargetSupernodeAccount:     "snA",
+		TicketId:                   "ticket-14",
+		TranscriptHash:             "hash-14",
 	}}
 	provider := &stubProofResultProvider{results: drained}
 
@@ -472,9 +487,10 @@ func TestTick_DuplicateReportErrorDoesNotRequeue(t *testing.T) {
 	sn.EXPECT().GetSupernodeWithLatestAddress(gomock.Any(), "snA").AnyTimes().Return(&supernodemod.SuperNodeInfo{LatestAddress: "127.0.0.1:4444"}, nil)
 
 	provider := &stubProofResultProvider{results: []*audittypes.StorageProofResult{{
-		TargetSupernodeAccount: "snA",
-		TicketId:               "ticket-15",
-		TranscriptHash:         "hash-15",
+		ChallengerSupernodeAccount: identity,
+		TargetSupernodeAccount:     "snA",
+		TicketId:                   "ticket-15",
+		TranscriptHash:             "hash-15",
 	}}}
 
 	// Match the chain phrase from lumera x/audit/v1/keeper/msg_submit_epoch_report.go:142.
@@ -523,7 +539,7 @@ func TestTick_FULLModeIncompleteStorageProofCoverageSkipsSubmitAndRequeues(t *te
 	auditMsg.EXPECT().SubmitEpochReport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 	provider := &stubProofResultProvider{results: []*audittypes.StorageProofResult{
-		{TargetSupernodeAccount: "snA", BucketType: audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, TicketId: "ticket-recent", TranscriptHash: "hash-recent"},
+		{ChallengerSupernodeAccount: identity, TargetSupernodeAccount: "snA", BucketType: audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, TicketId: "ticket-recent", TranscriptHash: "hash-recent"},
 	}}
 
 	svc, err := NewService(identity, client, kr, keyName, "", "")

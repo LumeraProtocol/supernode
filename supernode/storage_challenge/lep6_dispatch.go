@@ -18,6 +18,7 @@ import (
 	snkeyring "github.com/LumeraProtocol/supernode/v2/pkg/keyring"
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
+	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
@@ -63,7 +64,7 @@ type SupernodeCompoundClient interface {
 // supernode secure gRPC dialer (see service.go::callGetSliceProof for the
 // reference implementation).
 type SupernodeClientFactory interface {
-	Dial(ctx context.Context, targetSupernodeAccount string) (SupernodeCompoundClient, error)
+	Dial(ctx context.Context, logicalTargetAccount, currentTargetAccount string) (SupernodeCompoundClient, error)
 }
 
 // CascadeMetaProvider returns the cascade metadata for a ticket. The
@@ -221,8 +222,11 @@ func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) erro
 	if err != nil || assigned == nil {
 		return fmt.Errorf("lep6 dispatch: get assigned targets: %w", err)
 	}
-	targets := assigned.TargetSupernodeAccounts
-	if len(targets) == 0 {
+	assignment, err := auditmod.ResolveAssignedTargets(assigned, epochID)
+	if err != nil {
+		return fmt.Errorf("lep6 dispatch: invalid assigned targets: %w", err)
+	}
+	if len(assignment.Targets) == 0 {
 		logtrace.Debug(ctx, "lep6 dispatch: no targets assigned this epoch", logtrace.Fields{
 			"epoch_id": epochID,
 			"mode":     mode.String(),
@@ -246,21 +250,20 @@ func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) erro
 	logtrace.Info(ctx, "lep6 dispatch: starting epoch", logtrace.Fields{
 		"epoch_id": epochID,
 		"mode":     mode.String(),
-		"targets":  len(targets),
+		"targets":  len(assignment.Targets),
 	})
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	for _, target := range targets {
-		target = strings.TrimSpace(target)
-		if target == "" || target == d.self {
+	for _, target := range assignment.Targets {
+		if target.LogicalAccount == assignment.ReporterAccount {
 			continue
 		}
-		if err := d.dispatchTarget(ctx, epochID, anchor, params, currentHeight, target); err != nil {
+		if err := d.dispatchTarget(ctx, epochID, anchor, params, currentHeight, assignment.ReporterAccount, target); err != nil {
 			logtrace.Warn(ctx, "lep6 dispatch: target loop error", logtrace.Fields{
 				"epoch_id": epochID,
-				"target":   target,
+				"target":   target.LogicalAccount,
 				"error":    err.Error(),
 			})
 		}
@@ -274,15 +277,17 @@ func (d *LEP6Dispatcher) dispatchTarget(
 	anchor audittypes.EpochAnchor,
 	params audittypes.Params,
 	currentHeight int64,
-	target string,
+	reporter string,
+	target auditmod.AssignedTarget,
 ) error {
-	tickets, err := d.tickets.TicketsForTarget(ctx, target)
+	logicalTarget := target.LogicalAccount
+	tickets, err := d.tickets.TicketsForTarget(ctx, logicalTarget)
 	if err != nil {
 		// Treat as transient; emit no-eligible for both buckets so the
 		// chain still sees this epoch covered.
 		lep6metrics.SetNoTicketProviderActive(true)
 		logtrace.Warn(ctx, "lep6 dispatch: ticket provider error", logtrace.Fields{
-			"epoch_id": epochID, "target": target, "error": err.Error(),
+			"epoch_id": epochID, "target": logicalTarget, "error": err.Error(),
 		})
 		tickets = nil
 	}
@@ -302,20 +307,20 @@ func (d *LEP6Dispatcher) dispatchTarget(
 
 		if len(eligibleIDs) == 0 {
 			lep6metrics.SetNoTicketProviderActive(true)
-			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, "")
+			d.appendNoEligible(ctx, d.buffer, epochID, anchor, reporter, logicalTarget, bucket, "")
 			continue
 		}
 
-		ticketID := deterministic.SelectTicketForBucket(eligibleIDs, nil, anchor.Seed, target, bucket)
+		ticketID := deterministic.SelectTicketForBucket(eligibleIDs, nil, anchor.Seed, logicalTarget, bucket)
 		if ticketID == "" {
 			lep6metrics.SetNoTicketProviderActive(true)
-			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, "")
+			d.appendNoEligible(ctx, d.buffer, epochID, anchor, reporter, logicalTarget, bucket, "")
 			continue
 		}
 
-		if err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, target, bucket, ticketID); err != nil {
+		if err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, reporter, target, bucket, ticketID); err != nil {
 			logtrace.Warn(ctx, "lep6 dispatch: ticket loop error", logtrace.Fields{
-				"epoch_id": epochID, "target": target, "ticket": ticketID, "error": err.Error(),
+				"epoch_id": epochID, "target": logicalTarget, "ticket": ticketID, "error": err.Error(),
 			})
 		}
 	}
@@ -340,6 +345,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	buf *Buffer,
 	epochID uint64,
 	anchor audittypes.EpochAnchor,
+	reporter string,
 	target string,
 	bucket audittypes.StorageProofBucketType,
 	selectedTicketIDForLog string,
@@ -367,7 +373,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
 		EpochID:                    epochID,
-		ChallengerSupernodeAccount: d.self,
+		ChallengerSupernodeAccount: reporter,
 		TargetSupernodeAccount:     target,
 		TicketID:                   "",
 		Bucket:                     bucket,
@@ -397,7 +403,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String())
 	buf.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
-		ChallengerSupernodeAccount: d.self,
+		ChallengerSupernodeAccount: reporter,
 		BucketType:                 bucket,
 		ResultClass:                audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET,
 		TranscriptHash:             transcriptHashHex,
@@ -435,10 +441,12 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	epochID uint64,
 	anchor audittypes.EpochAnchor,
 	params audittypes.Params,
-	target string,
+	reporter string,
+	target auditmod.AssignedTarget,
 	bucket audittypes.StorageProofBucketType,
 	ticketID string,
 ) error {
+	logicalTarget := target.LogicalAccount
 	meta, fileSizeKbs, err := d.meta.GetCascadeMetadata(ctx, ticketID)
 	if err != nil || meta == nil {
 		if cerr := ctx.Err(); cerr != nil {
@@ -451,12 +459,12 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	indexCount, _ := storagechallenge.ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
 	symbolCount, _ := storagechallenge.ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL)
 
-	class := deterministic.SelectArtifactClass(anchor.Seed, target, ticketID, indexCount, symbolCount)
+	class := deterministic.SelectArtifactClass(anchor.Seed, logicalTarget, ticketID, indexCount, symbolCount)
 	if class == audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED {
 		// LEP-6 review H6 + L5: rolled class is empty for this ticket. Emit
 		// NO_ELIGIBLE_TICKET (no cross-class swap) and surface the selected
 		// ticket id in structured logs only — the chain row keeps ticket_id="".
-		d.appendNoEligible(ctx, buf, epochID, anchor, target, bucket, ticketID)
+		d.appendNoEligible(ctx, buf, epochID, anchor, reporter, logicalTarget, bucket, ticketID)
 		return nil
 	}
 
@@ -467,7 +475,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
 		artifactCount = symbolCount
 	}
-	ordinal, err := deterministic.SelectArtifactOrdinal(anchor.Seed, target, ticketID, class, artifactCount)
+	ordinal, err := deterministic.SelectArtifactOrdinal(anchor.Seed, logicalTarget, ticketID, class, artifactCount)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("select_ordinal")
 		return fmt.Errorf("select ordinal: %w", err)
@@ -524,7 +532,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		k = deterministic.LEP6CompoundRangesPerArtifact
 	}
 
-	offsets, err := deterministic.ComputeMultiRangeOffsets(anchor.Seed, target, ticketID, class, ordinal, artifactSize, rangeLen, k)
+	offsets, err := deterministic.ComputeMultiRangeOffsets(anchor.Seed, logicalTarget, ticketID, class, ordinal, artifactSize, rangeLen, k)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("compute_offsets")
 		return fmt.Errorf("compute offsets: %w", err)
@@ -534,21 +542,21 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		ranges[i] = &supernode.ByteRange{Start: off, End: off + rangeLen}
 	}
 
-	derivHash, err := deterministic.DerivationInputHash(anchor.Seed, target, ticketID, class, ordinal, offsets, rangeLen)
+	derivHash, err := deterministic.DerivationInputHash(anchor.Seed, logicalTarget, ticketID, class, ordinal, offsets, rangeLen)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("derivation_hash")
 		return fmt.Errorf("derivation input hash: %w", err)
 	}
 
-	challengeID := deriveCompoundChallengeID(anchor.Seed, epochID, target, ticketID, class, ordinal)
+	challengeID := deriveCompoundChallengeID(anchor.Seed, epochID, logicalTarget, ticketID, class, ordinal)
 
 	req := &supernode.GetCompoundProofRequest{
 		ChallengeId:            challengeID,
 		EpochId:                epochID,
 		Seed:                   anchor.Seed,
 		TicketId:               ticketID,
-		TargetSupernodeAccount: target,
-		ChallengerAccount:      d.self,
+		TargetSupernodeAccount: logicalTarget,
+		ChallengerAccount:      reporter,
 		ArtifactClass:          uint32(class),
 		ArtifactOrdinal:        ordinal,
 		ArtifactCount:          artifactCount,
@@ -558,9 +566,9 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		Ranges:                 ranges,
 	}
 
-	conn, err := d.supernodeClient.Dial(ctx, target)
+	conn, err := d.supernodeClient.Dial(ctx, logicalTarget, target.CurrentAccount)
 	if err != nil {
-		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, classifyProofFailure(err, "dial"), fmt.Sprintf("dial: %v", err))
+		d.appendFail(ctx, buf, epochID, reporter, logicalTarget, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, classifyProofFailure(err, "dial"), fmt.Sprintf("dial: %v", err))
 		return nil
 	}
 	defer func() { _ = conn.Close() }()
@@ -573,33 +581,33 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		} else if resp != nil && resp.Error != "" {
 			reason = resp.Error
 		}
-		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, classifyProofFailure(err, reason), reason)
+		d.appendFail(ctx, buf, epochID, reporter, logicalTarget, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, classifyProofFailure(err, reason), reason)
 		return nil
 	}
 
 	// Local validation: range count + per-range size, and proof hash recompute.
 	if len(resp.RangeBytes) != k {
-		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range count mismatch: got %d want %d", len(resp.RangeBytes), k))
+		d.appendFail(ctx, buf, epochID, reporter, logicalTarget, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range count mismatch: got %d want %d", len(resp.RangeBytes), k))
 		return nil
 	}
 	hasher := blake3.New(32, nil)
 	for i, b := range resp.RangeBytes {
 		if uint64(len(b)) != rangeLen {
-			d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range[%d] size %d != %d", i, len(b), rangeLen))
+			d.appendFail(ctx, buf, epochID, reporter, logicalTarget, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range[%d] size %d != %d", i, len(b), rangeLen))
 			return nil
 		}
 		_, _ = hasher.Write(b)
 	}
 	gotHash := hex.EncodeToString(hasher.Sum(nil))
 	if !strings.EqualFold(gotHash, resp.ProofHashHex) {
-		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH, fmt.Sprintf("proof hash mismatch: local=%s remote=%s", gotHash, resp.ProofHashHex))
+		d.appendFail(ctx, buf, epochID, reporter, logicalTarget, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH, fmt.Sprintf("proof hash mismatch: local=%s remote=%s", gotHash, resp.ProofHashHex))
 		return nil
 	}
 
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
 		EpochID:                    epochID,
-		ChallengerSupernodeAccount: d.self,
-		TargetSupernodeAccount:     target,
+		ChallengerSupernodeAccount: reporter,
+		TargetSupernodeAccount:     logicalTarget,
 		TicketID:                   ticketID,
 		Bucket:                     bucket,
 		ArtifactClass:              class,
@@ -624,8 +632,8 @@ func (d *LEP6Dispatcher) dispatchTicket(
 
 	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String())
 	buf.Append(epochID, &audittypes.StorageProofResult{
-		TargetSupernodeAccount:     target,
-		ChallengerSupernodeAccount: d.self,
+		TargetSupernodeAccount:     logicalTarget,
+		ChallengerSupernodeAccount: reporter,
 		TicketId:                   ticketID,
 		BucketType:                 bucket,
 		ArtifactClass:              class,
@@ -653,6 +661,7 @@ func (d *LEP6Dispatcher) appendFail(
 	ctx context.Context,
 	buf *Buffer,
 	epochID uint64,
+	reporter string,
 	target string,
 	bucket audittypes.StorageProofBucketType,
 	ticketID string,
@@ -666,7 +675,7 @@ func (d *LEP6Dispatcher) appendFail(
 ) {
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
 		EpochID:                    epochID,
-		ChallengerSupernodeAccount: d.self,
+		ChallengerSupernodeAccount: reporter,
 		TargetSupernodeAccount:     target,
 		TicketID:                   ticketID,
 		Bucket:                     bucket,
@@ -694,7 +703,7 @@ func (d *LEP6Dispatcher) appendFail(
 	lep6metrics.IncDispatchResult(resultClass.String())
 	buf.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
-		ChallengerSupernodeAccount: d.self,
+		ChallengerSupernodeAccount: reporter,
 		TicketId:                   ticketID,
 		BucketType:                 bucket,
 		ArtifactClass:              class,

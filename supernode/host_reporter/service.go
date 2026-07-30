@@ -19,6 +19,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
+	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	statussvc "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -174,24 +175,31 @@ func (s *Service) tick(ctx context.Context) {
 		return
 	}
 
-	// Idempotency: if a report exists for this epoch, do nothing.
-	if _, err := s.lumera.Audit().GetEpochReport(tickCtx, epochID, s.identity); err == nil {
+	assignResp, err := s.lumera.Audit().GetAssignedTargets(tickCtx, s.identity, epochID)
+	if err != nil || assignResp == nil {
+		return
+	}
+	assignment, err := auditmod.ResolveAssignedTargets(assignResp, epochID)
+	if err != nil {
+		logtrace.Warn(tickCtx, "epoch report skipped: invalid identity assignment", logtrace.Fields{"epoch_id": epochID, "error": err.Error()})
+		return
+	}
+
+	// Idempotency is keyed by the epoch-logical reporter, while the transaction
+	// is still signed and submitted by the configured current account.
+	if _, err := s.lumera.Audit().GetEpochReport(tickCtx, epochID, assignment.ReporterAccount); err == nil {
 		return
 	} else if status.Code(err) != codes.NotFound {
 		return
 	}
 
-	assignResp, err := s.lumera.Audit().GetAssignedTargets(tickCtx, s.identity, epochID)
-	if err != nil || assignResp == nil {
-		return
-	}
-
-	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
+	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignment.RequiredOpenPorts, assignment.Targets)
 
 	var storageProofResults []*audittypes.StorageProofResult
 	proofResultProvider := s.getProofResultProvider()
 	if proofResultProvider != nil {
 		storageProofResults = proofResultProvider.CollectResults(epochID)
+		storageProofResults = compatibleProofResults(storageProofResults, assignment)
 		mode, modeOK := s.storageTruthEnforcementMode(tickCtx)
 		if modeOK && mode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL {
 			// FULL mode is the only mode where the chain enforces compound
@@ -201,18 +209,18 @@ func (s *Service) tick(ctx context.Context) {
 			// drain doesn't satisfy that, we MUST skip this epoch and
 			// requeue the partial rows so the next tick can try again with
 			// a complete set.
-			complete, reason := storageProofCoverageComplete(storageProofResults, assignResp.TargetSupernodeAccounts)
+			complete, reason := storageProofCoverageComplete(storageProofResults, logicalTargetAccounts(assignment.Targets))
 			if !complete {
 				requeueProofResults(proofResultProvider, epochID, storageProofResults)
 				logtrace.Warn(tickCtx, "epoch report skipped: incomplete FULL-mode storage proof coverage", logtrace.Fields{
 					"epoch_id":         epochID,
-					"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+					"assigned_targets": len(assignment.Targets),
 					"proof_results":    len(storageProofResults),
 					"reason":           reason,
 				})
 				return
 			}
-		} else if modeOK && len(assignResp.TargetSupernodeAccounts) > 0 && len(storageProofResults) == 0 {
+		} else if modeOK && len(assignment.Targets) > 0 && len(storageProofResults) == 0 {
 			// SHADOW / SOFT / UNSPECIFIED: chain accepts empty StorageProofResults
 			// (only FULL enforces compound coverage). Submitting the host /
 			// peer-observation report is mandatory regardless — withholding it
@@ -224,7 +232,7 @@ func (s *Service) tick(ctx context.Context) {
 			// scoring (LEP-6 PR286 review F1).
 			logtrace.Info(tickCtx, "epoch report: submitting in non-FULL mode with empty LEP-6 proof rows", logtrace.Fields{
 				"epoch_id":         epochID,
-				"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+				"assigned_targets": len(assignment.Targets),
 				"mode":             mode.String(),
 			})
 		}
@@ -303,6 +311,36 @@ func requeueProofResults(provider ProofResultProvider, epochID uint64, results [
 	if requeuer, ok := provider.(ProofResultRequeuer); ok {
 		requeuer.RequeueResults(epochID, results)
 	}
+}
+
+func logicalTargetAccounts(targets []auditmod.AssignedTarget) []string {
+	out := make([]string, len(targets))
+	for i := range targets {
+		out[i] = targets[i].LogicalAccount
+	}
+	return out
+}
+
+// compatibleProofResults implements the migration buffer policy. Rows built
+// with current/pre-migration identities cannot be repaired because their
+// transcript and signature cover those identities; discard them so the
+// dispatcher rebuilds them from the authoritative assignment.
+func compatibleProofResults(results []*audittypes.StorageProofResult, assignment auditmod.AssignedTargets) []*audittypes.StorageProofResult {
+	allowed := make(map[string]struct{}, len(assignment.Targets))
+	for _, target := range assignment.Targets {
+		allowed[target.LogicalAccount] = struct{}{}
+	}
+	out := make([]*audittypes.StorageProofResult, 0, len(results))
+	for _, result := range results {
+		if result == nil || result.ChallengerSupernodeAccount != assignment.ReporterAccount {
+			continue
+		}
+		if _, ok := allowed[result.TargetSupernodeAccount]; !ok {
+			continue
+		}
+		out = append(out, result)
+	}
+	return out
 }
 
 func storageProofCoverageComplete(results []*audittypes.StorageProofResult, targets []string) (bool, string) {
@@ -436,7 +474,7 @@ func (s *Service) cascadeKademliaDBBytes(_ context.Context) (uint64, bool) {
 	return total, true
 }
 
-func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, targets []string) []*audittypes.StorageChallengeObservation {
+func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, targets []auditmod.AssignedTarget) []*audittypes.StorageChallengeObservation {
 	if len(targets) == 0 {
 		return nil
 	}
@@ -445,7 +483,7 @@ func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID
 
 	type workItem struct {
 		index  int
-		target string
+		target auditmod.AssignedTarget
 	}
 
 	work := make(chan workItem)
@@ -485,17 +523,19 @@ func (s *Service) buildStorageChallengeObservations(ctx context.Context, epochID
 	return final
 }
 
-func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, target string) *audittypes.StorageChallengeObservation {
-	target = strings.TrimSpace(target)
-	if target == "" {
+func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpenPorts []uint32, target auditmod.AssignedTarget) *audittypes.StorageChallengeObservation {
+	logicalTarget := strings.TrimSpace(target.LogicalAccount)
+	currentTarget := strings.TrimSpace(target.CurrentAccount)
+	if logicalTarget == "" || currentTarget == "" {
 		return nil
 	}
 
-	host, err := s.targetHost(ctx, target)
+	host, err := s.targetHost(ctx, currentTarget)
 	if err != nil {
 		logtrace.Warn(ctx, "storage challenge observe target: resolve host failed", logtrace.Fields{
 			"epoch_id": epochID,
-			"target":   target,
+			"target":   logicalTarget,
+			"current":  currentTarget,
 			"error":    err.Error(),
 		})
 		host = ""
@@ -507,7 +547,7 @@ func (s *Service) observeTarget(ctx context.Context, epochID uint64, requiredOpe
 	}
 
 	return &audittypes.StorageChallengeObservation{
-		TargetSupernodeAccount: target,
+		TargetSupernodeAccount: logicalTarget,
 		PortStates:             portStates,
 	}
 }
