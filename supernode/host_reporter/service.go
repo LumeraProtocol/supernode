@@ -248,9 +248,28 @@ func (s *Service) tick(ctx context.Context) {
 			})
 		}
 	}
-	// Final Lumera LEP-6 HostReport no longer carries Cascade Kademlia DB byte counters;
-	// keep disk usage as the host-side enforcement metric and leave the local helper intact
-	// for existing diagnostics/tests.
+	// Cascade Kademlia DB bytes MUST be populated on every epoch report.
+	//
+	// DO NOT REMOVE THIS. It was dropped in LEP-6 PR #286 on the reading that
+	// "the audit module does not consume this value for its own consensus
+	// logic". That reading is incorrect: the field is a metric-COURIER, not an
+	// audit input. The chain proto (lumera/audit/v1/audit.proto, HostReport
+	// field 6) states that on successful epoch-report acceptance the audit
+	// handler bridges this value into x/supernode SupernodeMetricsState, "which
+	// is the sole source consulted by Everlight payout / eligibility".
+	//
+	// The chain-side bridge assigns unconditionally and has no zero-guard, so a
+	// daemon that omits this field does not merely fail to update it -- it
+	// actively OVERWRITES the stored value with 0 on every epoch. Observed on a
+	// live devnet: a SuperNode holding 611,842 real bytes was zeroed within one
+	// epoch, and at the mainnet default min_cascade_bytes_for_payment of 1 GiB
+	// no such node can ever qualify for a payout.
+	//
+	// Reporting 0 when the store is genuinely empty is correct and expected;
+	// silently omitting the field is not.
+	if cascadeBytes, ok := s.cascadeKademliaDBBytes(tickCtx); ok {
+		hostReport.CascadeKademliaDbBytes = float64(cascadeBytes)
+	}
 
 	if _, err := s.lumera.AuditMsg().SubmitEpochReport(tickCtx, epochID, hostReport, storageChallengeObservations, storageProofResults); err != nil {
 		// LEP-6 PR286 review F2: CollectResults destructively drained the
