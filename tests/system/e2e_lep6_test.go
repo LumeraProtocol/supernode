@@ -36,7 +36,7 @@ func TestLEP6RealChainIntegration(t *testing.T) {
 			"--yes",
 			"--gas", "auto",
 			"--gas-adjustment", "1.5",
-			"--fees", "10ulume",
+			"--fees", "10000ulume",
 			"--broadcast-mode", "sync",
 			"--output", "json",
 		)
