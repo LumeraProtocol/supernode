@@ -1,0 +1,63 @@
+name: Go Vulnerability Scan
+
+# Port of the Lumera chain repo's `govulncheck.yml` (LumeraProtocol/lumera#212).
+#
+# Same tool, same goal: fail a PR when it introduces (or is built on) a
+# *reachable* known vulnerability. govulncheck's default mode only reports
+# vulnerabilities whose vulnerable symbols are actually called, so unused
+# transitive dependencies do not create noise.
+#
+# Difference from the chain repo: supernode is a multi-module repository
+# (root, cmd/sncli, sn-manager, tests/system). The chain repo scans a single
+# module; here each module is scanned independently via a matrix so a
+# vulnerability in sn-manager cannot hide behind a clean root scan.
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Surface every module's result; do not let the first failure mask others.
+      fail-fast: false
+      matrix:
+        include:
+          - name: supernode
+            module: .
+          - name: sncli
+            module: cmd/sncli
+          - name: sn-manager
+            module: sn-manager
+          - name: systemtests
+            module: tests/system
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.1
+
+      # Installs Go from go.mod, libwebp-dev (required to build the root
+      # module), and sets GOPRIVATE for the Lumera module.
+      - name: Setup Go and system deps
+        uses: ./.github/actions/setup-env
+
+      # Pinned rather than @latest: an unpinned scanner turns an unrelated
+      # upstream release into a surprise CI break, and makes a red run
+      # non-reproducible after the fact.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Run govulncheck
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...

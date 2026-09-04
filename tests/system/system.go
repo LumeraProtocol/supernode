@@ -205,6 +205,8 @@ func disableStateSyncConfig(configPath string) error {
 	if info, err := os.Stat(configPath); err == nil {
 		perm = info.Mode().Perm()
 	}
+	// #nosec G703 -- test harness: configPath is a node home directory created
+	// by this system-test suite itself, not untrusted input.
 	return os.WriteFile(configPath, []byte(strings.Join(lines, "\n")), perm)
 }
 

@@ -1,0 +1,77 @@
+version: "2"
+
+# Linter policy for the supernode repo.
+#
+# Mirrors the Lumera chain repo's `.golangci.yml` (same linter set, same
+# v2 schema) so both repos enforce a consistent bar. The exclusion list is
+# supernode-specific: it covers generated protobuf/mock surfaces and test
+# helpers rather than the chain's Cosmos SDK deprecations.
+#
+# Enforcement is diff-only via reviewdog (`.github/workflows/lint-pr.yml`),
+# so the pre-existing baseline is not a merge blocker; only findings on
+# lines a PR actually touches are reported.
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - govet
+    - nolintlint
+
+  exclusions:
+    generated: strict
+    rules:
+      # Test files: setup helpers routinely ignore errors from fixture
+      # construction where a failure would surface as a test failure anyway.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+      # Generated gRPC/protobuf gateway + mock surfaces.
+      - path: (gen/|/mocks?/|\.pb\.go|\.pb\.gw\.go)
+        linters:
+          - errcheck
+          - unused
+          - staticcheck
+
+      # SDK deprecated APIs — cannot be removed until upstream drops them.
+      - linters:
+          - staticcheck
+        text: "SA1019"
+
+      # Cosmetic quick-fix suggestions (QF1003/QF1007/QF1008/QF1011).
+      - linters:
+          - staticcheck
+        text: "QF10(0[378]|11)"
+
+      # S1001 (use copy), S1009 (nil check before len), S1011 (use append),
+      # S1021 (merge var) — cosmetic, not correctness issues.
+      - linters:
+          - staticcheck
+        text: "S100[19]|S101[1]|S1021"
+
+      # ST1005 (error string capitalization), ST1019 (duplicate import),
+      # ST1023 (omit type from declaration) — style, not correctness.
+      - linters:
+          - staticcheck
+        text: "ST10(05|19|23)"
+
+      # SA4031 (nil check on make result), SA9003 (empty branch) —
+      # intentional patterns in existing code.
+      - linters:
+          - staticcheck
+        text: "SA(4031|9003)"
+
+      # SA1029 (built-in type as context key) — existing pattern.
+      - linters:
+          - staticcheck
+        text: "SA1029"
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: strict

@@ -1,0 +1,93 @@
+name: lint-pr
+
+# Port of the Lumera chain repo's `lint-pr.yml` (LumeraProtocol/lumera#126).
+#
+# Runs golangci-lint through reviewdog with `filter_mode: added`, so findings
+# are posted as inline review comments on exactly the lines a PR changed and
+# the pre-existing baseline stays invisible.
+#
+# IMPORTANT DIFFERENCE FROM THE CHAIN REPO:
+# The chain repo has a separate full-scan gate (`lint.yml`) that is the
+# authoritative merge blocker, which lets its reviewdog layer be purely
+# additive. Supernode has NO existing lint gate and a large legacy baseline,
+# so a full-repo hard gate would be red on day one. This workflow is therefore
+# the only lint enforcement, and it is intentionally scoped to the diff:
+# new code must be clean, legacy debt is not retroactively blocking.
+#
+# Version pinning (see below) is not cosmetic — go.mod declares go 1.26.2 and
+# golangci-lint must be BUILT with a Go >= that language version or it exits
+# with a hard "the Go language version used to build golangci-lint is lower
+# than the targeted Go version" error. v2.13.2 is built with go1.27.0.
+# reviewdog/action-golangci-lint must be >= v2.8.0 to honour a v2.x pin.
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+
+permissions:
+  contents: read
+  pull-requests: write   # reviewdog needs this to post inline review comments (same-repo PRs only)
+  checks: write          # for the check-run summary
+
+jobs:
+  golangci-lint-diff:
+    name: golangci-lint (diff-only, inline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.1
+        with:
+          # reviewdog needs the merge-base to compute the PR diff.
+          fetch-depth: 0
+
+      # Installs Go from go.mod plus libwebp-dev, which the root module
+      # requires in order to type-check.
+      - name: Setup Go and system deps
+        uses: ./.github/actions/setup-env
+
+      # Same-repo PRs: post findings as inline review comments. The default
+      # GITHUB_TOKEN has the `pull-requests: write` scope declared above.
+      #
+      # We deliberately do NOT set `level` here: reviewdog's `level` input
+      # REWRITES every finding's severity rather than defaulting it, so
+      # `level: warning` combined with `fail_level: error` would silently
+      # neuter the gate. Leaving it unset preserves native severities so
+      # govet/staticcheck errors actually trip `fail_level: error`.
+      - name: golangci-lint via reviewdog (same-repo PR — inline comments)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: reviewdog/action-golangci-lint@v2.10.0
+        with:
+          go_version_file: go.mod
+          golangci_lint_version: v2.13.2
+          golangci_lint_flags: "--config=.golangci.yml --timeout=15m"
+          workdir: .
+          # Only annotate lines actually changed by the PR.
+          filter_mode: added
+          reporter: github-pr-review
+          fail_level: error
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fork PRs: GITHUB_TOKEN is strictly read-only regardless of the
+      # workflow-level permissions block, so neither `github-pr-review`
+      # (needs pull-requests: write) nor `github-pr-check` (needs
+      # checks: write) can post results. The `local` reporter writes findings
+      # to the job log instead. `fail_level: error` still fails the job, so
+      # the check continues to block merge for external contributors.
+      - name: golangci-lint via reviewdog (fork PR — log-only)
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        uses: reviewdog/action-golangci-lint@v2.10.0
+        with:
+          go_version_file: go.mod
+          golangci_lint_version: v2.13.2
+          golangci_lint_flags: "--config=.golangci.yml --timeout=15m"
+          workdir: .
+          filter_mode: added
+          reporter: local
+          fail_level: error
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
