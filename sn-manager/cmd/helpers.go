@@ -50,6 +50,8 @@ func ensureSupernodeInitialized() error {
 		userHome = os.Getenv("HOME")
 	}
 	supernodeConfigPath := filepath.Join(userHome, ".supernode", "config.yml")
+	// #nosec G703 -- path is derived from the operator's own home directory
+	// (os.UserHomeDir/$HOME), not from untrusted input, and is only stat'ed.
 	if _, err := os.Stat(supernodeConfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("SuperNode not initialized. Please run 'sn-manager init' first to configure your validator keys and network settings")
 	}

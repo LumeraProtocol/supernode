@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	// #nosec G108 -- importing net/http/pprof registers handlers on
+	// http.DefaultServeMux, but this server never serves DefaultServeMux. The
+	// pprof routes below are registered on a private mux and are only wired up
+	// when pprofEnabled (testnet chain-id or ENABLE_PPROF=true); the handlers
+	// additionally re-check that flag and return 403 otherwise.
 	_ "net/http/pprof"
 	"os"
 	"strconv"

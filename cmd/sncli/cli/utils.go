@@ -25,6 +25,8 @@ func NormalizePath(path string) string {
 func processConfigPath(path string) string {
 	path = NormalizePath(path)
 	// check if path defines directory
+	// #nosec G703 -- path is an explicit operator-supplied --config value for
+	// a local CLI, already normalized/cleaned above; only stat'ed here.
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		path = filepath.Join(path, defaultConfigFileName)
 	}

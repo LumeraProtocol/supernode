@@ -1,0 +1,128 @@
+name: Gosec Security Scan
+
+# Port of the Lumera chain repo's `gosec.yml` (LumeraProtocol/lumera#213).
+#
+# Same tool, same policy: HIGH severity + HIGH confidence, suppressions must
+# carry both a rule ID and a justification (`-nosec-require-rules`,
+# `-nosec-require-justification`), results published to GitHub code scanning
+# as SARIF.
+#
+# Difference from the chain repo: supernode has four Go modules instead of
+# three. gosec's package loader walks a single module at a time, so each is
+# scanned from its own working directory. A root `./...` run does NOT cover
+# the nested modules.
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gosec:
+    name: gosec (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      # Report every module; one module's findings must not hide another's.
+      fail-fast: false
+      matrix:
+        include:
+          - name: supernode
+            module: .
+          - name: sncli
+            module: cmd/sncli
+          - name: sn-manager
+            module: sn-manager
+          - name: systemtests
+            module: tests/system
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.1
+
+      # Installs Go from go.mod, libwebp-dev (required for the root module to
+      # type-check — without it gosec fails SSA construction rather than
+      # reporting a clean scan), and GOPRIVATE for the Lumera module.
+      - name: Setup Go and system deps
+        uses: ./.github/actions/setup-env
+
+      - name: Download Go modules
+        working-directory: ${{ matrix.module }}
+        run: go mod download
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+
+      # No `continue-on-error` here: this is a blocking gate. `-stdout
+      # -verbose text` keeps findings readable in the job log even when the
+      # SARIF upload is skipped (fork PRs).
+      - name: Run gosec
+        working-directory: ${{ matrix.module }}
+        run: |
+          gosec \
+            -severity high \
+            -confidence high \
+            -nosec-require-rules \
+            -nosec-require-justification \
+            -fmt sarif \
+            -out gosec.sarif \
+            -stdout \
+            -verbose text \
+            ./...
+
+      # gosec emits artifact URIs relative to the scanned module, so findings
+      # from nested modules would otherwise be attributed to paths that do not
+      # exist at the repository root. Prefix them with the module directory.
+      - name: Normalize SARIF paths
+        if: ${{ always() && matrix.module != '.' }}
+        env:
+          GOSEC_MODULE: ${{ matrix.module }}
+          GOSEC_SARIF: ${{ matrix.module }}/gosec.sarif
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import PurePosixPath
+          from urllib.parse import urlparse
+
+          sarif_path = os.environ["GOSEC_SARIF"]
+          module = os.environ["GOSEC_MODULE"].strip("/")
+          with open(sarif_path, encoding="utf-8") as sarif_file:
+              sarif = json.load(sarif_file)
+
+          def prefix_artifact_uris(value):
+              if isinstance(value, dict):
+                  artifact = value.get("artifactLocation")
+                  if isinstance(artifact, dict):
+                      uri = artifact.get("uri")
+                      if isinstance(uri, str) and uri and not urlparse(uri).scheme and not uri.startswith("/"):
+                          if not uri.startswith(module + "/"):
+                              artifact["uri"] = str(PurePosixPath(module) / uri)
+                  for child in value.values():
+                      prefix_artifact_uris(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      prefix_artifact_uris(child)
+
+          prefix_artifact_uris(sarif)
+          with open(sarif_path, "w", encoding="utf-8") as sarif_file:
+              json.dump(sarif, sarif_file, separators=(",", ":"))
+          PY
+
+      # `security-events: write` is not granted to fork PRs, and dependabot
+      # runs with a read-only token, so skip only the upload for those. The
+      # scan itself still runs and still blocks.
+      - name: Upload SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ matrix.module }}/gosec.sarif
+          category: gosec-${{ matrix.name }}

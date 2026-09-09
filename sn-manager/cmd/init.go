@@ -237,6 +237,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		userHome = os.Getenv("HOME")
 	}
 	supernodeConfigPath := filepath.Join(userHome, ".supernode", "config.yml")
+	// #nosec G703 -- path is derived from the operator's own home directory
+	// (os.UserHomeDir/$HOME), not from untrusted input, and is only stat'ed.
 	if _, err := os.Stat(supernodeConfigPath); err == nil {
 		fmt.Println("✓ SuperNode already initialized, skipping initialization")
 	} else {
