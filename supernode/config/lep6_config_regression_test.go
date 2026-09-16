@@ -7,36 +7,35 @@ import (
 	"testing"
 )
 
-// LEP-6 review regression: LEP-6 PR286 review fix regression tests.
+// LEP-6 config regression tests.
 //
 // Coverage:
-//   - C1: missing-block default for LEP-6 toggles is FALSE (no silent
-//     upgrade-time opt-in). Already covered structurally by
-//     TestLoadConfig_LEP6SafeDefaults; this file adds focused negative
-//     cases (wrong-direction default would cause auto-opt-in) and the
-//     advisory helper.
+//   - Missing-block defaults are ON for storage_challenge, LEP-6 dispatch,
+//     recheck, and self-healing so testnet operators get storage-truth
+//     runtime after update unless they explicitly emergency-disable it.
 //   - L6: structural validator rejects recheck=true with disabled parents.
-//     Before this fix, fixtures could carry recheck.enabled=true while
-//     storage_challenge.enabled=false, silently no-op'd at runtime.
 
-func TestLoadConfig_C1_MissingBlocksDefaultDisabled(t *testing.T) {
+func TestLoadConfig_MissingBlocksDefaultEnabled(t *testing.T) {
 	t.Parallel()
 
-	// No LEP-6 / recheck / self_healing block at all — defaults must be FALSE.
+	// No storage_challenge / LEP-6 / recheck / self_healing block at all — defaults must be TRUE.
 	cfg := loadConfigFromBody(t, baseConfigYAML())
 
-	if cfg.StorageChallengeConfig.LEP6.Enabled {
-		t.Fatalf("C1: storage_challenge.lep6.enabled = true on missing-block; want false (no silent opt-in)")
+	if !cfg.StorageChallengeConfig.Enabled {
+		t.Fatalf("storage_challenge.enabled = false on missing-block; want true")
 	}
-	if cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
-		t.Fatalf("C1: storage_challenge.lep6.recheck.enabled = true on missing-block; want false")
+	if !cfg.StorageChallengeConfig.LEP6.Enabled {
+		t.Fatalf("storage_challenge.lep6.enabled = false on missing-block; want true")
 	}
-	if cfg.SelfHealingConfig.Enabled {
-		t.Fatalf("C1: self_healing.enabled = true on missing-block; want false")
+	if !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
+		t.Fatalf("storage_challenge.lep6.recheck.enabled = false on missing-block; want true")
+	}
+	if !cfg.SelfHealingConfig.Enabled {
+		t.Fatalf("self_healing.enabled = false on missing-block; want true")
 	}
 }
 
-func TestLoadConfig_C1_ExplicitTrueRespected(t *testing.T) {
+func TestLoadConfig_ExplicitTrueRespected(t *testing.T) {
 	t.Parallel()
 
 	cfg := loadConfigFromBody(t, baseConfigYAML()+`
@@ -51,24 +50,33 @@ self_healing:
 `)
 
 	if !cfg.StorageChallengeConfig.LEP6.Enabled {
-		t.Fatalf("C1: explicit storage_challenge.lep6.enabled=true must be respected")
+		t.Fatalf("explicit storage_challenge.lep6.enabled=true must be respected")
 	}
 	if !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
-		t.Fatalf("C1: explicit recheck.enabled=true must be respected")
+		t.Fatalf("explicit recheck.enabled=true must be respected")
 	}
 	if !cfg.SelfHealingConfig.Enabled {
-		t.Fatalf("C1: explicit self_healing.enabled=true must be respected")
+		t.Fatalf("explicit self_healing.enabled=true must be respected")
 	}
 }
 
-func TestLoadConfig_C1_OptInAdvisory(t *testing.T) {
+func TestLoadConfig_LEP6OperatorOptInAdvisory(t *testing.T) {
 	t.Parallel()
 
-	// All three opted out — advisory must mention each disabled service.
-	allOff := loadConfigFromBody(t, baseConfigYAML())
+	// Explicitly opted out — advisory must mention each disabled service.
+	allOff := loadConfigFromBody(t, baseConfigYAML()+`
+storage_challenge:
+  enabled: true
+  lep6:
+    enabled: false
+    recheck:
+      enabled: false
+self_healing:
+  enabled: false
+`)
 	advisory := allOff.LEP6OperatorOptInAdvisory()
 	if advisory == "" {
-		t.Fatalf("C1: advisory must be non-empty when toggles are off")
+		t.Fatalf("advisory must be non-empty when toggles are off")
 	}
 	for _, want := range []string{
 		"storage_challenge.lep6.enabled=false",
@@ -80,17 +88,8 @@ func TestLoadConfig_C1_OptInAdvisory(t *testing.T) {
 		}
 	}
 
-	// All three opted in — advisory must be empty.
-	allOn := loadConfigFromBody(t, baseConfigYAML()+`
-storage_challenge:
-  enabled: true
-  lep6:
-    enabled: true
-    recheck:
-      enabled: true
-self_healing:
-  enabled: true
-`)
+	// Missing blocks now default on — advisory must be empty.
+	allOn := loadConfigFromBody(t, baseConfigYAML())
 	if got := allOn.LEP6OperatorOptInAdvisory(); got != "" {
 		t.Fatalf("C1 advisory should be empty when all opted in; got %q", got)
 	}

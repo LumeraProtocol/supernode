@@ -38,6 +38,24 @@ func ticketIDsOf(rs []*audittypes.StorageProofResult) []string {
 	return out
 }
 
+func TestBuffer_CountResultsDoesNotDrain(t *testing.T) {
+	b := NewBuffer()
+	b.Append(21, mkResult(bucketRecent, "ticket-a"))
+	b.Append(21, mkResult(bucketOld, "ticket-b"))
+
+	if got := b.CountResults(21); got != 2 {
+		t.Fatalf("want count 2, got %d", got)
+	}
+	if got := b.CountResults(22); got != 0 {
+		t.Fatalf("want count 0 for different epoch, got %d", got)
+	}
+
+	results := b.CollectResults(21)
+	if len(results) != 2 {
+		t.Fatalf("CountResults drained buffer: collect returned %d", len(results))
+	}
+}
+
 func TestBuffer_BelowCap_ReturnsAllSortedDeterministically(t *testing.T) {
 	b := NewBuffer()
 	// Append in scrambled order; expect sort by (BucketType, TicketId).

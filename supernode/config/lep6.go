@@ -32,6 +32,17 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+func (c *StorageChallengeConfig) UnmarshalYAML(value *yaml.Node) error {
+	type raw StorageChallengeConfig
+	var out raw
+	if err := value.Decode(&out); err != nil {
+		return err
+	}
+	*c = StorageChallengeConfig(out)
+	c.enabledSet = hasYAMLKey(value, "enabled")
+	return nil
+}
+
 func (c *StorageChallengeLEP6Config) UnmarshalYAML(value *yaml.Node) error {
 	type raw StorageChallengeLEP6Config
 	var out raw
@@ -77,30 +88,22 @@ func hasYAMLKey(value *yaml.Node, key string) bool {
 	return false
 }
 
-// applyLEP6DefaultsAndValidate applies safe defaults to LEP-6 toggles and
-// runtime knobs, then runs validation.
+// applyLEP6DefaultsAndValidate applies testnet-ready defaults to LEP-6
+// toggles and runtime knobs, then runs validation.
 //
-// LEP-6 review C1 (Matee, 2026-05-06): the missing-block default for the
-// three LEP-6 toggles (storage_challenge.lep6.enabled,
-// storage_challenge.lep6.recheck.enabled, self_healing.enabled) is FALSE.
-// Pre-Wave-4 the missing-block default was TRUE, which silently auto-opted
-// every operator into LEP-6 on upgrade. Now an operator must explicitly
-// opt in via either an explicit `enabled: true` in their YAML or by relying
-// on `CreateDefaultConfig`, which writes the explicit toggles into the
-// generated supernode.yml. Operators who want their existing config to
-// pick up LEP-6 must add the toggles explicitly.
-//
-// Chain enforcement remains the protocol source of truth: even when these
-// toggles are TRUE, every LEP-6 service no-ops while
-// StorageTruthEnforcementMode is UNSPECIFIED (see e.g.
-// LEP6Dispatcher.DispatchEpoch and self_healing.Service.Run). The toggles
-// are only an operator-side opt-in switch.
+// Storage truth remains chain-gated: even when local toggles default TRUE,
+// every LEP-6 service no-ops while StorageTruthEnforcementMode is
+// UNSPECIFIED. Operators can still emergency-disable any local runtime by
+// setting the relevant `enabled: false` explicitly in YAML.
 func (c *Config) applyLEP6DefaultsAndValidate() error {
-	// LEP-6 toggles: missing-block defaults to FALSE (C1).
-	// enabledSet=true means the YAML had an explicit `enabled:` key — keep
-	// the operator's value verbatim.
+	// Local storage-truth runtimes default ON for testnet operators who update
+	// without adding new config blocks. enabledSet=true means the YAML had an
+	// explicit `enabled:` key — keep the operator's value verbatim.
+	if !c.StorageChallengeConfig.enabledSet {
+		c.StorageChallengeConfig.Enabled = true
+	}
 	if !c.StorageChallengeConfig.LEP6.enabledSet {
-		c.StorageChallengeConfig.LEP6.Enabled = false
+		c.StorageChallengeConfig.LEP6.Enabled = true
 	}
 	if c.StorageChallengeConfig.LEP6.MaxConcurrentTargets == 0 {
 		c.StorageChallengeConfig.LEP6.MaxConcurrentTargets = DefaultLEP6MaxConcurrentTargets
@@ -111,7 +114,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 
 	recheck := &c.StorageChallengeConfig.LEP6.Recheck
 	if !recheck.enabledSet {
-		recheck.Enabled = false
+		recheck.Enabled = true
 	}
 	if recheck.LookbackEpochs == 0 {
 		recheck.LookbackEpochs = DefaultLEP6RecheckLookbackEpochs
@@ -130,7 +133,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 	}
 
 	if !c.SelfHealingConfig.enabledSet {
-		c.SelfHealingConfig.Enabled = false
+		c.SelfHealingConfig.Enabled = true
 	}
 	if c.SelfHealingConfig.PollIntervalMs == 0 {
 		c.SelfHealingConfig.PollIntervalMs = int(DefaultSelfHealingPollInterval / time.Millisecond)

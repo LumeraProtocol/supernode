@@ -27,9 +27,10 @@ import (
 )
 
 const (
-	defaultPollInterval = 5 * time.Second
-	defaultDialTimeout  = 2 * time.Second
-	defaultTickTimeout  = 30 * time.Second
+	defaultPollInterval           = 5 * time.Second
+	defaultDialTimeout            = 2 * time.Second
+	defaultTickTimeout            = 30 * time.Second
+	defaultNonFullProofWaitWindow = 90 * time.Second
 
 	maxConcurrentTargets = 8
 
@@ -55,6 +56,14 @@ type ProofResultRequeuer interface {
 	RequeueResults(epochID uint64, results []*audittypes.StorageProofResult)
 }
 
+// ProofResultCounter is implemented by providers that can report whether proof
+// rows are buffered without draining them. This lets SHADOW / SOFT reports wait
+// briefly for LEP-6 dispatch instead of burning the one-report-per-epoch slot
+// before late proof rows arrive.
+type ProofResultCounter interface {
+	CountResults(epochID uint64) int
+}
+
 // Service submits one MsgSubmitEpochReport per epoch for the local supernode.
 // All runtime behavior is driven by on-chain params/queries; there are no local config knobs.
 type Service struct {
@@ -73,6 +82,9 @@ type Service struct {
 
 	proofResultProviderMu sync.RWMutex
 	proofResultProvider   ProofResultProvider
+
+	nonFullProofWaitWindow  time.Duration
+	nonFullProofWaitStarted map[uint64]time.Time
 }
 
 // SetProofResultProvider attaches a ProofResultProvider to be drained on each
@@ -130,15 +142,17 @@ func NewService(identity string, lumeraClient lumera.Client, kr keyring.Keyring,
 	}
 
 	return &Service{
-		identity:     identity,
-		lumera:       lumeraClient,
-		keyring:      kr,
-		keyName:      keyName,
-		pollInterval: defaultPollInterval,
-		dialTimeout:  defaultDialTimeout,
-		metrics:      statussvc.NewMetricsCollector(),
-		storagePaths: storagePaths,
-		p2pDataDir:   strings.TrimSpace(p2pDataDir),
+		identity:                identity,
+		lumera:                  lumeraClient,
+		keyring:                 kr,
+		keyName:                 keyName,
+		pollInterval:            defaultPollInterval,
+		dialTimeout:             defaultDialTimeout,
+		metrics:                 statussvc.NewMetricsCollector(),
+		storagePaths:            storagePaths,
+		p2pDataDir:              strings.TrimSpace(p2pDataDir),
+		nonFullProofWaitWindow:  defaultNonFullProofWaitWindow,
+		nonFullProofWaitStarted: make(map[uint64]time.Time),
 	}, nil
 }
 
@@ -191,8 +205,20 @@ func (s *Service) tick(ctx context.Context) {
 	var storageProofResults []*audittypes.StorageProofResult
 	proofResultProvider := s.getProofResultProvider()
 	if proofResultProvider != nil {
-		storageProofResults = proofResultProvider.CollectResults(epochID)
 		mode, modeOK := s.storageTruthEnforcementMode(tickCtx)
+		if modeOK && mode != audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL && len(assignResp.TargetSupernodeAccounts) > 0 {
+			if counter, ok := proofResultProvider.(ProofResultCounter); ok && counter.CountResults(epochID) == 0 && s.shouldWaitForNonFullProofRows(epochID) {
+				logtrace.Info(tickCtx, "epoch report: waiting for non-FULL LEP-6 proof rows", logtrace.Fields{
+					"epoch_id":         epochID,
+					"assigned_targets": len(assignResp.TargetSupernodeAccounts),
+					"mode":             mode.String(),
+					"wait_window_ms":   s.nonFullProofWaitWindow.Milliseconds(),
+				})
+				return
+			}
+		}
+		storageProofResults = proofResultProvider.CollectResults(epochID)
+		delete(s.nonFullProofWaitStarted, epochID)
 		if modeOK && mode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL {
 			// FULL mode is the only mode where the chain enforces compound
 			// storage-proof coverage (one RECENT + one OLD per assigned target).
@@ -214,15 +240,11 @@ func (s *Service) tick(ctx context.Context) {
 			}
 		} else if modeOK && len(assignResp.TargetSupernodeAccounts) > 0 && len(storageProofResults) == 0 {
 			// SHADOW / SOFT / UNSPECIFIED: chain accepts empty StorageProofResults
-			// (only FULL enforces compound coverage). Submitting the host /
-			// peer-observation report is mandatory regardless — withholding it
-			// would feed audit_missing_reports and risk self-postponement
-			// (ConsecutiveEpochsToPostpone defaults to 1). The trade-off is
-			// that a same-epoch idempotency window can cause late-arriving
-			// proof rows to be rejected as duplicate; that is acceptable in
-			// observational modes because SHADOW/SOFT proofs do not affect
-			// scoring (LEP-6 PR286 review F1).
-			logtrace.Info(tickCtx, "epoch report: submitting in non-FULL mode with empty LEP-6 proof rows", logtrace.Fields{
+			// (only FULL enforces compound coverage). We wait only for a bounded
+			// local window before submitting empty rows, preserving host-report
+			// liveness while avoiding the early-submit race that discards late
+			// LEP-6 proof rows as duplicate epoch reports.
+			logtrace.Info(tickCtx, "epoch report: submitting in non-FULL mode with empty LEP-6 proof rows after wait window", logtrace.Fields{
 				"epoch_id":         epochID,
 				"assigned_targets": len(assignResp.TargetSupernodeAccounts),
 				"mode":             mode.String(),
@@ -280,10 +302,18 @@ func (s *Service) tick(ctx context.Context) {
 		//   - any other error (transient RPC / sequence / validation) →
 		//     requeue so next tick can retry with the same proofs.
 		if chainerrors.IsEpochReportDuplicate(err) {
-			logtrace.Info(tickCtx, "epoch report submit returned chain duplicate; drained proof rows discarded", logtrace.Fields{
+			fields := logtrace.Fields{
 				"epoch_id":      epochID,
 				"proof_results": len(storageProofResults),
-			})
+			}
+			if len(storageProofResults) > 0 {
+				fields["proof_result_classes"] = proofResultClassCounts(storageProofResults)
+			}
+			if len(storageProofResults) > 0 {
+				logtrace.Warn(tickCtx, "epoch report submit returned chain duplicate; drained proof rows discarded", fields)
+			} else {
+				logtrace.Info(tickCtx, "epoch report submit returned chain duplicate; drained proof rows discarded", fields)
+			}
 			return
 		}
 		requeueProofResults(proofResultProvider, epochID, storageProofResults)
@@ -300,6 +330,32 @@ func (s *Service) tick(ctx context.Context) {
 		"storage_challenge_observations_count": len(storageChallengeObservations),
 		"storage_proof_results_count":          len(storageProofResults),
 	})
+}
+
+func proofResultClassCounts(results []*audittypes.StorageProofResult) map[string]uint64 {
+	out := make(map[string]uint64)
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		out[result.ResultClass.String()]++
+	}
+	return out
+}
+
+func (s *Service) shouldWaitForNonFullProofRows(epochID uint64) bool {
+	if s.nonFullProofWaitWindow <= 0 {
+		return false
+	}
+	if s.nonFullProofWaitStarted == nil {
+		s.nonFullProofWaitStarted = make(map[uint64]time.Time)
+	}
+	started, ok := s.nonFullProofWaitStarted[epochID]
+	if !ok {
+		s.nonFullProofWaitStarted[epochID] = time.Now()
+		return true
+	}
+	return time.Since(started) < s.nonFullProofWaitWindow
 }
 
 func (s *Service) storageTruthEnforcementMode(ctx context.Context) (audittypes.StorageTruthEnforcementMode, bool) {
