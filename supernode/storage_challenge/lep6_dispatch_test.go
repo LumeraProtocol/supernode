@@ -56,6 +56,14 @@ func (s *dispatchAuditModule) GetCurrentEpochAnchor(ctx context.Context) (*audit
 	return &audittypes.QueryCurrentEpochAnchorResponse{}, nil
 }
 func (s *dispatchAuditModule) GetAssignedTargets(ctx context.Context, supernodeAccount string, epochID uint64) (*audittypes.QueryAssignedTargetsResponse, error) {
+	if s.assigned != nil && s.assigned.ReporterSupernodeAccount == "" {
+		s.assigned.EpochId = epochID
+		s.assigned.ReporterSupernodeAccount = supernodeAccount
+		s.assigned.TargetAccountMappings = make([]audittypes.AccountIdentityMapping, len(s.assigned.TargetSupernodeAccounts))
+		for i, target := range s.assigned.TargetSupernodeAccounts {
+			s.assigned.TargetAccountMappings[i] = audittypes.AccountIdentityMapping{LogicalAccount: target, CurrentAccount: target}
+		}
+	}
 	return s.assigned, nil
 }
 func (s *dispatchAuditModule) GetEpochReport(ctx context.Context, epochID uint64, supernodeAccount string) (*audittypes.QueryEpochReportResponse, error) {
@@ -142,9 +150,11 @@ func (s *stubCompoundClient) Close() error { return nil }
 type stubFactory struct {
 	client *stubCompoundClient
 	err    error
+	dials  [][2]string
 }
 
-func (s *stubFactory) Dial(_ context.Context, _ string) (SupernodeCompoundClient, error) {
+func (s *stubFactory) Dial(_ context.Context, logical, current string) (SupernodeCompoundClient, error) {
+	s.dials = append(s.dials, [2]string{logical, current})
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -230,7 +240,7 @@ func TestAppendNoEligiblePreservedWhenOnlySelectedTicketExists(t *testing.T) {
 	d, buf := newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
 	anchor := makeAnchor(9, 1000, "target-1")
 
-	d.appendNoEligible(context.Background(), buf, 9, anchor, "target-1", audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, "ticket-existing")
+	d.appendNoEligible(context.Background(), buf, 9, anchor, "reporter-1", "target-1", audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, "ticket-existing")
 
 	results := buf.CollectResults(9)
 	require.Len(t, results, 1, "selected ticket alone is not a chain transcript-history conflict; H6 class-roll fallback still emits NO_ELIGIBLE")
@@ -248,7 +258,7 @@ func TestAppendNoEligibleSuppressedWhenBufferedEligibleResultExists(t *testing.T
 		ResultClass:            audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
 	})
 
-	d.appendNoEligible(context.Background(), buf, 10, anchor, "target-1", bucket, "")
+	d.appendNoEligible(context.Background(), buf, 10, anchor, "reporter-1", "target-1", bucket, "")
 
 	results := buf.CollectResults(10)
 	require.Len(t, results, 1)
@@ -350,14 +360,21 @@ func TestDispatchEpoch_GetCompoundProofError_EmitsFailClass(t *testing.T) {
 	const epochID uint64 = 17
 	// EpochEndHeight=200, ticket anchor=100 → currentHeight-anchor=100 < 300 →
 	// RECENT bucket eligible.
-	anchor := makeAnchor(epochID, 200, "sn-target")
+	anchor := makeAnchor(epochID, 200, "target-A")
 	audit := &dispatchAuditModule{
-		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)},
-		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
-		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+		params: &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)},
+		anchor: &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{
+			EpochId:                  epochID,
+			ReporterSupernodeAccount: "reporter-A",
+			TargetSupernodeAccounts:  []string{"target-A"},
+			TargetAccountMappings: []audittypes.AccountIdentityMapping{{
+				LogicalAccount: "target-A", CurrentAccount: "target-B",
+			}},
+		},
 	}
 	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
-		"sn-target": {{TicketID: "tkt-rpc-fail", AnchorBlock: 100}},
+		"target-A": {{TicketID: "tkt-rpc-fail", AnchorBlock: 100}},
 	}}
 	// Cascade meta: SYMBOL-only with one id; artifact_size big enough for 4*256.
 	meta := stubMetaProvider{
@@ -369,6 +386,10 @@ func TestDispatchEpoch_GetCompoundProofError_EmitsFailClass(t *testing.T) {
 	d, buf := newDispatcher(t, audit, factory, tickets, meta)
 
 	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	require.Equal(t, [][2]string{{"target-A", "target-B"}}, factory.dials, "live routing must use the current target while retaining its logical identity")
+	require.Len(t, factory.client.requests, 1)
+	require.Equal(t, "reporter-A", factory.client.requests[0].ChallengerAccount)
+	require.Equal(t, "target-A", factory.client.requests[0].TargetSupernodeAccount, "recipient payload must carry the epoch-logical target")
 	results := buf.CollectResults(epochID)
 	require.NotEmpty(t, results)
 	// Expect a FAIL class for the RECENT bucket (single eligible ticket) and
@@ -378,7 +399,37 @@ func TestDispatchEpoch_GetCompoundProofError_EmitsFailClass(t *testing.T) {
 		switch r.ResultClass {
 		case audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT:
 			sawFail = true
+			require.Equal(t, "reporter-A", r.ChallengerSupernodeAccount)
+			require.Equal(t, "target-A", r.TargetSupernodeAccount)
 			require.Contains(t, r.Details, "rpc unavailable")
+
+			logicalTranscript, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
+				EpochID:                    epochID,
+				ChallengerSupernodeAccount: "reporter-A",
+				TargetSupernodeAccount:     "target-A",
+				TicketID:                   r.TicketId,
+				Bucket:                     r.BucketType,
+				ArtifactClass:              r.ArtifactClass,
+				ArtifactOrdinal:            r.ArtifactOrdinal,
+				ArtifactKey:                r.ArtifactKey,
+				DerivationInputHash:        r.DerivationInputHash,
+			})
+			require.NoError(t, err)
+			require.Equal(t, logicalTranscript, r.TranscriptHash, "transcript must remain bound to epoch-logical identities")
+
+			currentTranscript, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
+				EpochID:                    epochID,
+				ChallengerSupernodeAccount: d.self,
+				TargetSupernodeAccount:     "target-B",
+				TicketID:                   r.TicketId,
+				Bucket:                     r.BucketType,
+				ArtifactClass:              r.ArtifactClass,
+				ArtifactOrdinal:            r.ArtifactOrdinal,
+				ArtifactKey:                r.ArtifactKey,
+				DerivationInputHash:        r.DerivationInputHash,
+			})
+			require.NoError(t, err)
+			require.NotEqual(t, currentTranscript, r.TranscriptHash, "current routing identities must not leak into the transcript")
 		case audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET:
 			sawNoEligible = true
 		}

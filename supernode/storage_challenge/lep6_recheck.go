@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	auditmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/audit"
 	"github.com/LumeraProtocol/supernode/v2/supernode/recheck"
 )
 
@@ -46,10 +47,23 @@ func (d *LEP6Dispatcher) Recheck(ctx context.Context, c recheck.Candidate) (rech
 		return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: epoch anchor not yet available for epoch %d", c.EpochID)
 	}
 
+	assigned, err := d.client.Audit().GetAssignedTargets(ctx, d.self, c.EpochID)
+	if err != nil {
+		return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: get assigned targets: %w", err)
+	}
+	assignment, err := auditmod.ResolveAssignedTargets(assigned, c.EpochID)
+	if err != nil {
+		return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: invalid assigned targets: %w", err)
+	}
+	target, ok := assignedTargetByLogicalAccount(assignment.Targets, c.TargetAccount)
+	if !ok {
+		return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: target %s is not assigned in epoch %d", c.TargetAccount, c.EpochID)
+	}
+
 	// Per-call ephemeral buffer: dispatchTicket writes here, dispatcher's
 	// shared buffer is left alone. No global lock held during the RPC.
 	tmp := NewBuffer()
-	if err := d.dispatchTicket(ctx, tmp, c.EpochID, anchorResp.Anchor, params, c.TargetAccount, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
+	if err := d.dispatchTicket(ctx, tmp, c.EpochID, anchorResp.Anchor, params, assignment.ReporterAccount, target, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
 		return recheck.RecheckResult{}, err
 	}
 	results := tmp.CollectResults(c.EpochID)
@@ -64,4 +78,13 @@ func (d *LEP6Dispatcher) Recheck(ctx context.Context, c recheck.Candidate) (rech
 		return recheck.RecheckResult{TranscriptHash: r.TranscriptHash, ResultClass: cls, Details: r.Details}, nil
 	}
 	return recheck.RecheckResult{}, fmt.Errorf("lep6 recheck: no result emitted for epoch=%d ticket=%s target=%s", c.EpochID, c.TicketID, c.TargetAccount)
+}
+
+func assignedTargetByLogicalAccount(targets []auditmod.AssignedTarget, logical string) (auditmod.AssignedTarget, bool) {
+	for _, target := range targets {
+		if target.LogicalAccount == logical {
+			return target, true
+		}
+	}
+	return auditmod.AssignedTarget{}, false
 }
