@@ -72,6 +72,8 @@ type LogConfig struct {
 }
 
 type StorageChallengeConfig struct {
+	enabledSet bool `yaml:"-"`
+
 	Enabled        bool                       `yaml:"enabled"`
 	PollIntervalMs uint64                     `yaml:"poll_interval_ms,omitempty"`
 	SubmitEvidence bool                       `yaml:"submit_evidence,omitempty"`

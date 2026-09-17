@@ -94,6 +94,15 @@ func (b *Buffer) RequeueResults(epochID uint64, results []*audittypes.StoragePro
 	}
 }
 
+// CountResults returns the number of buffered proof rows for epochID without
+// draining them. Host reporter uses this to avoid submitting an early SHADOW /
+// SOFT epoch report before the LEP-6 dispatcher has had a chance to append rows.
+func (b *Buffer) CountResults(epochID uint64) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.byEpoch[epochID])
+}
+
 // HasEligibleResult reports whether the current in-memory buffer already has a
 // non-NO_ELIGIBLE row for (epoch,target,bucket). It is intentionally scoped to
 // this process/epoch; the current Lumera audit query interface does not expose

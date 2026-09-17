@@ -249,8 +249,7 @@ func (f *fakeMigrationClient) BroadcastMigrationTx(_ context.Context, msg sdk.Ms
 // newMigrationCfg creates a config with tmpDir for tests that need config persistence.
 func newMigrationCfg(t *testing.T, keyName, evmKeyName string) *snConfig.Config {
 	t.Helper()
-	cfg := &snConfig.Config{}
-	cfg.SupernodeConfig.KeyName = keyName
+	cfg := snConfig.CreateDefaultConfig(keyName, "", "testing", "test", "keys", "", "", "")
 	cfg.SupernodeConfig.EVMKeyName = evmKeyName
 	cfg.BaseDir = t.TempDir()
 	return cfg
@@ -793,13 +792,8 @@ func TestKeyDeleteAfterMigration(t *testing.T) {
 func TestConfigUpdateAfterMigration(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	cfg := &snConfig.Config{
-		SupernodeConfig: snConfig.SupernodeConfig{
-			KeyName:    "mykey",
-			Identity:   "lumera1oldaddr",
-			EVMKeyName: "evm-key",
-		},
-	}
+	cfg := snConfig.CreateDefaultConfig("mykey", "lumera1oldaddr", "testing", "test", "keys", "", "", "")
+	cfg.SupernodeConfig.EVMKeyName = "evm-key"
 	cfg.BaseDir = tmpDir
 
 	newAddr := "lumera1newaddr"

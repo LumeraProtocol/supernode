@@ -8,17 +8,14 @@ import (
 	"time"
 )
 
-func TestLoadConfig_LEP6SafeDefaults(t *testing.T) {
+func TestLoadConfig_LEP6DefaultEnabled(t *testing.T) {
 	t.Parallel()
 
-	// LEP-6 review C1 (Matee, 2026-05-06): with the missing-block default
-	// flipped to FALSE, an operator who upgrades without adding the LEP-6
-	// toggles MUST stay opted out. This test pins that contract: even
-	// though storage_challenge.enabled=true, the missing lep6 / recheck /
-	// self_healing blocks default to disabled. Operators must opt in
-	// explicitly. Runtime knobs (timeouts, concurrency) still receive
-	// their defaults so that flipping a toggle on later requires no
-	// further config edits.
+	// Testnet rollout default: an operator who upgrades without adding the
+	// LEP-6 blocks should run storage challenge + LEP-6 while the chain
+	// StorageTruthEnforcementMode remains the protocol gate. Explicit
+	// enabled:false remains the emergency-disable path. Runtime knobs
+	// still receive defaults so no extra config edits are required.
 	cfg := loadConfigFromBody(t, `
 supernode:
   key_name: test-key
@@ -40,8 +37,11 @@ storage_challenge:
   enabled: true
 `)
 
-	if cfg.StorageChallengeConfig.LEP6.Enabled {
-		t.Fatalf("storage_challenge.lep6.enabled default = true, want false (C1: opt-in not opt-out)")
+	if !cfg.StorageChallengeConfig.Enabled {
+		t.Fatalf("storage_challenge.enabled default = false, want true")
+	}
+	if !cfg.StorageChallengeConfig.LEP6.Enabled {
+		t.Fatalf("storage_challenge.lep6.enabled default = false, want true")
 	}
 	if cfg.StorageChallengeConfig.LEP6.MaxConcurrentTargets != DefaultLEP6MaxConcurrentTargets {
 		t.Fatalf("max_concurrent_targets = %d, want %d", cfg.StorageChallengeConfig.LEP6.MaxConcurrentTargets, DefaultLEP6MaxConcurrentTargets)
@@ -49,8 +49,8 @@ storage_challenge:
 	if cfg.StorageChallengeConfig.LEP6.RecipientReadTimeout != DefaultLEP6RecipientReadTimeout {
 		t.Fatalf("recipient_read_timeout = %s, want %s", cfg.StorageChallengeConfig.LEP6.RecipientReadTimeout, DefaultLEP6RecipientReadTimeout)
 	}
-	if cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
-		t.Fatalf("storage_challenge.lep6.recheck.enabled default = true, want false (C1)")
+	if !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
+		t.Fatalf("storage_challenge.lep6.recheck.enabled default = false, want true")
 	}
 	if cfg.StorageChallengeConfig.LEP6.Recheck.LookbackEpochs != DefaultLEP6RecheckLookbackEpochs {
 		t.Fatalf("recheck.lookback_epochs = %d, want %d", cfg.StorageChallengeConfig.LEP6.Recheck.LookbackEpochs, DefaultLEP6RecheckLookbackEpochs)
@@ -68,8 +68,8 @@ storage_challenge:
 		t.Fatalf("recheck.failure_backoff_ttl_ms = %d, want %d", cfg.StorageChallengeConfig.LEP6.Recheck.FailureBackoffTTLms, int(DefaultLEP6RecheckFailureBackoffTTL/time.Millisecond))
 	}
 
-	if cfg.SelfHealingConfig.Enabled {
-		t.Fatalf("self_healing.enabled default = true, want false (C1)")
+	if !cfg.SelfHealingConfig.Enabled {
+		t.Fatalf("self_healing.enabled default = false, want true")
 	}
 	if cfg.SelfHealingConfig.PollIntervalMs != int(DefaultSelfHealingPollInterval/time.Millisecond) {
 		t.Fatalf("self_healing.poll_interval_ms = %d, want %d", cfg.SelfHealingConfig.PollIntervalMs, int(DefaultSelfHealingPollInterval/time.Millisecond))
@@ -118,7 +118,7 @@ lumera:
 raptorq:
   files_dir: raptorq_files
 storage_challenge:
-  enabled: true
+  enabled: false
   lep6:
     enabled: false
     recheck:
@@ -127,6 +127,9 @@ self_healing:
   enabled: false
 `)
 
+	if cfg.StorageChallengeConfig.Enabled {
+		t.Fatalf("storage_challenge.enabled = true, want explicit false emergency disable preserved")
+	}
 	if cfg.StorageChallengeConfig.LEP6.Enabled {
 		t.Fatalf("storage_challenge.lep6.enabled = true, want explicit false emergency disable preserved")
 	}

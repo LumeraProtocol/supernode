@@ -137,30 +137,10 @@ func TestConfigPersistenceAfterMigration(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create initial config with legacy identity and evm_key_name set.
-	cfg := &snConfig.Config{
-		SupernodeConfig: snConfig.SupernodeConfig{
-			KeyName:    "mykey",
-			Identity:   "lumera1legacyaddr123",
-			Host:       "127.0.0.1",
-			Port:       4444,
-			EVMKeyName: "evm-key",
-		},
-		KeyringConfig: snConfig.KeyringConfig{
-			Backend: "test",
-			Dir:     "keyring",
-		},
-		P2PConfig: snConfig.P2PConfig{
-			Port:    4445,
-			DataDir: "data/p2p",
-		},
-		LumeraClientConfig: snConfig.LumeraClientConfig{
-			GRPCAddr: "localhost:9090",
-			ChainID:  "lumera-testnet",
-		},
-		RaptorQConfig: snConfig.RaptorQConfig{
-			FilesDir: "data/raptorq",
-		},
-	}
+	cfg := snConfig.CreateDefaultConfig("mykey", "lumera1legacyaddr123", "lumera-testnet", "test", "keyring", "", "", "")
+	cfg.SupernodeConfig.Host = "127.0.0.1"
+	cfg.SupernodeConfig.EVMKeyName = "evm-key"
+	cfg.RaptorQConfig.FilesDir = "data/raptorq"
 	cfg.BaseDir = tmpDir
 
 	cfgFile := filepath.Join(tmpDir, "config.yml")
