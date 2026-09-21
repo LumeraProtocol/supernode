@@ -88,23 +88,16 @@ func hasYAMLKey(value *yaml.Node, key string) bool {
 	return false
 }
 
-// applyLEP6DefaultsAndValidate applies testnet-ready defaults to LEP-6
-// toggles and runtime knobs, then runs validation.
+// applyLEP6DefaultsAndValidate forces local LEP-6 storage-truth runtimes on,
+// applies runtime knobs, then runs validation.
 //
-// Storage truth remains chain-gated: even when local toggles default TRUE,
-// every LEP-6 service no-ops while StorageTruthEnforcementMode is
-// UNSPECIFIED. Operators can still emergency-disable any local runtime by
-// setting the relevant `enabled: false` explicitly in YAML.
+// Storage truth remains chain-gated: even when local toggles are forced TRUE,
+// every LEP-6 service no-ops while StorageTruthEnforcementMode is UNSPECIFIED.
+// Operators must not be able to bypass storage challenges with local YAML
+// `enabled: false`; network credibility testing is protocol-owned.
 func (c *Config) applyLEP6DefaultsAndValidate() error {
-	// Local storage-truth runtimes default ON for testnet operators who update
-	// without adding new config blocks. enabledSet=true means the YAML had an
-	// explicit `enabled:` key — keep the operator's value verbatim.
-	if !c.StorageChallengeConfig.enabledSet {
-		c.StorageChallengeConfig.Enabled = true
-	}
-	if !c.StorageChallengeConfig.LEP6.enabledSet {
-		c.StorageChallengeConfig.LEP6.Enabled = true
-	}
+	c.StorageChallengeConfig.Enabled = true
+	c.StorageChallengeConfig.LEP6.Enabled = true
 	if c.StorageChallengeConfig.LEP6.MaxConcurrentTargets == 0 {
 		c.StorageChallengeConfig.LEP6.MaxConcurrentTargets = DefaultLEP6MaxConcurrentTargets
 	}
@@ -113,9 +106,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 	}
 
 	recheck := &c.StorageChallengeConfig.LEP6.Recheck
-	if !recheck.enabledSet {
-		recheck.Enabled = true
-	}
+	recheck.Enabled = true
 	if recheck.LookbackEpochs == 0 {
 		recheck.LookbackEpochs = DefaultLEP6RecheckLookbackEpochs
 	}
@@ -132,9 +123,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 		recheck.FailureBackoffTTLms = int(DefaultLEP6RecheckFailureBackoffTTL / time.Millisecond)
 	}
 
-	if !c.SelfHealingConfig.enabledSet {
-		c.SelfHealingConfig.Enabled = true
-	}
+	c.SelfHealingConfig.Enabled = true
 	if c.SelfHealingConfig.PollIntervalMs == 0 {
 		c.SelfHealingConfig.PollIntervalMs = int(DefaultSelfHealingPollInterval / time.Millisecond)
 	}
