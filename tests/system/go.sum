@@ -108,7 +108,7 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 h1:0s6TxfCu2KHkkZPnBfsQ2y5qia0jl3MMrmBhu3nCOYk=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0/go.mod h1:Mf6O40IAyB9zR/1J8nGDDPirZQQPbYJni8Yisy7NTMc=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
-github.com/LumeraProtocol/lumera v1.20.3 h1:U+s+qTgStOieD5j6Is2KkYXup8PUbOM3CDbh3+8KBBA=
+github.com/LumeraProtocol/lumera v1.20.3 h1:fAH1U19x7TXXxHzsk9zWBv/RGrUMslDXpoYO05vigGs=
 github.com/LumeraProtocol/lumera v1.20.3/go.mod h1:tVUvVN+mlsRIxEmxp4XTSaDl7EyEt2zGyfuQM6do9QE=
 github.com/LumeraProtocol/rq-go v0.2.1 h1:8B3UzRChLsGMmvZ+UVbJsJj6JZzL9P9iYxbdUwGsQI4=
 github.com/LumeraProtocol/rq-go v0.2.1/go.mod h1:APnKCZRh1Es2Vtrd2w4kCLgAyaL5Bqrkz/BURoRJ+O8=

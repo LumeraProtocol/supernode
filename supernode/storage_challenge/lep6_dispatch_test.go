@@ -32,10 +32,11 @@ import (
 // dispatchAuditModule is an in-test stub of audit.Module used to drive
 // LEP6Dispatcher per-test; mirrors the host_reporter test pattern.
 type dispatchAuditModule struct {
-	params        *audittypes.QueryParamsResponse
-	anchor        *audittypes.QueryEpochAnchorResponse
-	assigned      *audittypes.QueryAssignedTargetsResponse
-	getParamsHook func()
+	params          *audittypes.QueryParamsResponse
+	anchor          *audittypes.QueryEpochAnchorResponse
+	assigned        *audittypes.QueryAssignedTargetsResponse
+	healOpsByTicket map[string][]audittypes.HealOp
+	getParamsHook   func()
 }
 
 var _ auditmod.Module = (*dispatchAuditModule)(nil)
@@ -80,13 +81,52 @@ func (s *dispatchAuditModule) GetHealOpsByStatus(ctx context.Context, status aud
 	return &audittypes.QueryHealOpsByStatusResponse{}, nil
 }
 func (s *dispatchAuditModule) GetHealOpsByTicket(ctx context.Context, ticketID string, pagination *query.PageRequest) (*audittypes.QueryHealOpsByTicketResponse, error) {
-	return &audittypes.QueryHealOpsByTicketResponse{}, nil
+	return &audittypes.QueryHealOpsByTicketResponse{HealOps: append([]audittypes.HealOp(nil), s.healOpsByTicket[ticketID]...)}, nil
+}
+
+// routedFactory returns a per-account stub client so dispatcher tests can
+// distinguish target calls from observer calls.
+type routedFactory struct {
+	clients map[string]*stubCompoundClient
+	err     error
+}
+
+func (s *routedFactory) Dial(_ context.Context, target string) (SupernodeCompoundClient, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if c := s.clients[target]; c != nil {
+		return c, nil
+	}
+	return nil, errors.New("missing routed client for " + target)
+}
+
+func makeCompoundRangeBytes(t *testing.T, byteSeed byte, rangeLen int) ([][]byte, string) {
+	t.Helper()
+	rangeBytes := make([][]byte, deterministic.LEP6CompoundRangesPerArtifact)
+	hasher := blake3.New(32, nil)
+	for i := range rangeBytes {
+		buf := make([]byte, rangeLen)
+		for j := range buf {
+			buf[j] = byte(int(byteSeed) + i*7 + j)
+		}
+		rangeBytes[i] = buf
+		_, _ = hasher.Write(buf)
+	}
+	return rangeBytes, hex.EncodeToString(hasher.Sum(nil))
+}
+
+func makeOKCompoundResponse(t *testing.T, byteSeed byte, rangeLen int) *supernodepb.GetCompoundProofResponse {
+	t.Helper()
+	rangeBytes, proofHashHex := makeCompoundRangeBytes(t, byteSeed, rangeLen)
+	return &supernodepb.GetCompoundProofResponse{Ok: true, RangeBytes: rangeBytes, ProofHashHex: proofHashHex, RecipientSignature: "sig"}
 }
 
 // stubTicketProvider returns a fixed list per target.
 type stubTicketProvider struct {
-	tickets map[string][]TicketDescriptor
-	err     error
+	tickets            map[string][]TicketDescriptor
+	observerCandidates map[string][]string
+	err                error
 }
 
 func (s stubTicketProvider) TicketsForTarget(_ context.Context, target string) ([]TicketDescriptor, error) {
@@ -94,6 +134,14 @@ func (s stubTicketProvider) TicketsForTarget(_ context.Context, target string) (
 		return nil, s.err
 	}
 	return s.tickets[target], nil
+}
+
+func (s stubTicketProvider) ObserverCandidatesForTicket(_ context.Context, target string, ticketID string) ([]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	key := target + "/" + ticketID
+	return append([]string(nil), s.observerCandidates[key]...), nil
 }
 
 // stubMetaProvider returns a fixed cascade meta + size for any ticket.
@@ -464,9 +512,14 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
 		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
 	}
-	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
-		"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
-	}}
+	tickets := stubTicketProvider{
+		tickets: map[string][]TicketDescriptor{
+			"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
+		},
+		observerCandidates: map[string][]string{
+			"sn-target/tkt-happy": {"holder-a", "holder-b", "holder-c"},
+		},
+	}
 	meta := stubMetaProvider{
 		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
 		size: 4 * 1024,
@@ -474,23 +527,7 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 
 	// Construct a response with 4 ranges of 256 bytes each (deterministic
 	// content) and a matching BLAKE3 proof hash.
-	rangeBytes := make([][]byte, deterministic.LEP6CompoundRangesPerArtifact)
-	hasher := blake3.New(32, nil)
-	for i := range rangeBytes {
-		buf := make([]byte, deterministic.LEP6CompoundRangeLenBytes)
-		// Fill with i-stamped bytes for determinism.
-		for j := range buf {
-			buf[j] = byte((i*7 + j) & 0xFF)
-		}
-		rangeBytes[i] = buf
-		_, _ = hasher.Write(buf)
-	}
-	proofHashHex := hex.EncodeToString(hasher.Sum(nil))
-	resp := &supernodepb.GetCompoundProofResponse{
-		Ok:           true,
-		RangeBytes:   rangeBytes,
-		ProofHashHex: proofHashHex,
-	}
+	resp := makeOKCompoundResponse(t, 0, deterministic.LEP6CompoundRangeLenBytes)
 	factory := &stubFactory{client: &stubCompoundClient{resp: resp}}
 	d, buf := newDispatcher(t, audit, factory, tickets, meta)
 
@@ -511,6 +548,166 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 		}
 	}
 	require.True(t, sawPass, "expected a PASS-class result on happy path")
+}
+
+func TestDispatchEpoch_IncludesDeterministicObserversInTargetRequest(t *testing.T) {
+	const epochID uint64 = 1901
+	anchor := makeAnchor(epochID, 200, "sn-target", "observer-a", "observer-b", "observer-c")
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+	}
+	tickets := stubTicketProvider{
+		tickets: map[string][]TicketDescriptor{
+			"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
+		},
+		observerCandidates: map[string][]string{
+			"sn-target/tkt-happy": {"holder-a", "holder-b", "holder-c"},
+		},
+	}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		size: 4 * 1024,
+	}
+	targetClient := &stubCompoundClient{resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)}
+	factory := &routedFactory{clients: map[string]*stubCompoundClient{
+		"sn-target": targetClient,
+		"holder-a":  {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-b":  {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-c":  {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+	}}
+	d, buf := newDispatcher(t, audit, factory, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	require.NotEmpty(t, targetClient.requests)
+	require.NotEmpty(t, targetClient.requests[0].ObserverAccounts, "dispatcher must include the deterministic observer set in the target request")
+	require.NotContains(t, targetClient.requests[0].ObserverAccounts, "sn-target")
+	require.NotContains(t, targetClient.requests[0].ObserverAccounts, d.self)
+	for _, observer := range targetClient.requests[0].ObserverAccounts {
+		require.Contains(t, []string{"holder-a", "holder-b", "holder-c"}, observer, "observer must come from holder/artifact candidate set when available")
+	}
+	results := buf.CollectResults(epochID)
+	var pass *audittypes.StorageProofResult
+	for _, r := range results {
+		if r.ResultClass == audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS {
+			pass = r
+			break
+		}
+	}
+	require.NotNil(t, pass)
+	require.NotEmpty(t, pass.ObserverAttestationSignatures)
+	for _, attestation := range pass.ObserverAttestationSignatures {
+		require.Contains(t, attestation, "v2|observer=", "observer envelope must use canonical v2 format")
+		require.Contains(t, attestation, "challenger="+pass.ChallengerSupernodeAccount)
+		require.Contains(t, attestation, "target="+pass.TargetSupernodeAccount)
+		require.Contains(t, attestation, "ticket="+pass.TicketId)
+		require.Contains(t, attestation, "bucket=RECENT")
+		require.Contains(t, attestation, "class=SYMBOL")
+		require.Contains(t, attestation, "ordinal=0")
+		require.Contains(t, attestation, "artifact_key="+pass.ArtifactKey)
+		require.Contains(t, attestation, "proof_hash="+targetClient.resp.ProofHashHex)
+		require.Contains(t, attestation, "transcript_hash="+pass.TranscriptHash, "observer envelope must bind to final transcript hash")
+		require.Contains(t, attestation, "verdict=PASS")
+		require.Contains(t, attestation, "signature=")
+	}
+}
+
+func TestDispatchEpoch_ObserverMismatchPreventsPass(t *testing.T) {
+	const epochID uint64 = 1902
+	anchor := makeAnchor(epochID, 200, "sn-target", "observer-a", "observer-b")
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+	}
+	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
+		"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
+	}}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		size: 4 * 1024,
+	}
+	factory := &routedFactory{clients: map[string]*stubCompoundClient{
+		"sn-target":  {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+		"observer-a": {resp: makeOKCompoundResponse(t, 99, deterministic.LEP6CompoundRangeLenBytes)},
+		"observer-b": {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+	}}
+	d, buf := newDispatcher(t, audit, factory, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	results := buf.CollectResults(epochID)
+	var found bool
+	for _, r := range results {
+		if r.TicketId == "tkt-happy" {
+			found = true
+			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL, r.ResultClass)
+			require.NotContains(t, r.ObserverAttestationSignatures, "observer-a")
+		}
+	}
+	require.True(t, found, "expected an observer-gated result for selected ticket")
+}
+
+func TestDispatchEpoch_ObserverUnavailableDoesNotBlockRolloutPass(t *testing.T) {
+	const epochID uint64 = 1904
+	anchor := makeAnchor(epochID, 200, "sn-target", "observer-a", "observer-b")
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+	}
+	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
+		"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
+	}}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		size: 4 * 1024,
+	}
+	factory := &routedFactory{clients: map[string]*stubCompoundClient{
+		"sn-target": {resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)},
+	}}
+	d, buf := newDispatcher(t, audit, factory, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	results := buf.CollectResults(epochID)
+	var sawPass bool
+	for _, r := range results {
+		if r.TicketId == "tkt-happy" {
+			sawPass = true
+			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, r.ResultClass)
+			require.Empty(t, r.ObserverAttestationSignatures)
+		}
+	}
+	require.True(t, sawPass, "observer availability must not halt rollout-era PASS rows")
+}
+
+func TestDispatchEpoch_ActiveHealOpTicketsAreExcluded(t *testing.T) {
+	const epochID uint64 = 1903
+	anchor := makeAnchor(epochID, 200, "sn-target")
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+		healOpsByTicket: map[string][]audittypes.HealOp{
+			"tkt-happy": {{HealOpId: 7, TicketId: "tkt-happy", Status: audittypes.HealOpStatus_HEAL_OP_STATUS_IN_PROGRESS}},
+		},
+	}
+	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
+		"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
+	}}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		size: 4 * 1024,
+	}
+	targetClient := &stubCompoundClient{resp: makeOKCompoundResponse(t, 1, deterministic.LEP6CompoundRangeLenBytes)}
+	d, buf := newDispatcher(t, audit, &stubFactory{client: targetClient}, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	require.Empty(t, targetClient.requests, "active heal-op tickets must be excluded before proof RPC")
+	results := buf.CollectResults(epochID)
+	for _, r := range results {
+		require.NotEqual(t, "tkt-happy", r.TicketId)
+	}
 }
 
 func TestDispatchEpoch_SmallArtifactUsesWholeArtifactRange(t *testing.T) {
