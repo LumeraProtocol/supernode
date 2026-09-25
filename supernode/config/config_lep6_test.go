@@ -11,11 +11,11 @@ import (
 func TestLoadConfig_LEP6DefaultEnabled(t *testing.T) {
 	t.Parallel()
 
-	// Testnet rollout default: an operator who upgrades without adding the
-	// LEP-6 blocks should run storage challenge + LEP-6 while the chain
-	// StorageTruthEnforcementMode remains the protocol gate. Explicit
-	// enabled:false remains the emergency-disable path. Runtime knobs
-	// still receive defaults so no extra config edits are required.
+	// Testnet rollout policy: an operator who upgrades runs storage
+	// challenge + LEP-6 while the chain StorageTruthEnforcementMode remains
+	// the protocol gate. Local enabled:false is overridden so operators cannot
+	// bypass credibility checks. Runtime knobs still receive defaults so no
+	// extra config edits are required.
 	cfg := loadConfigFromBody(t, `
 supernode:
   key_name: test-key
@@ -97,7 +97,7 @@ storage_challenge:
 	}
 }
 
-func TestLoadConfig_LEP6EmergencyDisablesRemainFalse(t *testing.T) {
+func TestLoadConfig_LEP6ExplicitFalseForcedOn(t *testing.T) {
 	t.Parallel()
 
 	cfg := loadConfigFromBody(t, `
@@ -127,17 +127,17 @@ self_healing:
   enabled: false
 `)
 
-	if cfg.StorageChallengeConfig.Enabled {
-		t.Fatalf("storage_challenge.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.Enabled {
+		t.Fatalf("storage_challenge.enabled = false, want forced true")
 	}
-	if cfg.StorageChallengeConfig.LEP6.Enabled {
-		t.Fatalf("storage_challenge.lep6.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.LEP6.Enabled {
+		t.Fatalf("storage_challenge.lep6.enabled = false, want forced true")
 	}
-	if cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
-		t.Fatalf("storage_challenge.lep6.recheck.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
+		t.Fatalf("storage_challenge.lep6.recheck.enabled = false, want forced true")
 	}
-	if cfg.SelfHealingConfig.Enabled {
-		t.Fatalf("self_healing.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.SelfHealingConfig.Enabled {
+		t.Fatalf("self_healing.enabled = false, want forced true")
 	}
 }
 
