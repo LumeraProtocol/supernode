@@ -156,6 +156,36 @@ func TestSelectLEP6Targets_DeterministicAcrossRuns(t *testing.T) {
 	}
 }
 
+func TestSelectLEP6Observers_DeterministicExcludesChallengerAndTarget(t *testing.T) {
+	active := []string{"sn-a", "sn-b", "sn-c", "sn-d", "sn-e"}
+	got := SelectLEP6Observers(active, chainSeed, "sn-a", "sn-c", 2)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 observers, got %d (%v)", len(got), got)
+	}
+	for _, observer := range got {
+		if observer == "sn-a" || observer == "sn-c" {
+			t.Fatalf("observer set must exclude challenger and target, got %v", got)
+		}
+	}
+	for i := 0; i < 50; i++ {
+		again := SelectLEP6Observers(active, chainSeed, "sn-a", "sn-c", 2)
+		if !equalSliceOrdered(got, again) {
+			t.Fatalf("observer selection is non-deterministic: %v != %v", got, again)
+		}
+	}
+}
+
+func TestSelectLEP6Observers_InsufficientCandidatesReturnsAvailableOnly(t *testing.T) {
+	active := []string{"challenger", "target", "observer-1"}
+	got := SelectLEP6Observers(active, chainSeed, "challenger", "target", 2)
+	if !equalSliceOrdered(got, []string{"observer-1"}) {
+		t.Fatalf("expected only available observer, got %v", got)
+	}
+	if got := SelectLEP6Observers(active, chainSeed, "challenger", "target", 0); got != nil {
+		t.Fatalf("quorum 0 should return nil, got %v", got)
+	}
+}
+
 func TestPairChallengerToTarget_NoSelfTarget(t *testing.T) {
 	got := PairChallengerToTarget("sn-a", []string{"sn-a", "sn-b", "sn-c"}, chainSeed, nil)
 	if got == "sn-a" {

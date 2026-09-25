@@ -25,7 +25,7 @@ runs:
       uses: actions/setup-go@v6.2.0
       with:
         go-version: ${{ steps.get-go-version.outputs.version }}
-        cache: true
+        cache: false
 
     - name: Install libwebp-dev
       shell: bash

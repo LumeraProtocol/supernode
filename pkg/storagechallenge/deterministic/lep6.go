@@ -108,6 +108,7 @@ const (
 	domainTicketRank      = "ticket_rank"
 	domainArtifactClass   = "artifact_class"
 	domainArtifactOrdinal = "artifact_ordinal"
+	domainObserverRank    = "observer"
 	domainRangeOffset     = "range_offset"
 	domainDerivationInput = "derivation_input"
 	domainTranscript      = "transcript"
@@ -226,6 +227,54 @@ func SelectLEP6Targets(activeIDs []string, seed []byte, divisor uint32) []string
 	return out
 }
 
+// SelectLEP6Observers returns the deterministic observer set for a challenger
+// and target under the LEP-6 compound challenge topology. The candidate list is
+// treated as the chain-provided active set: empty strings, the challenger, and
+// the target are excluded; duplicates are ignored; remaining candidates are
+// ranked by SHA-256(seed || 0x00 || challenger || 0x00 || target || 0x00 ||
+// candidate || 0x00 || "observer") with lexicographic tie-break. If fewer
+// candidates than requested are available, all available candidates are
+// returned so rollout code can collect best-effort attestations without
+// blocking old-chain deployments.
+func SelectLEP6Observers(activeIDs []string, seed []byte, challenger, target string, count uint32) []string {
+	if count == 0 || len(activeIDs) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(activeIDs))
+	candidates := make([]rankedAccount, 0, len(activeIDs))
+	for _, id := range activeIDs {
+		if id == "" || id == challenger || id == target {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		candidates = append(candidates, rankedAccount{
+			id:   id,
+			rank: storageTruthAssignmentHash(seed, challenger, target, id, domainObserverRank),
+		})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if c := compareBytes(candidates[i].rank, candidates[j].rank); c != 0 {
+			return c < 0
+		}
+		return candidates[i].id < candidates[j].id
+	})
+	limit := int(count)
+	if limit > len(candidates) {
+		limit = len(candidates)
+	}
+	out := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		out[i] = candidates[i].id
+	}
+	return out
+}
+
 // PairChallengerToTarget assigns one target from `targets` to the given
 // challenger using the chain's pair-ranking algorithm.
 //
@@ -241,7 +290,6 @@ func SelectLEP6Targets(activeIDs []string, seed []byte, divisor uint32) []string
 // already present in it. The caller is expected to feed in the fixed-iteration
 // view of the assignment as the chain computes it (see
 // SelectLEP6Targets + iterate through challengers in deterministic order).
-//
 // Returns "" if no valid target remains for this challenger.
 func PairChallengerToTarget(challenger string, targets []string, seed []byte, assigned map[string]struct{}) string {
 	bestTarget := ""
