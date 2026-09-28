@@ -62,8 +62,10 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/btcsuite/btcutil/base58"
 	"lukechampine.com/blake3"
 )
 
@@ -98,6 +100,11 @@ const (
 	// LEP6ArtifactClassIndexCutoff is exclusive upper bound for INDEX bucket
 	// (roll < cutoff -> INDEX).
 	LEP6ArtifactClassIndexCutoff = 2
+
+	// LEP6ArtifactReplicaCount mirrors the Kademlia store fanout (Alpha).
+	// LEP-6 target/observer selection must reason about the nodes expected to
+	// hold the concrete artifact, not just the action participant.
+	LEP6ArtifactReplicaCount = 6
 )
 
 // Domain separator labels used across LEP-6 hash inputs. Freezing these as
@@ -271,6 +278,61 @@ func SelectLEP6Observers(activeIDs []string, seed []byte, challenger, target str
 	out := make([]string, limit)
 	for i := 0; i < limit; i++ {
 		out[i] = candidates[i].id
+	}
+	return out
+}
+
+// SelectArtifactReplicaSet returns the expected Kademlia/Cascade holder set for
+// a concrete artifact key from a candidate topology. It mirrors the P2P store
+// placement rule used by DHT IterateBatchStore: decode the artifact key when it
+// is base58, normalize the target to a 32-byte BLAKE3 key when needed, hash each
+// node/account ID with BLAKE3, then sort by big-endian XOR distance to the
+// artifact key. Empty/duplicate candidates are ignored and ties break
+// lexicographically by account for deterministic tests/logs.
+func SelectArtifactReplicaSet(candidates []string, artifactKey string, count uint32) []string {
+	if count == 0 || len(candidates) == 0 || strings.TrimSpace(artifactKey) == "" {
+		return nil
+	}
+	target := base58.Decode(strings.TrimSpace(artifactKey))
+	if len(target) != 32 {
+		sum := blake3.Sum256(target)
+		target = sum[:]
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	ranked := make([]rankedAccount, 0, len(candidates))
+	for _, id := range candidates {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		nodeHash := blake3.Sum256([]byte(id))
+		rank := make([]byte, 32)
+		for i := 0; i < 32; i++ {
+			rank[i] = nodeHash[i] ^ target[i]
+		}
+		ranked = append(ranked, rankedAccount{id: id, rank: rank})
+	}
+	if len(ranked) == 0 {
+		return nil
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if c := compareBytes(ranked[i].rank, ranked[j].rank); c != 0 {
+			return c < 0
+		}
+		return ranked[i].id < ranked[j].id
+	})
+	limit := int(count)
+	if limit > len(ranked) {
+		limit = len(ranked)
+	}
+	out := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		out[i] = ranked[i].id
 	}
 	return out
 }
@@ -478,20 +540,10 @@ func SelectTicketForBucket(eligibleTicketIDs []string, excluded map[string]struc
 //	class_roll = SHA-256(seed || 0x00 || target || 0x00 || ticket_id || 0x00 || "artifact_class")[:8] (big-endian uint64) mod 10
 //	class_roll < 2 -> INDEX, else SYMBOL
 //
-// If the rolled class has zero artifacts, returns UNSPECIFIED — the caller
-// MUST emit NO_ELIGIBLE_TICKET for that (target, bucket) slot. Cross-class
-// fallback is intentionally NOT performed: the chain does not mirror a
-// supernode-side swap (see lumera@v1.12.0
-// x/audit/v1/keeper/msg_submit_epoch_report_storage_proofs.go:120-128 — chain
-// only validates that ArtifactClass is INDEX or SYMBOL and that
-// (class, ordinal) is consistent with the anchored count for that ticket; it
-// does not re-derive the class roll). Per LEP-6 §14, the artifact class
-// affects D/N delta routing, so a supernode-side swap would land deltas in
-// the wrong scoring bucket relative to a peer that did not swap.
-//
-// LEP-6 review (Matee, 2026-05-06) — H6: emitting NO_ELIGIBLE_TICKET is the
-// safer, deterministically reproducible result; chain has consistency checks
-// for NO_ELIGIBLE that still surface real coverage gaps.
+// If the rolled class has zero artifacts but the other class exists, fall back
+// deterministically to the other class per LEP-6 §10. Return UNSPECIFIED only
+// when neither class has a concrete artifact universe, signalling
+// NO_ELIGIBLE_TICKET for that (target, bucket) slot.
 func SelectArtifactClass(seed []byte, target, ticketID string, indexCount, symbolCount uint32) audittypes.StorageProofArtifactClass {
 	if indexCount == 0 && symbolCount == 0 {
 		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
@@ -503,12 +555,12 @@ func SelectArtifactClass(seed []byte, target, ticketID string, indexCount, symbo
 		if indexCount > 0 {
 			return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX
 		}
-		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
+		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
 	}
 	if symbolCount > 0 {
 		return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL
 	}
-	return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED
+	return audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX
 }
 
 // SelectArtifactOrdinal implements LEP-6 §10 step 2:

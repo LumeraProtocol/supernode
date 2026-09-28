@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/cosmos/gogoproto/proto"
@@ -25,26 +26,24 @@ func NewChainTicketProvider(client lumera.Client) *ChainTicketProvider {
 	return &ChainTicketProvider{client: client}
 }
 
-// TicketsForTarget returns finalized cascade actions that include the target
-// supernode in their action.SuperNodes assignment list.
+// TicketsForTarget returns finalized cascade actions from the chain action
+// universe. Target-specific storage eligibility is intentionally checked later
+// by the dispatcher against the selected artifact-key holder set; current Lumera
+// actions can name only the action/top supernode in action.SuperNodes while
+// Cascade stores artifacts across the action-block topology.
 func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupernodeAccount string) ([]TicketDescriptor, error) {
-	if p == nil || p.client == nil || p.client.Action() == nil {
+	if strings.TrimSpace(targetSupernodeAccount) == "" {
 		return nil, nil
 	}
-	target := strings.TrimSpace(targetSupernodeAccount)
-	if target == "" {
-		return nil, nil
-	}
-
-	resp, err := p.client.Action().ListActionsBySuperNode(ctx, target)
-	if err != nil || resp == nil {
+	actions, err := p.listFinalizedCascadeActions(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	out := make([]TicketDescriptor, 0, len(resp.Actions))
-	seen := make(map[string]struct{}, len(resp.Actions))
-	for _, act := range resp.Actions {
-		if !isEligibleCascadeAction(act, target) {
+	out := make([]TicketDescriptor, 0, len(actions))
+	seen := make(map[string]struct{}, len(actions))
+	for _, act := range actions {
+		if !isEligibleCascadeAction(act) {
 			lep6metrics.IncTicketDiscovery("ineligible")
 			continue
 		}
@@ -64,7 +63,73 @@ func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupern
 	return out, nil
 }
 
-func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
+// ObserverCandidatesForTicket returns the action-block storage topology candidate
+// set for the ticket. Current Lumera action.SuperNodes identifies the action/top
+// supernode; Cascade storage fans artifacts out across the top-supernode set at
+// the action block, so expose that topology here and let the dispatcher narrow
+// it to the concrete artifact-key replica set after artifact selection.
+func (p *ChainTicketProvider) ObserverCandidatesForTicket(ctx context.Context, targetSupernodeAccount string, ticketID string) ([]string, error) {
+	_ = targetSupernodeAccount
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" || p == nil || p.client == nil || p.client.Action() == nil {
+		return nil, nil
+	}
+	resp, err := p.client.Action().GetAction(ctx, ticketID)
+	if err != nil || resp == nil || resp.Action == nil {
+		return nil, err
+	}
+	if !isEligibleCascadeAction(resp.Action) {
+		return []string{}, nil
+	}
+	return p.topSupernodeAccountsForAction(ctx, resp.Action)
+}
+
+func (p *ChainTicketProvider) topSupernodeAccountsForAction(ctx context.Context, act *actiontypes.Action) ([]string, error) {
+	if p == nil || p.client == nil || p.client.SuperNode() == nil || act == nil || act.BlockHeight <= 0 {
+		return nil, nil
+	}
+	resp, err := p.client.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
+		BlockHeight: int32(act.BlockHeight),
+		State:       "SUPERNODE_STATE_ACTIVE",
+		Limit:       10,
+	})
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	accounts := make([]string, 0, len(resp.Supernodes))
+	for _, sn := range resp.Supernodes {
+		if sn == nil {
+			continue
+		}
+		accounts = append(accounts, sn.SupernodeAccount)
+	}
+	return uniqueNonEmptyStrings(accounts), nil
+}
+
+func (p *ChainTicketProvider) listFinalizedCascadeActions(ctx context.Context) ([]*actiontypes.Action, error) {
+	if p == nil || p.client == nil || p.client.Action() == nil {
+		return nil, nil
+	}
+	actionModule := p.client.Action()
+	states := []actiontypes.ActionState{
+		actiontypes.ActionStateDone,
+		actiontypes.ActionStateApproved,
+	}
+	out := make([]*actiontypes.Action, 0)
+	for _, state := range states {
+		resp, err := actionModule.ListActions(ctx, actiontypes.ActionTypeCascade, state)
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			continue
+		}
+		out = append(out, resp.Actions...)
+	}
+	return out, nil
+}
+
+func isEligibleCascadeAction(act *actiontypes.Action) bool {
 	if act == nil {
 		return false
 	}
@@ -83,12 +148,7 @@ func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
 	if !hasValidCascadeMetadata(act.Metadata) {
 		return false
 	}
-	for _, sn := range act.SuperNodes {
-		if strings.TrimSpace(sn) == target {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func hasValidCascadeMetadata(raw []byte) bool {
@@ -105,14 +165,33 @@ func hasValidCascadeMetadata(raw []byte) bool {
 	if meta.RqIdsMax == 0 || len(meta.RqIdsIds) == 0 {
 		return false
 	}
-	// LEP-6 review M10 (Matee, 2026-05-06): a ticket is eligible if AT LEAST
-	// ONE artifact class has a non-zero count. Previously we required BOTH
-	// counts to be > 0, which silently hid INDEX-only or SYMBOL-only tickets
-	// from the dispatcher. The class roll handles per-class emptiness via
-	// SelectArtifactClass returning UNSPECIFIED → caller emits NO_ELIGIBLE
-	// (post-H6 fix). Both zero remains invisible (legacy preserve).
+	// LEP-6 challenges tickets when at least one artifact class has a concrete
+	// universe. SelectArtifactClass applies the §10 fallback when the rolled class
+	// is empty; both zero remains invisible because no chain-acceptable proof row
+	// can identify a concrete artifact.
 	if meta.IndexArtifactCount == 0 && meta.SymbolArtifactCount == 0 {
 		return false
 	}
 	return true
+}
+
+func uniqueNonEmptyStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

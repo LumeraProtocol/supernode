@@ -34,31 +34,35 @@ var ErrUnspecifiedArtifactClass = errors.New("storagechallenge: artifact class i
 // replaces a chain GetTicketArtifactCount RPC that does not exist (LEP-6 v2
 // plan §9, Resolved Decision 8).
 //
-// Semantics mirror Lumera chain action metadata exactly via
-// actiontypes.CascadeArtifactCountsWithFallbackStrict:
-//   - INDEX  -> meta.IndexArtifactCount, falling back to len(meta.RqIdsIds)
-//   - SYMBOL -> meta.SymbolArtifactCount, falling back to len(meta.RqIdsIds)
-//   - UNSPECIFIED -> error
-//
-// The strict Lumera helper rejects malformed metadata where explicit counts are
-// missing and the fallback universe is empty. This keeps supernode proof rows
-// aligned with chain validation instead of maintaining duplicate count logic.
+// Semantics:
+//   - INDEX/SYMBOL use their explicit metadata count when present.
+//   - Legacy metadata with both explicit counts missing falls back to
+//     len(meta.RqIdsIds) for both classes, matching Lumera's backward-
+//     compatibility rule.
+//   - If one class has an explicit count and the other is zero, the zero class
+//     is treated as absent so LEP-6 §10 can fall back deterministically to the
+//     existing class.
+//   - UNSPECIFIED returns ErrUnspecifiedArtifactClass.
 func ResolveArtifactCount(meta *actiontypes.CascadeMetadata, class audittypes.StorageProofArtifactClass) (uint32, error) {
 	if meta == nil {
 		return 0, errors.New("storagechallenge: nil cascade metadata")
 	}
+	idx := meta.GetIndexArtifactCount()
+	sym := meta.GetSymbolArtifactCount()
+	if idx == 0 && sym == 0 {
+		fallback := uint32(len(meta.GetRqIdsIds()))
+		idx = fallback
+		sym = fallback
+		if fallback == 0 {
+			return 0, fmt.Errorf("storagechallenge: cascade artifact counts unavailable: explicit index/symbol counts missing and rq_ids_ids empty")
+		}
+	}
 	switch class {
 	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED:
 		return 0, ErrUnspecifiedArtifactClass
-	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX,
-		audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
-		idx, sym, err := actiontypes.CascadeArtifactCountsWithFallbackStrict(meta)
-		if err != nil {
-			return 0, fmt.Errorf("storagechallenge: resolve canonical cascade artifact counts: %w", err)
-		}
-		if class == audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX {
-			return idx, nil
-		}
+	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX:
+		return idx, nil
+	case audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL:
 		return sym, nil
 	default:
 		return 0, fmt.Errorf("storagechallenge: unknown artifact class %v", class)

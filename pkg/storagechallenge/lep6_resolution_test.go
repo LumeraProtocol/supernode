@@ -44,7 +44,29 @@ func TestResolveArtifactCount_Index_Symbol_Unspecified(t *testing.T) {
 	}
 }
 
-func TestResolveArtifactCount_UsesLumeraCanonicalFallback(t *testing.T) {
+func TestResolveArtifactCount_OneExplicitClassMissingReturnsZeroForThatClass(t *testing.T) {
+	meta := &actiontypes.CascadeMetadata{
+		IndexArtifactCount:  3,
+		SymbolArtifactCount: 0,
+	}
+
+	gotIdx, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
+	if err != nil {
+		t.Fatalf("INDEX: unexpected error: %v", err)
+	}
+	if gotIdx != 3 {
+		t.Fatalf("INDEX count: want 3, got %d", gotIdx)
+	}
+	gotSym, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL)
+	if err != nil {
+		t.Fatalf("SYMBOL: unexpected error: %v", err)
+	}
+	if gotSym != 0 {
+		t.Fatalf("SYMBOL count: want 0 for absent one-class metadata, got %d", gotSym)
+	}
+}
+
+func TestResolveArtifactCount_UsesLumeraCanonicalFallbackWhenBothExplicitCountsMissing(t *testing.T) {
 	meta := &actiontypes.CascadeMetadata{
 		RqIdsIc:  11,
 		RqIdsIds: make([]string, 50),
@@ -55,7 +77,14 @@ func TestResolveArtifactCount_UsesLumeraCanonicalFallback(t *testing.T) {
 		t.Fatalf("INDEX: unexpected error: %v", err)
 	}
 	if gotIdx != 50 {
-		t.Fatalf("INDEX count must mirror Lumera CascadeArtifactCountsWithFallbackStrict fallback: want 50, got %d", gotIdx)
+		t.Fatalf("INDEX count must use legacy rq_ids_ids fallback when both explicit counts are missing: want 50, got %d", gotIdx)
+	}
+	gotSym, err := ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL)
+	if err != nil {
+		t.Fatalf("SYMBOL: unexpected error: %v", err)
+	}
+	if gotSym != 50 {
+		t.Fatalf("SYMBOL count must use legacy rq_ids_ids fallback when both explicit counts are missing: want 50, got %d", gotSym)
 	}
 }
 

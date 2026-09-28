@@ -3,6 +3,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	pb "github.com/LumeraProtocol/supernode/v2/gen/supernode"
@@ -61,7 +62,12 @@ func (s *SupernodeStatusService) GetChainID() string {
 
 func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Metrics {
 	return &pb.StatusResponse_LEP6Metrics{
+		RecentChallengeRefs:                  lep6ChallengeRefs(s.RecentChallengeRefs),
 		DispatchResultsTotal:                 cloneUint64Map(s.DispatchResultsTotal),
+		DispatchResultDetailsTotal:           cloneUint64Map(s.DispatchResultDetailsTotal),
+		DispatchSignFailuresTotal:            cloneUint64Map(s.DispatchSignFailuresTotal),
+		DispatchInternalFailuresTotal:        cloneUint64Map(s.DispatchInternalFailuresTotal),
+		ObserverProofsTotal:                  cloneUint64Map(s.ObserverProofsTotal),
 		DispatchThrottledTotal:               cloneUint64Map(s.DispatchThrottledTotal),
 		DispatchEpochDurationMillisTotal:     cloneUint64Map(s.DispatchEpochDurationMillisTotal),
 		DispatchEpochDurationMillisMax:       cloneUint64Map(s.DispatchEpochDurationMillisMax),
@@ -84,6 +90,55 @@ func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Met
 	}
 }
 
+func lep6ChallengeRefs(in []lep6metrics.ChallengeRef) []*pb.StatusResponse_LEP6Metrics_LEP6ChallengeRef {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*pb.StatusResponse_LEP6Metrics_LEP6ChallengeRef, 0, len(in))
+	for _, c := range in {
+		out = append(out, &pb.StatusResponse_LEP6Metrics_LEP6ChallengeRef{
+			ChallengeId:   c.ChallengeID,
+			TimestampUnix: c.TimestampUnix,
+			EpochId:       c.EpochID,
+			ResultClass:   c.ResultClass,
+		})
+	}
+	return out
+}
+
+func lep6ChallengeDetail(c lep6metrics.ChallengeSnapshot) *pb.LEP6ChallengeDetailResponse {
+	return &pb.LEP6ChallengeDetailResponse{
+		ChallengeId:           c.ChallengeID,
+		TimestampUnix:         c.TimestampUnix,
+		EpochId:               c.EpochID,
+		Challenger:            c.Challenger,
+		Target:                c.Target,
+		TicketId:              c.TicketID,
+		Bucket:                c.Bucket,
+		ArtifactClass:         c.ArtifactClass,
+		ArtifactOrdinal:       c.ArtifactOrdinal,
+		ArtifactCount:         c.ArtifactCount,
+		ArtifactKey:           c.ArtifactKey,
+		ResultClass:           c.ResultClass,
+		TranscriptHash:        c.TranscriptHash,
+		DerivationHash:        c.DerivationHash,
+		ProofHash:             c.ProofHash,
+		ObserverCount:         c.ObserverCount,
+		AttestationCount:      c.AttestationCount,
+		ObserverMismatch:      c.ObserverMismatch,
+		Details:               c.Details,
+		FailureStage:          c.FailureStage,
+		CandidateSource:       c.CandidateSource,
+		TargetExpectedHolder:  c.TargetExpectedHolder,
+		ObserverCandidates:    append([]string(nil), c.ObserverCandidates...),
+		SelectedObservers:     append([]string(nil), c.SelectedObservers...),
+		ObserverOutcomes:      append([]string(nil), c.ObserverOutcomes...),
+		EffectiveArtifactSize: c.EffectiveArtifactSize,
+		RangeLen:              c.RangeLen,
+		SizeSource:            c.SizeSource,
+	}
+}
+
 func cloneUint64Map(in map[string]uint64) map[string]uint64 {
 	if len(in) == 0 {
 		return nil
@@ -93,6 +148,19 @@ func cloneUint64Map(in map[string]uint64) map[string]uint64 {
 		out[k] = v
 	}
 	return out
+}
+
+// GetLEP6ChallengeDetail returns one bounded in-memory LEP-6 challenge detail by id.
+func (s *SupernodeStatusService) GetLEP6ChallengeDetail(ctx context.Context, challengeID string) (*pb.LEP6ChallengeDetailResponse, error) {
+	challengeID = strings.TrimSpace(challengeID)
+	if challengeID == "" {
+		return nil, fmt.Errorf("challenge_id is required")
+	}
+	c, ok := lep6metrics.GetChallenge(challengeID)
+	if !ok {
+		return nil, fmt.Errorf("LEP-6 challenge %q not found", challengeID)
+	}
+	return lep6ChallengeDetail(c), nil
 }
 
 // GetStatus returns the current system status including optional P2P info

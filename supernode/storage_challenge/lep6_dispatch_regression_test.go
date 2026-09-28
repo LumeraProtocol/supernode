@@ -7,33 +7,29 @@ import (
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/stretchr/testify/require"
 )
 
 // LEP-6 review regression: LEP-6 PR286 review fix regression tests.
 //
 // Coverage:
-//   - H6: SelectArtifactClass with empty rolled class emits NO_ELIGIBLE_TICKET
-//     (no class swap). Verified end-to-end through DispatchEpoch:
-//        * INDEX-only ticket where the class roll lands on SYMBOL → NO_ELIGIBLE.
-//        * SYMBOL-only ticket where the class roll lands on INDEX  → NO_ELIGIBLE.
-//        * NO_ELIGIBLE row keeps ticket_id="" (chain validator requirement).
-//   - L5: when NO_ELIGIBLE is emitted post-class-roll, the selected ticket id
-//     must NOT leak into the chain row's TicketId field (chain rejects).
+//   - L5: when NO_ELIGIBLE is emitted after selecting a ticket with no concrete
+//     artifact universe, the selected ticket id must NOT leak into the chain
+//     row's TicketId field (chain rejects).
+//   - NO_ELIGIBLE row keeps ticket_id="" and artifact_class=UNSPECIFIED.
 //
+// Artifact-class fallback for one-class tickets is covered here at the dispatcher
+// boundary and in pkg/storagechallenge/deterministic/lep6_test.go.
 // H4/H5 invariants are covered by lep6_dispatch_test.go +
-// result_buffer_test.go after the LEP-6 dispatcher rewrites; this file targets the
-// behavioural regressions specific to H6/L5 that did not have a direct test
-// before this regression coverage.
+// result_buffer_test.go after the LEP-6 dispatcher rewrites; this file targets
+// the selected-ticket/no-eligible row-shape regressions.
 
-// TestDispatchEpoch_H6_NoSwapEmitsNoEligible_TicketIdEmpty exercises the
-// fixed SelectArtifactClass behavior: with `tkt-T0` (rolls SYMBOL when
-// both classes are present) and indexCount=0, the function must return
-// UNSPECIFIED — wait, that's only the indexCount=0 + INDEX-roll case. For
-// SYMBOL-roll + indexCount=0 we still return SYMBOL and the dispatcher hits
-// the meta validation. So instead we use a ticket id that rolls INDEX with
-// indexCount=0 → UNSPECIFIED → NO_ELIGIBLE.
-func TestDispatchEpoch_H6_RollEmptyEmitsNoEligibleNotSwap(t *testing.T) {
+// TestDispatchEpoch_NoConcreteArtifactUniverseEmitsNoEligible_TicketIdEmpty
+// exercises the selected-ticket NO_ELIGIBLE path: when a bucket has a selected
+// ticket but the ticket has no concrete artifact universe, the dispatcher emits
+// NO_ELIGIBLE_TICKET and keeps the chain row TicketId empty.
+func TestDispatchEpoch_NoConcreteArtifactUniverseEmitsNoEligible_TicketIdEmpty(t *testing.T) {
 	const epochID uint64 = 4242
 	anchor := makeAnchor(epochID, 200, "sn-target")
 	audit := &dispatchAuditModule{
@@ -41,10 +37,8 @@ func TestDispatchEpoch_H6_RollEmptyEmitsNoEligibleNotSwap(t *testing.T) {
 		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
 		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
 	}
-	// `tkt-timeout` rolls INDEX under makeAnchor's seed (verified empirically;
-	// see find_symbol_roll.go probe). With indexCount=0 the fixed
-	// behaviour MUST be UNSPECIFIED → NO_ELIGIBLE_TICKET. The previous selection code
-	// would have swapped to SYMBOL and tried to dispatch.
+	// This ticket has no chain-valid artifact universe in either class, so it must
+	// remain NO_ELIGIBLE_TICKET.
 	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
 		"sn-target": {{TicketID: "tkt-timeout", AnchorBlock: 100}},
 	}}
@@ -86,45 +80,60 @@ func TestDispatchEpoch_H6_RollEmptyEmitsNoEligibleNotSwap(t *testing.T) {
 	require.True(t, sawNoEligible, "expected NO_ELIGIBLE_TICKET row in RECENT bucket")
 }
 
-// TestDispatchEpoch_H6_SymbolEmptyAlsoEmitsNoEligible covers the inverse case:
-// SYMBOL-rolled ticket where SymbolArtifactCount=0 must emit NO_ELIGIBLE.
-func TestDispatchEpoch_H6_SymbolEmptyEmitsNoEligible(t *testing.T) {
+// TestDispatchEpoch_OneClassMissingFallsBackToOtherClass covers LEP-6 §10 at
+// the dispatcher boundary: when the deterministic roll selects a missing SYMBOL
+// class but INDEX exists, dispatch must challenge INDEX instead of emitting
+// NO_ELIGIBLE_TICKET.
+func TestDispatchEpoch_OneClassMissingFallsBackToOtherClass(t *testing.T) {
 	const epochID uint64 = 4243
 	anchor := makeAnchor(epochID, 200, "sn-target")
+	params := defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)
+	params.StorageTruthCompoundRangeLenBytes = 1
 	audit := &dispatchAuditModule{
-		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_SHADOW)},
+		params:   &audittypes.QueryParamsResponse{Params: params},
 		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
 		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
 	}
-	// `tkt-happy` rolls SYMBOL (verified). With SymbolArtifactCount=0 the
-	// dispatcher must emit NO_ELIGIBLE rather than swapping to INDEX.
+	// `tkt-happy` rolls SYMBOL (verified). With SymbolArtifactCount=0 and
+	// IndexArtifactCount=1, the dispatcher must fall back to INDEX and reach the
+	// proof path.
 	tickets := stubTicketProvider{tickets: map[string][]TicketDescriptor{
 		"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
 	}}
 	meta := stubMetaProvider{
 		meta: &actiontypes.CascadeMetadata{
-			RqIdsIc:  3, // INDEX class non-empty
-			RqIdsMax: 1,
-			RqIdsIds: []string{}, // SYMBOL count = 0
+			Signatures:          "index-signature-format",
+			RqIdsIc:             1,
+			RqIdsMax:            1,
+			IndexArtifactCount:  1,
+			SymbolArtifactCount: 0,
+			RqIdsIds:            []string{},
 		},
 		size: 4 * 1024,
 	}
-	d, buf := newDispatcher(t, audit, &stubFactory{}, tickets, meta)
+	targetClient := &stubCompoundClient{resp: makeOKCompoundResponse(t, 0, 1)}
+	d, buf := newDispatcher(t, audit, &stubFactory{client: targetClient}, tickets, meta)
 
 	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
-	results := buf.CollectResults(epochID)
-	require.NotEmpty(t, results)
+	require.NotEmpty(t, targetClient.requests, "fallback must reach target proof RPC")
+	require.Equal(t, uint32(audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX), targetClient.requests[0].ArtifactClass)
+	require.NotEmpty(t, targetClient.requests[0].ArtifactKey)
+	require.Equal(t, uint64(1), targetClient.requests[0].Ranges[0].End-targetClient.requests[0].Ranges[0].Start)
 
-	var sawNoEligibleRecent bool
+	results := buf.CollectResults(epochID)
+	var sawPass bool
 	for _, r := range results {
-		if r.BucketType == audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT &&
-			r.ResultClass == audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET {
-			sawNoEligibleRecent = true
-			require.Equal(t, "", r.TicketId)
-			require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_UNSPECIFIED, r.ArtifactClass)
+		if r.TicketId == "tkt-happy" {
+			sawPass = true
+			require.Equal(t, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS, r.ResultClass)
+			require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX, r.ArtifactClass)
+			require.Equal(t, uint32(1), r.ArtifactCount)
 		}
 	}
-	require.True(t, sawNoEligibleRecent, "SYMBOL-empty + SYMBOL-roll must emit NO_ELIGIBLE")
+	require.True(t, sawPass, "one-class fallback must produce a proof row, not NO_ELIGIBLE")
+	require.Equal(t, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_SYMBOL,
+		deterministic.SelectArtifactClass(anchor.Seed, "sn-target", "tkt-happy", 1, 1),
+		"test setup must roll SYMBOL before the zero-count fallback is applied")
 }
 
 // TestBuffer_H5_DeterministicCrossChallenger pins H5's deterministic-tiebreak
