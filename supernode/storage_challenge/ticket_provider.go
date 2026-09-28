@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/cosmos/gogoproto/proto"
@@ -28,15 +29,7 @@ func NewChainTicketProvider(client lumera.Client) *ChainTicketProvider {
 // TicketsForTarget returns finalized cascade actions that include the target
 // supernode in their action.SuperNodes assignment list.
 func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupernodeAccount string) ([]TicketDescriptor, error) {
-	if p == nil || p.client == nil || p.client.Action() == nil {
-		return nil, nil
-	}
-	target := strings.TrimSpace(targetSupernodeAccount)
-	if target == "" {
-		return nil, nil
-	}
-
-	resp, err := p.client.Action().ListActionsBySuperNode(ctx, target)
+	resp, target, err := p.listActionsForTarget(ctx, targetSupernodeAccount)
 	if err != nil || resp == nil {
 		return nil, err
 	}
@@ -62,6 +55,68 @@ func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupern
 
 	sort.Slice(out, func(i, j int) bool { return out[i].TicketID < out[j].TicketID })
 	return out, nil
+}
+
+// ObserverCandidatesForTicket returns the expected storage replica set for the
+// ticket. Current Lumera action.SuperNodes identifies the action/top supernode;
+// Cascade storage fans artifacts out across the top-supernode set at the action
+// block, so use that same current-chain query for LEP-6 observer candidates.
+func (p *ChainTicketProvider) ObserverCandidatesForTicket(ctx context.Context, targetSupernodeAccount string, ticketID string) ([]string, error) {
+	resp, target, err := p.listActionsForTarget(ctx, targetSupernodeAccount)
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	ticketID = strings.TrimSpace(ticketID)
+	if ticketID == "" {
+		return nil, nil
+	}
+	for _, act := range resp.Actions {
+		if strings.TrimSpace(act.GetActionID()) != ticketID {
+			continue
+		}
+		if !isEligibleCascadeAction(act, target) {
+			return []string{}, nil
+		}
+		return p.topSupernodeAccountsForAction(ctx, act)
+	}
+	return []string{}, nil
+}
+
+func (p *ChainTicketProvider) topSupernodeAccountsForAction(ctx context.Context, act *actiontypes.Action) ([]string, error) {
+	if p == nil || p.client == nil || p.client.SuperNode() == nil || act == nil || act.BlockHeight <= 0 {
+		return nil, nil
+	}
+	resp, err := p.client.SuperNode().GetTopSuperNodesForBlock(ctx, &sntypes.QueryGetTopSuperNodesForBlockRequest{
+		BlockHeight: int32(act.BlockHeight),
+		State:       "SUPERNODE_STATE_ACTIVE",
+		Limit:       10,
+	})
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	accounts := make([]string, 0, len(resp.Supernodes))
+	for _, sn := range resp.Supernodes {
+		if sn == nil {
+			continue
+		}
+		accounts = append(accounts, sn.SupernodeAccount)
+	}
+	return uniqueNonEmptyStrings(accounts), nil
+}
+
+func (p *ChainTicketProvider) listActionsForTarget(ctx context.Context, targetSupernodeAccount string) (*actiontypes.QueryListActionsBySuperNodeResponse, string, error) {
+	if p == nil || p.client == nil || p.client.Action() == nil {
+		return nil, "", nil
+	}
+	target := strings.TrimSpace(targetSupernodeAccount)
+	if target == "" {
+		return nil, "", nil
+	}
+	resp, err := p.client.Action().ListActionsBySuperNode(ctx, target)
+	if err != nil || resp == nil {
+		return nil, target, err
+	}
+	return resp, target, nil
 }
 
 func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
@@ -105,14 +160,33 @@ func hasValidCascadeMetadata(raw []byte) bool {
 	if meta.RqIdsMax == 0 || len(meta.RqIdsIds) == 0 {
 		return false
 	}
-	// LEP-6 review M10 (Matee, 2026-05-06): a ticket is eligible if AT LEAST
-	// ONE artifact class has a non-zero count. Previously we required BOTH
-	// counts to be > 0, which silently hid INDEX-only or SYMBOL-only tickets
-	// from the dispatcher. The class roll handles per-class emptiness via
-	// SelectArtifactClass returning UNSPECIFIED → caller emits NO_ELIGIBLE
-	// (post-H6 fix). Both zero remains invisible (legacy preserve).
+	// LEP-6 challenges tickets when at least one artifact class has a concrete
+	// universe. SelectArtifactClass applies the §10 fallback when the rolled class
+	// is empty; both zero remains invisible because no chain-acceptable proof row
+	// can identify a concrete artifact.
 	if meta.IndexArtifactCount == 0 && meta.SymbolArtifactCount == 0 {
 		return false
 	}
 	return true
+}
+
+func uniqueNonEmptyStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

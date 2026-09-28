@@ -30,6 +30,11 @@ func (s *SupernodeServer) GetStatus(ctx context.Context, req *pb.StatusRequest) 
 	return s.statusService.GetStatus(ctx, req.GetIncludeP2PMetrics())
 }
 
+// GetLEP6ChallengeDetail implements SupernodeService.GetLEP6ChallengeDetail.
+func (s *SupernodeServer) GetLEP6ChallengeDetail(ctx context.Context, req *pb.LEP6ChallengeDetailRequest) (*pb.LEP6ChallengeDetailResponse, error) {
+	return s.statusService.GetLEP6ChallengeDetail(ctx, req.GetChallengeId())
+}
+
 // ListServices implements SupernodeService.ListServices
 func (s *SupernodeServer) ListServices(ctx context.Context, _ *pb.ListServicesRequest) (*pb.ListServicesResponse, error) {
 	// Describe available services and methods/streams exposed by this node

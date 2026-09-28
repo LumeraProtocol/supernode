@@ -20,8 +20,11 @@ import (
 type MetricsSnapshot struct {
 	// Storage challenge / dispatcher — LEP-6 §§9-12.
 	DispatchResultsTotal             map[string]uint64 // result_class
+	DispatchResultDetailsTotal       map[string]uint64 // result=<class>,bucket=<bucket>,artifact_class=<class>
 	DispatchSignFailuresTotal        map[string]uint64 // context (e.g. PASS, NO_ELIGIBLE)
 	DispatchInternalFailuresTotal    map[string]uint64 // pre-derivation stage label
+	ObserverProofsTotal              map[string]uint64 // result=<attested|dial_failed|proof_failed|mismatch>
+	RecentChallengeRefs              []ChallengeRef
 	DispatchThrottledTotal           map[string]uint64 // policy
 	DispatchEpochDurationMillisTotal map[string]uint64 // role
 	DispatchEpochDurationMillisMax   map[string]uint64 // role
@@ -46,6 +49,47 @@ type MetricsSnapshot struct {
 	RecheckEvidenceAlreadySubmittedTotal uint64
 	RecheckExecutionFailuresTotal        map[string]uint64 // reason
 	RecheckPendingCandidates             int64
+}
+
+// ChallengeRef is the bounded status-list projection for a recent challenge.
+type ChallengeRef struct {
+	ChallengeID   string
+	TimestampUnix int64
+	EpochID       uint64
+	ResultClass   string
+}
+
+// ChallengeSnapshot is a bounded recent per-process challenge detail record.
+// It is intentionally metadata-only: no raw proof bytes and no signatures.
+type ChallengeSnapshot struct {
+	ChallengeID           string
+	TimestampUnix         int64
+	EpochID               uint64
+	Challenger            string
+	Target                string
+	TicketID              string
+	Bucket                string
+	ArtifactClass         string
+	ArtifactOrdinal       uint32
+	ArtifactCount         uint32
+	ArtifactKey           string
+	ResultClass           string
+	TranscriptHash        string
+	DerivationHash        string
+	ProofHash             string
+	ObserverCount         uint32
+	AttestationCount      uint32
+	ObserverMismatch      bool
+	Details               string
+	FailureStage          string
+	CandidateSource       string
+	TargetExpectedHolder  bool
+	ObserverCandidates    []string
+	SelectedObservers     []string
+	ObserverOutcomes      []string
+	EffectiveArtifactSize uint64
+	RangeLen              uint64
+	SizeSource            string
 }
 
 type counterMap struct {
@@ -119,10 +163,71 @@ func (c *counterMap) reset() {
 	c.mu.Unlock()
 }
 
+type challengeRing struct {
+	mu    sync.RWMutex
+	items []ChallengeSnapshot
+	cap   int
+}
+
+func (r *challengeRing) add(c ChallengeSnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cap <= 0 {
+		r.cap = 32
+	}
+	c.TimestampUnix = time.Now().Unix()
+	if len(r.items) >= r.cap {
+		copy(r.items, r.items[1:])
+		r.items[len(r.items)-1] = c
+		return
+	}
+	r.items = append(r.items, c)
+}
+
+func (r *challengeRing) refs() []ChallengeRef {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ChallengeRef, 0, len(r.items))
+	for _, item := range r.items {
+		out = append(out, ChallengeRef{
+			ChallengeID:   item.ChallengeID,
+			TimestampUnix: item.TimestampUnix,
+			EpochID:       item.EpochID,
+			ResultClass:   item.ResultClass,
+		})
+	}
+	return out
+}
+
+func (r *challengeRing) get(challengeID string) (ChallengeSnapshot, bool) {
+	challengeID = strings.TrimSpace(challengeID)
+	if challengeID == "" {
+		return ChallengeSnapshot{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for i := len(r.items) - 1; i >= 0; i-- {
+		if r.items[i].ChallengeID == challengeID {
+			return r.items[i], true
+		}
+	}
+	return ChallengeSnapshot{}, false
+}
+
+func (r *challengeRing) reset() {
+	r.mu.Lock()
+	r.items = nil
+	r.cap = 32
+	r.mu.Unlock()
+}
+
 var metrics = struct {
 	dispatchResults          counterMap
+	dispatchResultDetails    counterMap
 	dispatchSignFailures     counterMap
 	dispatchInternalFailures counterMap
+	observerProofs           counterMap
+	recentChallenges         challengeRing
 	dispatchThrottled        counterMap
 	dispatchEpochMillisTotal counterMap
 	dispatchEpochMillisMax   counterMap
@@ -150,8 +255,11 @@ var metrics = struct {
 // Reset clears all counters/gauges. It is intended for tests.
 func Reset() {
 	metrics.dispatchResults.reset()
+	metrics.dispatchResultDetails.reset()
 	metrics.dispatchSignFailures.reset()
 	metrics.dispatchInternalFailures.reset()
+	metrics.observerProofs.reset()
+	metrics.recentChallenges.reset()
 	metrics.dispatchThrottled.reset()
 	metrics.dispatchEpochMillisTotal.reset()
 	metrics.dispatchEpochMillisMax.reset()
@@ -178,8 +286,11 @@ func Reset() {
 func Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
 		DispatchResultsTotal:                 metrics.dispatchResults.snapshot(),
+		DispatchResultDetailsTotal:           metrics.dispatchResultDetails.snapshot(),
 		DispatchSignFailuresTotal:            metrics.dispatchSignFailures.snapshot(),
 		DispatchInternalFailuresTotal:        metrics.dispatchInternalFailures.snapshot(),
+		ObserverProofsTotal:                  metrics.observerProofs.snapshot(),
+		RecentChallengeRefs:                  metrics.recentChallenges.refs(),
 		DispatchThrottledTotal:               metrics.dispatchThrottled.snapshot(),
 		DispatchEpochDurationMillisTotal:     metrics.dispatchEpochMillisTotal.snapshot(),
 		DispatchEpochDurationMillisMax:       metrics.dispatchEpochMillisMax.snapshot(),
@@ -203,9 +314,17 @@ func Snapshot() MetricsSnapshot {
 	}
 }
 
-func IncDispatchResult(resultClass string)    { metrics.dispatchResults.inc(resultClass, 1) }
+func IncDispatchResult(resultClass string) { metrics.dispatchResults.inc(resultClass, 1) }
+func IncDispatchResultDetail(resultClass, bucket, artifactClass string) {
+	metrics.dispatchResultDetails.inc("result="+normalizeLabel(resultClass)+",bucket="+normalizeLabel(bucket)+",artifact_class="+normalizeLabel(artifactClass), 1)
+}
 func IncDispatchSignFailure(context string)   { metrics.dispatchSignFailures.inc(context, 1) }
 func IncDispatchInternalFailure(stage string) { metrics.dispatchInternalFailures.inc(stage, 1) }
+func IncObserverProof(result string)          { metrics.observerProofs.inc(result, 1) }
+func RecordChallenge(c ChallengeSnapshot)     { metrics.recentChallenges.add(c) }
+func GetChallenge(challengeID string) (ChallengeSnapshot, bool) {
+	return metrics.recentChallenges.get(challengeID)
+}
 func IncDispatchThrottled(policy string, dropped int) {
 	if dropped > 0 {
 		metrics.dispatchThrottled.inc(policy, uint64(dropped))
