@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
+	sntypes "github.com/LumeraProtocol/lumera/x/supernode/v1/types"
 	lumeraMock "github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	actionmod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/action"
+	supernodemod "github.com/LumeraProtocol/supernode/v2/pkg/lumera/modules/supernode"
 	"github.com/cosmos/gogoproto/proto"
 	"go.uber.org/mock/gomock"
 )
@@ -70,5 +72,64 @@ func TestChainTicketProvider_M10_AcceptsAtLeastOneClass(t *testing.T) {
 					tc.indexCount, tc.symbolCount, gotEligible, tc.eligible)
 			}
 		})
+	}
+}
+
+func TestChainTicketProvider_ObserverCandidatesUseActionBlockTopSupernodes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	client := lumeraMock.NewMockClient(ctrl)
+	actions := actionmod.NewMockModule(ctrl)
+	supernodes := supernodemod.NewMockModule(ctrl)
+
+	meta := &actiontypes.CascadeMetadata{
+		DataHash:            "h",
+		RqIdsMax:            3,
+		RqIdsIds:            []string{"rq-1"},
+		IndexArtifactCount:  1,
+		SymbolArtifactCount: 1,
+	}
+	metaBytes, err := proto.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	actionResp := &actiontypes.QueryListActionsBySuperNodeResponse{Actions: []*actiontypes.Action{{
+		ActionID:    "ticket-1",
+		ActionType:  actiontypes.ActionTypeCascade,
+		State:       actiontypes.ActionStateDone,
+		BlockHeight: 75,
+		// Current Lumera may store only the action/top supernode here; LEP-6
+		// observers must come from the registration-time top-supernode topology.
+		SuperNodes: []string{"sn-target"},
+		Metadata:   metaBytes,
+	}}}
+
+	client.EXPECT().Action().Return(actions).Times(2)
+	actions.EXPECT().ListActionsBySuperNode(gomock.Any(), "sn-target").Return(actionResp, nil)
+	client.EXPECT().SuperNode().Return(supernodes).Times(2)
+	supernodes.EXPECT().GetTopSuperNodesForBlock(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, req *sntypes.QueryGetTopSuperNodesForBlockRequest) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error) {
+			if req.GetBlockHeight() != 75 || req.GetState() != "SUPERNODE_STATE_ACTIVE" {
+				t.Fatalf("unexpected top-supernode request: %#v", req)
+			}
+			return &sntypes.QueryGetTopSuperNodesForBlockResponse{Supernodes: []*sntypes.SuperNode{
+				{SupernodeAccount: "sn-target"},
+				{SupernodeAccount: "sn-observer-a"},
+				{SupernodeAccount: "sn-observer-b"},
+			}}, nil
+		})
+
+	got, err := NewChainTicketProvider(client).ObserverCandidatesForTicket(context.Background(), "sn-target", "ticket-1")
+	if err != nil {
+		t.Fatalf("ObserverCandidatesForTicket: %v", err)
+	}
+	want := []string{"sn-observer-a", "sn-observer-b", "sn-target"}
+	if len(got) != len(want) {
+		t.Fatalf("candidates len=%d want=%d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidates[%d]=%q want %q; all=%#v", i, got[i], want[i], got)
+		}
 	}
 }

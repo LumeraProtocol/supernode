@@ -142,6 +142,20 @@ message StatusResponse {
     map<string, uint64> dispatch_epoch_duration_count = 5;
     map<string, uint64> ticket_discovery_total = 6;
     int64 no_ticket_provider_active = 7;
+    map<string, uint64> dispatch_result_details_total = 21;
+    map<string, uint64> dispatch_sign_failures_total = 22;
+    map<string, uint64> dispatch_internal_failures_total = 23;
+    map<string, uint64> observer_proofs_total = 24;
+    repeated LEP6ChallengeRef recent_challenge_refs = 25;
+
+    // Recent challenge references only. Fetch full bounded metadata via
+    // /api/v1/lep6/challenges/{challenge_id}.
+    message LEP6ChallengeRef {
+      string challenge_id = 1;
+      int64 timestamp_unix = 2;
+      uint64 epoch_id = 3;
+      string result_class = 4;
+    }
 
     // Self-healing signals.
     map<string, uint64> heal_claims_submitted_total = 8;
@@ -162,4 +176,41 @@ message StatusResponse {
   }
 
   LEP6Metrics lep6_metrics = 10;
+}
+// Request full bounded LEP-6 challenge metadata by id.
+message LEP6ChallengeDetailRequest {
+  string challenge_id = 1;
+}
+
+// Full metadata for one recent LEP-6 challenge. This is in-memory and bounded;
+// raw proof bytes and signatures are intentionally not exposed.
+message LEP6ChallengeDetailResponse {
+  string challenge_id = 1;
+  int64 timestamp_unix = 2;
+  uint64 epoch_id = 3;
+  string challenger = 4;
+  string target = 5;
+  string ticket_id = 6;
+  string bucket = 7;
+  string artifact_class = 8;
+  uint32 artifact_ordinal = 9;
+  uint32 artifact_count = 10;
+  string artifact_key = 11;
+  string result_class = 12;
+  string transcript_hash = 13;
+  string derivation_hash = 14;
+  string proof_hash = 15;
+  uint32 observer_count = 16;
+  uint32 attestation_count = 17;
+  bool observer_mismatch = 18;
+  string details = 19;
+  string failure_stage = 20;
+  string candidate_source = 21;
+  bool target_expected_holder = 22;
+  repeated string observer_candidates = 23;
+  repeated string selected_observers = 24;
+  repeated string observer_outcomes = 25;
+  uint64 effective_artifact_size = 26;
+  uint64 range_len = 27;
+  string size_source = 28;
 }

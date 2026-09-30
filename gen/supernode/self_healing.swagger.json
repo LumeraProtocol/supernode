@@ -44,25 +44,6 @@
           }
         }
       }
-    },
-    "supernodeServeReconstructedArtefactsResponse": {
-      "type": "object",
-      "properties": {
-        "chunk": {
-          "type": "string",
-          "format": "byte",
-          "description": "chunk is a contiguous slice of the reconstructed file bytes. Chunks are\nordered; concatenating chunks across the stream yields the original file\nwhose BLAKE3 must equal op.ResultHash (= action.DataHash recipe)."
-        },
-        "totalSize": {
-          "type": "string",
-          "format": "uint64",
-          "description": "total_size is the full file size; populated on the first message and\noptionally repeated. Allows clients to pre-allocate buffers."
-        },
-        "isLast": {
-          "type": "boolean",
-          "description": "is_last indicates this message carries the final chunk."
-        }
-      }
     }
   }
 }

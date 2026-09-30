@@ -19,6 +19,12 @@ service SupernodeService {
     };
   }
 
+  rpc GetLEP6ChallengeDetail(LEP6ChallengeDetailRequest) returns (LEP6ChallengeDetailResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/lep6/challenges/{challenge_id}"
+    };
+  }
+
   // Raw pprof endpoints - return standard pprof output directly
   rpc GetRawPprof(RawPprofRequest) returns (RawPprofResponse) {
     option (google.api.http) = {
