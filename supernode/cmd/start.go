@@ -76,19 +76,6 @@ The supernode will connect to the Lumera network and begin participating in the 
 		cfgFile := filepath.Join(baseDir, DefaultConfigFile)
 		logtrace.Debug(ctx, "Starting supernode with configuration", logtrace.Fields{"config_file": cfgFile, "keyring_dir": appConfig.GetKeyringDir(), "key_name": appConfig.SupernodeConfig.KeyName})
 
-		// LEP-6 review C1 (Matee, 2026-05-06): the LEP-6 toggles default to
-		// FALSE on missing-block. If this operator upgraded without adding
-		// the toggles, surface a WARN so they can see they are out of policy
-		// before the chain enforcement mode flips to SOFT/FULL. Empty string
-		// means everything is opted in.
-		if advisory := appConfig.LEP6OperatorOptInAdvisory(); advisory != "" {
-			logtrace.Warn(ctx, advisory, logtrace.Fields{
-				"storage_challenge.lep6.enabled":         appConfig.StorageChallengeConfig.LEP6.Enabled,
-				"storage_challenge.lep6.recheck.enabled": appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled,
-				"self_healing.enabled":                   appConfig.SelfHealingConfig.Enabled,
-			})
-		}
-
 		// Initialize keyring
 		kr, err := initKeyringFromConfig(appConfig)
 		if err != nil {
@@ -117,10 +104,10 @@ The supernode will connect to the Lumera network and begin participating in the 
 		evmMigrationOccurred := appConfig.SupernodeConfig.KeyName != preMigrationKeyName || appConfig.SupernodeConfig.Identity != preMigrationIdentity
 		if evmMigrationOccurred {
 			logtrace.Info(ctx, "Reloading Lumera client after EVM migration", logtrace.Fields{
-				"old_key_name":  preMigrationKeyName,
-				"new_key_name":  appConfig.SupernodeConfig.KeyName,
-				"old_identity":  preMigrationIdentity,
-				"new_identity":  appConfig.SupernodeConfig.Identity,
+				"old_key_name": preMigrationKeyName,
+				"new_key_name": appConfig.SupernodeConfig.KeyName,
+				"old_identity": preMigrationIdentity,
+				"new_identity": appConfig.SupernodeConfig.Identity,
 			})
 			if err := lumeraClient.Close(); err != nil {
 				logtrace.Warn(ctx, "Failed to close pre-migration Lumera client", logtrace.Fields{"error": err.Error()})
@@ -216,29 +203,19 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// Create supernode status service with injected tracker
 		statusSvc := statusService.NewSupernodeStatusService(p2pService, lumeraClient, appConfig, tr)
 
-		// Test/devnet affordance: when LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1 is set,
-		// skip starting the on-chain host_reporter service. This frees the supernode's
-		// reporter key for externally driven `MsgSubmitEpochReport` flows (e.g. the
-		// everlight devnet test scenarios) that would otherwise lose the account-sequence
-		// race against the SN's own ~5s auto-submit ticker. Production deployments must
-		// leave this unset; gated behind an env var with no config-file surface so the
-		// canonical path is unchanged.
-		var hostReporter *hostReporterService.Service
-		if v := strings.TrimSpace(os.Getenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")); v == "1" || strings.EqualFold(v, "true") {
-			logtrace.Info(ctx, "host_reporter disabled via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", logtrace.Fields{})
-		} else {
-			hr, err := hostReporterService.NewService(
-				appConfig.SupernodeConfig.Identity,
-				lumeraClient,
-				kr,
-				appConfig.SupernodeConfig.KeyName,
-				appConfig.BaseDir,
-				appConfig.GetP2PDataDir(),
-			)
-			if err != nil {
-				logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
-			}
-			hostReporter = hr
+		// Host reporter is mandatory: it submits epoch reports and drains LEP-6
+		// storage proof results into x/audit. Local config/env must not opt a node
+		// out of protocol participation.
+		hostReporter, err := hostReporterService.NewService(
+			appConfig.SupernodeConfig.Identity,
+			lumeraClient,
+			kr,
+			appConfig.SupernodeConfig.KeyName,
+			appConfig.BaseDir,
+			appConfig.GetP2PDataDir(),
+		)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize host reporter", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Legacy on-chain supernode metrics reporting has been superseded by `x/audit`.
@@ -272,65 +249,57 @@ The supernode will connect to the Lumera network and begin participating in the 
 			WithArtifactReader(artifactReader).
 			WithRecipientSigner(kr, appConfig.SupernodeConfig.KeyName).
 			WithAuditParams(lumeraClient.Audit())
-		var storageChallengeRunner *storageChallengeService.Service
-		var recheckRunner *recheckService.Service
-		if appConfig.StorageChallengeConfig.Enabled {
-			storageChallengeRunner, err = storageChallengeService.NewService(
-				appConfig.SupernodeConfig.Identity,
-				appConfig.SupernodeConfig.Port,
-				lumeraClient,
-				p2pService,
-				kr,
-				historyStore,
-				storageChallengeService.Config{
-					Enabled:        true,
-					PollInterval:   time.Duration(appConfig.StorageChallengeConfig.PollIntervalMs) * time.Millisecond,
-					SubmitEvidence: appConfig.StorageChallengeConfig.SubmitEvidence,
-					KeyName:        appConfig.SupernodeConfig.KeyName,
-				},
-			)
-			if err != nil {
-				logtrace.Fatal(ctx, "Failed to initialize storage challenge runner", logtrace.Fields{"error": err.Error()})
-			}
+		storageChallengeRunner, err := storageChallengeService.NewService(
+			appConfig.SupernodeConfig.Identity,
+			appConfig.SupernodeConfig.Port,
+			lumeraClient,
+			p2pService,
+			kr,
+			historyStore,
+			storageChallengeService.Config{
+				Enabled:        true,
+				PollInterval:   time.Duration(appConfig.StorageChallengeConfig.PollIntervalMs) * time.Millisecond,
+				SubmitEvidence: appConfig.StorageChallengeConfig.SubmitEvidence,
+				KeyName:        appConfig.SupernodeConfig.KeyName,
+			},
+		)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize storage challenge runner", logtrace.Fields{"error": err.Error()})
+		}
 
-			// LEP-6 dispatcher (mode-gated internally; see DispatchEpoch).
-			if appConfig.StorageChallengeConfig.LEP6.Enabled {
-				dispatcher, derr := storageChallengeService.NewLEP6Dispatcher(
-					lumeraClient,
-					kr,
-					appConfig.SupernodeConfig.KeyName,
-					appConfig.SupernodeConfig.Identity,
-					storageChallengeService.NewSecureSupernodeClientFactory(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port),
-					storageChallengeService.NewChainTicketProvider(lumeraClient),
-					storageChallengeService.NewCascadeMetaProvider(lumeraClient),
-					resultBuffer,
-				)
-				if derr != nil {
-					logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
-				}
-				dispatcher.SetArtifactSizeProvider(artifactReader)
-				storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
+		// LEP-6 dispatcher (mode-gated internally; see DispatchEpoch).
+		dispatcher, derr := storageChallengeService.NewLEP6Dispatcher(
+			lumeraClient,
+			kr,
+			appConfig.SupernodeConfig.KeyName,
+			appConfig.SupernodeConfig.Identity,
+			storageChallengeService.NewSecureSupernodeClientFactory(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port),
+			storageChallengeService.NewChainTicketProvider(lumeraClient),
+			storageChallengeService.NewCascadeMetaProvider(lumeraClient),
+			resultBuffer,
+		)
+		if derr != nil {
+			logtrace.Fatal(ctx, "Failed to initialize LEP-6 dispatcher", logtrace.Fields{"error": derr.Error()})
+		}
+		dispatcher.SetArtifactSizeProvider(artifactReader)
+		storageChallengeRunner.SetLEP6Dispatcher(dispatcher)
 
-				if appConfig.StorageChallengeConfig.LEP6.Recheck.Enabled {
-					rc := appConfig.StorageChallengeConfig.LEP6.Recheck
-					tickInterval := time.Duration(rc.TickIntervalMs) * time.Millisecond
-					failureBackoffTTL := time.Duration(rc.FailureBackoffTTLms) * time.Millisecond
-					recheckCfg := recheckService.Config{
-						Enabled:                     true,
-						LookbackEpochs:              rc.LookbackEpochs,
-						MaxPerTick:                  rc.MaxPerTick,
-						TickInterval:                tickInterval,
-						MaxFailureAttemptsPerTicket: rc.MaxFailureAttemptsPerTicket,
-						FailureBackoffTTL:           failureBackoffTTL,
-					}
-					attestor := recheckService.NewAttestor(appConfig.SupernodeConfig.Identity, lumeraClient.AuditMsg(), historyStore)
-					reporterSource := recheckService.NewSupernodeReporterSource(lumeraClient.SuperNode(), appConfig.SupernodeConfig.Identity)
-					recheckRunner, err = recheckService.NewServiceWithReporters(recheckCfg, lumeraClient.Audit(), historyStore, dispatcher, attestor, appConfig.SupernodeConfig.Identity, reporterSource)
-					if err != nil {
-						logtrace.Fatal(ctx, "Failed to initialize LEP-6 recheck runner", logtrace.Fields{"error": err.Error()})
-					}
-				}
-			}
+		rc := appConfig.StorageChallengeConfig.LEP6.Recheck
+		tickInterval := time.Duration(rc.TickIntervalMs) * time.Millisecond
+		failureBackoffTTL := time.Duration(rc.FailureBackoffTTLms) * time.Millisecond
+		recheckCfg := recheckService.Config{
+			Enabled:                     true,
+			LookbackEpochs:              rc.LookbackEpochs,
+			MaxPerTick:                  rc.MaxPerTick,
+			TickInterval:                tickInterval,
+			MaxFailureAttemptsPerTicket: rc.MaxFailureAttemptsPerTicket,
+			FailureBackoffTTL:           failureBackoffTTL,
+		}
+		attestor := recheckService.NewAttestor(appConfig.SupernodeConfig.Identity, lumeraClient.AuditMsg(), historyStore)
+		reporterSource := recheckService.NewSupernodeReporterSource(lumeraClient.SuperNode(), appConfig.SupernodeConfig.Identity)
+		recheckRunner, err := recheckService.NewServiceWithReporters(recheckCfg, lumeraClient.Audit(), historyStore, dispatcher, attestor, appConfig.SupernodeConfig.Identity, reporterSource)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize LEP-6 recheck runner", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Create supernode server
@@ -341,51 +310,47 @@ The supernode will connect to the Lumera network and begin participating in the 
 		// finalizer roles based on chain assignment. The §19 transport
 		// server lets verifiers fetch reconstructed bytes from the
 		// assigned healer before chain VERIFIED quorum.
-		var selfHealingRunner *selfHealingService.Service
-		var selfHealingServer *selfHealingRPC.Server
-		if appConfig.SelfHealingConfig.Enabled {
-			pollInterval := time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond
-			fetchTimeout := time.Duration(appConfig.SelfHealingConfig.VerifierFetchTimeoutMs) * time.Millisecond
-			// LEP-6 review M1 (Matee, 2026-05-06): the configured staging
-			// dir may be relative (default "heal-staging"). Resolve it
-			// against appConfig.BaseDir so we don't end up writing to the
-			// process's working directory (e.g. "/heal-staging" if launched
-			// from "/").
-			stagingRoot := appConfig.GetFullPath(appConfig.SelfHealingConfig.StagingDir)
-			shCfg := selfHealingService.Config{
-				Enabled:                    true,
-				PollInterval:               pollInterval,
-				MaxConcurrentReconstructs:  appConfig.SelfHealingConfig.MaxConcurrentReconstructs,
-				MaxConcurrentVerifications: appConfig.SelfHealingConfig.MaxConcurrentVerifications,
-				MaxConcurrentPublishes:     appConfig.SelfHealingConfig.MaxConcurrentPublishes,
-				StagingRoot:                stagingRoot,
-				VerifierFetchTimeout:       fetchTimeout,
-				VerifierFetchAttempts:      appConfig.SelfHealingConfig.VerifierFetchAttempts,
-				VerifierBackoffBase:        time.Duration(appConfig.SelfHealingConfig.VerifierBackoffBaseMs) * time.Millisecond,
-				AuditQueryTimeout:          time.Duration(appConfig.SelfHealingConfig.AuditQueryTimeoutMs) * time.Millisecond,
-				KeyName:                    appConfig.SupernodeConfig.KeyName,
-			}
-			fetcher := selfHealingService.NewSecureVerifierFetcher(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port)
-			selfHealingRunner, err = selfHealingService.New(
-				appConfig.SupernodeConfig.Identity,
-				shCfg,
-				lumeraClient,
-				historyStore,
-				cService,
-				fetcher,
-			)
-			if err != nil {
-				logtrace.Fatal(ctx, "Failed to initialize self-healing runner", logtrace.Fields{"error": err.Error()})
-			}
-			selfHealingServer, err = selfHealingRPC.NewServer(
-				appConfig.SupernodeConfig.Identity,
-				shCfg.StagingRoot,
-				lumeraClient,
-				selfHealingRPC.DefaultCallerIdentityResolver(),
-			)
-			if err != nil {
-				logtrace.Fatal(ctx, "Failed to initialize self-healing transport", logtrace.Fields{"error": err.Error()})
-			}
+		pollInterval := time.Duration(appConfig.SelfHealingConfig.PollIntervalMs) * time.Millisecond
+		fetchTimeout := time.Duration(appConfig.SelfHealingConfig.VerifierFetchTimeoutMs) * time.Millisecond
+		// LEP-6 review M1 (Matee, 2026-05-06): the configured staging
+		// dir may be relative (default "heal-staging"). Resolve it
+		// against appConfig.BaseDir so we don't end up writing to the
+		// process's working directory (e.g. "/heal-staging" if launched
+		// from "/").
+		stagingRoot := appConfig.GetFullPath(appConfig.SelfHealingConfig.StagingDir)
+		shCfg := selfHealingService.Config{
+			Enabled:                    true,
+			PollInterval:               pollInterval,
+			MaxConcurrentReconstructs:  appConfig.SelfHealingConfig.MaxConcurrentReconstructs,
+			MaxConcurrentVerifications: appConfig.SelfHealingConfig.MaxConcurrentVerifications,
+			MaxConcurrentPublishes:     appConfig.SelfHealingConfig.MaxConcurrentPublishes,
+			StagingRoot:                stagingRoot,
+			VerifierFetchTimeout:       fetchTimeout,
+			VerifierFetchAttempts:      appConfig.SelfHealingConfig.VerifierFetchAttempts,
+			VerifierBackoffBase:        time.Duration(appConfig.SelfHealingConfig.VerifierBackoffBaseMs) * time.Millisecond,
+			AuditQueryTimeout:          time.Duration(appConfig.SelfHealingConfig.AuditQueryTimeoutMs) * time.Millisecond,
+			KeyName:                    appConfig.SupernodeConfig.KeyName,
+		}
+		fetcher := selfHealingService.NewSecureVerifierFetcher(lumeraClient, kr, appConfig.SupernodeConfig.Identity, appConfig.SupernodeConfig.Port)
+		selfHealingRunner, err := selfHealingService.New(
+			appConfig.SupernodeConfig.Identity,
+			shCfg,
+			lumeraClient,
+			historyStore,
+			cService,
+			fetcher,
+		)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize self-healing runner", logtrace.Fields{"error": err.Error()})
+		}
+		selfHealingServer, err := selfHealingRPC.NewServer(
+			appConfig.SupernodeConfig.Identity,
+			shCfg.StagingRoot,
+			lumeraClient,
+			selfHealingRPC.DefaultCallerIdentityResolver(),
+		)
+		if err != nil {
+			logtrace.Fatal(ctx, "Failed to initialize self-healing transport", logtrace.Fields{"error": err.Error()})
 		}
 
 		// Create gRPC server (explicit args, no config struct)

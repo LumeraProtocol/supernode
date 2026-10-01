@@ -63,11 +63,15 @@ func (s *SupernodeStatusService) GetChainID() string {
 func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Metrics {
 	return &pb.StatusResponse_LEP6Metrics{
 		RecentChallengeRefs:                  lep6ChallengeRefs(s.RecentChallengeRefs),
+		RecentEpochSummaries:                 lep6EpochSummaries(s.RecentEpochSummaries),
 		DispatchResultsTotal:                 cloneUint64Map(s.DispatchResultsTotal),
 		DispatchResultDetailsTotal:           cloneUint64Map(s.DispatchResultDetailsTotal),
 		DispatchSignFailuresTotal:            cloneUint64Map(s.DispatchSignFailuresTotal),
 		DispatchInternalFailuresTotal:        cloneUint64Map(s.DispatchInternalFailuresTotal),
 		ObserverProofsTotal:                  cloneUint64Map(s.ObserverProofsTotal),
+		NoEligibleReasonsTotal:               cloneUint64Map(s.NoEligibleReasonsTotal),
+		ActionableResultsTotal:               cloneUint64Map(s.ActionableResultsTotal),
+		ParticipationTotal:                   cloneUint64Map(s.ParticipationTotal),
 		DispatchThrottledTotal:               cloneUint64Map(s.DispatchThrottledTotal),
 		DispatchEpochDurationMillisTotal:     cloneUint64Map(s.DispatchEpochDurationMillisTotal),
 		DispatchEpochDurationMillisMax:       cloneUint64Map(s.DispatchEpochDurationMillisMax),
@@ -80,6 +84,7 @@ func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Met
 		HealVerificationsAlreadyExistsTotal:  s.HealVerificationsAlreadyExistsTotal,
 		HealFinalizePublishesTotal:           s.HealFinalizePublishesTotal,
 		HealFinalizeCleanupsTotal:            cloneUint64Map(s.HealFinalizeCleanupsTotal),
+		HealOrphanedStagingCleanupsTotal:     s.HealOrphanedStagingCleanupsTotal,
 		SelfHealingPendingClaims:             s.SelfHealingPendingClaims,
 		SelfHealingStagingBytes:              s.SelfHealingStagingBytes,
 		RecheckCandidatesFoundTotal:          s.RecheckCandidatesFoundTotal,
@@ -88,6 +93,23 @@ func lep6StatusMetrics(s lep6metrics.MetricsSnapshot) *pb.StatusResponse_LEP6Met
 		RecheckExecutionFailuresTotal:        cloneUint64Map(s.RecheckExecutionFailuresTotal),
 		RecheckPendingCandidates:             s.RecheckPendingCandidates,
 	}
+}
+
+func lep6EpochSummaries(in []lep6metrics.EpochSummary) []*pb.StatusResponse_LEP6Metrics_LEP6EpochSummary {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*pb.StatusResponse_LEP6Metrics_LEP6EpochSummary, 0, len(in))
+	for _, e := range in {
+		out = append(out, &pb.StatusResponse_LEP6Metrics_LEP6EpochSummary{
+			EpochId:             e.EpochID,
+			ValidChallenges:     e.ValidChallenges,
+			NoEligibleTickets:   e.NoEligibleTickets,
+			ProofFailures:       e.ProofFailures,
+			FailureReasonsTotal: cloneUint64Map(e.FailureReasonsTotal),
+		})
+	}
+	return out
 }
 
 func lep6ChallengeRefs(in []lep6metrics.ChallengeRef) []*pb.StatusResponse_LEP6Metrics_LEP6ChallengeRef {

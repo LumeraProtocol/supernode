@@ -778,6 +778,10 @@ type StatusResponse_LEP6Metrics struct {
 	DispatchInternalFailuresTotal    map[string]uint64                              `protobuf:"bytes,23,rep,name=dispatch_internal_failures_total,json=dispatchInternalFailuresTotal,proto3" json:"dispatch_internal_failures_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	ObserverProofsTotal              map[string]uint64                              `protobuf:"bytes,24,rep,name=observer_proofs_total,json=observerProofsTotal,proto3" json:"observer_proofs_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	RecentChallengeRefs              []*StatusResponse_LEP6Metrics_LEP6ChallengeRef `protobuf:"bytes,25,rep,name=recent_challenge_refs,json=recentChallengeRefs,proto3" json:"recent_challenge_refs,omitempty"`
+	NoEligibleReasonsTotal           map[string]uint64                              `protobuf:"bytes,27,rep,name=no_eligible_reasons_total,json=noEligibleReasonsTotal,proto3" json:"no_eligible_reasons_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	ActionableResultsTotal           map[string]uint64                              `protobuf:"bytes,28,rep,name=actionable_results_total,json=actionableResultsTotal,proto3" json:"actionable_results_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	ParticipationTotal               map[string]uint64                              `protobuf:"bytes,29,rep,name=participation_total,json=participationTotal,proto3" json:"participation_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	RecentEpochSummaries             []*StatusResponse_LEP6Metrics_LEP6EpochSummary `protobuf:"bytes,30,rep,name=recent_epoch_summaries,json=recentEpochSummaries,proto3" json:"recent_epoch_summaries,omitempty"`
 	// Self-healing signals.
 	HealClaimsSubmittedTotal            map[string]uint64 `protobuf:"bytes,8,rep,name=heal_claims_submitted_total,json=healClaimsSubmittedTotal,proto3" json:"heal_claims_submitted_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	HealClaimsReconciledTotal           uint64            `protobuf:"varint,9,opt,name=heal_claims_reconciled_total,json=healClaimsReconciledTotal,proto3" json:"heal_claims_reconciled_total,omitempty"`
@@ -787,6 +791,7 @@ type StatusResponse_LEP6Metrics struct {
 	HealFinalizeCleanupsTotal           map[string]uint64 `protobuf:"bytes,13,rep,name=heal_finalize_cleanups_total,json=healFinalizeCleanupsTotal,proto3" json:"heal_finalize_cleanups_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	SelfHealingPendingClaims            int64             `protobuf:"varint,14,opt,name=self_healing_pending_claims,json=selfHealingPendingClaims,proto3" json:"self_healing_pending_claims,omitempty"`
 	SelfHealingStagingBytes             int64             `protobuf:"varint,15,opt,name=self_healing_staging_bytes,json=selfHealingStagingBytes,proto3" json:"self_healing_staging_bytes,omitempty"`
+	HealOrphanedStagingCleanupsTotal    uint64            `protobuf:"varint,26,opt,name=heal_orphaned_staging_cleanups_total,json=healOrphanedStagingCleanupsTotal,proto3" json:"heal_orphaned_staging_cleanups_total,omitempty"`
 	// Storage recheck signals.
 	RecheckCandidatesFoundTotal          uint64            `protobuf:"varint,16,opt,name=recheck_candidates_found_total,json=recheckCandidatesFoundTotal,proto3" json:"recheck_candidates_found_total,omitempty"`
 	RecheckEvidenceSubmittedTotal        map[string]uint64 `protobuf:"bytes,17,rep,name=recheck_evidence_submitted_total,json=recheckEvidenceSubmittedTotal,proto3" json:"recheck_evidence_submitted_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
@@ -911,6 +916,34 @@ func (x *StatusResponse_LEP6Metrics) GetRecentChallengeRefs() []*StatusResponse_
 	return nil
 }
 
+func (x *StatusResponse_LEP6Metrics) GetNoEligibleReasonsTotal() map[string]uint64 {
+	if x != nil {
+		return x.NoEligibleReasonsTotal
+	}
+	return nil
+}
+
+func (x *StatusResponse_LEP6Metrics) GetActionableResultsTotal() map[string]uint64 {
+	if x != nil {
+		return x.ActionableResultsTotal
+	}
+	return nil
+}
+
+func (x *StatusResponse_LEP6Metrics) GetParticipationTotal() map[string]uint64 {
+	if x != nil {
+		return x.ParticipationTotal
+	}
+	return nil
+}
+
+func (x *StatusResponse_LEP6Metrics) GetRecentEpochSummaries() []*StatusResponse_LEP6Metrics_LEP6EpochSummary {
+	if x != nil {
+		return x.RecentEpochSummaries
+	}
+	return nil
+}
+
 func (x *StatusResponse_LEP6Metrics) GetHealClaimsSubmittedTotal() map[string]uint64 {
 	if x != nil {
 		return x.HealClaimsSubmittedTotal
@@ -963,6 +996,13 @@ func (x *StatusResponse_LEP6Metrics) GetSelfHealingPendingClaims() int64 {
 func (x *StatusResponse_LEP6Metrics) GetSelfHealingStagingBytes() int64 {
 	if x != nil {
 		return x.SelfHealingStagingBytes
+	}
+	return 0
+}
+
+func (x *StatusResponse_LEP6Metrics) GetHealOrphanedStagingCleanupsTotal() uint64 {
+	if x != nil {
+		return x.HealOrphanedStagingCleanupsTotal
 	}
 	return 0
 }
@@ -1701,7 +1741,7 @@ type StatusResponse_LEP6Metrics_LEP6ChallengeRef struct {
 
 func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) Reset() {
 	*x = StatusResponse_LEP6Metrics_LEP6ChallengeRef{}
-	mi := &file_supernode_status_proto_msgTypes[31]
+	mi := &file_supernode_status_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1713,7 +1753,7 @@ func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) String() string {
 func (*StatusResponse_LEP6Metrics_LEP6ChallengeRef) ProtoMessage() {}
 
 func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) ProtoReflect() protoreflect.Message {
-	mi := &file_supernode_status_proto_msgTypes[31]
+	mi := &file_supernode_status_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1726,7 +1766,7 @@ func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) ProtoReflect() protoreflec
 
 // Deprecated: Use StatusResponse_LEP6Metrics_LEP6ChallengeRef.ProtoReflect.Descriptor instead.
 func (*StatusResponse_LEP6Metrics_LEP6ChallengeRef) Descriptor() ([]byte, []int) {
-	return file_supernode_status_proto_rawDescGZIP(), []int{1, 4, 10}
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 4, 13}
 }
 
 func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) GetChallengeId() string {
@@ -1757,13 +1797,89 @@ func (x *StatusResponse_LEP6Metrics_LEP6ChallengeRef) GetResultClass() string {
 	return ""
 }
 
+type StatusResponse_LEP6Metrics_LEP6EpochSummary struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	EpochId             uint64                 `protobuf:"varint,1,opt,name=epoch_id,json=epochId,proto3" json:"epoch_id,omitempty"`
+	ValidChallenges     uint64                 `protobuf:"varint,2,opt,name=valid_challenges,json=validChallenges,proto3" json:"valid_challenges,omitempty"`
+	NoEligibleTickets   uint64                 `protobuf:"varint,3,opt,name=no_eligible_tickets,json=noEligibleTickets,proto3" json:"no_eligible_tickets,omitempty"`
+	ProofFailures       uint64                 `protobuf:"varint,4,opt,name=proof_failures,json=proofFailures,proto3" json:"proof_failures,omitempty"`
+	FailureReasonsTotal map[string]uint64      `protobuf:"bytes,5,rep,name=failure_reasons_total,json=failureReasonsTotal,proto3" json:"failure_reasons_total,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) Reset() {
+	*x = StatusResponse_LEP6Metrics_LEP6EpochSummary{}
+	mi := &file_supernode_status_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusResponse_LEP6Metrics_LEP6EpochSummary) ProtoMessage() {}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_supernode_status_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusResponse_LEP6Metrics_LEP6EpochSummary.ProtoReflect.Descriptor instead.
+func (*StatusResponse_LEP6Metrics_LEP6EpochSummary) Descriptor() ([]byte, []int) {
+	return file_supernode_status_proto_rawDescGZIP(), []int{1, 4, 14}
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) GetEpochId() uint64 {
+	if x != nil {
+		return x.EpochId
+	}
+	return 0
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) GetValidChallenges() uint64 {
+	if x != nil {
+		return x.ValidChallenges
+	}
+	return 0
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) GetNoEligibleTickets() uint64 {
+	if x != nil {
+		return x.NoEligibleTickets
+	}
+	return 0
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) GetProofFailures() uint64 {
+	if x != nil {
+		return x.ProofFailures
+	}
+	return 0
+}
+
+func (x *StatusResponse_LEP6Metrics_LEP6EpochSummary) GetFailureReasonsTotal() map[string]uint64 {
+	if x != nil {
+		return x.FailureReasonsTotal
+	}
+	return nil
+}
+
 var File_supernode_status_proto protoreflect.FileDescriptor
 
 const file_supernode_status_proto_rawDesc = "" +
 	"\n" +
 	"\x16supernode/status.proto\x12\tsupernode\"?\n" +
 	"\rStatusRequest\x12.\n" +
-	"\x13include_p2p_metrics\x18\x01 \x01(\bR\x11includeP2pMetrics\"\x87:\n" +
+	"\x13include_p2p_metrics\x18\x01 \x01(\bR\x11includeP2pMetrics\"\x8dC\n" +
 	"\x0eStatusResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\x12A\n" +
@@ -1865,7 +1981,7 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v23.supernode.StatusResponse.P2PMetrics.HandleCountersR\x05value:\x028\x01\x1aB\n" +
 	"\x14ConnPoolMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\x1a\xb6 \n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\x1a\xbc)\n" +
 	"\vLEP6Metrics\x12u\n" +
 	"\x16dispatch_results_total\x18\x01 \x03(\v2?.supernode.StatusResponse.LEP6Metrics.DispatchResultsTotalEntryR\x14dispatchResultsTotal\x12{\n" +
 	"\x18dispatch_throttled_total\x18\x02 \x03(\v2A.supernode.StatusResponse.LEP6Metrics.DispatchThrottledTotalEntryR\x16dispatchThrottledTotal\x12\x9b\x01\n" +
@@ -1878,7 +1994,11 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\x1cdispatch_sign_failures_total\x18\x16 \x03(\v2D.supernode.StatusResponse.LEP6Metrics.DispatchSignFailuresTotalEntryR\x19dispatchSignFailuresTotal\x12\x91\x01\n" +
 	" dispatch_internal_failures_total\x18\x17 \x03(\v2H.supernode.StatusResponse.LEP6Metrics.DispatchInternalFailuresTotalEntryR\x1ddispatchInternalFailuresTotal\x12r\n" +
 	"\x15observer_proofs_total\x18\x18 \x03(\v2>.supernode.StatusResponse.LEP6Metrics.ObserverProofsTotalEntryR\x13observerProofsTotal\x12j\n" +
-	"\x15recent_challenge_refs\x18\x19 \x03(\v26.supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRefR\x13recentChallengeRefs\x12\x82\x01\n" +
+	"\x15recent_challenge_refs\x18\x19 \x03(\v26.supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRefR\x13recentChallengeRefs\x12|\n" +
+	"\x19no_eligible_reasons_total\x18\x1b \x03(\v2A.supernode.StatusResponse.LEP6Metrics.NoEligibleReasonsTotalEntryR\x16noEligibleReasonsTotal\x12{\n" +
+	"\x18actionable_results_total\x18\x1c \x03(\v2A.supernode.StatusResponse.LEP6Metrics.ActionableResultsTotalEntryR\x16actionableResultsTotal\x12n\n" +
+	"\x13participation_total\x18\x1d \x03(\v2=.supernode.StatusResponse.LEP6Metrics.ParticipationTotalEntryR\x12participationTotal\x12l\n" +
+	"\x16recent_epoch_summaries\x18\x1e \x03(\v26.supernode.StatusResponse.LEP6Metrics.LEP6EpochSummaryR\x14recentEpochSummaries\x12\x82\x01\n" +
 	"\x1bheal_claims_submitted_total\x18\b \x03(\v2C.supernode.StatusResponse.LEP6Metrics.HealClaimsSubmittedTotalEntryR\x18healClaimsSubmittedTotal\x12?\n" +
 	"\x1cheal_claims_reconciled_total\x18\t \x01(\x04R\x19healClaimsReconciledTotal\x12\x97\x01\n" +
 	"\"heal_verifications_submitted_total\x18\n" +
@@ -1887,7 +2007,8 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\x1dheal_finalize_publishes_total\x18\f \x01(\x04R\x1ahealFinalizePublishesTotal\x12\x85\x01\n" +
 	"\x1cheal_finalize_cleanups_total\x18\r \x03(\v2D.supernode.StatusResponse.LEP6Metrics.HealFinalizeCleanupsTotalEntryR\x19healFinalizeCleanupsTotal\x12=\n" +
 	"\x1bself_healing_pending_claims\x18\x0e \x01(\x03R\x18selfHealingPendingClaims\x12;\n" +
-	"\x1aself_healing_staging_bytes\x18\x0f \x01(\x03R\x17selfHealingStagingBytes\x12C\n" +
+	"\x1aself_healing_staging_bytes\x18\x0f \x01(\x03R\x17selfHealingStagingBytes\x12N\n" +
+	"$heal_orphaned_staging_cleanups_total\x18\x1a \x01(\x04R healOrphanedStagingCleanupsTotal\x12C\n" +
 	"\x1erecheck_candidates_found_total\x18\x10 \x01(\x04R\x1brecheckCandidatesFoundTotal\x12\x91\x01\n" +
 	" recheck_evidence_submitted_total\x18\x11 \x03(\v2H.supernode.StatusResponse.LEP6Metrics.RecheckEvidenceSubmittedTotalEntryR\x1drecheckEvidenceSubmittedTotal\x12V\n" +
 	"(recheck_evidence_already_submitted_total\x18\x12 \x01(\x04R$recheckEvidenceAlreadySubmittedTotal\x12\x91\x01\n" +
@@ -1922,12 +2043,30 @@ const file_supernode_status_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aF\n" +
 	"\x18ObserverProofsTotalEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aI\n" +
+	"\x1bNoEligibleReasonsTotalEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aI\n" +
+	"\x1bActionableResultsTotalEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aE\n" +
+	"\x17ParticipationTotalEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1a\x9a\x01\n" +
 	"\x10LEP6ChallengeRef\x12!\n" +
 	"\fchallenge_id\x18\x01 \x01(\tR\vchallengeId\x12%\n" +
 	"\x0etimestamp_unix\x18\x02 \x01(\x03R\rtimestampUnix\x12\x19\n" +
 	"\bepoch_id\x18\x03 \x01(\x04R\aepochId\x12!\n" +
-	"\fresult_class\x18\x04 \x01(\tR\vresultClass\x1aK\n" +
+	"\fresult_class\x18\x04 \x01(\tR\vresultClass\x1a\xfd\x02\n" +
+	"\x10LEP6EpochSummary\x12\x19\n" +
+	"\bepoch_id\x18\x01 \x01(\x04R\aepochId\x12)\n" +
+	"\x10valid_challenges\x18\x02 \x01(\x04R\x0fvalidChallenges\x12.\n" +
+	"\x13no_eligible_tickets\x18\x03 \x01(\x04R\x11noEligibleTickets\x12%\n" +
+	"\x0eproof_failures\x18\x04 \x01(\x04R\rproofFailures\x12\x83\x01\n" +
+	"\x15failure_reasons_total\x18\x05 \x03(\v2O.supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary.FailureReasonsTotalEntryR\x13failureReasonsTotal\x1aF\n" +
+	"\x18FailureReasonsTotalEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aK\n" +
 	"\x1dHealClaimsSubmittedTotalEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aR\n" +
@@ -1992,7 +2131,7 @@ func file_supernode_status_proto_rawDescGZIP() []byte {
 	return file_supernode_status_proto_rawDescData
 }
 
-var file_supernode_status_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_supernode_status_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_supernode_status_proto_goTypes = []any{
 	(*StatusRequest)(nil),                            // 0: supernode.StatusRequest
 	(*StatusResponse)(nil),                           // 1: supernode.StatusResponse
@@ -2025,12 +2164,17 @@ var file_supernode_status_proto_goTypes = []any{
 	nil, // 28: supernode.StatusResponse.LEP6Metrics.DispatchSignFailuresTotalEntry
 	nil, // 29: supernode.StatusResponse.LEP6Metrics.DispatchInternalFailuresTotalEntry
 	nil, // 30: supernode.StatusResponse.LEP6Metrics.ObserverProofsTotalEntry
-	(*StatusResponse_LEP6Metrics_LEP6ChallengeRef)(nil), // 31: supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRef
-	nil, // 32: supernode.StatusResponse.LEP6Metrics.HealClaimsSubmittedTotalEntry
-	nil, // 33: supernode.StatusResponse.LEP6Metrics.HealVerificationsSubmittedTotalEntry
-	nil, // 34: supernode.StatusResponse.LEP6Metrics.HealFinalizeCleanupsTotalEntry
-	nil, // 35: supernode.StatusResponse.LEP6Metrics.RecheckEvidenceSubmittedTotalEntry
-	nil, // 36: supernode.StatusResponse.LEP6Metrics.RecheckExecutionFailuresTotalEntry
+	nil, // 31: supernode.StatusResponse.LEP6Metrics.NoEligibleReasonsTotalEntry
+	nil, // 32: supernode.StatusResponse.LEP6Metrics.ActionableResultsTotalEntry
+	nil, // 33: supernode.StatusResponse.LEP6Metrics.ParticipationTotalEntry
+	(*StatusResponse_LEP6Metrics_LEP6ChallengeRef)(nil), // 34: supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRef
+	(*StatusResponse_LEP6Metrics_LEP6EpochSummary)(nil), // 35: supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary
+	nil, // 36: supernode.StatusResponse.LEP6Metrics.HealClaimsSubmittedTotalEntry
+	nil, // 37: supernode.StatusResponse.LEP6Metrics.HealVerificationsSubmittedTotalEntry
+	nil, // 38: supernode.StatusResponse.LEP6Metrics.HealFinalizeCleanupsTotalEntry
+	nil, // 39: supernode.StatusResponse.LEP6Metrics.RecheckEvidenceSubmittedTotalEntry
+	nil, // 40: supernode.StatusResponse.LEP6Metrics.RecheckExecutionFailuresTotalEntry
+	nil, // 41: supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary.FailureReasonsTotalEntry
 }
 var file_supernode_status_proto_depIdxs = []int32{
 	4,  // 0: supernode.StatusResponse.resources:type_name -> supernode.StatusResponse.Resources
@@ -2057,20 +2201,25 @@ var file_supernode_status_proto_depIdxs = []int32{
 	28, // 21: supernode.StatusResponse.LEP6Metrics.dispatch_sign_failures_total:type_name -> supernode.StatusResponse.LEP6Metrics.DispatchSignFailuresTotalEntry
 	29, // 22: supernode.StatusResponse.LEP6Metrics.dispatch_internal_failures_total:type_name -> supernode.StatusResponse.LEP6Metrics.DispatchInternalFailuresTotalEntry
 	30, // 23: supernode.StatusResponse.LEP6Metrics.observer_proofs_total:type_name -> supernode.StatusResponse.LEP6Metrics.ObserverProofsTotalEntry
-	31, // 24: supernode.StatusResponse.LEP6Metrics.recent_challenge_refs:type_name -> supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRef
-	32, // 25: supernode.StatusResponse.LEP6Metrics.heal_claims_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealClaimsSubmittedTotalEntry
-	33, // 26: supernode.StatusResponse.LEP6Metrics.heal_verifications_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealVerificationsSubmittedTotalEntry
-	34, // 27: supernode.StatusResponse.LEP6Metrics.heal_finalize_cleanups_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealFinalizeCleanupsTotalEntry
-	35, // 28: supernode.StatusResponse.LEP6Metrics.recheck_evidence_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.RecheckEvidenceSubmittedTotalEntry
-	36, // 29: supernode.StatusResponse.LEP6Metrics.recheck_execution_failures_total:type_name -> supernode.StatusResponse.LEP6Metrics.RecheckExecutionFailuresTotalEntry
-	19, // 30: supernode.StatusResponse.P2PMetrics.DhtMetrics.store_success_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
-	20, // 31: supernode.StatusResponse.P2PMetrics.DhtMetrics.batch_retrieve_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
-	13, // 32: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry.value:type_name -> supernode.StatusResponse.P2PMetrics.HandleCounters
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	34, // 24: supernode.StatusResponse.LEP6Metrics.recent_challenge_refs:type_name -> supernode.StatusResponse.LEP6Metrics.LEP6ChallengeRef
+	31, // 25: supernode.StatusResponse.LEP6Metrics.no_eligible_reasons_total:type_name -> supernode.StatusResponse.LEP6Metrics.NoEligibleReasonsTotalEntry
+	32, // 26: supernode.StatusResponse.LEP6Metrics.actionable_results_total:type_name -> supernode.StatusResponse.LEP6Metrics.ActionableResultsTotalEntry
+	33, // 27: supernode.StatusResponse.LEP6Metrics.participation_total:type_name -> supernode.StatusResponse.LEP6Metrics.ParticipationTotalEntry
+	35, // 28: supernode.StatusResponse.LEP6Metrics.recent_epoch_summaries:type_name -> supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary
+	36, // 29: supernode.StatusResponse.LEP6Metrics.heal_claims_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealClaimsSubmittedTotalEntry
+	37, // 30: supernode.StatusResponse.LEP6Metrics.heal_verifications_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealVerificationsSubmittedTotalEntry
+	38, // 31: supernode.StatusResponse.LEP6Metrics.heal_finalize_cleanups_total:type_name -> supernode.StatusResponse.LEP6Metrics.HealFinalizeCleanupsTotalEntry
+	39, // 32: supernode.StatusResponse.LEP6Metrics.recheck_evidence_submitted_total:type_name -> supernode.StatusResponse.LEP6Metrics.RecheckEvidenceSubmittedTotalEntry
+	40, // 33: supernode.StatusResponse.LEP6Metrics.recheck_execution_failures_total:type_name -> supernode.StatusResponse.LEP6Metrics.RecheckExecutionFailuresTotalEntry
+	19, // 34: supernode.StatusResponse.P2PMetrics.DhtMetrics.store_success_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.StoreSuccessPoint
+	20, // 35: supernode.StatusResponse.P2PMetrics.DhtMetrics.batch_retrieve_recent:type_name -> supernode.StatusResponse.P2PMetrics.DhtMetrics.BatchRetrievePoint
+	13, // 36: supernode.StatusResponse.P2PMetrics.NetworkHandleMetricsEntry.value:type_name -> supernode.StatusResponse.P2PMetrics.HandleCounters
+	41, // 37: supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary.failure_reasons_total:type_name -> supernode.StatusResponse.LEP6Metrics.LEP6EpochSummary.FailureReasonsTotalEntry
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_supernode_status_proto_init() }
@@ -2084,7 +2233,7 @@ func file_supernode_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_supernode_status_proto_rawDesc), len(file_supernode_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   37,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -72,10 +72,10 @@
       "name": "Host reporter test/devnet disable affordance",
       "status": "done",
       "implementation_state": "done_outside_bridge",
-      "notes": "Setting LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1/true skips starting the on-chain host reporter so externally driven devnet epoch-report flows do not race account sequence. Marked done after retrospective gate PASS and operator evaluation approval on 2026-04-28.",
+      "notes": "The legacy host-reporter-disable env var has been removed; host reporter is mandatory so epoch reports and LEP-6 proof results cannot be locally disabled.",
       "evidence": [
         "supernode/cmd/start.go",
-        "git log: e349971 feat(host_reporter): add LUMERA_SUPERNODE_DISABLE_HOST_REPORTER test affordance (#285)"
+        "git log: e349971 feat(host_reporter): add the legacy host-reporter-disable env var test affordance (#285)"
       ]
     },
     {
@@ -141,7 +141,7 @@
         "?? docs/requirements.json"
       ],
       "recent_commits": [
-        "e349971 feat(host_reporter): add LUMERA_SUPERNODE_DISABLE_HOST_REPORTER test affordance (#285)",
+        "e349971 feat(host_reporter): add the legacy host-reporter-disable env var test affordance (#285)",
         "2a97508 Everlight: supernode compatibility + p2p STORAGE_FULL eligibility gate (#284)",
         "3dd5fee feat: LEP-5 availability commitment support (Merkle proof challenge) (#274)",
         "eae3929 feat(tx): lower default gas_adjustment to 1.3, make tuning configurable, retry on OOG (#283)",

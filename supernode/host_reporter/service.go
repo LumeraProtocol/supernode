@@ -19,6 +19,7 @@ import (
 	"github.com/LumeraProtocol/supernode/v2/pkg/logtrace"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera"
 	"github.com/LumeraProtocol/supernode/v2/pkg/lumera/chainerrors"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/reachability"
 	statussvc "github.com/LumeraProtocol/supernode/v2/supernode/status"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -199,6 +200,8 @@ func (s *Service) tick(ctx context.Context) {
 	if err != nil || assignResp == nil {
 		return
 	}
+	lep6metrics.IncParticipation("epoch_report_attempts")
+	lep6metrics.AddParticipation("epoch_report_assigned_targets", uint64(len(assignResp.TargetSupernodeAccounts)))
 
 	storageChallengeObservations := s.buildStorageChallengeObservations(tickCtx, epochID, assignResp.RequiredOpenPorts, assignResp.TargetSupernodeAccounts)
 
@@ -218,6 +221,7 @@ func (s *Service) tick(ctx context.Context) {
 			}
 		}
 		storageProofResults = proofResultProvider.CollectResults(epochID)
+		lep6metrics.AddParticipation("proof_rows_drained_for_report", uint64(len(storageProofResults)))
 		delete(s.nonFullProofWaitStarted, epochID)
 		if modeOK && mode == audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL {
 			// FULL mode is the only mode where the chain enforces compound
@@ -301,6 +305,7 @@ func (s *Service) tick(ctx context.Context) {
 		//     drained rows are stale; do not requeue, just log;
 		//   - any other error (transient RPC / sequence / validation) →
 		//     requeue so next tick can retry with the same proofs.
+		lep6metrics.IncParticipation("epoch_report_submit_failed")
 		if chainerrors.IsEpochReportDuplicate(err) {
 			fields := logtrace.Fields{
 				"epoch_id":      epochID,
@@ -325,6 +330,8 @@ func (s *Service) tick(ctx context.Context) {
 		return
 	}
 
+	lep6metrics.IncParticipation("epoch_report_submitted")
+	lep6metrics.AddParticipation("proof_rows_submitted_to_chain", uint64(len(storageProofResults)))
 	logtrace.Info(tickCtx, "epoch report submitted", logtrace.Fields{
 		"epoch_id":                             epochID,
 		"storage_challenge_observations_count": len(storageChallengeObservations),

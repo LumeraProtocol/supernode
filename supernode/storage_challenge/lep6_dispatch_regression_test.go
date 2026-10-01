@@ -7,6 +7,7 @@ import (
 
 	actiontypes "github.com/LumeraProtocol/lumera/x/action/v1/types"
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	lep6metrics "github.com/LumeraProtocol/supernode/v2/pkg/metrics/lep6"
 	"github.com/LumeraProtocol/supernode/v2/pkg/storagechallenge/deterministic"
 	"github.com/stretchr/testify/require"
 )
@@ -30,6 +31,8 @@ import (
 // ticket but the ticket has no concrete artifact universe, the dispatcher emits
 // NO_ELIGIBLE_TICKET and keeps the chain row TicketId empty.
 func TestDispatchEpoch_NoConcreteArtifactUniverseEmitsNoEligible_TicketIdEmpty(t *testing.T) {
+	lep6metrics.Reset()
+	t.Cleanup(lep6metrics.Reset)
 	const epochID uint64 = 4242
 	anchor := makeAnchor(epochID, 200, "sn-target")
 	audit := &dispatchAuditModule{
@@ -78,6 +81,12 @@ func TestDispatchEpoch_NoConcreteArtifactUniverseEmitsNoEligible_TicketIdEmpty(t
 		}
 	}
 	require.True(t, sawNoEligible, "expected NO_ELIGIBLE_TICKET row in RECENT bucket")
+	snap := lep6metrics.Snapshot()
+	require.Equal(t, uint64(1), snap.NoEligibleReasonsTotal["reason=artifact_universe_empty,bucket=storage_proof_bucket_type_recent"])
+	require.Contains(t, snap.RecentChallengeRefs, lep6metrics.ChallengeRef{ChallengeID: results[0].TranscriptHash, TimestampUnix: snap.RecentChallengeRefs[0].TimestampUnix, EpochID: epochID, ResultClass: audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String()})
+	detail, ok := lep6metrics.GetChallenge(results[0].TranscriptHash)
+	require.True(t, ok)
+	require.Equal(t, noEligibleReasonArtifactUniverseEmpty, detail.FailureStage)
 }
 
 // TestDispatchEpoch_OneClassMissingFallsBackToOtherClass covers LEP-6 §10 at

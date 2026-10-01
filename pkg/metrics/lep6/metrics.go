@@ -24,7 +24,11 @@ type MetricsSnapshot struct {
 	DispatchSignFailuresTotal        map[string]uint64 // context (e.g. PASS, NO_ELIGIBLE)
 	DispatchInternalFailuresTotal    map[string]uint64 // pre-derivation stage label
 	ObserverProofsTotal              map[string]uint64 // result=<attested|dial_failed|proof_failed|mismatch>
+	NoEligibleReasonsTotal           map[string]uint64 // reason=<reason>,bucket=<bucket>
+	ActionableResultsTotal           map[string]uint64 // result_class excluding NO_ELIGIBLE_TICKET
+	ParticipationTotal               map[string]uint64 // event counters for assignment/report reconciliation
 	RecentChallengeRefs              []ChallengeRef
+	RecentEpochSummaries             []EpochSummary
 	DispatchThrottledTotal           map[string]uint64 // policy
 	DispatchEpochDurationMillisTotal map[string]uint64 // role
 	DispatchEpochDurationMillisMax   map[string]uint64 // role
@@ -57,6 +61,16 @@ type ChallengeRef struct {
 	TimestampUnix int64
 	EpochID       uint64
 	ResultClass   string
+}
+
+// EpochSummary is derived from the bounded recent challenge ring and helps
+// operators distinguish epoch participation from actionable proof success.
+type EpochSummary struct {
+	EpochID             uint64
+	ValidChallenges     uint64
+	NoEligibleTickets   uint64
+	ProofFailures       uint64
+	FailureReasonsTotal map[string]uint64
 }
 
 // ChallengeSnapshot is a bounded recent per-process challenge detail record.
@@ -199,6 +213,59 @@ func (r *challengeRing) refs() []ChallengeRef {
 	return out
 }
 
+func (r *challengeRing) epochSummaries() []EpochSummary {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if len(r.items) == 0 {
+		return nil
+	}
+	byEpoch := make(map[uint64]*EpochSummary)
+	for _, item := range r.items {
+		summary := byEpoch[item.EpochID]
+		if summary == nil {
+			summary = &EpochSummary{EpochID: item.EpochID, FailureReasonsTotal: make(map[string]uint64)}
+			byEpoch[item.EpochID] = summary
+		}
+		result := normalizeLabel(item.ResultClass)
+		switch result {
+		case "storage_proof_result_class_no_eligible_ticket", "no_eligible_ticket":
+			summary.NoEligibleTickets++
+		default:
+			if result == "storage_proof_result_class_pass" || result == "pass" {
+				summary.ValidChallenges++
+			} else {
+				summary.ProofFailures++
+				reason := normalizeLabel(item.FailureStage)
+				if reason == "unknown" {
+					reason = normalizeLabel(item.ResultClass)
+				}
+				summary.FailureReasonsTotal[reason]++
+			}
+		}
+	}
+	epochs := make([]uint64, 0, len(byEpoch))
+	for epoch := range byEpoch {
+		epochs = append(epochs, epoch)
+	}
+	sort.Slice(epochs, func(i, j int) bool { return epochs[i] < epochs[j] })
+	out := make([]EpochSummary, 0, len(epochs))
+	for _, epoch := range epochs {
+		summary := byEpoch[epoch]
+		clone := EpochSummary{
+			EpochID:             summary.EpochID,
+			ValidChallenges:     summary.ValidChallenges,
+			NoEligibleTickets:   summary.NoEligibleTickets,
+			ProofFailures:       summary.ProofFailures,
+			FailureReasonsTotal: make(map[string]uint64, len(summary.FailureReasonsTotal)),
+		}
+		for k, v := range summary.FailureReasonsTotal {
+			clone.FailureReasonsTotal[k] = v
+		}
+		out = append(out, clone)
+	}
+	return out
+}
+
 func (r *challengeRing) get(challengeID string) (ChallengeSnapshot, bool) {
 	challengeID = strings.TrimSpace(challengeID)
 	if challengeID == "" {
@@ -227,6 +294,9 @@ var metrics = struct {
 	dispatchSignFailures     counterMap
 	dispatchInternalFailures counterMap
 	observerProofs           counterMap
+	noEligibleReasons        counterMap
+	actionableResults        counterMap
+	participation            counterMap
 	recentChallenges         challengeRing
 	dispatchThrottled        counterMap
 	dispatchEpochMillisTotal counterMap
@@ -259,6 +329,9 @@ func Reset() {
 	metrics.dispatchSignFailures.reset()
 	metrics.dispatchInternalFailures.reset()
 	metrics.observerProofs.reset()
+	metrics.noEligibleReasons.reset()
+	metrics.actionableResults.reset()
+	metrics.participation.reset()
 	metrics.recentChallenges.reset()
 	metrics.dispatchThrottled.reset()
 	metrics.dispatchEpochMillisTotal.reset()
@@ -290,7 +363,11 @@ func Snapshot() MetricsSnapshot {
 		DispatchSignFailuresTotal:            metrics.dispatchSignFailures.snapshot(),
 		DispatchInternalFailuresTotal:        metrics.dispatchInternalFailures.snapshot(),
 		ObserverProofsTotal:                  metrics.observerProofs.snapshot(),
+		NoEligibleReasonsTotal:               metrics.noEligibleReasons.snapshot(),
+		ActionableResultsTotal:               metrics.actionableResults.snapshot(),
+		ParticipationTotal:                   metrics.participation.snapshot(),
 		RecentChallengeRefs:                  metrics.recentChallenges.refs(),
+		RecentEpochSummaries:                 metrics.recentChallenges.epochSummaries(),
 		DispatchThrottledTotal:               metrics.dispatchThrottled.snapshot(),
 		DispatchEpochDurationMillisTotal:     metrics.dispatchEpochMillisTotal.snapshot(),
 		DispatchEpochDurationMillisMax:       metrics.dispatchEpochMillisMax.snapshot(),
@@ -321,7 +398,17 @@ func IncDispatchResultDetail(resultClass, bucket, artifactClass string) {
 func IncDispatchSignFailure(context string)   { metrics.dispatchSignFailures.inc(context, 1) }
 func IncDispatchInternalFailure(stage string) { metrics.dispatchInternalFailures.inc(stage, 1) }
 func IncObserverProof(result string)          { metrics.observerProofs.inc(result, 1) }
-func RecordChallenge(c ChallengeSnapshot)     { metrics.recentChallenges.add(c) }
+func IncNoEligibleReason(reason, bucket string) {
+	metrics.noEligibleReasons.inc("reason="+normalizeLabel(reason)+",bucket="+normalizeLabel(bucket), 1)
+}
+func IncActionableResult(resultClass string) { metrics.actionableResults.inc(resultClass, 1) }
+func IncParticipation(event string)          { metrics.participation.inc(event, 1) }
+func AddParticipation(event string, delta uint64) {
+	if delta > 0 {
+		metrics.participation.inc(event, delta)
+	}
+}
+func RecordChallenge(c ChallengeSnapshot) { metrics.recentChallenges.add(c) }
 func GetChallenge(challengeID string) (ChallengeSnapshot, bool) {
 	return metrics.recentChallenges.get(challengeID)
 }

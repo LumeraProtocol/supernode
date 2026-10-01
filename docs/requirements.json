@@ -22,7 +22,7 @@
       "Supernode query wrappers for Everlight surfaces: pool-state, sn-eligibility, payout-history",
       "P2P Kademlia eligibility policy distinguishing routing/read eligibility (ACTIVE+POSTPONED+STORAGE_FULL) from store/write eligibility (ACTIVE only) for new keys, while preserving existing-key replication and read",
       "Supernode verifier acceptance of STORAGE_FULL as a valid state where appropriate",
-      "Test/devnet affordance to disable the on-chain host reporter via LUMERA_SUPERNODE_DISABLE_HOST_REPORTER",
+      "Removed legacy test/devnet affordance that disabled the on-chain host reporter",
       "LEP-5 availability commitment / Merkle proof challenge support in cascadekit and SDK evidence payload"
     ],
     "out_of_scope": [
@@ -167,7 +167,7 @@
     {
       "id": "F05",
       "name": "Host reporter test/devnet disable affordance",
-      "description": "Setting LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1 (or true) at startup skips starting the on-chain host reporter, so externally driven devnet epoch-report flows do not race the supernode's own account sequence.",
+      "description": "Host reporter is mandatory at startup; local environment variables cannot disable epoch-report submission.",
       "user_value": "Unblocks deterministic devnet/integration tests that drive epoch reports out-of-band.",
       "acceptance_tests": [
         {
@@ -228,7 +228,7 @@
       "name": "Devnet test driver disables on-chain host reporter",
       "actor": "Devnet operator",
       "steps": [
-        "Set LUMERA_SUPERNODE_DISABLE_HOST_REPORTER=1",
+        "Attempt to disable host reporter via legacy env var",
         "Start supernode",
         "Drive epoch reports externally without account-sequence collision"
       ],

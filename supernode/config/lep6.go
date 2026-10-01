@@ -39,7 +39,6 @@ func (c *StorageChallengeConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = StorageChallengeConfig(out)
-	c.enabledSet = hasYAMLKey(value, "enabled")
 	return nil
 }
 
@@ -50,7 +49,6 @@ func (c *StorageChallengeLEP6Config) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = StorageChallengeLEP6Config(out)
-	c.enabledSet = hasYAMLKey(value, "enabled")
 	return nil
 }
 
@@ -61,7 +59,6 @@ func (c *StorageRecheckConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = StorageRecheckConfig(out)
-	c.enabledSet = hasYAMLKey(value, "enabled")
 	return nil
 }
 
@@ -72,39 +69,19 @@ func (c *SelfHealingConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = SelfHealingConfig(out)
-	c.enabledSet = hasYAMLKey(value, "enabled")
 	return nil
 }
 
-func hasYAMLKey(value *yaml.Node, key string) bool {
-	if value == nil || value.Kind != yaml.MappingNode {
-		return false
-	}
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		if value.Content[i].Value == key {
-			return true
-		}
-	}
-	return false
-}
-
 // applyLEP6DefaultsAndValidate applies testnet-ready defaults to LEP-6
-// toggles and runtime knobs, then runs validation.
+// runtime knobs, then runs validation.
 //
-// Storage truth remains chain-gated: even when local toggles default TRUE,
-// every LEP-6 service no-ops while StorageTruthEnforcementMode is
-// UNSPECIFIED. Operators can still emergency-disable any local runtime by
-// setting the relevant `enabled: false` explicitly in YAML.
+// Storage truth remains chain-gated: local config cannot opt a node out of
+// storage challenge / LEP-6 participation. Even if old YAML explicitly sets
+// enabled: false, the supernode normalizes these participation gates to true;
+// chain audit params decide whether work is performed.
 func (c *Config) applyLEP6DefaultsAndValidate() error {
-	// Local storage-truth runtimes default ON for testnet operators who update
-	// without adding new config blocks. enabledSet=true means the YAML had an
-	// explicit `enabled:` key — keep the operator's value verbatim.
-	if !c.StorageChallengeConfig.enabledSet {
-		c.StorageChallengeConfig.Enabled = true
-	}
-	if !c.StorageChallengeConfig.LEP6.enabledSet {
-		c.StorageChallengeConfig.LEP6.Enabled = true
-	}
+	c.StorageChallengeConfig.Enabled = true
+	c.StorageChallengeConfig.LEP6.Enabled = true
 	if c.StorageChallengeConfig.LEP6.MaxConcurrentTargets == 0 {
 		c.StorageChallengeConfig.LEP6.MaxConcurrentTargets = DefaultLEP6MaxConcurrentTargets
 	}
@@ -113,9 +90,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 	}
 
 	recheck := &c.StorageChallengeConfig.LEP6.Recheck
-	if !recheck.enabledSet {
-		recheck.Enabled = true
-	}
+	recheck.Enabled = true
 	if recheck.LookbackEpochs == 0 {
 		recheck.LookbackEpochs = DefaultLEP6RecheckLookbackEpochs
 	}
@@ -132,9 +107,7 @@ func (c *Config) applyLEP6DefaultsAndValidate() error {
 		recheck.FailureBackoffTTLms = int(DefaultLEP6RecheckFailureBackoffTTL / time.Millisecond)
 	}
 
-	if !c.SelfHealingConfig.enabledSet {
-		c.SelfHealingConfig.Enabled = true
-	}
+	c.SelfHealingConfig.Enabled = true
 	if c.SelfHealingConfig.PollIntervalMs == 0 {
 		c.SelfHealingConfig.PollIntervalMs = int(DefaultSelfHealingPollInterval / time.Millisecond)
 	}
@@ -212,18 +185,5 @@ func (c *Config) validateLEP6Config() error {
 		return fmt.Errorf("LEP-6 config: self_healing.audit_query_timeout_ms must be >= 0")
 	}
 
-	// LEP-6 review L6 (Matee, 2026-05-06): structural consistency check —
-	// the recheck runtime is only spawned when storage_challenge.enabled AND
-	// storage_challenge.lep6.enabled are both true (see supernode/cmd/start.go).
-	// Catching this at config-load surfaces the dead block at startup
-	// rather than letting it silently no-op.
-	if lep6.Recheck.Enabled {
-		if !c.StorageChallengeConfig.Enabled {
-			return fmt.Errorf("LEP-6 config: storage_challenge.lep6.recheck.enabled=true requires storage_challenge.enabled=true (recheck runtime is gated by parent storage_challenge service)")
-		}
-		if !lep6.Enabled {
-			return fmt.Errorf("LEP-6 config: storage_challenge.lep6.recheck.enabled=true requires storage_challenge.lep6.enabled=true (recheck runtime is gated by parent LEP-6 dispatcher)")
-		}
-	}
 	return nil
 }
