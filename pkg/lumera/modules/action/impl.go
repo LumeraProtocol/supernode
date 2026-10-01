@@ -59,6 +59,34 @@ func (m *module) GetParams(ctx context.Context) (*types.QueryParamsResponse, err
 	return resp, nil
 }
 
+// ListActions lists actions with optional type/state filters.
+func (m *module) ListActions(ctx context.Context, actionType types.ActionType, actionState types.ActionState) (*types.QueryListActionsResponse, error) {
+	var all []*types.Action
+	var nextKey []byte
+	for {
+		resp, err := m.client.ListActions(ctx, &types.QueryListActionsRequest{
+			ActionType:  actionType,
+			ActionState: actionState,
+			Pagination: &query.PageRequest{
+				Key:   nextKey,
+				Limit: 100,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			return &types.QueryListActionsResponse{Actions: all}, nil
+		}
+		all = append(all, resp.Actions...)
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			resp.Actions = all
+			return resp, nil
+		}
+		nextKey = resp.Pagination.NextKey
+	}
+}
+
 // ListActionsBySuperNode lists actions assigned to a specific supernode.
 func (m *module) ListActionsBySuperNode(ctx context.Context, superNodeAddress string) (*types.QueryListActionsBySuperNodeResponse, error) {
 	var all []*types.Action

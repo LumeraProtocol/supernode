@@ -106,6 +106,13 @@ type observerCandidateSelection struct {
 	InsufficientForQuorum bool
 }
 
+type dispatchTicketOutcome int
+
+const (
+	dispatchTicketOutcomeTerminal dispatchTicketOutcome = iota
+	dispatchTicketOutcomeSkipped
+)
+
 type challengeDebug struct {
 	FailureStage          string
 	CandidateSource       string
@@ -342,17 +349,37 @@ func (d *LEP6Dispatcher) dispatchTarget(
 			continue
 		}
 
-		ticketID := deterministic.SelectTicketForBucket(eligibleIDs, nil, anchor.Seed, target, bucket)
-		if ticketID == "" {
-			lep6metrics.SetNoTicketProviderActive(true)
-			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, "")
-			continue
-		}
+		attempted := make(map[string]struct{}, len(eligibleIDs))
+		lastSkipped := ""
+		for len(attempted) < len(eligibleIDs) {
+			remaining := make([]string, 0, len(eligibleIDs)-len(attempted))
+			for _, id := range eligibleIDs {
+				if _, seen := attempted[id]; !seen {
+					remaining = append(remaining, id)
+				}
+			}
+			ticketID := deterministic.SelectTicketForBucket(remaining, nil, anchor.Seed, target, bucket)
+			if ticketID == "" {
+				break
+			}
+			attempted[ticketID] = struct{}{}
 
-		if err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, target, bucket, ticketID); err != nil {
-			logtrace.Warn(ctx, "lep6 dispatch: ticket loop error", logtrace.Fields{
-				"epoch_id": epochID, "target": target, "ticket": ticketID, "error": err.Error(),
-			})
+			outcome, err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, target, bucket, ticketID)
+			if err != nil {
+				logtrace.Warn(ctx, "lep6 dispatch: ticket loop error", logtrace.Fields{
+					"epoch_id": epochID, "target": target, "ticket": ticketID, "error": err.Error(),
+				})
+				break
+			}
+			if outcome == dispatchTicketOutcomeTerminal {
+				lastSkipped = ""
+				break
+			}
+			lastSkipped = ticketID
+		}
+		if len(attempted) == len(eligibleIDs) && lastSkipped != "" {
+			lep6metrics.SetNoTicketProviderActive(true)
+			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, lastSkipped)
 		}
 	}
 	return nil
@@ -514,14 +541,14 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	target string,
 	bucket audittypes.StorageProofBucketType,
 	ticketID string,
-) error {
+) (dispatchTicketOutcome, error) {
 	meta, fileSizeKbs, err := d.meta.GetCascadeMetadata(ctx, ticketID)
 	if err != nil || meta == nil {
 		if cerr := ctx.Err(); cerr != nil {
-			return cerr
+			return dispatchTicketOutcomeTerminal, cerr
 		}
 		lep6metrics.IncDispatchInternalFailure("cascade_meta")
-		return fmt.Errorf("get cascade meta: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("get cascade meta: %w", err)
 	}
 
 	indexCount, _ := storagechallenge.ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
@@ -532,8 +559,10 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		// The selected ticket has no concrete artifact universe in either class.
 		// Emit NO_ELIGIBLE_TICKET and surface the selected ticket id in structured
 		// logs only — the chain row keeps ticket_id="".
-		d.appendNoEligible(ctx, buf, epochID, anchor, target, bucket, ticketID)
-		return nil
+		logtrace.Info(ctx, "lep6 dispatch: selected ticket has no concrete artifact universe; trying next eligible ticket", logtrace.Fields{
+			"epoch_id": epochID, "target": target, "bucket": bucket.String(), "ticket": ticketID,
+		})
+		return dispatchTicketOutcomeSkipped, nil
 	}
 
 	var artifactCount uint32
@@ -546,17 +575,17 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	ordinal, err := deterministic.SelectArtifactOrdinal(anchor.Seed, target, ticketID, class, artifactCount)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("select_ordinal")
-		return fmt.Errorf("select ordinal: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("select ordinal: %w", err)
 	}
 	artifactKey, err := storagechallenge.ResolveArtifactKey(meta, class, ordinal)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("resolve_key")
-		return fmt.Errorf("resolve artifact key: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("resolve artifact key: %w", err)
 	}
 	artifactSize, err := storagechallenge.ResolveArtifactSize(&actiontypes.Action{FileSizeKbs: int64(fileSizeKbs)}, meta, class, ordinal)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("resolve_size")
-		return fmt.Errorf("resolve artifact size: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("resolve artifact size: %w", err)
 	}
 	sizeSource := "metadata"
 	rangeLen := uint64(params.StorageTruthCompoundRangeLenBytes)
@@ -620,7 +649,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	offsets, err := deterministic.ComputeMultiRangeOffsets(anchor.Seed, target, ticketID, class, ordinal, artifactSize, rangeLen, k)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("compute_offsets")
-		return fmt.Errorf("compute offsets: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("compute offsets: %w", err)
 	}
 	ranges := make([]*supernode.ByteRange, len(offsets))
 	for i, off := range offsets {
@@ -630,11 +659,11 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	derivHash, err := deterministic.DerivationInputHash(anchor.Seed, target, ticketID, class, ordinal, offsets, rangeLen)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("derivation_hash")
-		return fmt.Errorf("derivation input hash: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("derivation input hash: %w", err)
 	}
 
 	challengeID := deriveCompoundChallengeID(anchor.Seed, epochID, target, ticketID, class, ordinal)
-	observerSelection := d.observerCandidatesForTicket(ctx, anchor.ActiveSupernodeAccounts, target, ticketID)
+	observerSelection := d.observerCandidatesForArtifact(ctx, anchor.ActiveSupernodeAccounts, target, ticketID, artifactKey)
 	observerCandidates := observerSelection.Candidates
 	observers := deterministic.SelectLEP6Observers(observerCandidates, anchor.Seed, d.self, target, 2)
 	debug := challengeDebug{
@@ -646,6 +675,13 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		RangeLen:              rangeLen,
 		SizeSource:            sizeSource,
 	}
+	if observerSelection.ProviderHadHolderSet && !observerSelection.TargetExpectedHolder {
+		logtrace.Info(ctx, "lep6 dispatch: target is not an expected artifact holder; trying next eligible ticket", logtrace.Fields{
+			"epoch_id": epochID, "challenger": d.self, "target": target, "ticket": ticketID, "bucket": bucket.String(), "artifact_key": artifactKey, "holder_set": observerCandidates,
+		})
+		return dispatchTicketOutcomeSkipped, nil
+	}
+
 	logtrace.Info(ctx, "lep6 dispatch diagnostic: observer selection", logtrace.Fields{
 		"epoch_id":                  epochID,
 		"challenger":                d.self,
@@ -666,7 +702,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		reason := fmt.Sprintf("observer holder quorum unavailable: selected %d want 2 from %d active holder candidates", len(observers), len(observerCandidates))
 		debug.FailureStage = "observer_selection"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL, reason, debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 
 	req := &supernode.GetCompoundProofRequest{
@@ -690,7 +726,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if err != nil {
 		debug.FailureStage = "dial_target"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, classifyProofFailure(err, "dial"), fmt.Sprintf("dial: %v", err), debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -704,21 +740,21 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		}
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, classifyProofFailure(err, reason), reason, debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 
 	// Local validation: range count + per-range size, and proof hash recompute.
 	if len(resp.RangeBytes) != k {
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range count mismatch: got %d want %d", len(resp.RangeBytes), k), debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 	hasher := blake3.New(32, nil)
 	for i, b := range resp.RangeBytes {
 		if uint64(len(b)) != rangeLen {
 			debug.FailureStage = "target_proof"
 			d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range[%d] size %d != %d", i, len(b), rangeLen), debug)
-			return nil
+			return dispatchTicketOutcomeTerminal, nil
 		}
 		_, _ = hasher.Write(b)
 	}
@@ -726,7 +762,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if !strings.EqualFold(gotHash, resp.ProofHashHex) {
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH, fmt.Sprintf("proof hash mismatch: local=%s remote=%s", gotHash, resp.ProofHashHex), debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
@@ -744,7 +780,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	})
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("transcript_hash")
-		return fmt.Errorf("transcript hash: %w", err)
+		return dispatchTicketOutcomeTerminal, fmt.Errorf("transcript hash: %w", err)
 	}
 
 	observerAttestations, observerMismatch, observerOutcomes := d.collectObserverAttestations(ctx, observers, req, gotHash, transcriptHashHex)
@@ -766,7 +802,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if observerMismatch {
 		debug.FailureStage = "observer_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL, "observer bytes diverged from target transcript", debug)
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 
 	sig, signErr := snkeyring.SignBytes(d.keyring, d.keyName, []byte(transcriptHashHex))
@@ -776,7 +812,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		logtrace.Warn(ctx, "lep6 dispatch: pass-row sign error — row dropped", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "ticket": ticketID, "error": signErr.Error(),
 		})
-		return nil
+		return dispatchTicketOutcomeTerminal, nil
 	}
 
 	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String())
@@ -824,23 +860,24 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		ChallengerSignature:           hex.EncodeToString(sig),
 		ObserverAttestationSignatures: observerAttestations,
 	})
-	return nil
+	return dispatchTicketOutcomeTerminal, nil
 }
 
-func (d *LEP6Dispatcher) observerCandidatesForTicket(ctx context.Context, activeSupernodes []string, target string, ticketID string) observerCandidateSelection {
+func (d *LEP6Dispatcher) observerCandidatesForArtifact(ctx context.Context, activeSupernodes []string, target string, ticketID string, artifactKey string) observerCandidateSelection {
 	provider, ok := d.tickets.(ObserverCandidateProvider)
 	if !ok {
 		return observerCandidateSelection{Candidates: activeSupernodes, Source: "active_fallback", TargetExpectedHolder: true}
 	}
-	candidates, err := provider.ObserverCandidatesForTicket(ctx, target, ticketID)
+	topologyCandidates, err := provider.ObserverCandidatesForTicket(ctx, target, ticketID)
 	if err != nil {
 		logtrace.Warn(ctx, "lep6 dispatch: observer holder candidates unavailable", logtrace.Fields{"target": target, "ticket": ticketID, "error": err.Error()})
 		return observerCandidateSelection{Source: "holder_provider_error", TargetExpectedHolder: false, ProviderHadHolderSet: true, InsufficientForQuorum: true}
 	}
-	if candidates == nil {
+	if topologyCandidates == nil {
 		logtrace.Warn(ctx, "lep6 dispatch: observer holder candidates unavailable; falling back to active set", logtrace.Fields{"target": target, "ticket": ticketID})
 		return observerCandidateSelection{Candidates: activeSupernodes, Source: "active_fallback", TargetExpectedHolder: true}
 	}
+	replicaCandidates := deterministic.SelectArtifactReplicaSet(topologyCandidates, artifactKey, deterministic.LEP6ArtifactReplicaCount)
 	active := make(map[string]struct{}, len(activeSupernodes))
 	for _, sn := range activeSupernodes {
 		sn = strings.TrimSpace(sn)
@@ -848,10 +885,10 @@ func (d *LEP6Dispatcher) observerCandidatesForTicket(ctx context.Context, active
 			active[sn] = struct{}{}
 		}
 	}
-	filtered := make([]string, 0, len(candidates))
+	filtered := make([]string, 0, len(replicaCandidates))
 	targetExpected := false
-	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
+	seen := make(map[string]struct{}, len(replicaCandidates))
+	for _, candidate := range replicaCandidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" {
 			continue
@@ -873,7 +910,7 @@ func (d *LEP6Dispatcher) observerCandidatesForTicket(ctx context.Context, active
 	}
 	return observerCandidateSelection{
 		Candidates:            filtered,
-		Source:                "holder_set",
+		Source:                "artifact_replica_set",
 		TargetExpectedHolder:  targetExpected,
 		ProviderHadHolderSet:  true,
 		InsufficientForQuorum: len(deterministic.SelectLEP6Observers(filtered, []byte("probe"), d.self, target, 2)) < 2,

@@ -56,6 +56,32 @@ func TestSelectLEP6Targets_OneThirdCoverage_AssignmentMatchesChain(t *testing.T)
 	}
 }
 
+func TestSelectArtifactReplicaSet_FiltersRanksAndLimits(t *testing.T) {
+	candidates := []string{"sn-c", "", "sn-a", "sn-b", "sn-a", "sn-d"}
+	got := SelectArtifactReplicaSet(candidates, "artifact-key", 3)
+	if len(got) != 3 {
+		t.Fatalf("replica set len=%d want=3: %v", len(got), got)
+	}
+	seen := map[string]struct{}{}
+	for _, id := range got {
+		if id == "" {
+			t.Fatalf("replica set contains empty id: %v", got)
+		}
+		if _, ok := seen[id]; ok {
+			t.Fatalf("replica set contains duplicate id %q: %v", id, got)
+		}
+		seen[id] = struct{}{}
+	}
+	gotAgain := SelectArtifactReplicaSet([]string{"sn-d", "sn-c", "sn-b", "sn-a"}, "artifact-key", 3)
+	if !equalSliceOrdered(got, gotAgain) {
+		t.Fatalf("replica selection must be independent of input order\nfirst=%v\nagain=%v", got, gotAgain)
+	}
+	all := SelectArtifactReplicaSet([]string{"sn-a", "sn-b"}, "artifact-key", 6)
+	if len(all) != 2 {
+		t.Fatalf("count above candidates should return all candidates, got %v", all)
+	}
+}
+
 func TestAssignChallengerTargets_KnownAssignment(t *testing.T) {
 	active := []string{"sn-a", "sn-b", "sn-c", "sn-d", "sn-e", "sn-f"}
 	targets := SelectLEP6Targets(active, chainSeed, 3)

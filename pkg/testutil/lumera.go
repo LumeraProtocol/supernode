@@ -183,6 +183,10 @@ func (m *MockActionModule) GetParams(ctx context.Context) (*actiontypes.QueryPar
 	return &actiontypes.QueryParamsResponse{}, nil
 }
 
+func (m *MockActionModule) ListActions(ctx context.Context, actionType actiontypes.ActionType, actionState actiontypes.ActionState) (*actiontypes.QueryListActionsResponse, error) {
+	return &actiontypes.QueryListActionsResponse{}, nil
+}
+
 func (m *MockActionModule) ListActionsBySuperNode(ctx context.Context, superNodeAddress string) (*actiontypes.QueryListActionsBySuperNodeResponse, error) {
 	return &actiontypes.QueryListActionsBySuperNodeResponse{}, nil
 }

@@ -62,8 +62,10 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	audittypes "github.com/LumeraProtocol/lumera/x/audit/v1/types"
+	"github.com/btcsuite/btcutil/base58"
 	"lukechampine.com/blake3"
 )
 
@@ -98,6 +100,11 @@ const (
 	// LEP6ArtifactClassIndexCutoff is exclusive upper bound for INDEX bucket
 	// (roll < cutoff -> INDEX).
 	LEP6ArtifactClassIndexCutoff = 2
+
+	// LEP6ArtifactReplicaCount mirrors the Kademlia store fanout (Alpha).
+	// LEP-6 target/observer selection must reason about the nodes expected to
+	// hold the concrete artifact, not just the action participant.
+	LEP6ArtifactReplicaCount = 6
 )
 
 // Domain separator labels used across LEP-6 hash inputs. Freezing these as
@@ -271,6 +278,61 @@ func SelectLEP6Observers(activeIDs []string, seed []byte, challenger, target str
 	out := make([]string, limit)
 	for i := 0; i < limit; i++ {
 		out[i] = candidates[i].id
+	}
+	return out
+}
+
+// SelectArtifactReplicaSet returns the expected Kademlia/Cascade holder set for
+// a concrete artifact key from a candidate topology. It mirrors the P2P store
+// placement rule used by DHT IterateBatchStore: decode the artifact key when it
+// is base58, normalize the target to a 32-byte BLAKE3 key when needed, hash each
+// node/account ID with BLAKE3, then sort by big-endian XOR distance to the
+// artifact key. Empty/duplicate candidates are ignored and ties break
+// lexicographically by account for deterministic tests/logs.
+func SelectArtifactReplicaSet(candidates []string, artifactKey string, count uint32) []string {
+	if count == 0 || len(candidates) == 0 || strings.TrimSpace(artifactKey) == "" {
+		return nil
+	}
+	target := base58.Decode(strings.TrimSpace(artifactKey))
+	if len(target) != 32 {
+		sum := blake3.Sum256(target)
+		target = sum[:]
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	ranked := make([]rankedAccount, 0, len(candidates))
+	for _, id := range candidates {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		nodeHash := blake3.Sum256([]byte(id))
+		rank := make([]byte, 32)
+		for i := 0; i < 32; i++ {
+			rank[i] = nodeHash[i] ^ target[i]
+		}
+		ranked = append(ranked, rankedAccount{id: id, rank: rank})
+	}
+	if len(ranked) == 0 {
+		return nil
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if c := compareBytes(ranked[i].rank, ranked[j].rank); c != 0 {
+			return c < 0
+		}
+		return ranked[i].id < ranked[j].id
+	})
+	limit := int(count)
+	if limit > len(ranked) {
+		limit = len(ranked)
+	}
+	out := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		out[i] = ranked[i].id
 	}
 	return out
 }

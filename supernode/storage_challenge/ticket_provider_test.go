@@ -18,15 +18,15 @@ func TestChainTicketProviderFiltersFinalizedCascadeActions(t *testing.T) {
 
 	metadata := validCascadeMetadata(t)
 	client.EXPECT().Action().Return(actions).Times(2)
-	actions.EXPECT().ListActionsBySuperNode(gomock.Any(), "sn-target").Return(&actiontypes.QueryListActionsBySuperNodeResponse{Actions: []*actiontypes.Action{
-		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}, Metadata: metadata},
-		{ActionID: "sym-approved", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateApproved, BlockHeight: 100, SuperNodes: []string{"sn-target"}, Metadata: metadata},
-		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-target"}, Metadata: metadata}, // duplicate
-		{ActionID: "pending", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStatePending, BlockHeight: 101, SuperNodes: []string{"sn-target"}, Metadata: metadata},
-		{ActionID: "wrong-type", ActionType: actiontypes.ActionTypeSense, State: actiontypes.ActionStateDone, BlockHeight: 102, SuperNodes: []string{"sn-target"}, Metadata: metadata},
-		{ActionID: "wrong-target", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 103, SuperNodes: []string{"other"}, Metadata: metadata},
-		{ActionID: "zero-height", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 0, SuperNodes: []string{"sn-target"}, Metadata: metadata},
-		{ActionID: "bad-metadata", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 104, SuperNodes: []string{"sn-target"}, Metadata: []byte("not-proto")},
+	actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateDone).Return(&actiontypes.QueryListActionsResponse{Actions: []*actiontypes.Action{
+		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-action-top"}, Metadata: metadata},
+		{ActionID: "sym-old", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 99, SuperNodes: []string{"sn-action-top"}, Metadata: metadata}, // duplicate
+		{ActionID: "wrong-type", ActionType: actiontypes.ActionTypeSense, State: actiontypes.ActionStateDone, BlockHeight: 102, SuperNodes: []string{"sn-action-top"}, Metadata: metadata},
+		{ActionID: "zero-height", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 0, SuperNodes: []string{"sn-action-top"}, Metadata: metadata},
+		{ActionID: "bad-metadata", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateDone, BlockHeight: 104, SuperNodes: []string{"sn-action-top"}, Metadata: []byte("not-proto")},
+	}}, nil)
+	actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateApproved).Return(&actiontypes.QueryListActionsResponse{Actions: []*actiontypes.Action{
+		{ActionID: "sym-approved", ActionType: actiontypes.ActionTypeCascade, State: actiontypes.ActionStateApproved, BlockHeight: 100, SuperNodes: []string{"sn-action-top"}, Metadata: metadata},
 	}}, nil)
 
 	got, err := NewChainTicketProvider(client).TicketsForTarget(context.Background(), "sn-target")

@@ -49,7 +49,7 @@ func (d *LEP6Dispatcher) Recheck(ctx context.Context, c recheck.Candidate) (rech
 	// Per-call ephemeral buffer: dispatchTicket writes here, dispatcher's
 	// shared buffer is left alone. No global lock held during the RPC.
 	tmp := NewBuffer()
-	if err := d.dispatchTicket(ctx, tmp, c.EpochID, anchorResp.Anchor, params, c.TargetAccount, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
+	if _, err := d.dispatchTicket(ctx, tmp, c.EpochID, anchorResp.Anchor, params, c.TargetAccount, audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECHECK, c.TicketID); err != nil {
 		return recheck.RecheckResult{}, err
 	}
 	results := tmp.CollectResults(c.EpochID)

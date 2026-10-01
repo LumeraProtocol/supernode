@@ -524,7 +524,7 @@ func TestDispatchEpoch_HappyPath_EmitsPassResult(t *testing.T) {
 			"sn-target": {{TicketID: "tkt-happy", AnchorBlock: 100}},
 		},
 		observerCandidates: map[string][]string{
-			"sn-target/tkt-happy": {"holder-a", "holder-b", "holder-c"},
+			"sn-target/tkt-happy": {"sn-target", "holder-a", "holder-b", "holder-c"},
 		},
 	}
 	meta := stubMetaProvider{
@@ -659,6 +659,58 @@ func TestDispatchEpoch_KnownHolderSetRequiresObserverQuorum(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected a holder-quorum failure for selected ticket")
+}
+
+func TestDispatchEpoch_TargetNotArtifactHolderSkipsToNextEligibleTicket(t *testing.T) {
+	const epochID uint64 = 1906
+	anchor := makeAnchor(epochID, 200, "sn-target", "holder-a", "holder-b", "holder-c", "holder-d", "holder-e", "holder-f")
+	audit := &dispatchAuditModule{
+		params:   &audittypes.QueryParamsResponse{Params: defaultParams(audittypes.StorageTruthEnforcementMode_STORAGE_TRUTH_ENFORCEMENT_MODE_FULL)},
+		anchor:   &audittypes.QueryEpochAnchorResponse{Anchor: anchor},
+		assigned: &audittypes.QueryAssignedTargetsResponse{TargetSupernodeAccounts: []string{"sn-target"}},
+	}
+	tickets := stubTicketProvider{
+		tickets: map[string][]TicketDescriptor{
+			"sn-target": {
+				{TicketID: "tkt-not-holder", AnchorBlock: 100},
+				{TicketID: "tkt-holder", AnchorBlock: 100},
+			},
+		},
+		observerCandidates: map[string][]string{
+			"sn-target/tkt-not-holder": {"holder-a", "holder-b", "holder-c", "holder-d", "holder-e", "holder-f"},
+			"sn-target/tkt-holder":     {"sn-target", "holder-a", "holder-b", "holder-c", "holder-d", "holder-e", "holder-f"},
+		},
+	}
+	meta := stubMetaProvider{
+		meta: &actiontypes.CascadeMetadata{RqIdsIc: 0, RqIdsMax: 1, RqIdsIds: []string{"sym-0"}},
+		size: 4 * 1024,
+	}
+	targetClient := &stubCompoundClient{resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)}
+	factory := &routedFactory{clients: map[string]*stubCompoundClient{
+		"sn-target": targetClient,
+		"holder-a":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-b":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-c":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-d":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-e":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+		"holder-f":  {resp: makeOKCompoundResponse(t, 2, deterministic.LEP6CompoundRangeLenBytes)},
+	}}
+	d, buf := newDispatcher(t, audit, factory, tickets, meta)
+
+	require.NoError(t, d.DispatchEpoch(context.Background(), epochID))
+	require.NotEmpty(t, targetClient.requests, "dispatcher should skip non-holder ticket and prove the next holder-valid ticket")
+	for _, req := range targetClient.requests {
+		require.Equal(t, "tkt-holder", req.TicketId)
+	}
+	results := buf.CollectResults(epochID)
+	var sawHolderPass bool
+	for _, r := range results {
+		require.NotEqual(t, "tkt-not-holder", r.TicketId, "non-holder ticket must not become false target evidence")
+		if r.TicketId == "tkt-holder" && r.ResultClass == audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS {
+			sawHolderPass = true
+		}
+	}
+	require.True(t, sawHolderPass, "expected next holder-valid ticket to produce PASS")
 }
 
 func TestDispatchEpoch_ObserverMismatchPreventsPass(t *testing.T) {

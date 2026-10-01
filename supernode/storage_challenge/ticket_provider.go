@@ -26,18 +26,24 @@ func NewChainTicketProvider(client lumera.Client) *ChainTicketProvider {
 	return &ChainTicketProvider{client: client}
 }
 
-// TicketsForTarget returns finalized cascade actions that include the target
-// supernode in their action.SuperNodes assignment list.
+// TicketsForTarget returns finalized cascade actions from the chain action
+// universe. Target-specific storage eligibility is intentionally checked later
+// by the dispatcher against the selected artifact-key holder set; current Lumera
+// actions can name only the action/top supernode in action.SuperNodes while
+// Cascade stores artifacts across the action-block topology.
 func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupernodeAccount string) ([]TicketDescriptor, error) {
-	resp, target, err := p.listActionsForTarget(ctx, targetSupernodeAccount)
-	if err != nil || resp == nil {
+	if strings.TrimSpace(targetSupernodeAccount) == "" {
+		return nil, nil
+	}
+	actions, err := p.listFinalizedCascadeActions(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	out := make([]TicketDescriptor, 0, len(resp.Actions))
-	seen := make(map[string]struct{}, len(resp.Actions))
-	for _, act := range resp.Actions {
-		if !isEligibleCascadeAction(act, target) {
+	out := make([]TicketDescriptor, 0, len(actions))
+	seen := make(map[string]struct{}, len(actions))
+	for _, act := range actions {
+		if !isEligibleCascadeAction(act) {
 			lep6metrics.IncTicketDiscovery("ineligible")
 			continue
 		}
@@ -57,29 +63,25 @@ func (p *ChainTicketProvider) TicketsForTarget(ctx context.Context, targetSupern
 	return out, nil
 }
 
-// ObserverCandidatesForTicket returns the expected storage replica set for the
-// ticket. Current Lumera action.SuperNodes identifies the action/top supernode;
-// Cascade storage fans artifacts out across the top-supernode set at the action
-// block, so use that same current-chain query for LEP-6 observer candidates.
+// ObserverCandidatesForTicket returns the action-block storage topology candidate
+// set for the ticket. Current Lumera action.SuperNodes identifies the action/top
+// supernode; Cascade storage fans artifacts out across the top-supernode set at
+// the action block, so expose that topology here and let the dispatcher narrow
+// it to the concrete artifact-key replica set after artifact selection.
 func (p *ChainTicketProvider) ObserverCandidatesForTicket(ctx context.Context, targetSupernodeAccount string, ticketID string) ([]string, error) {
-	resp, target, err := p.listActionsForTarget(ctx, targetSupernodeAccount)
-	if err != nil || resp == nil {
-		return nil, err
-	}
+	_ = targetSupernodeAccount
 	ticketID = strings.TrimSpace(ticketID)
-	if ticketID == "" {
+	if ticketID == "" || p == nil || p.client == nil || p.client.Action() == nil {
 		return nil, nil
 	}
-	for _, act := range resp.Actions {
-		if strings.TrimSpace(act.GetActionID()) != ticketID {
-			continue
-		}
-		if !isEligibleCascadeAction(act, target) {
-			return []string{}, nil
-		}
-		return p.topSupernodeAccountsForAction(ctx, act)
+	resp, err := p.client.Action().GetAction(ctx, ticketID)
+	if err != nil || resp == nil || resp.Action == nil {
+		return nil, err
 	}
-	return []string{}, nil
+	if !isEligibleCascadeAction(resp.Action) {
+		return []string{}, nil
+	}
+	return p.topSupernodeAccountsForAction(ctx, resp.Action)
 }
 
 func (p *ChainTicketProvider) topSupernodeAccountsForAction(ctx context.Context, act *actiontypes.Action) ([]string, error) {
@@ -104,22 +106,30 @@ func (p *ChainTicketProvider) topSupernodeAccountsForAction(ctx context.Context,
 	return uniqueNonEmptyStrings(accounts), nil
 }
 
-func (p *ChainTicketProvider) listActionsForTarget(ctx context.Context, targetSupernodeAccount string) (*actiontypes.QueryListActionsBySuperNodeResponse, string, error) {
+func (p *ChainTicketProvider) listFinalizedCascadeActions(ctx context.Context) ([]*actiontypes.Action, error) {
 	if p == nil || p.client == nil || p.client.Action() == nil {
-		return nil, "", nil
+		return nil, nil
 	}
-	target := strings.TrimSpace(targetSupernodeAccount)
-	if target == "" {
-		return nil, "", nil
+	actionModule := p.client.Action()
+	states := []actiontypes.ActionState{
+		actiontypes.ActionStateDone,
+		actiontypes.ActionStateApproved,
 	}
-	resp, err := p.client.Action().ListActionsBySuperNode(ctx, target)
-	if err != nil || resp == nil {
-		return nil, target, err
+	out := make([]*actiontypes.Action, 0)
+	for _, state := range states {
+		resp, err := actionModule.ListActions(ctx, actiontypes.ActionTypeCascade, state)
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil {
+			continue
+		}
+		out = append(out, resp.Actions...)
 	}
-	return resp, target, nil
+	return out, nil
 }
 
-func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
+func isEligibleCascadeAction(act *actiontypes.Action) bool {
 	if act == nil {
 		return false
 	}
@@ -138,12 +148,7 @@ func isEligibleCascadeAction(act *actiontypes.Action, target string) bool {
 	if !hasValidCascadeMetadata(act.Metadata) {
 		return false
 	}
-	for _, sn := range act.SuperNodes {
-		if strings.TrimSpace(sn) == target {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func hasValidCascadeMetadata(raw []byte) bool {

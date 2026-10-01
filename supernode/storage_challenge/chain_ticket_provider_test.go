@@ -50,17 +50,19 @@ func TestChainTicketProvider_M10_AcceptsAtLeastOneClass(t *testing.T) {
 			}
 
 			client.EXPECT().Action().Return(actions).Times(2)
-			actions.EXPECT().ListActionsBySuperNode(gomock.Any(), "sn-target").Return(
-				&actiontypes.QueryListActionsBySuperNodeResponse{
+			actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateDone).Return(
+				&actiontypes.QueryListActionsResponse{
 					Actions: []*actiontypes.Action{{
 						ActionID:    "sym-1",
 						ActionType:  actiontypes.ActionTypeCascade,
 						State:       actiontypes.ActionStateDone,
 						BlockHeight: 100,
-						SuperNodes:  []string{"sn-target"},
+						SuperNodes:  []string{"sn-action-top"},
 						Metadata:    metaBytes,
 					}},
 				}, nil)
+			actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateApproved).Return(
+				&actiontypes.QueryListActionsResponse{}, nil)
 
 			got, err := NewChainTicketProvider(client).TicketsForTarget(context.Background(), "sn-target")
 			if err != nil {
@@ -105,7 +107,7 @@ func TestChainTicketProvider_ObserverCandidatesUseActionBlockTopSupernodes(t *te
 	}}}
 
 	client.EXPECT().Action().Return(actions).Times(2)
-	actions.EXPECT().ListActionsBySuperNode(gomock.Any(), "sn-target").Return(actionResp, nil)
+	actions.EXPECT().GetAction(gomock.Any(), "ticket-1").Return(&actiontypes.QueryGetActionResponse{Action: actionResp.Actions[0]}, nil)
 	client.EXPECT().SuperNode().Return(supernodes).Times(2)
 	supernodes.EXPECT().GetTopSuperNodesForBlock(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, req *sntypes.QueryGetTopSuperNodesForBlockRequest) (*sntypes.QueryGetTopSuperNodesForBlockResponse, error) {
@@ -131,5 +133,49 @@ func TestChainTicketProvider_ObserverCandidatesUseActionBlockTopSupernodes(t *te
 		if got[i] != want[i] {
 			t.Fatalf("candidates[%d]=%q want %q; all=%#v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestChainTicketProvider_TicketsForTargetDiscoversActionTopSupernodeTicket(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	client := lumeraMock.NewMockClient(ctrl)
+	actions := actionmod.NewMockModule(ctrl)
+
+	meta := &actiontypes.CascadeMetadata{
+		DataHash:            "h",
+		RqIdsMax:            3,
+		RqIdsIds:            []string{"rq-1"},
+		IndexArtifactCount:  1,
+		SymbolArtifactCount: 1,
+	}
+	metaBytes, err := proto.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+
+	// Current Lumera can finalize an action with only the action/top supernode in
+	// action.SuperNodes. LEP-6 challenge eligibility is decided later by the
+	// artifact-key holder set, so discovery must not be keyed only by the epoch
+	// target's action.SuperNodes membership.
+	client.EXPECT().Action().Return(actions).Times(2)
+	actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateDone).Return(
+		&actiontypes.QueryListActionsResponse{Actions: []*actiontypes.Action{{
+			ActionID:    "ticket-action-top-only",
+			ActionType:  actiontypes.ActionTypeCascade,
+			State:       actiontypes.ActionStateDone,
+			BlockHeight: 83,
+			SuperNodes:  []string{"sn-action-top"},
+			Metadata:    metaBytes,
+		}}}, nil)
+	actions.EXPECT().ListActions(gomock.Any(), actiontypes.ActionTypeCascade, actiontypes.ActionStateApproved).Return(
+		&actiontypes.QueryListActionsResponse{}, nil)
+
+	got, err := NewChainTicketProvider(client).TicketsForTarget(context.Background(), "sn-artifact-holder-target")
+	if err != nil {
+		t.Fatalf("TicketsForTarget: %v", err)
+	}
+	if len(got) != 1 || got[0].TicketID != "ticket-action-top-only" || got[0].AnchorBlock != 83 {
+		t.Fatalf("TicketsForTarget()=%#v, want finalized action-top-only ticket", got)
 	}
 }
