@@ -29,6 +29,9 @@ func TestStatusResponse_ExposesLEP6MetricsSnapshot(t *testing.T) {
 	lep6metrics.IncDispatchInternalFailure("resolve_key")
 	lep6metrics.IncDispatchSignFailure("PASS")
 	lep6metrics.IncObserverProof("attested")
+	lep6metrics.IncNoEligibleReason("target_not_expected_holder", "RECENT")
+	lep6metrics.IncActionableResult("PASS")
+	lep6metrics.IncParticipation("epoch_report_submitted")
 	lep6metrics.RecordChallenge(lep6metrics.ChallengeSnapshot{
 		ChallengeID:           "challenge-1",
 		EpochID:               9,
@@ -59,6 +62,7 @@ func TestStatusResponse_ExposesLEP6MetricsSnapshot(t *testing.T) {
 	lep6metrics.IncHealClaim("submitted")
 	lep6metrics.IncHealVerification("submitted", true)
 	lep6metrics.IncRecheckSubmission("RECHECK_CONFIRMED_FAIL", "submitted")
+	lep6metrics.IncHealOrphanedStagingCleanup()
 	lep6metrics.SetSelfHealingPendingClaims(2)
 	t.Cleanup(lep6metrics.Reset)
 
@@ -85,6 +89,18 @@ func TestStatusResponse_ExposesLEP6MetricsSnapshot(t *testing.T) {
 	}
 	if got := lep6.GetObserverProofsTotal()["attested"]; got != 1 {
 		t.Fatalf("observer proof counter = %d, want 1", got)
+	}
+	if got := lep6.GetNoEligibleReasonsTotal()["reason=target_not_expected_holder,bucket=recent"]; got != 1 {
+		t.Fatalf("no eligible reason counter = %d, want 1", got)
+	}
+	if got := lep6.GetActionableResultsTotal()["pass"]; got != 1 {
+		t.Fatalf("actionable pass counter = %d, want 1", got)
+	}
+	if got := lep6.GetParticipationTotal()["epoch_report_submitted"]; got != 1 {
+		t.Fatalf("participation counter = %d, want 1", got)
+	}
+	if len(lep6.GetRecentEpochSummaries()) != 1 || lep6.GetRecentEpochSummaries()[0].GetEpochId() != 9 || lep6.GetRecentEpochSummaries()[0].GetValidChallenges() != 1 {
+		t.Fatalf("unexpected recent epoch summaries: %#v", lep6.GetRecentEpochSummaries())
 	}
 	if len(lep6.GetRecentChallengeRefs()) != 1 {
 		t.Fatalf("recent challenge refs len = %d, want 1", len(lep6.GetRecentChallengeRefs()))
@@ -117,6 +133,9 @@ func TestStatusResponse_ExposesLEP6MetricsSnapshot(t *testing.T) {
 	}
 	if got := lep6.GetRecheckEvidenceSubmittedTotal()["class=recheck_confirmed_fail,outcome=submitted"]; got != 1 {
 		t.Fatalf("recheck evidence submitted counter = %d, want 1", got)
+	}
+	if got := lep6.GetHealOrphanedStagingCleanupsTotal(); got != 1 {
+		t.Fatalf("heal orphaned staging cleanup counter = %d, want 1", got)
 	}
 	if got := lep6.GetSelfHealingPendingClaims(); got != 2 {
 		t.Fatalf("self-healing pending claims = %d, want 2", got)

@@ -55,7 +55,7 @@ Project: supernode
 
 ### Steps:
 1. Run `go test ./supernode/cmd` -> Expected: command package tests pass.
-2. Inspect `supernode/cmd/start.go` around `LUMERA_SUPERNODE_DISABLE_HOST_REPORTER` -> Expected: `1` or `true` disables host reporter startup only for the current process environment.
+2. Inspect `supernode/cmd/start.go` host reporter startup -> Expected: no local env/config bypass disables host reporter startup.
 3. Confirm there is no config-file setting for this affordance -> Expected: production canonical path remains unchanged unless the env var is explicitly set.
 
 ### Checklist:

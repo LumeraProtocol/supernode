@@ -285,7 +285,7 @@ func TestAppendNoEligiblePreservedWhenOnlySelectedTicketExists(t *testing.T) {
 	d, buf := newDispatcher(t, audit, &stubFactory{}, NoTicketProvider{}, stubMetaProvider{})
 	anchor := makeAnchor(9, 1000, "target-1")
 
-	d.appendNoEligible(context.Background(), buf, 9, anchor, "target-1", audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, "ticket-existing")
+	d.appendNoEligible(context.Background(), buf, 9, anchor, "target-1", audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT, "ticket-existing", noEligibleReasonAllCandidatesSkipped)
 
 	results := buf.CollectResults(9)
 	require.Len(t, results, 1, "selected ticket alone is not a chain transcript-history conflict; H6 class-roll fallback still emits NO_ELIGIBLE")
@@ -303,7 +303,7 @@ func TestAppendNoEligibleSuppressedWhenBufferedEligibleResultExists(t *testing.T
 		ResultClass:            audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS,
 	})
 
-	d.appendNoEligible(context.Background(), buf, 10, anchor, "target-1", bucket, "")
+	d.appendNoEligible(context.Background(), buf, 10, anchor, "target-1", bucket, "", noEligibleReasonBucketEmpty)
 
 	results := buf.CollectResults(10)
 	require.Len(t, results, 1)

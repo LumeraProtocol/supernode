@@ -48,10 +48,8 @@ type lep6UploadUser struct {
 // logs must not contain lock/panic/duplicate-report failures.
 func TestLEP6ConcurrentCascadesContendedReporter(t *testing.T) {
 	os.Setenv("INTEGRATION_TEST", "true")
-	os.Setenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", "1")
 	t.Cleanup(func() {
 		os.Unsetenv("INTEGRATION_TEST")
-		os.Unsetenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")
 	})
 
 	const (

@@ -14,7 +14,7 @@ func TestLoadConfig_LEP6DefaultEnabled(t *testing.T) {
 	// Testnet rollout default: an operator who upgrades without adding the
 	// LEP-6 blocks should run storage challenge + LEP-6 while the chain
 	// StorageTruthEnforcementMode remains the protocol gate. Explicit
-	// enabled:false remains the emergency-disable path. Runtime knobs
+	// enabled:false is ignored for participation. Runtime knobs
 	// still receive defaults so no extra config edits are required.
 	cfg := loadConfigFromBody(t, `
 supernode:
@@ -97,7 +97,7 @@ storage_challenge:
 	}
 }
 
-func TestLoadConfig_LEP6EmergencyDisablesRemainFalse(t *testing.T) {
+func TestLoadConfig_LEP6ExplicitFalseParticipationGatesIgnored(t *testing.T) {
 	t.Parallel()
 
 	cfg := loadConfigFromBody(t, `
@@ -127,17 +127,17 @@ self_healing:
   enabled: false
 `)
 
-	if cfg.StorageChallengeConfig.Enabled {
-		t.Fatalf("storage_challenge.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.Enabled {
+		t.Fatalf("storage_challenge.enabled explicit false was preserved; want forced true")
 	}
-	if cfg.StorageChallengeConfig.LEP6.Enabled {
-		t.Fatalf("storage_challenge.lep6.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.LEP6.Enabled {
+		t.Fatalf("storage_challenge.lep6.enabled explicit false was preserved; want forced true")
 	}
-	if cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
-		t.Fatalf("storage_challenge.lep6.recheck.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled {
+		t.Fatalf("storage_challenge.lep6.recheck.enabled explicit false was preserved; want forced true")
 	}
-	if cfg.SelfHealingConfig.Enabled {
-		t.Fatalf("self_healing.enabled = true, want explicit false emergency disable preserved")
+	if !cfg.SelfHealingConfig.Enabled {
+		t.Fatalf("self_healing.enabled explicit false was preserved; want forced true")
 	}
 }
 
@@ -212,15 +212,11 @@ func TestSystemConfigFixturesIncludeLEP6(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadConfig(%s): %v", fixture, err)
 			}
-			// LEP-6 review L6 (Matee, 2026-05-06): these fixtures keep the
-			// storage-challenge dispatcher OFF (e2e submits reports manually)
-			// and self-healing ON. Recheck must follow its parent gates per
-			// the new structural validator.
-			if cfg.SelfHealingConfig.Enabled == false {
-				t.Fatalf("fixture should enable self-healing runtime: %+v", cfg)
-			}
-			if cfg.StorageChallengeConfig.LEP6.Recheck.Enabled && !cfg.StorageChallengeConfig.LEP6.Enabled {
-				t.Fatalf("L6: fixture has recheck.enabled=true while lep6.enabled=false — invalid combination, would be rejected by validator")
+			// Local enabled flags are normalized on at load time; fixture values
+			// cannot opt a node out of storage challenge, LEP-6, recheck, or
+			// self-healing participation.
+			if !cfg.StorageChallengeConfig.Enabled || !cfg.StorageChallengeConfig.LEP6.Enabled || !cfg.StorageChallengeConfig.LEP6.Recheck.Enabled || !cfg.SelfHealingConfig.Enabled {
+				t.Fatalf("fixture local enabled flags should all normalize true: %+v", cfg)
 			}
 		})
 	}

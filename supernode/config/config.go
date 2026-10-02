@@ -72,8 +72,6 @@ type LogConfig struct {
 }
 
 type StorageChallengeConfig struct {
-	enabledSet bool `yaml:"-"`
-
 	Enabled        bool                       `yaml:"enabled"`
 	PollIntervalMs uint64                     `yaml:"poll_interval_ms,omitempty"`
 	SubmitEvidence bool                       `yaml:"submit_evidence,omitempty"`
@@ -86,14 +84,9 @@ type StorageChallengeConfig struct {
 // flow via x/audit Params and are deliberately omitted here. See
 // docs/plans/LEP6_SUPERNODE_IMPLEMENTATION_PLAN_v2.md §2.3.
 type StorageChallengeLEP6Config struct {
-	// enabledSet tracks whether YAML explicitly provided enabled. Plain bools
-	// cannot distinguish omitted from explicit false, but LEP-6 needs both safe
-	// default-on local toggles and emergency-disable `enabled: false`.
-	enabledSet bool `yaml:"-"`
-
-	// Enabled gates construction of the LEP6Dispatcher. When false, the
-	// legacy single-range loop runs alone (default true; the chain audit
-	// StorageTruthEnforcementMode remains the protocol source of truth).
+	// Enabled is normalized to true after config load. Local config cannot opt
+	// a node out of LEP-6 participation; chain audit params decide whether work
+	// is performed.
 	Enabled bool `yaml:"enabled"`
 	// MaxConcurrentTargets bounds parallelism inside DispatchEpoch.
 	// Default 4. Reserved for follow-up parallelism work; PR3 dispatch
@@ -107,8 +100,6 @@ type StorageChallengeLEP6Config struct {
 }
 
 type StorageRecheckConfig struct {
-	enabledSet bool `yaml:"-"`
-
 	Enabled        bool   `yaml:"enabled"`
 	LookbackEpochs uint64 `yaml:"lookback_epochs,omitempty"`
 	MaxPerTick     int    `yaml:"max_per_tick,omitempty"`
@@ -125,12 +116,9 @@ type StorageRecheckConfig struct {
 // the chain's StorageTruthEnforcementMode param — UNSPECIFIED skips the
 // dispatcher regardless of Enabled.
 type SelfHealingConfig struct {
-	// enabledSet tracks explicit YAML emergency-disable vs omitted default.
-	enabledSet bool `yaml:"-"`
-
-	// Enabled toggles the dispatcher and the §19 transport server. Default
-	// true; chain StorageTruthEnforcementMode=UNSPECIFIED remains the global
-	// protocol disable.
+	// Enabled is normalized to true after config load. Local config cannot opt
+	// a node out of LEP-6 self-healing participation; chain audit params decide
+	// whether work is performed.
 	Enabled bool `yaml:"enabled"`
 	// PollIntervalMs is the dispatcher tick cadence (default 30000).
 	PollIntervalMs int `yaml:"poll_interval_ms,omitempty"`

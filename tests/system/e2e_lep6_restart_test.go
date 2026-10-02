@@ -41,10 +41,8 @@ func TestLEP6CrashRestartMidHealResumeOrReclaim(t *testing.T) {
 func runLEP6SupernodeRestartMidEpochPlannerConsistency(t *testing.T) {
 	t.Helper()
 	os.Setenv("INTEGRATION_TEST", "true")
-	os.Setenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", "1")
 	t.Cleanup(func() {
 		os.Unsetenv("INTEGRATION_TEST")
-		os.Unsetenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")
 	})
 
 	const (
@@ -138,10 +136,8 @@ func runLEP6SupernodeRestartMidEpochPlannerConsistency(t *testing.T) {
 func runLEP6CrashRestartMidHealResumeOrReclaim(t *testing.T) {
 	t.Helper()
 	os.Setenv("INTEGRATION_TEST", "true")
-	os.Setenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", "1")
 	t.Cleanup(func() {
 		os.Unsetenv("INTEGRATION_TEST")
-		os.Unsetenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")
 	})
 
 	const (

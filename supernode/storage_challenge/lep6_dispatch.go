@@ -113,6 +113,21 @@ const (
 	dispatchTicketOutcomeSkipped
 )
 
+type dispatchTicketResult struct {
+	Outcome          dispatchTicketOutcome
+	NoEligibleReason string
+}
+
+const (
+	noEligibleReasonProviderError            = "provider_error"
+	noEligibleReasonNoFinalizedCascadeAction = "no_finalized_cascade_actions"
+	noEligibleReasonBucketEmpty              = "bucket_empty"
+	noEligibleReasonActiveHealOp             = "active_heal_op"
+	noEligibleReasonArtifactUniverseEmpty    = "artifact_universe_empty"
+	noEligibleReasonTargetNotExpectedHolder  = "target_not_expected_holder"
+	noEligibleReasonAllCandidatesSkipped     = "all_candidates_skipped"
+)
+
 type challengeDebug struct {
 	FailureStage          string
 	CandidateSource       string
@@ -258,6 +273,7 @@ func (d *LEP6Dispatcher) DispatchEpoch(ctx context.Context, epochID uint64) erro
 		return fmt.Errorf("lep6 dispatch: get assigned targets: %w", err)
 	}
 	targets := assigned.TargetSupernodeAccounts
+	lep6metrics.AddParticipation("assigned_targets", uint64(len(targets)))
 	if len(targets) == 0 {
 		logtrace.Debug(ctx, "lep6 dispatch: no targets assigned this epoch", logtrace.Fields{
 			"epoch_id": epochID,
@@ -313,9 +329,11 @@ func (d *LEP6Dispatcher) dispatchTarget(
 	target string,
 ) error {
 	tickets, err := d.tickets.TicketsForTarget(ctx, target)
+	providerFailed := false
 	if err != nil {
 		// Treat as transient; emit no-eligible for both buckets so the
 		// chain still sees this epoch covered.
+		providerFailed = true
 		lep6metrics.SetNoTicketProviderActive(true)
 		logtrace.Warn(ctx, "lep6 dispatch: ticket provider error", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "error": err.Error(),
@@ -327,30 +345,45 @@ func (d *LEP6Dispatcher) dispatchTarget(
 		audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_RECENT,
 		audittypes.StorageProofBucketType_STORAGE_PROOF_BUCKET_TYPE_OLD,
 	} {
+		lep6metrics.IncParticipation("bucket_slots")
 		eligibleIDs := make([]string, 0, len(tickets))
+		bucketCandidates := 0
+		healExcluded := 0
 		for _, t := range tickets {
 			cls := deterministic.ClassifyTicketBucket(currentHeight, t.AnchorBlock,
 				params.StorageTruthRecentBucketMaxBlocks, params.StorageTruthOldBucketMinBlocks)
 			if cls != bucket {
 				continue
 			}
+			bucketCandidates++
 			if d.ticketHasActiveHealOp(ctx, t.TicketID) {
 				logtrace.Info(ctx, "lep6 dispatch: excluding ticket with active heal op", logtrace.Fields{
 					"epoch_id": epochID, "target": target, "bucket": bucket.String(), "ticket": t.TicketID,
 				})
+				healExcluded++
 				continue
 			}
 			eligibleIDs = append(eligibleIDs, t.TicketID)
 		}
 
 		if len(eligibleIDs) == 0 {
+			reason := noEligibleReasonBucketEmpty
+			if providerFailed {
+				reason = noEligibleReasonProviderError
+			} else if len(tickets) == 0 {
+				reason = noEligibleReasonNoFinalizedCascadeAction
+			} else if bucketCandidates > 0 && healExcluded == bucketCandidates {
+				reason = noEligibleReasonActiveHealOp
+			}
 			lep6metrics.SetNoTicketProviderActive(true)
-			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, "")
+			lep6metrics.IncNoEligibleReason(reason, bucket.String())
+			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, "", reason)
 			continue
 		}
 
 		attempted := make(map[string]struct{}, len(eligibleIDs))
 		lastSkipped := ""
+		lastSkipReason := ""
 		for len(attempted) < len(eligibleIDs) {
 			remaining := make([]string, 0, len(eligibleIDs)-len(attempted))
 			for _, id := range eligibleIDs {
@@ -364,22 +397,27 @@ func (d *LEP6Dispatcher) dispatchTarget(
 			}
 			attempted[ticketID] = struct{}{}
 
-			outcome, err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, target, bucket, ticketID)
+			result, err := d.dispatchTicket(ctx, d.buffer, epochID, anchor, params, target, bucket, ticketID)
 			if err != nil {
 				logtrace.Warn(ctx, "lep6 dispatch: ticket loop error", logtrace.Fields{
 					"epoch_id": epochID, "target": target, "ticket": ticketID, "error": err.Error(),
 				})
 				break
 			}
-			if outcome == dispatchTicketOutcomeTerminal {
+			if result.Outcome == dispatchTicketOutcomeTerminal {
 				lastSkipped = ""
 				break
 			}
 			lastSkipped = ticketID
+			lastSkipReason = result.NoEligibleReason
 		}
 		if len(attempted) == len(eligibleIDs) && lastSkipped != "" {
+			if lastSkipReason == "" {
+				lastSkipReason = noEligibleReasonAllCandidatesSkipped
+			}
 			lep6metrics.SetNoTicketProviderActive(true)
-			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, lastSkipped)
+			lep6metrics.IncNoEligibleReason(lastSkipReason, bucket.String())
+			d.appendNoEligible(ctx, d.buffer, epochID, anchor, target, bucket, lastSkipped, lastSkipReason)
 		}
 	}
 	return nil
@@ -431,6 +469,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	target string,
 	bucket audittypes.StorageProofBucketType,
 	selectedTicketIDForLog string,
+	reason string,
 ) {
 	// Wave 2 / F-PR286-02: Lumera chain validateNoEligibleTicketConsistency
 	// rejects NO_ELIGIBLE_TICKET when a recent eligible transcript exists for
@@ -476,6 +515,10 @@ func (d *LEP6Dispatcher) appendNoEligible(
 		return
 	}
 
+	if reason == "" {
+		reason = noEligibleReasonAllCandidatesSkipped
+	}
+
 	if selectedTicketIDForLog != "" {
 		logtrace.Info(ctx, "lep6 dispatch: no-eligible after class roll", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "bucket": bucket.String(), "selected_ticket": selectedTicketIDForLog,
@@ -483,6 +526,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 	}
 
 	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String())
+	lep6metrics.IncParticipation("proof_rows_buffered")
 	lep6metrics.IncDispatchResultDetail(
 		audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String(),
 		bucket.String(),
@@ -496,7 +540,8 @@ func (d *LEP6Dispatcher) appendNoEligible(
 		Bucket:         bucket.String(),
 		ResultClass:    audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET.String(),
 		TranscriptHash: transcriptHashHex,
-		Details:        "no eligible ticket for bucket",
+		Details:        "no eligible ticket for bucket: " + reason,
+		FailureStage:   reason,
 	})
 	buf.Append(epochID, &audittypes.StorageProofResult{
 		TargetSupernodeAccount:     target,
@@ -505,7 +550,7 @@ func (d *LEP6Dispatcher) appendNoEligible(
 		ResultClass:                audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_NO_ELIGIBLE_TICKET,
 		TranscriptHash:             transcriptHashHex,
 		ChallengerSignature:        hex.EncodeToString(sig),
-		Details:                    "no eligible ticket for bucket",
+		Details:                    "no eligible ticket for bucket: " + reason,
 	})
 	_ = anchor
 }
@@ -541,14 +586,14 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	target string,
 	bucket audittypes.StorageProofBucketType,
 	ticketID string,
-) (dispatchTicketOutcome, error) {
+) (dispatchTicketResult, error) {
 	meta, fileSizeKbs, err := d.meta.GetCascadeMetadata(ctx, ticketID)
 	if err != nil || meta == nil {
 		if cerr := ctx.Err(); cerr != nil {
-			return dispatchTicketOutcomeTerminal, cerr
+			return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, cerr
 		}
 		lep6metrics.IncDispatchInternalFailure("cascade_meta")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("get cascade meta: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("get cascade meta: %w", err)
 	}
 
 	indexCount, _ := storagechallenge.ResolveArtifactCount(meta, audittypes.StorageProofArtifactClass_STORAGE_PROOF_ARTIFACT_CLASS_INDEX)
@@ -562,7 +607,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		logtrace.Info(ctx, "lep6 dispatch: selected ticket has no concrete artifact universe; trying next eligible ticket", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "bucket": bucket.String(), "ticket": ticketID,
 		})
-		return dispatchTicketOutcomeSkipped, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeSkipped, NoEligibleReason: noEligibleReasonArtifactUniverseEmpty}, nil
 	}
 
 	var artifactCount uint32
@@ -575,17 +620,17 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	ordinal, err := deterministic.SelectArtifactOrdinal(anchor.Seed, target, ticketID, class, artifactCount)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("select_ordinal")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("select ordinal: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("select ordinal: %w", err)
 	}
 	artifactKey, err := storagechallenge.ResolveArtifactKey(meta, class, ordinal)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("resolve_key")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("resolve artifact key: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("resolve artifact key: %w", err)
 	}
 	artifactSize, err := storagechallenge.ResolveArtifactSize(&actiontypes.Action{FileSizeKbs: int64(fileSizeKbs)}, meta, class, ordinal)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("resolve_size")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("resolve artifact size: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("resolve artifact size: %w", err)
 	}
 	sizeSource := "metadata"
 	rangeLen := uint64(params.StorageTruthCompoundRangeLenBytes)
@@ -649,7 +694,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	offsets, err := deterministic.ComputeMultiRangeOffsets(anchor.Seed, target, ticketID, class, ordinal, artifactSize, rangeLen, k)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("compute_offsets")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("compute offsets: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("compute offsets: %w", err)
 	}
 	ranges := make([]*supernode.ByteRange, len(offsets))
 	for i, off := range offsets {
@@ -659,7 +704,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	derivHash, err := deterministic.DerivationInputHash(anchor.Seed, target, ticketID, class, ordinal, offsets, rangeLen)
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("derivation_hash")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("derivation input hash: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("derivation input hash: %w", err)
 	}
 
 	challengeID := deriveCompoundChallengeID(anchor.Seed, epochID, target, ticketID, class, ordinal)
@@ -679,7 +724,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		logtrace.Info(ctx, "lep6 dispatch: target is not an expected artifact holder; trying next eligible ticket", logtrace.Fields{
 			"epoch_id": epochID, "challenger": d.self, "target": target, "ticket": ticketID, "bucket": bucket.String(), "artifact_key": artifactKey, "holder_set": observerCandidates,
 		})
-		return dispatchTicketOutcomeSkipped, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeSkipped, NoEligibleReason: noEligibleReasonTargetNotExpectedHolder}, nil
 	}
 
 	logtrace.Info(ctx, "lep6 dispatch diagnostic: observer selection", logtrace.Fields{
@@ -702,7 +747,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		reason := fmt.Sprintf("observer holder quorum unavailable: selected %d want 2 from %d active holder candidates", len(observers), len(observerCandidates))
 		debug.FailureStage = "observer_selection"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL, reason, debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 
 	req := &supernode.GetCompoundProofRequest{
@@ -726,7 +771,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if err != nil {
 		debug.FailureStage = "dial_target"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, classifyProofFailure(err, "dial"), fmt.Sprintf("dial: %v", err), debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -740,21 +785,21 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		}
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, classifyProofFailure(err, reason), reason, debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 
 	// Local validation: range count + per-range size, and proof hash recompute.
 	if len(resp.RangeBytes) != k {
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range count mismatch: got %d want %d", len(resp.RangeBytes), k), debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 	hasher := blake3.New(32, nil)
 	for i, b := range resp.RangeBytes {
 		if uint64(len(b)) != rangeLen {
 			debug.FailureStage = "target_proof"
 			d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_INVALID_TRANSCRIPT, fmt.Sprintf("range[%d] size %d != %d", i, len(b), rangeLen), debug)
-			return dispatchTicketOutcomeTerminal, nil
+			return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 		}
 		_, _ = hasher.Write(b)
 	}
@@ -762,7 +807,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if !strings.EqualFold(gotHash, resp.ProofHashHex) {
 		debug.FailureStage = "target_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_HASH_MISMATCH, fmt.Sprintf("proof hash mismatch: local=%s remote=%s", gotHash, resp.ProofHashHex), debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 
 	transcriptHashHex, err := deterministic.TranscriptHash(deterministic.TranscriptInputs{
@@ -780,7 +825,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	})
 	if err != nil {
 		lep6metrics.IncDispatchInternalFailure("transcript_hash")
-		return dispatchTicketOutcomeTerminal, fmt.Errorf("transcript hash: %w", err)
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, fmt.Errorf("transcript hash: %w", err)
 	}
 
 	observerAttestations, observerMismatch, observerOutcomes := d.collectObserverAttestations(ctx, observers, req, gotHash, transcriptHashHex)
@@ -802,7 +847,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 	if observerMismatch {
 		debug.FailureStage = "observer_proof"
 		d.appendFail(ctx, buf, epochID, target, bucket, ticketID, class, ordinal, artifactCount, artifactKey, derivHash, challengeID, audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_OBSERVER_QUORUM_FAIL, "observer bytes diverged from target transcript", debug)
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 
 	sig, signErr := snkeyring.SignBytes(d.keyring, d.keyName, []byte(transcriptHashHex))
@@ -812,10 +857,12 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		logtrace.Warn(ctx, "lep6 dispatch: pass-row sign error — row dropped", logtrace.Fields{
 			"epoch_id": epochID, "target": target, "ticket": ticketID, "error": signErr.Error(),
 		})
-		return dispatchTicketOutcomeTerminal, nil
+		return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 	}
 
 	lep6metrics.IncDispatchResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String())
+	lep6metrics.IncActionableResult(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String())
+	lep6metrics.IncParticipation("proof_rows_buffered")
 	lep6metrics.IncDispatchResultDetail(audittypes.StorageProofResultClass_STORAGE_PROOF_RESULT_CLASS_PASS.String(), bucket.String(), class.String())
 	lep6metrics.RecordChallenge(lep6metrics.ChallengeSnapshot{
 		ChallengeID:           challengeID,
@@ -860,7 +907,7 @@ func (d *LEP6Dispatcher) dispatchTicket(
 		ChallengerSignature:           hex.EncodeToString(sig),
 		ObserverAttestationSignatures: observerAttestations,
 	})
-	return dispatchTicketOutcomeTerminal, nil
+	return dispatchTicketResult{Outcome: dispatchTicketOutcomeTerminal}, nil
 }
 
 func (d *LEP6Dispatcher) observerCandidatesForArtifact(ctx context.Context, activeSupernodes []string, target string, ticketID string, artifactKey string) observerCandidateSelection {
@@ -1060,6 +1107,8 @@ func (d *LEP6Dispatcher) appendFail(
 	}
 
 	lep6metrics.IncDispatchResult(resultClass.String())
+	lep6metrics.IncActionableResult(resultClass.String())
+	lep6metrics.IncParticipation("proof_rows_buffered")
 	lep6metrics.IncDispatchResultDetail(resultClass.String(), bucket.String(), class.String())
 	lep6metrics.RecordChallenge(lep6metrics.ChallengeSnapshot{
 		ChallengeID:           challengeID,

@@ -47,9 +47,7 @@ import (
 // supernode self_healing services.
 func TestLEP6RuntimeE2E_CascadeChallengeHealVerifyAndStore(t *testing.T) {
 	os.Setenv("INTEGRATION_TEST", "true")
-	os.Setenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER", "1")
 	defer os.Unsetenv("INTEGRATION_TEST")
-	defer os.Unsetenv("LUMERA_SUPERNODE_DISABLE_HOST_REPORTER")
 
 	const (
 		epochLengthBlocks = uint64(12)
