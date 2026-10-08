@@ -8,7 +8,7 @@ This repository publishes releases only. Development happens in a private reposi
 - **New releases** carry `SHA256SUMS` (verify with `sha256sum -c SHA256SUMS`). A `supernode-<version>-src.tar.gz` source tarball will follow once the new release pipeline is in place.
 - **Copied releases** (v2.5.2, and v2.5.3-testnet through v2.6.9-testnet) were copied here on 2026-10-06 from the previous repository and carry their original binaries only.
 - **Source code archives:** GitHub's "Source code" archives on a release contain only this README.
-- **Go:** existing versions of `github.com/LumeraProtocol/supernode/v2` stay available through the Go module proxy. New versions will be published as `go.lumera.io/supernode/v2`.
+- **Go:** existing versions of `github.com/LumeraProtocol/supernode/v2` stay available through the Go module proxy. New versions are published as `lumera.build/supernode/v2`, starting with the first release built by the new pipeline.
 
 [RELEASES.md](RELEASES.md) lists every release published here.
 
