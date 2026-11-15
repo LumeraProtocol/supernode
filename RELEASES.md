@@ -17,3 +17,4 @@ Copied on 2026-10-06 from the previous repository:
 Published from the private repository:
 
 - v2.7.0-testnet (2026-11-14)
+- v2.7.1-testnet (2026-11-15)
