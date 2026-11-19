@@ -20,3 +20,4 @@ Published from the private repository:
 - v2.7.1-testnet (2026-11-15)
 - v2.5.3 (2026-11-18)
 - v2.8.0 (2026-11-19)
+- v2.8.0-testnet (2026-11-19)
